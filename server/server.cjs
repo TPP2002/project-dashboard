@@ -448,6 +448,131 @@ function handleDispatchProject(req, res) {
   });
 }
 
+/**
+ * handleDispatchTask —— 任务级派单(用户要的正确粒度):
+ * 一个任务的所有 unlanded decisions 打包给一个对话,那对话 claim 一次该任务、
+ * 带着所有答案一起施工。治"一个决策一个对话各自 claim 同一任务打架"。
+ */
+function handleDispatchTask(req, res) {
+  readBody(req, BODY_MAX, (err, raw) => {
+    if (err) return sendJson(res, 413, { ok: false, error: err.message });
+    let body;
+    try { body = raw ? JSON.parse(raw) : {}; }
+    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+    const pid = String(body.pid || '').trim();
+    const tid = String(body.tid || '').trim();
+    if (!pid || !tid) return sendJson(res, 400, { ok: false, error: '缺 pid/tid' });
+
+    let projects;
+    try { projects = readRegistrySafe(); }
+    catch (e) { return sendJson(res, 500, { ok: false, error: 'registry 读不出:' + e.message }); }
+    const proj = projects.projects && projects.projects[pid];
+    if (!proj) return sendJson(res, 404, { ok: false, error: `项目 ${pid} 未注册` });
+
+    let board;
+    try { board = JSON.parse(fs.readFileSync(proj.board, 'utf8')); }
+    catch (_) { return sendJson(res, 404, { ok: false, error: `${pid} 的 board.json 读不出` }); }
+    const task = (board.tasks || []).find((t) => t.id === tid);
+    if (!task) return sendJson(res, 404, { ok: false, error: `任务 ${tid} 不存在` });
+
+    const decisions = (task.decisions || []).filter(
+      (d) => d.answer !== null && d.answer !== undefined && !d.landed,
+    );
+    if (!decisions.length) return sendJson(res, 400, { ok: false, error: `任务 ${tid} 没有待落地决策` });
+
+    const prompt = buildTaskDispatchPrompt(pid, proj, task, decisions);
+    if (body.preview === true) return sendJson(res, 200, { ok: true, prompt, count: decisions.length });
+
+    const cwd = proj.mainRepo;
+    const cmdArgs = ['/c', 'start', '"看板派单·' + tid + '·' + decisions.length + '决策"', 'cmd', '/k',
+      'chcp 65001 >nul && claude ' + JSON.stringify(prompt)];
+    try {
+      const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+      });
+      child.unref();
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, error: '派单失败:' + e.message });
+    }
+    sendJson(res, 200, { ok: true, dispatched: { pid, tid, count: decisions.length },
+      msg: `已开新对话落地任务 ${tid}(${decisions.length} 条决策)` });
+  });
+}
+
+function buildTaskDispatchPrompt(pid, proj, task, decisions) {
+  const CLI = 'node ~/.claude/dashboard/cli/index.cjs';
+  const lines = [
+    `# 【看板派单】此对话负责落地任务 ${task.id} 的全部已拍板决策`,
+    '',
+    `你是被【项目管理看板】自动派来的对话——用户在看板上点了"派单本任务",看板启动本对话、cwd 已进项目主仓、这条 prompt 就是完整任务书。你不需要问用户"要做什么"。`,
+    '',
+    `**项目**:${proj.name || pid} (项目 id: \`${pid}\`,已接入看板)`,
+    `**任务**:${task.id} · ${task.title}`,
+    `**本任务有 ${decisions.length} 条已拍板决策要落地**(都是这一个任务的决策,由你一个对话统一施工):`,
+    '',
+    '---',
+    '',
+  ];
+  decisions.forEach((d, i) => {
+    lines.push(`## 决策 ${i + 1}/${decisions.length}:#${d.id}(用户拍于 ${d.decidedAt})`);
+    lines.push('');
+    lines.push(`**问题**:${d.question}`);
+    lines.push('');
+    lines.push('**用户拍的答案**:');
+    lines.push('');
+    lines.push('```');
+    lines.push(d.answer);
+    lines.push('```');
+    lines.push('');
+    if (d.recommendReason) {
+      lines.push(`**当时看板给的推荐理由**(参考,以用户答案为准):${d.recommendReason}`);
+      lines.push('');
+    }
+    lines.push('---');
+    lines.push('');
+  });
+  lines.push('## 你的施工职责');
+  lines.push('');
+  lines.push('**读了再动手**:');
+  lines.push('1. 项目根 `CLAUDE.md`——本项目的看板同步纪律(pre-commit 硬闸门会拦你不 claim 就 commit)');
+  lines.push('2. skill `project-build-workflow` §11.2 认领协议 + §11.9 看板同步 + §6.2 拍板话术');
+  lines.push(`3. 本任务的设计文档(见 board.json 里 ${task.id}.docs 字段)`);
+  lines.push('');
+  lines.push('**落地流程(整个任务一次 claim,把上面所有决策一起做)**:');
+  lines.push('');
+  lines.push('```');
+  lines.push('# 先核对新鲜度 + 建分支');
+  lines.push('git fetch');
+  lines.push('# 认领本任务(整个任务只 claim 一次,不 claim git commit 会被 pre-commit 硬闸门拦)');
+  lines.push(`${CLI} claim ${task.id} --project ${pid} --branch <你的分支名>`);
+  lines.push('');
+  lines.push('# 按上面每条决策的答案落地实现...(施工)');
+  lines.push('');
+  lines.push('# 施工完成');
+  lines.push(`${CLI} done ${task.id} --project ${pid} --pr <PR号> --commit <sha>`);
+  lines.push('# 逐条标记决策已落地:');
+  decisions.forEach((d) => {
+    lines.push(`${CLI} mark-landed ${task.id} --did ${d.id} --project ${pid}`);
+  });
+  lines.push('```');
+  lines.push('');
+  lines.push('4. 达标自动 push + gh pr create + auto-merge to main(见 skill §11.7)');
+  lines.push('5. 中途冒出新的待拍板点 → `cli pending --json` 登记(背景/利弊/推荐理由三件套,skill §6.2)');
+  lines.push('');
+  const hasDesignAnswer = decisions.some((d) => /暂缓|编写一套|设计方案|联网|对抗审查/.test(d.answer || ''));
+  if (hasDesignAnswer) {
+    lines.push('**注意本任务含"去设计"类答案**(不是照代码改,而是启动新方案设计):');
+    lines.push('- 不是现在动代码,而是新起一份设计方案文档(放 `docs/plans/` 下,沿用项目编号规则)');
+    lines.push('- 按 skill §3 阶段①对账 + §4 阶段②建议 + §5 阶段③分解 走完,最后停下等用户拍板才能开工');
+    lines.push('- 联网搜索/对抗审查/对齐现有代码这些用户提到的都要做完');
+    lines.push('');
+  }
+  lines.push('## 现在开始');
+  lines.push('');
+  lines.push('别问"要不要开始"、别问"具体做什么"——上面就是完整任务书。请从决策 1 开始,先做本任务的阶段①对账。');
+  return lines.join('\n');
+}
+
 function buildProjectDispatchPrompt(pid, proj, items) {
   const CLI = 'node ~/.claude/dashboard/cli/index.cjs';
   const lines = [
@@ -672,6 +797,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
       if (sub === 'dispatch' && req.method === 'POST') return handleDispatch(req, res);
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
+      if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
     }
