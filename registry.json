@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "projects": {
+    "game": {
+      "name": "A股模拟器",
+      "mainRepo": "F:\\game",
+      "board": "F:\\game\\.dashboard\\board.json",
+      "docsRoot": "F:\\game\\docs\\plans\\股市清零工程"
+    }
+  }
+}

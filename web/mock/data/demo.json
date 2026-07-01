@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "id": "docs-site",
+    "name": "文档站",
+    "mainRepo": "F:\\docs-site",
+    "forbiddenZones": [],
+    "createdAt": "2026-06-20T09:00:00Z",
+    "updatedAt": "2026-07-01T08:10:00Z"
+  },
+  "tasks": [
+    {
+      "id": "D01", "title": "首页与导航", "status": "施工中", "percent": 70, "wave": 1,
+      "description": "落地页 + 侧边导航 + 暗色主题。",
+      "dates": { "design": "2026-06-21", "start": "2026-06-22", "done": null },
+      "gitBranch": ["feat/home"], "nextMilestone": "移动端适配",
+      "tests": { "total": 8, "passing": 6, "mustFailFirst": 0 }, "typecheck": true,
+      "deps": { "dependsOn": [], "blockedBy": [], "relatedTasks": [] }
+    },
+    {
+      "id": "D02", "title": "全文搜索", "status": "待拍板", "percent": 0, "wave": 2,
+      "description": "站内搜索方案选型。",
+      "dates": { "design": "2026-06-28", "start": null, "done": null },
+      "deps": { "dependsOn": ["D01"], "blockedBy": [], "relatedTasks": [] },
+      "decisions": [
+        {
+          "id": "d1",
+          "question": "文档站是否启用本地全文搜索（会增加产物体积）？",
+          "options": ["启用(pagefind)", "不启用"],
+          "recommended": "启用(pagefind)",
+          "answer": null, "decidedAt": null
+        }
+      ]
+    },
+    {
+      "id": "D03", "title": "部署流水线", "status": "未开工", "percent": 0, "wave": 2,
+      "description": "CI 构建 + 静态托管。",
+      "dates": { "design": "2026-06-29", "start": null, "done": null },
+      "deps": { "dependsOn": ["D01"], "blockedBy": [], "relatedTasks": [] }
+    }
+  ],
+  "activity": [
+    { "ts": "2026-06-22T09:30:00Z", "author": "feat/home", "type": "claim", "text": "认领 D01：分支 feat/home", "taskId": "D01" },
+    { "ts": "2026-06-28T14:00:00Z", "author": "看板", "type": "pending", "text": "待拍板 D02：是否启用本地全文搜索？", "taskId": "D02" },
+    { "ts": "2026-07-01T08:10:00Z", "author": "feat/home", "type": "progress", "text": "进度 D01 70%：暗色主题完成", "taskId": "D01" }
+  ]
+}

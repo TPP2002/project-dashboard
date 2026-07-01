@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "id": "game",
+    "name": "A股模拟器",
+    "mainRepo": "F:\\game",
+    "forbiddenZones": ["src/engine/invariants/**", "src/内宇宙/**"],
+    "createdAt": "2026-05-09T09:00:00Z",
+    "updatedAt": "2026-07-01T12:30:00Z"
+  },
+  "tasks": [
+    {
+      "id": "P01", "title": "R9 挂单改价语义", "status": "已完工", "percent": 100, "wave": 1,
+      "description": "改价即撤旧挂新，虚写指纹绝迹。拍板 B/B2 治本。",
+      "dates": { "design": "2026-06-10", "start": "2026-06-11", "done": "2026-06-12" },
+      "gitBranch": ["stock-r14-9"], "prNumbers": [24], "commitShas": ["b1ccb9a"],
+      "tests": { "total": 30, "passing": 30, "mustFailFirst": 2 }, "typecheck": true,
+      "deps": { "dependsOn": [], "blockedBy": [], "relatedTasks": ["P02"] },
+      "docs": ["docs/plans/股市清零工程/INDEX.md"]
+    },
+    {
+      "id": "P02", "title": "bounded 阈值分层", "status": "已完工", "percent": 100, "wave": 1,
+      "description": "天地板直跳族根因侦查结案，主因=R9 零成交虚写。",
+      "dates": { "design": "2026-06-10", "start": "2026-06-11", "done": "2026-06-12" },
+      "gitBranch": ["stock-r14-11"], "prNumbers": [14, 16], "commitShas": ["d1f7865"],
+      "tests": { "total": 22, "passing": 22, "mustFailFirst": 1 }, "typecheck": true,
+      "deps": { "dependsOn": ["P01"], "blockedBy": [], "relatedTasks": [] },
+      "docs": ["docs/plans/股市清零工程/P02.md"]
+    },
+    {
+      "id": "P05", "title": "龙虎榜引擎", "status": "收官", "percent": 95, "wave": 2,
+      "description": "topList 改 computed 派生 topListHistory，新引擎 topListEngine.ts。",
+      "dates": { "design": "2026-06-13", "start": "2026-06-13", "done": null },
+      "gitBranch": ["stock-r14-32"], "prNumbers": [33], "commitShas": ["54c2983"],
+      "nextMilestone": "补验收文档后合 main",
+      "tests": { "total": 41, "passing": 41, "mustFailFirst": 0 }, "typecheck": true,
+      "deps": { "dependsOn": [], "blockedBy": [], "relatedTasks": ["P09"] },
+      "fileScope": ["src/engine/topListEngine.ts"],
+      "docs": [{ "title": "P05 龙虎榜说明", "path": "docs/plans/股市清零工程/P05.md" }]
+    },
+    {
+      "id": "P07", "title": "中层日线剧本重建", "status": "施工中", "percent": 60, "wave": 2,
+      "description": "Step3.5 剧本重建：archetype 故事表 + 复用 applyDnaTuning + 三硬约束 + midDays 总开关。",
+      "dates": { "design": "2026-06-28", "start": "2026-06-30", "done": null },
+      "gitBranch": ["stock-r14-37"], "worktree": ["pedantic-black"],
+      "nextMilestone": "黄金快照锁零变化 → 板块共振对齐",
+      "tests": { "total": 47, "passing": 45, "mustFailFirst": 3 }, "typecheck": true,
+      "deps": { "dependsOn": [], "blockedBy": [], "relatedTasks": ["P08"] },
+      "fileScope": ["src/engine/historyGenerator.ts", "src/engine/midLayer/**"],
+      "docs": [
+        { "title": "P07 实现说明", "path": "docs/plans/股市清零工程/P07.md" },
+        "docs/plans/股市清零工程/INDEX.md"
+      ]
+    },
+    {
+      "id": "P08", "title": "板块共振多长度", "status": "已完工", "percent": 100, "wave": 2,
+      "description": "尾部偏移日历对齐 + 短股部分覆盖 + 无缝重连 + 三级幅度护栏。",
+      "dates": { "design": "2026-06-28", "start": "2026-06-29", "done": "2026-06-30" },
+      "gitBranch": ["stock-r14-37"], "prNumbers": [47], "commitShas": ["af9582d"],
+      "tests": { "total": 18, "passing": 18, "mustFailFirst": 0 }, "typecheck": true,
+      "deps": { "dependsOn": [], "blockedBy": [], "relatedTasks": ["P07"] },
+      "docs": ["docs/plans/股市清零工程/P08.md"]
+    },
+    {
+      "id": "P09", "title": "龙虎榜席位语义", "status": "待拍板", "percent": 20, "wave": 3,
+      "description": "席位昵称与数据源口径待定，等拍板后开工。",
+      "dates": { "design": "2026-06-30", "start": null, "done": null },
+      "deps": { "dependsOn": ["P05"], "blockedBy": [], "relatedTasks": [] },
+      "decisions": [
+        {
+          "id": "d1",
+          "question": "龙虎榜数据源用实时快照还是收盘快照？",
+          "options": ["实时快照", "收盘快照(稳定)"],
+          "recommended": "收盘快照(稳定)",
+          "answer": null, "decidedAt": null
+        },
+        {
+          "id": "d2",
+          "question": "玩家席位昵称冲突时以哪边为准？",
+          "options": ["user_profile 优先", "引擎生成优先"],
+          "recommended": "user_profile 优先",
+          "answer": null, "decidedAt": null
+        }
+      ],
+      "docs": ["docs/plans/股市清零工程/P09.md"]
+    },
+    {
+      "id": "P10", "title": "融资融券利率", "status": "待开工", "percent": 0, "wave": 3,
+      "description": "两融日息与强平线，接 getShortMarginRatio 押金分级接口。",
+      "dates": { "design": "2026-06-30", "start": null, "done": null },
+      "deps": { "dependsOn": ["P03"], "blockedBy": [], "relatedTasks": [] }
+    },
+    {
+      "id": "P12", "title": "全量回归总收官", "status": "压轴", "percent": 0, "wave": 4,
+      "description": "所有任务合并后全量 vitest + bot 双跑 + 黄金快照总校验。",
+      "dates": { "design": "2026-06-14", "start": null, "done": null },
+      "deps": { "dependsOn": ["P07", "P09", "P10"], "blockedBy": [], "relatedTasks": [] }
+    },
+    {
+      "id": "P15", "title": "屏幕外轻量盘口", "status": "暂缓", "percent": 10, "wave": 3,
+      "description": "in_quote 屏幕外暴涨的彻底治理，依赖 LOD 模型重估。",
+      "dates": { "design": "2026-06-14", "start": "2026-06-14", "done": null },
+      "blockReason": "等 P19 屏幕外 LOD 模型定稿",
+      "parkedNote": "已拍板接受 in_quote 暴涨为 LOD 副产品，WARN 不拦游戏",
+      "deps": { "dependsOn": [], "blockedBy": ["P19"], "relatedTasks": [] }
+    },
+    {
+      "id": "P16", "title": "机器人 2.0 宽版", "status": "施工中", "percent": 40, "wave": 3,
+      "description": "P11 宽版 rng 收编 + metamorphic 对照体检。",
+      "dates": { "design": "2026-06-30", "start": "2026-07-01", "done": null },
+      "gitBranch": ["stock-r14-40"], "worktree": ["determined-snyder"],
+      "nextMilestone": "market.ts 裸随机全收编成种子流",
+      "tests": { "total": 35, "passing": 30, "mustFailFirst": 5 }, "typecheck": true,
+      "deps": { "dependsOn": ["P07"], "blockedBy": [], "relatedTasks": [] },
+      "fileScope": ["src/engine/market.ts"]
+    },
+    {
+      "id": "P17", "title": "复牌集合竞价", "status": "已完工", "percent": 100, "wave": 3,
+      "description": "两段式真集合竞价，复牌瞬间不写价，09:25 撮价，涨跌停按停牌前昨收分日释放。",
+      "dates": { "design": "2026-06-29", "start": "2026-06-30", "done": "2026-06-30" },
+      "gitBranch": ["stock-r14-36"], "prNumbers": [45], "commitShas": ["bb84c78"],
+      "tests": { "total": 52, "passing": 52, "mustFailFirst": 4 }, "typecheck": true,
+      "deps": { "dependsOn": [], "blockedBy": [], "relatedTasks": [] },
+      "docs": ["docs/plans/股市清零工程/P17.md"]
+    }
+  ],
+  "activity": [
+    { "ts": "2026-06-30T10:12:00Z", "author": "stock-r14-37", "type": "claim", "text": "认领 P07：分支 stock-r14-37，文件域 historyGenerator.ts", "taskId": "P07" },
+    { "ts": "2026-06-30T15:40:00Z", "author": "stock-r14-37", "type": "done", "text": "完工 P08·PR 47", "taskId": "P08" },
+    { "ts": "2026-06-30T16:05:00Z", "author": "看板", "type": "pending", "text": "待拍板 P09：龙虎榜数据源用实时快照还是收盘快照？", "taskId": "P09" },
+    { "ts": "2026-06-30T18:20:00Z", "author": "stock-r14-36", "type": "done", "text": "完工 P17·PR 45", "taskId": "P17" },
+    { "ts": "2026-07-01T09:15:00Z", "author": "determined-snyder", "type": "claim", "text": "认领 P16：分支 stock-r14-40", "taskId": "P16" },
+    { "ts": "2026-07-01T10:30:00Z", "author": "stock-r14-37", "type": "progress", "text": "进度 P07 60%：archetype 故事表落地", "taskId": "P07" },
+    { "ts": "2026-07-01T11:50:00Z", "author": "determined-snyder", "type": "progress", "text": "进度 P16 40%：market.ts rng 收编中", "taskId": "P16" },
+    { "ts": "2026-07-01T12:30:00Z", "author": "cli", "type": "park", "text": "暂缓 P15：等 P19 屏幕外 LOD 模型定稿", "taskId": "P15" }
+  ]
+}
