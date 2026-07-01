@@ -6,3 +6,4 @@ snapshots/
 approvals/
 status-drafts/
 *.lock
+*.exe
