@@ -15,6 +15,24 @@ const CUSTOM = '__custom__'
 const items = computed(() => store.pendingDecisions)
 const keyOf = (it: PendingItem) => `${it.projectId}:${it.task.id}:${it.decision.id}`
 
+function incomplete(it: PendingItem): boolean {
+  const d = it.decision as any
+  if (!d.background || String(d.background).trim().length < 60) return true
+  if (!d.recommendReason || String(d.recommendReason).trim().length < 30) return true
+  if (!d.optionPros) return true
+  for (const opt of d.options || []) if (!(d.optionPros[opt] || '').trim()) return true
+  return false
+}
+function incompleteReason(it: PendingItem): string {
+  const d = it.decision as any
+  const miss: string[] = []
+  if (!d.background || String(d.background).trim().length < 60) miss.push('背景（大白话前因后果）')
+  if (!d.recommendReason || String(d.recommendReason).trim().length < 30) miss.push('推荐理由')
+  if (!d.optionPros) miss.push('每选项利弊')
+  else for (const opt of d.options || []) if (!(d.optionPros[opt] || '').trim()) miss.push(`「${opt}」的利弊`)
+  return miss.length ? '缺：' + miss.join('、') : ''
+}
+
 function pick(it: PendingItem, opt: string) {
   picked[keyOf(it)] = opt
   delete errors[keyOf(it)]
@@ -68,9 +86,14 @@ async function submit(it: PendingItem) {
           <span class="proj pill">{{ it.projectName }}</span>
           <span class="tid mono">{{ it.task.id }}</span>
           <span class="ttitle">{{ it.task.title }}</span>
+          <span v-if="incomplete(it)" class="incomplete" :title="incompleteReason(it)">⚠️ 信息不完整</span>
           <span class="did mono">#{{ it.decision.id }}</span>
         </div>
         <div class="q">{{ it.decision.question }}</div>
+        <div v-if="incomplete(it)" class="incomplete-note">
+          {{ incompleteReason(it) }}
+          <span class="muted">（登记这条待拍板的对话没按 skill §6.2 给全"三件套"——你仍可拍，但看板界面无法展示完整背景/利弊/推荐理由）</span>
+        </div>
         <div v-if="(it.decision as any).background" class="bg">
           <div class="bg-label">背景（大白话）</div>
           <div class="bg-body">{{ (it.decision as any).background }}</div>
@@ -164,6 +187,8 @@ async function submit(it: PendingItem) {
 .bg-body { font-size: 13px; line-height: 1.65; white-space: pre-line; }
 .reason { font-size: 12px; color: var(--muted); line-height: 1.6; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: var(--radius-sm); }
 .reason-label { color: var(--ok); font-weight: 500; }
+.incomplete { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(240, 180, 90, 0.15); color: #f0b45a; border: 1px solid rgba(240, 180, 90, 0.4); }
+.incomplete-note { font-size: 12px; color: #f0b45a; padding: 8px 12px; background: rgba(240, 180, 90, 0.08); border-radius: var(--radius-sm); border-left: 3px solid #f0b45a; line-height: 1.55; }
 .drow { display: flex; align-items: center; gap: 10px; }
 .err { color: var(--danger); font-size: 12px; }
 </style>

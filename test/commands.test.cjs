@@ -19,12 +19,25 @@ const clean = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 test('状态机全流转 未开工→待拍板→已拍板→施工中→已完工', () => {
   const { dir, P } = setup();
   cmds.add({ _: ['P01'], title: 'x', ...P });
-  assert.equal(cmds.pending({ _: ['P01'], q: 'A?', opt: ['A', 'B'], rec: 'B', ...P }).task.status, '待拍板');
+  assert.equal(cmds.pending({ _: ['P01'], q: 'A?', opt: ['A', 'B'], rec: 'B',
+    background: '【场景】这是单元测试用的背景描述文字需要够长才能通过校验器所以我在这里多写一些占位内容以确保。【问题】用于占位以通过 skill 六点二的字数最小值检查。【要做的事】占位。【为什么重要】占位。',
+    'pros-A': '【好处】A 的好处。【代价】A 的代价描述在这里。',
+    'pros-B': '【好处】B 的好处。【代价】B 的代价描述在这里。',
+    reason: '推荐 B 的理由描述需要写得足够长才能通过校验器所以我在这里多写一些内容占位。',
+    ...P }).task.status, '待拍板');
   assert.equal(cmds.decide({ _: ['P01'], did: 'd1', answer: 'B', promote: true, ...P }).task.status, '已拍板');
   assert.equal(cmds.claim({ _: ['P01'], branch: 'br1', ...P }).task.status, '施工中');
   const done = cmds.done({ _: ['P01'], pr: '24', commit: 'a1b2c3d', ...P });
   assert.equal(done.task.status, '已完工');
   assert.equal(done.task.percent, 100);
+  clean(dir);
+});
+
+test('pending 强制校验：缺三件套被拒（skill §6.2 硬规则）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  assert.throws(() => cmds.pending({ _: ['P01'], q: 'A?', opt: ['A', 'B'], rec: 'B', ...P }),
+    /不合格|background|optionPros|recommendReason/);
   clean(dir);
 });
 
@@ -53,7 +66,12 @@ test('add 非法 status 被拒', () => {
 test('decide 答案不在选项被拒', () => {
   const { dir, P } = setup();
   cmds.add({ _: ['P01'], title: 'x', ...P });
-  cmds.pending({ _: ['P01'], q: 'A?', opt: ['A', 'B'], rec: 'B', ...P });
+  cmds.pending({ _: ['P01'], q: 'A?', opt: ['A', 'B'], rec: 'B', strict: true,
+    background: '【场景】这是单元测试用的背景描述文字需要够长才能通过校验器所以我在这里多写一些占位内容以确保。【问题】用于占位以通过 skill 六点二的字数最小值检查。【要做的事】占位。【为什么重要】占位。',
+    'pros-A': '【好处】A 的好处描述。【代价】A 的代价描述在这里。',
+    'pros-B': '【好处】B 的好处描述。【代价】B 的代价描述在这里。',
+    reason: '推荐 B 的理由描述需要写得足够长才能通过校验器所以我在这里多写一些内容占位。',
+    ...P });
   assert.throws(() => cmds.decide({ _: ['P01'], did: 'd1', answer: 'C', ...P }), /选项|options/);
   clean(dir);
 });
