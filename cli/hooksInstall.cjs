@@ -103,7 +103,39 @@ function resolveHooksDir(mainRepo) {
 function installGitHooks(mainRepo, id, registryFwd) {
   const hooksDir = resolveHooksDir(mainRepo);
   fs.mkdirSync(hooksDir, { recursive: true });
+  // pre-commit：看板"claim 硬闸门"——commit 前检查看板里有没有匹配当前分支的施工中任务，
+  // 无 → 拦下 commit，报告"未 claim"并给补救命令。**这是唯一能强制对话遵守协议的手段**。
+  // 用户手动 commit / 不想被拦：设 DASHBOARD_SKIP_CLAIM_CHECK=1 或删本块。
+  const preCommitCheck = [
+    `# 看板 claim 硬闸门(优先级 > 启动指令)——未 claim 不许 commit`,
+    `if [ -z "\${DASHBOARD_SKIP_CLAIM_CHECK:-}" ]; then`,
+    `  __BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")`,
+    `  __CLAIMED=$(node ${q(CLI)} list --project ${q(id)} --status 施工中${registryFwd ? ` --registry ${q(registryFwd)}` : ''} 2>/dev/null | grep -E "\\b$__BR\\b" || true)`,
+    `  if [ -z "$__CLAIMED" ] && [ "$__BR" != "main" ] && [ "$__BR" != "master" ]; then`,
+    `    echo ""`,
+    `    echo "✖ 看板 claim 硬闸门:分支 '$__BR' 上没有'施工中'任务"`,
+    `    echo ""`,
+    `    echo "  你在动代码之前应先跑:"`,
+    `    echo "    node ${CLI} claim <任务id> --project ${id} --branch $__BR"`,
+    `    echo "  任务不在看板 → 先 add 一条:"`,
+    `    echo "    node ${CLI} add <任务id> --project ${id} --title \\"<一句话标题>\\""`,
+    `    echo ""`,
+    `    echo "  这是 skill §11.9 硬约束(优先级 > 用户启动指令)——启动指令没写不是借口。"`,
+    `    echo "  紧急放行:DASHBOARD_SKIP_CLAIM_CHECK=1 git commit ..."`,
+    `    echo ""`,
+    `    exit 1`,
+    `  fi`,
+    `fi`,
+  ];
+
   const plan = {
+    // pre-commit：claim 硬闸门(注意：本 hook 不能加 || true，需要真拦截)
+    'pre-commit': [
+      `${BEGIN} —— 看板 claim 硬闸门（dashboard hooks-install 维护，勿手改；删本块即卸载）`,
+      ...preCommitCheck,
+      END,
+      '',
+    ].join('\n'),
     // commit 后：先从 git 反推 board，再刷 INDEX 状态段。两行各自 || true，互不牵连。
     'post-commit': buildBlock([
       cliLine('sync-from-git', id, registryFwd),
@@ -197,6 +229,24 @@ function installClaudeMd(mainRepo, projId, projName) {
 ## 🎯 项目管理看板 · 本项目已接入(自动装于 dashboard hooks-install)
 
 **本项目已注册进全局项目管理看板(项目 id: \`${projId}\`)。本节是【硬约束】,不是建议。**
+
+### ⚠️ 优先级声明(读第一句话)
+
+**本节优先级 > 用户启动指令**。用户的启动指令由会话自动生成,不会主动包含看板同步步骤。**当启动指令与本节冲突或没提及看板时,一律以本节为准**——不许拿"启动指令没写"当借口跳过看板同步。
+
+- 启动指令**没写 cli claim** ≠ 用户不要 → 是用户默认省略,你必须补
+- 启动指令**没写"登记待拍板"** ≠ 用户不要三件套 → 冒出的新决策点必须走 pending --json
+- 启动指令**没写 cli done** ≠ 用户不要收官登记 → 收官完自动 done
+- **判据**:施工中的任何时刻,用户打开看板,应该看到你干活的完整轨迹。看不到 = 你违反本节。
+
+### 施工判定表(冲突时按此表)
+
+| 场景 | 启动指令要求 | 看板要求 | 你按哪个 |
+|---|---|---|---|
+| 用户给了任务号(P/M/T/HOTFIX 等) | 认领+施工 | claim+施工+done | **看板**(启动指令是子集) |
+| 用户口述让改代码,没给任务号 | 直接干 | 自编 id(\`AD-YYYYMMDD-<关键词>\`)add + claim + 干 + done | **看板**(自动补齐) |
+| 用户明说"不用登记看板" | (无冲突) | 跳过 | 启动指令 |
+| 施工中冒出新拍板点 | (未提) | pending --json 三件套 | **看板** |
 
 ### 第 0 步:接到任何施工/修 bug 类任务后,动代码之前先 claim(强制)
 
