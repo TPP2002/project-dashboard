@@ -19,7 +19,11 @@ async function asJson<T>(res: Response): Promise<T> {
 }
 
 export async function fetchProjects(): Promise<ProjectSummary[]> {
-  return asJson<ProjectSummary[]>(await fetch(`${API}/projects`))
+  // 兼容两种契约：真 server 返回 { ok, projects: [...] } 信封；dev:mock 返回裸数组。二者皆归一为数组。
+  const data = await asJson<ProjectSummary[] | { projects?: ProjectSummary[] }>(
+    await fetch(`${API}/projects`),
+  )
+  return Array.isArray(data) ? data : data.projects ?? []
 }
 
 export async function fetchBoard(id: string): Promise<Board> {
