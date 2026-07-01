@@ -77,7 +77,7 @@ function validateTask(t, p, errs, ids) {
     const dp = `${p}.decisions[${i}]`;
     for (const k of ['id', 'question', 'recommended']) if (!d[k]) errs.push(`${dp}.${k}: 缺失`);
     if (!Array.isArray(d.options) || d.options.length === 0) errs.push(`${dp}.options: 至少一个选项`);
-    if (d.answer !== null && d.answer !== undefined && Array.isArray(d.options) && !d.options.includes(d.answer)) {
+    if (d.answer !== null && d.answer !== undefined && Array.isArray(d.options) && !d.options.includes(d.answer) && !d.allowCustom) {
       errs.push(`${dp}.answer: 答案「${d.answer}」不在 options 中`);
     }
     if (d.decidedAt && !DATE.test(d.decidedAt)) errs.push(`${dp}.decidedAt: 日期格式错误`);

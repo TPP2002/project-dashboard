@@ -132,7 +132,7 @@ function decide(flags) {
     const t = findTask(b, id);
     const d = (t.decisions || []).find((x) => x.id === did);
     if (!d) throw new Error(`decision ${did} 不存在`);
-    if (!d.options.includes(answer)) throw new Error(`答案「${answer}」不在选项 ${d.options.join('/')} 中`);
+    if (!d.options.includes(answer) && !d.allowCustom) throw new Error(`答案「${answer}」不在选项 ${d.options.join('/')} 中`);
     d.answer = answer; d.decidedAt = today();
     if (flags.promote && (t.decisions || []).every((x) => x.answer !== null) && t.status === '待拍板') t.status = '已拍板';
   }, act('decide', flags.author || '看板', `拍板 ${id}·${did}=${answer}`, id));

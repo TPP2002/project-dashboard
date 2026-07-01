@@ -1,0 +1,16 @@
+{
+  "P01": { "deps.dependsOn": ["P14"] },
+  "P02": { "deps.dependsOn": ["P14"] },
+  "P03": { "deps.dependsOn": ["P14"] },
+  "P04": { "deps.dependsOn": ["P01"] },
+  "P05": { "deps.dependsOn": ["P04"] },
+  "P06": { "deps.dependsOn": ["P05"], "deps.relatedTasks": ["P05"] },
+  "P09": { "deps.dependsOn": ["P03"] },
+  "P10": { "deps.dependsOn": ["P14"], "deps.relatedTasks": ["P12"] },
+  "P12": { "deps.dependsOn": ["P10"] },
+  "P15": { "deps.blockedBy": ["P03"], "deps.relatedTasks": ["P03"] },
+  "P17": { "deps.dependsOn": ["P04", "P20"] },
+  "P18": { "deps.dependsOn": ["P01"] },
+  "P20": { "deps.dependsOn": ["P17"] },
+  "P21": { "deps.dependsOn": ["P11"], "deps.relatedTasks": ["P16"] }
+}
