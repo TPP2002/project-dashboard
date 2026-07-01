@@ -6,6 +6,8 @@
   "scripts": {
     "test": "node --test",
     "cli": "node cli/index.cjs",
-    "serve": "node server/server.cjs"
+    "build": "npm --prefix web run build",
+    "serve": "node server/server.cjs",
+    "start": "node server/server.cjs"
   }
 }
