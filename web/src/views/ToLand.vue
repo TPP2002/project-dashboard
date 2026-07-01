@@ -9,6 +9,35 @@ import type { PendingItem } from '@/utils/derive'
 
 const store = useBoardStore()
 const items = computed(() => store.unlandedDecisions)
+// 按项目分组:{ pid: {name, items: [...] } }
+const grouped = computed(() => {
+  const g: Record<string, { name: string; items: PendingItem[] }> = {}
+  for (const it of items.value) {
+    if (!g[it.projectId]) g[it.projectId] = { name: it.projectName, items: [] }
+    g[it.projectId].items.push(it)
+  }
+  return g
+})
+const projDispatching = ref<Record<string, boolean>>({})
+const projDispatched = ref<Record<string, string>>({})
+
+async function dispatchProject(pid: string, name: string, count: number) {
+  if (!confirm(`确认打包派单【${name}】全部 ${count} 条已拍板决策?\n\n将开一个新终端窗口、启动 claude、注入完整任务书,一个对话接手全部决策。`)) return
+  projDispatching.value[pid] = true
+  try {
+    const res = await fetch('/api/dispatch-project', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pid }),
+    })
+    const data = await res.json()
+    if (!res.ok || !data.ok) throw new Error(data.error || '派单失败')
+    projDispatched.value[pid] = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  } catch (e) {
+    alert('派单失败:' + (e instanceof Error ? e.message : String(e)))
+  } finally {
+    projDispatching.value[pid] = false
+  }
+}
 const copied = ref<Record<string, boolean>>({})
 const marking = ref<Record<string, boolean>>({})
 const dispatching = ref<Record<string, boolean>>({})
@@ -119,8 +148,24 @@ async function markLanded(it: PendingItem) {
       <div>所有拍板都已落地——干净</div>
     </div>
 
+    <div v-for="(g, pid) in grouped" :key="pid" class="project-group">
+      <div class="proj-head card">
+        <div class="proj-info">
+          <span class="proj-name">📦 {{ g.name }}</span>
+          <span class="proj-count muted">{{ g.items.length }} 条待落地</span>
+        </div>
+        <div class="proj-actions">
+          <button class="btn btn-project-dispatch" :disabled="projDispatching[pid]" @click="dispatchProject(pid, g.name, g.items.length)">
+            {{ projDispatching[pid] ? '开对话中…' : `🚀 打包派单本项目全部 ${g.items.length} 条` }}
+          </button>
+        </div>
+        <div v-if="projDispatched[pid]" class="proj-note">
+          ✓ 已打包派单于 {{ projDispatched[pid] }}——新窗口应已启动
+        </div>
+      </div>
+
     <div class="list">
-      <div v-for="it in items" :key="keyOf(it)" class="row card">
+      <div v-for="it in g.items" :key="keyOf(it)" class="row card">
         <div class="top">
           <span class="proj pill">{{ it.projectName }}</span>
           <span class="tid mono">{{ it.task.id }}</span>
@@ -153,6 +198,7 @@ async function markLanded(it: PendingItem) {
         </details>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
@@ -183,6 +229,16 @@ async function markLanded(it: PendingItem) {
 .btn-primary-strong { background: linear-gradient(90deg, #4c8ce0, #6c9ce8); font-weight: 500; }
 .btn-mini { padding: 4px 10px; font-size: 11px; margin-top: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
 .dispatched-note { padding: 8px 12px; background: rgba(76, 140, 224, 0.15); border-left: 3px solid #4c8ce0; border-radius: var(--radius-sm); color: #4c8ce0; font-size: 13px; }
+.project-group { margin-bottom: 24px; }
+.proj-head { padding: 14px 16px; margin-bottom: 12px; background: linear-gradient(135deg, rgba(76,140,224,0.08), rgba(108,156,232,0.04)); border-left: 4px solid #4c8ce0; display: flex; flex-direction: column; gap: 10px; }
+.proj-info { display: flex; align-items: baseline; gap: 12px; }
+.proj-name { font-size: 15px; font-weight: 500; }
+.proj-count { font-size: 12px; }
+.proj-actions { display: flex; }
+.btn-project-dispatch { padding: 10px 16px; background: linear-gradient(90deg, #4c8ce0, #6c9ce8); color: white; border: none; border-radius: var(--radius-sm); font-weight: 500; font-size: 13px; cursor: pointer; width: 100%; }
+.btn-project-dispatch:hover { opacity: 0.92; }
+.btn-project-dispatch:disabled { opacity: 0.5; cursor: not-allowed; }
+.proj-note { padding: 6px 10px; background: rgba(76,140,224,0.15); border-radius: var(--radius-sm); color: #4c8ce0; font-size: 12px; }
 .empty { padding: 40px; text-align: center; }
 .empty .big { font-size: 48px; margin-bottom: 8px; }
 </style>
