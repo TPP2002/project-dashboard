@@ -180,6 +180,30 @@ function postToolUseCommand(id, registryFwd) {
   return `node -e "${prog}" || true`;
 }
 
+/**
+ * PostToolUse/TodoWrite 的 command：对话每次更新待办清单,自动把"完成 N/共 M"换算成
+ * 百分比,调 sync-progress 同步到看板(按当前 git 分支找施工中任务)。全自动、不靠对话记性。
+ * 同样全用【单引号 JS 字面量 + 正斜杠路径 + 无 " $ ` \ 】,放外层 sh 双引号内安全。
+ */
+function todoWriteCommand(id, registryFwd) {
+  const argv = ["'sync-progress'", "'--project'", `'${id}'`];
+  if (registryFwd) argv.push("'--registry'", `'${registryFwd}'`);
+  const prog =
+    "var s='';" +
+    "process.stdin.on('data',function(d){s+=d;});" +
+    "process.stdin.on('end',function(){" +
+      "try{" +
+        "var j=JSON.parse(s);" +
+        "var a=(j.tool_input&&j.tool_input.todos)||[];" +
+        "if(!a.length)return;" +
+        "var done=a.filter(function(t){return t.status==='completed';}).length;" +
+        "var p=Math.round(done*100/a.length);" +
+        `require('child_process').execFileSync('node',['${CLI}',${argv.join(',')},'--percent',String(p)],{stdio:'ignore'});` +
+      "}catch(e){}" +
+    "});";
+  return `node -e "${prog}" || true`;
+}
+
 /** 读-合并-写 <mainRepo>/.claude/settings.json：并入 Stop + PostToolUse hook，不覆盖既有键。 */
 function installCcSettings(mainRepo, id, registryFwd) {
   const settingsPath = path.join(mainRepo, '.claude', 'settings.json');
@@ -209,6 +233,10 @@ function installCcSettings(mainRepo, id, registryFwd) {
   settings.hooks.PostToolUse.push({
     matcher: 'Bash',
     hooks: [{ type: 'command', command: postToolUseCommand(id, registryFwd) }],
+  });
+  settings.hooks.PostToolUse.push({
+    matcher: 'TodoWrite',
+    hooks: [{ type: 'command', command: todoWriteCommand(id, registryFwd) }],
   });
 
   atomicWriteJsonSync(settingsPath, settings);

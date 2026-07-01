@@ -42,6 +42,7 @@ const REGISTRY = {
   set: ['./commands.cjs', 'set'], list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
   'mark-landed': ['./commands.cjs', 'markLanded'],
+  'sync-progress': ['./commands.cjs', 'syncProgress'],
   // —— 由并行对话实现（惰性；文件未建时触发会提示"尚未实现"）——
   'hooks-install': ['./hooksInstall.cjs', 'hooksInstall'],
   import: ['./importCmd.cjs', 'importCmd'],

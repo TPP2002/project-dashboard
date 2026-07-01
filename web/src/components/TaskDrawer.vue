@@ -13,6 +13,12 @@ const store = useBoardStore()
 const task = computed(() => store.selectedTask)
 const pid = computed(() => store.selectedTaskProjectId || '')
 const acts = computed(() => derive.activityOfTask(store.selectedBoard, task.value?.id || ''))
+// 施工中任务进度戳超 30 分钟没动 = 陈旧
+const progStale = computed(() => {
+  const lp = (task.value as any)?.lastProgressAt
+  if (!lp || task.value?.status !== '施工中') return false
+  return Date.now() - new Date(lp).getTime() > 30 * 60 * 1000
+})
 
 const hasArr = (a: unknown): a is unknown[] => Array.isArray(a) && a.length > 0
 
@@ -93,6 +99,9 @@ onUnmounted(() => {
             <div class="d-prog">
               <div class="progress"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
               <span class="pct mono">{{ task.percent || 0 }}%</span>
+              <span v-if="task.status === '施工中' && (task as any).lastProgressAt" class="prog-time" :class="{ stale: progStale }">
+                {{ progStale ? '⚠ 进度' : '进度更新于' }} {{ relTime((task as any).lastProgressAt) }}
+              </span>
             </div>
 
             <p v-if="task.description" class="d-desc">{{ task.description }}</p>
@@ -215,6 +224,8 @@ onUnmounted(() => {
 .d-prog { display: flex; align-items: center; gap: 10px; }
 .d-prog .progress { flex: 1; }
 .d-prog .pct { font-size: 12px; color: var(--muted); }
+.d-prog .prog-time { font-size: 11px; color: var(--muted-2); margin-left: 4px; }
+.d-prog .prog-time.stale { color: var(--warn); }
 .d-desc { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; white-space: pre-wrap; }
 .sec { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .sec.block { flex-direction: column; gap: 8px; border-top: 1px solid var(--border-soft); padding-top: 12px; }
