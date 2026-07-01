@@ -48,6 +48,7 @@ const REGISTRY = {
   'render-index': ['./renderIndex.cjs', 'renderIndex'],
   snapshot: ['./snapshot.cjs', 'snapshot'],
   onboard: ['./onboard.cjs', 'onboard'],
+  enroll: ['./enroll.cjs', 'enroll'],
 };
 
 function main() {
