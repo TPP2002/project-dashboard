@@ -106,6 +106,33 @@ export function collectUnlanded(boards: Board[]): PendingItem[] {
   return collectDecided(boards).filter((it) => !(it.decision as any).landed)
 }
 
+export interface UnlandedTask {
+  projectId: string
+  projectName: string
+  task: Task
+  decisions: Decision[] // 该任务下所有"已拍板未落地"的决策
+}
+
+/**
+ * 按【任务】聚合待落地决策——治"一个决策一个对话"的错误粒度。
+ * 决策从属于任务:P10 的 d1/d2/d3 是同一任务的三个问题,应打包给一个对话,
+ * 那对话 claim 一次 P10、带着三个答案一起施工,而不是开三个对话各自 claim 打架。
+ */
+export function collectUnlandedByTask(boards: Board[]): UnlandedTask[] {
+  const out: UnlandedTask[] = []
+  for (const b of boards) {
+    for (const t of b.tasks ?? []) {
+      const ds = (t.decisions ?? []).filter(
+        (d) => d.answer !== null && d.answer !== undefined && !(d as any).landed,
+      )
+      if (ds.length) {
+        out.push({ projectId: b.project.id, projectName: b.project.name, task: t, decisions: ds })
+      }
+    }
+  }
+  return out
+}
+
 export type ActivityWithProject = Activity & { projectId: string; projectName: string }
 
 /** 合并各项目 activity，按时间倒序取前 limit 条 */

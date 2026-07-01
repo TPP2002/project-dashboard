@@ -36,6 +36,7 @@ export const useBoardStore = defineStore('board', () => {
   const decidedHistory = computed(() => derive.collectDecided(allBoards.value))
   const unlandedDecisions = computed(() => derive.collectUnlanded(allBoards.value))
   const unlandedCount = computed(() => unlandedDecisions.value.length)
+  const unlandedByTask = computed(() => derive.collectUnlandedByTask(allBoards.value))
   const globalActivity = computed(() => derive.mergeActivity(allBoards.value))
   const selectedBoard = computed<Board | null>(() =>
     selectedTaskProjectId.value ? boards.value[selectedTaskProjectId.value] ?? null : null,
@@ -151,7 +152,7 @@ export const useBoardStore = defineStore('board', () => {
     projects, boards, currentProjectId, selectedTaskId, selectedTaskProjectId,
     conn, loading, error, initialized,
     projectList, allBoards, currentBoard, currentTasks, currentStatusCounts,
-    currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, globalActivity, selectedBoard, selectedTask,
+    currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, globalActivity, selectedBoard, selectedTask,
     isPulsing,
     init, loadProjects, loadBoard, loadAllBoards, selectProject,
     openTask, closeTask, decide, startStream, stopStream, refresh,
