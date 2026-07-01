@@ -106,19 +106,97 @@ function progress(flags) {
 }
 
 // ---------- pending（登记待拍板问题） ----------
+// pending 必须给全三件套（skill §6.2/§6.3 硬规则）——缺就报错，绝不允许"术语墙裸奔"。
+// 两种输入模式：
+//   ① --json：从 stdin 读整块 JSON（推荐给对话用，便于结构化）
+//   ② 命令行 flag：--q --opt --opt --rec --background --reason --pros-<option>=<text> [--strict]
+// strict=true 时禁用 allowCustom，默认开放自定义答案。
+function readStdinSync() {
+  try { return require('node:fs').readFileSync(0, 'utf8'); }
+  catch { return ''; }
+}
+const MIN_BG = 60;      // 背景至少 60 字（怕术语墙一句话糊弄）
+const MIN_REASON = 30;  // 推荐理由至少 30 字
+const MIN_PROS = 20;    // 每个选项利弊至少 20 字
+
+function validatePendingPayload(p) {
+  const errs = [];
+  const missing = (k) => (p[k] === undefined || p[k] === null || String(p[k]).trim() === '');
+  if (missing('question')) errs.push('缺 question（要拍什么板）');
+  if (!Array.isArray(p.options) || p.options.length < 2) errs.push('options 至少 2 个（一元选项没法叫拍板）');
+  if (missing('recommended')) errs.push('缺 recommended（推荐哪个）');
+  else if (Array.isArray(p.options) && !p.options.includes(p.recommended)) errs.push(`recommended「${p.recommended}」不在 options 内`);
+  if (missing('background')) errs.push('缺 background（背景大白话，讲清"什么问题+为什么+影响+要做啥"，见 skill §6.2）');
+  else if (String(p.background).trim().length < MIN_BG) errs.push(`background 太短（${String(p.background).trim().length}<${MIN_BG} 字）——skill §6.2 要求分点讲透，别一句话糊弄`);
+  if (missing('recommendReason')) errs.push('缺 recommendReason（讲透为什么推这个，不是空推荐）');
+  else if (String(p.recommendReason).trim().length < MIN_REASON) errs.push(`recommendReason 太短（${String(p.recommendReason).trim().length}<${MIN_REASON} 字）`);
+  if (!p.optionPros || typeof p.optionPros !== 'object') errs.push('缺 optionPros（每个选项的【好处】【代价】拆解）');
+  else {
+    for (const opt of (p.options || [])) {
+      const txt = (p.optionPros[opt] || '').trim();
+      if (!txt) errs.push(`optionPros 缺选项「${opt}」的利弊`);
+      else if (txt.length < MIN_PROS) errs.push(`optionPros["${opt}"] 太短（${txt.length}<${MIN_PROS} 字）——分【好处】【代价】具体讲`);
+    }
+  }
+  return errs;
+}
+
 function pending(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'pending <taskId> --q <问题> --opt <选项>... --rec <推荐>');
-  const q = need(flags.q, '--q <问题>');
-  const options = asArray(flags.opt);
-  if (!options.length) throw new Error('至少一个 --opt <选项>');
+  const id = need(flags._[0], 'pending <taskId> --json <<< "{...}"  或  --q --opt --opt --rec --background --reason --pros-<opt>=<text>');
+  // 组装 payload
+  let payload;
+  if (flags.json) {
+    const raw = readStdinSync();
+    if (!raw.trim()) throw new Error('--json 需从 stdin 读 JSON，但 stdin 为空');
+    try { payload = JSON.parse(raw); } catch (e) { throw new Error('--json stdin 解析失败：' + e.message); }
+  } else {
+    const options = asArray(flags.opt);
+    const optionPros = {};
+    for (const k of Object.keys(flags)) {
+      if (k.startsWith('pros-')) optionPros[k.slice(5)] = flags[k];
+    }
+    payload = {
+      question: flags.q,
+      options,
+      recommended: flags.rec || options[0],
+      background: flags.background,
+      optionPros,
+      recommendReason: flags.reason || flags.recommendReason,
+      allowCustom: flags.strict ? false : true,
+    };
+  }
+  // 硬校验
+  const errs = validatePendingPayload(payload);
+  if (errs.length) {
+    throw new Error('登记待拍板不合格（skill §6.2 硬规则，缺字段/太短就不许提交）:\n  - ' + errs.join('\n  - ') + '\n\n模板 JSON（存成 pending.json 后 `... pending <id> --json < pending.json`）:\n' + JSON.stringify({
+      question: '一句大白话问题',
+      options: ['选项A', '选项B'],
+      recommended: '选项A',
+      background: '【场景】...\n【问题】...\n【要做的事】...\n【为什么这重要】...',
+      optionPros: { '选项A': '【好处】...\n【代价】...', '选项B': '【好处】...\n【代价】...' },
+      recommendReason: '讲透为什么推这个（历史教训/前置条件/机会成本/风险权衡）',
+      allowCustom: true,
+    }, null, 2));
+  }
   const board = mutate(proj, (b) => {
     const t = findTask(b, id); t.decisions = t.decisions || [];
     const did = flags.did || ('d' + (t.decisions.length + 1));
     if (t.decisions.find((d) => d.id === did)) throw new Error(`decision ${did} 已存在`);
-    t.decisions.push({ id: did, question: q, options, recommended: flags.rec || options[0], answer: null, decidedAt: null });
+    t.decisions.push({
+      id: did,
+      question: payload.question,
+      options: payload.options,
+      recommended: payload.recommended,
+      background: payload.background,
+      optionPros: payload.optionPros,
+      recommendReason: payload.recommendReason,
+      allowCustom: payload.allowCustom !== false,
+      answer: null,
+      decidedAt: null,
+    });
     if (['未开工', '待开工'].includes(t.status)) t.status = '待拍板';
-  }, act('pending', flags.author, `待拍板 ${id}：${q}`, id));
+  }, act('pending', flags.author, `待拍板 ${id}：${payload.question}`, id));
   return okTask(board, id);
 }
 

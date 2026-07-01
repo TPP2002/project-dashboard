@@ -82,6 +82,21 @@ function doctor(flags) {
   const hookOk = fs.existsSync(hookPath) && /dashboard/.test(safeRead(hookPath));
   if (!hookOk) issues.push('同步 hook 未安装（.git/hooks/post-commit），board 可能过时 → 跑 `hooksInstall` 修复');
 
+  // 1.5) 待拍板质量 lint（skill §6.2/§6.3 硬规则）——已在的 decisions 缺三件套就报
+  const badDecisions = [];
+  for (const t of board.tasks || []) {
+    for (const d of t.decisions || []) {
+      if (d.answer !== null) continue; // 已拍板的老数据放过
+      const miss = [];
+      if (!d.background || String(d.background).trim().length < 60) miss.push('background<60字');
+      if (!d.recommendReason || String(d.recommendReason).trim().length < 30) miss.push('recommendReason<30字');
+      if (!d.optionPros || typeof d.optionPros !== 'object') miss.push('optionPros');
+      else for (const opt of d.options || []) if (!(d.optionPros[opt] || '').trim()) miss.push(`optionPros["${opt}"]`);
+      if (miss.length) badDecisions.push(`${t.id}·${d.id}：缺 ${miss.join(', ')}`);
+    }
+  }
+  if (badDecisions.length) issues.push(`${badDecisions.length} 条待拍板不合格（skill §6.2）：\n    ` + badDecisions.slice(0, 10).join('\n    ') + (badDecisions.length > 10 ? `\n    ...（共 ${badDecisions.length} 条）` : ''));
+
   // 2) git 派生字段漂移（git 有、board 缺）
   const taskIds = (board.tasks || []).map((t) => t.id);
   const { perTask } = scanCommits(repo, taskIds);

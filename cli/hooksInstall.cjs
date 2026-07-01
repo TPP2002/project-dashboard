@@ -187,6 +187,60 @@ function installCcSettings(mainRepo, id, registryFwd) {
  * hooks-install：给主仓装同步 hook（git 自动派生 + CC 兜底对账）。
  * @param {{project:string, registry?:string, author?:string}} flags
  */
+// 装/更新项目 CLAUDE.md 里的"看板协议"锚段——让每个新对话进项目就自动看到规矩。
+// 幂等 upsert：有锚就替换锚间内容，无锚就在末尾追加。绝不动锚外用户内容。
+function installClaudeMd(mainRepo, projId, projName) {
+  const cmdPath = path.join(mainRepo, 'CLAUDE.md');
+  const BEGIN = '<!-- dashboard-protocol: begin -->';
+  const END = '<!-- dashboard-protocol: end -->';
+  const block = `${BEGIN}
+## 项目管理看板 · 本项目已接入（自动装于 dashboard hooks-install）
+
+**你（AI 对话）在本项目施工时必须遵守以下同步纪律**——本项目已注册进全局项目管理看板（项目 id: \`${projId}\`）。
+
+- **认领任务**：\`node ~/.claude/dashboard/cli/index.cjs claim <任务id> --project ${projId} --branch <分支>\`
+- **里程碑/进度回写**：\`... progress <任务id> --project ${projId} --percent <n> --next "<下一步>"\`
+- **收官**：\`... done <任务id> --project ${projId} --pr <n> --commit <sha>\`
+- **登记新待拍板问题时【必须】给全"三件套"**——用 \`pending --json\` 从 stdin 读整块 JSON：
+  \`\`\`
+  cat <<'JSON' | node ~/.claude/dashboard/cli/index.cjs pending <任务id> --project ${projId} --json
+  {
+    "question": "一句大白话问题",
+    "options": ["选项A", "选项B"],
+    "recommended": "选项A",
+    "background": "【场景】...\\n【问题】...\\n【要做的事】...\\n【为什么这重要】...",
+    "optionPros": {
+      "选项A": "【好处】...\\n【代价】...",
+      "选项B": "【好处】...\\n【代价】..."
+    },
+    "recommendReason": "讲透为什么推这个（历史教训/前置条件/机会成本/风险权衡）"
+  }
+  JSON
+  \`\`\`
+  缺 background / optionPros / recommendReason 任何一项，CLI 会直接拒绝——**这是硬规则**，见 skill \`project-build-workflow\` §6.2 / §6.3。默认允许用户在看板界面写自定义答案（\`allowCustom: true\`）。
+
+**为什么这样**：git 自动同步只能补分支/PR/提交号；任务状态、进度、拍板这些"语义"必须靠你主动报，git 推不出来。看板不更新 = 用户在看板上看到的是过时/错误的信息 → 决策失效。
+
+跳过本节 = 违反 skill §11.9。
+${END}`;
+
+  let src = '';
+  try { src = fs.readFileSync(cmdPath, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  let out;
+  if (src) {
+    const b = src.indexOf(BEGIN), e = src.indexOf(END);
+    if (b !== -1 && e !== -1 && e > b) {
+      out = src.slice(0, b) + block + src.slice(e + END.length);
+    } else {
+      out = src.trimEnd() + '\n\n' + block + '\n';
+    }
+  } else {
+    out = `# ${projName || projId} · CLAUDE 协作说明\n\n${block}\n`;
+  }
+  atomicWriteFileSync(cmdPath, out);
+  return { path: cmdPath, action: src ? (src.includes(BEGIN) ? 'updated' : 'appended') : 'created' };
+}
+
 function hooksInstall(flags) {
   const proj = resolveProj(flags);
   // 项目 id 受控（registry key），仍做基本断言防 shell 注入。
@@ -196,13 +250,15 @@ function hooksInstall(flags) {
 
   const git = installGitHooks(proj.mainRepo, proj.id, registryFwd);
   const cc = installCcSettings(proj.mainRepo, proj.id, registryFwd);
+  const cmd = installClaudeMd(proj.mainRepo, proj.id, proj.name);
 
   const text =
     `✔ 已装同步 hook @ ${proj.name}（${proj.mainRepo}）\n` +
     `  · git hooks：${git.written.join(', ')} → ${git.hooksDir}\n` +
     `  · CC settings：Stop(doctor 兜底) + PostToolUse(Bash·git commit→sync) → ${cc.settingsPath}\n` +
+    `  · CLAUDE.md 看板协议锚段：${cmd.action} → ${cmd.path}\n` +
     '  提示：所有调用 || true 结尾，绝不阻断 commit/对话；再次运行本命令幂等更新。';
-  return { ok: true, text, gitHooks: git.written, hooksDir: git.hooksDir, settings: cc.settingsPath };
+  return { ok: true, text, gitHooks: git.written, hooksDir: git.hooksDir, settings: cc.settingsPath, claudeMd: cmd };
 }
 
 module.exports = { hooksInstall };
