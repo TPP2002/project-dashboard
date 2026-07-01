@@ -355,9 +355,13 @@ node ~/.claude/dashboard/cli/index.cjs claim <任务id> --project ${projId} --br
 
 **不 claim 就动代码 = 违反 skill §11.2/§11.9**,即便代码写对了,施工也不合规——因为看板上看不到你在干活,用户没法实时掌控。
 
+### 新建任务的波次(wave)规矩
+
+用 \`cli add\` 新建任务时,**wave 默认留 0、别传 --wave、更别继承"父任务/相关任务"的 wave**。波次编号只属于项目原始计划里的批次划分;施工中新冒出来的任务(比如某个拍板决定要另起的子系统)是全新工作,应从 wave 0 起,不该塞进已有的高波次里。
+
 ### 施工中的其他同步动作
 
-- **里程碑/进度回写**:\`... progress <任务id> --project ${projId} --percent <n> --next "<下一步>"\`
+- **里程碑/进度回写**:\`... progress <任务id> --project ${projId} --percent <n> --next "<下一步>"\`(注:装了全局 TodoWrite 钩子后,进度会随你更新待办清单自动同步,手动 progress 仅用于补充里程碑说明)
 - **收官**:\`... done <任务id> --project ${projId} --pr <n> --commit <sha>\`
 - **登记新待拍板问题**(施工中冒出的新决策点):必须用 \`pending --json\` 从 stdin 读整块 JSON,且必须包含 background/optionPros/recommendReason 三件套(缺就被 CLI 拒),见 skill §6.2/§6.3。默认 allowCustom=true。
 

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const cmds = require('../cli/commands.cjs');
+const { inbox } = require('../cli/inboxCmd.cjs');
 
 function setup() {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'cmd-')));
@@ -114,6 +115,42 @@ test('sync-progress 按分支找施工中任务、只进不退、封顶 95', () 
   // 封顶 95:待办全完成=100 也只到 95(真完工靠 cli done)
   b = cmds.syncProgress({ _: [], branch: 'feat-x', percent: '100', ...P });
   assert.equal(b.task.percent, 95, '自动进度封顶 95');
+  clean(dir);
+});
+
+test('inbox 无 tid 列出待落地任务；给 tid 打印完整任务书含 claim/mark-landed/波次警告', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: '不变量集成', ...P });
+  const bg = '【场景】这是单测背景需要够长以通过校验器所以多写一些占位内容确保达标凑够六十字这里继续补充。【问题】占位。【要做】占位。【为什么】占位。';
+  cmds.pending({ _: ['P10'], q: '要不要豁免?', opt: ['豁免', '不豁免'], rec: '不豁免', strict: true,
+    background: bg, 'pros-豁免': '【好处】豁免的好处描述在这里。【代价】豁免的代价描述在这里。',
+    'pros-不豁免': '【好处】不豁免的好处描述。【代价】不豁免的代价描述。',
+    reason: '推荐不豁免的理由需要写得足够长才能通过校验器所以我多写一些占位内容。', ...P });
+  cmds.decide({ _: ['P10'], did: 'd1', answer: '不豁免', ...P });
+  // 无 tid → 列表含 P10
+  const list = inbox({ ...P });
+  assert.match(list.text, /P10/, '列表应含 P10');
+  assert.match(list.text, /待落地任务/, '应是列表标题');
+  // 给 tid → 完整任务书
+  const book = inbox({ tid: 'P10', ...P });
+  assert.match(book.text, /claim P10/, '任务书含 claim 命令');
+  assert.match(book.text, /mark-landed P10 --did d1/, '任务书含逐条 mark-landed');
+  assert.match(book.text, /wave.*默认留 0|新任务从 0 起/, '任务书含波次警告');
+  clean(dir);
+});
+
+test('inbox 决策已落地后不再出现在待落地', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  const bg = '【场景】这是单测背景需要够长以通过校验器所以多写一些占位内容确保达标凑够六十字这里继续补充。【问题】占位。【要做】占位。【为什么】占位。';
+  cmds.pending({ _: ['P10'], q: 'Q?', opt: ['A', 'B'], rec: 'B', strict: true,
+    background: bg, 'pros-A': '【好处】A好处描述在这里。【代价】A代价描述在这里。',
+    'pros-B': '【好处】B好处描述在这里。【代价】B代价描述在这里。',
+    reason: '推荐B的理由需要写得足够长才能通过校验器所以多写一些占位内容凑字数。', ...P });
+  cmds.decide({ _: ['P10'], did: 'd1', answer: 'B', ...P });
+  cmds.markLanded({ _: ['P10'], did: 'd1', ...P });
+  const list = inbox({ ...P });
+  assert.match(list.text, /没有待落地任务/, '全落地后列表应空');
   clean(dir);
 });
 
