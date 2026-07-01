@@ -7,8 +7,10 @@ import type { PendingItem } from '@/utils/derive'
 const store = useBoardStore()
 const author = ref('看板')
 const picked = reactive<Record<string, string>>({})
+const customText = reactive<Record<string, string>>({})
 const submitting = reactive<Record<string, boolean>>({})
 const errors = reactive<Record<string, string>>({})
+const CUSTOM = '__custom__'
 
 const items = computed(() => store.pendingDecisions)
 const keyOf = (it: PendingItem) => `${it.projectId}:${it.task.id}:${it.decision.id}`
@@ -17,12 +19,21 @@ function pick(it: PendingItem, opt: string) {
   picked[keyOf(it)] = opt
   delete errors[keyOf(it)]
 }
+function isCustom(it: PendingItem) {
+  return picked[keyOf(it)] === CUSTOM
+}
 function chosen(it: PendingItem) {
-  return picked[keyOf(it)] ?? it.decision.recommended
+  const p = picked[keyOf(it)]
+  if (p === CUSTOM) return (customText[keyOf(it)] || '').trim() || '（自定义答案未填写）'
+  return p ?? it.decision.recommended
 }
 
 async function submit(it: PendingItem) {
   const k = keyOf(it)
+  if (isCustom(it) && !(customText[k] || '').trim()) {
+    errors[k] = '请在"其他"输入框里写下你的答案'
+    return
+  }
   submitting[k] = true
   delete errors[k]
   try {
@@ -60,6 +71,10 @@ async function submit(it: PendingItem) {
           <span class="did mono">#{{ it.decision.id }}</span>
         </div>
         <div class="q">{{ it.decision.question }}</div>
+        <div v-if="(it.decision as any).background" class="bg">
+          <div class="bg-label">背景（大白话）</div>
+          <div class="bg-body">{{ (it.decision as any).background }}</div>
+        </div>
         <div class="opts">
           <button
             v-for="o in it.decision.options"
@@ -68,10 +83,37 @@ async function submit(it: PendingItem) {
             :class="{ on: chosen(it) === o, rec: it.decision.recommended === o }"
             @click="pick(it, o)"
           >
-            <span class="tick">{{ chosen(it) === o ? '●' : '○' }}</span>
-            {{ o }}
-            <span v-if="it.decision.recommended === o" class="rectag">推荐</span>
+            <div class="opt-row">
+              <span class="tick">{{ chosen(it) === o ? '●' : '○' }}</span>
+              <span class="opt-name">{{ o }}</span>
+              <span v-if="it.decision.recommended === o" class="rectag">推荐</span>
+            </div>
+            <div v-if="(it.decision as any).optionPros?.[o]" class="opt-pros">
+              {{ (it.decision as any).optionPros[o] }}
+            </div>
           </button>
+          <button
+            class="opt opt-custom"
+            :class="{ on: isCustom(it) }"
+            @click="pick(it, CUSTOM)"
+          >
+            <div class="opt-row">
+              <span class="tick">{{ isCustom(it) ? '●' : '○' }}</span>
+              <span class="opt-name">✍️ 其他（自己写答案）</span>
+            </div>
+            <div v-if="isCustom(it)" class="custom-wrap" @click.stop>
+              <textarea
+                v-model="customText[keyOf(it)]"
+                class="custom-input"
+                placeholder="在这里输入你自己的答案、想法或指令（例如：'先做只做一期的门面拆分，把核心逻辑抽出来后再评估要不要拆更深'）"
+                rows="3"
+              />
+            </div>
+          </button>
+        </div>
+        <div v-if="(it.decision as any).recommendReason" class="reason">
+          <span class="reason-label">推荐「{{ it.decision.recommended }}」的原因：</span>
+          {{ (it.decision as any).recommendReason }}
         </div>
         <div class="drow">
           <span v-if="errors[keyOf(it)]" class="err">⚠️ {{ errors[keyOf(it)] }}</span>
@@ -98,16 +140,30 @@ async function submit(it: PendingItem) {
 .dtop .did { color: var(--muted-2); font-size: 12px; margin-left: auto; }
 .q { font-size: 14px; line-height: 1.5; }
 .opts { display: flex; flex-direction: column; gap: 7px; }
+.opts .opts-inner { display: none; }
 .opt {
-  display: flex; align-items: center; gap: 9px; text-align: left;
+  display: flex; text-align: left;
   background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
   border-radius: var(--radius-sm); padding: 9px 12px; cursor: pointer; font-size: 13px;
   transition: border-color 0.15s, background 0.15s;
 }
+.opt.opt-custom { border-style: dashed; }
+.custom-wrap { margin-top: 10px; padding-left: 22px; }
+.custom-input { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px; font: inherit; line-height: 1.55; resize: vertical; min-height: 60px; }
+.custom-input:focus { outline: none; border-color: var(--accent); }
+.opt { flex-direction: column; align-items: stretch; }
+.opt-row { display: flex; align-items: center; gap: 9px; }
+.opt-name { font-weight: 500; }
+.opt-pros { color: var(--muted); font-size: 12px; line-height: 1.55; margin-top: 6px; padding-left: 22px; white-space: pre-line; }
 .opt:hover { border-color: var(--accent); }
 .opt.on { border-color: var(--accent); background: var(--accent-soft); }
 .opt .tick { color: var(--accent); }
 .opt .rectag { margin-left: auto; font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 0 7px; }
+.bg { background: var(--panel-2); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 9px 13px; }
+.bg-label { font-size: 11px; color: var(--muted-2); margin-bottom: 4px; letter-spacing: 0.4px; }
+.bg-body { font-size: 13px; line-height: 1.65; white-space: pre-line; }
+.reason { font-size: 12px; color: var(--muted); line-height: 1.6; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: var(--radius-sm); }
+.reason-label { color: var(--ok); font-weight: 500; }
 .drow { display: flex; align-items: center; gap: 10px; }
 .err { color: var(--danger); font-size: 12px; }
 </style>

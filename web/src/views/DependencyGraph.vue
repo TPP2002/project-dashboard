@@ -19,12 +19,20 @@ function buildOption() {
     label: { show: true, color: '#e6edf3', fontSize: 11 },
   }))
   const links: unknown[] = []
+  const seenRelated = new Set<string>()
   for (const t of tasks) {
     for (const d of t.deps?.dependsOn ?? []) {
-      if (ids.has(d)) links.push({ source: d, target: t.id })
+      if (ids.has(d)) links.push({ source: d, target: t.id, lineStyle: { color: '#4c8ce0', width: 2 } })
     }
     for (const d of t.deps?.blockedBy ?? []) {
-      if (ids.has(d)) links.push({ source: d, target: t.id, lineStyle: { color: '#d0637c', type: 'dashed', width: 2 } })
+      if (ids.has(d)) links.push({ source: d, target: t.id, lineStyle: { color: '#d0637c', type: 'dashed', width: 2.5 } })
+    }
+    for (const d of t.deps?.relatedTasks ?? []) {
+      if (!ids.has(d)) continue
+      const key = [t.id, d].sort().join('-')
+      if (seenRelated.has(key)) continue
+      seenRelated.add(key)
+      links.push({ source: t.id, target: d, symbol: ['none', 'none'], lineStyle: { color: '#7a8a9c', type: 'dotted', width: 1.5, curveness: 0.2 } })
     }
   }
   if (!nodes.length) return { title: { text: '无任务', left: 'center', top: 'center', textStyle: { color: '#8b98a9', fontSize: 13 } } }
@@ -61,7 +69,7 @@ watch(() => store.currentBoard, update, { deep: true })
     <div class="head">
       <h2>🕸️ 依赖关系图</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
-      <span class="muted small">实线=依赖，红虚线=阻塞；点节点开任务，可拖拽/缩放</span>
+      <span class="muted small">蓝实线=依赖 · 红虚线=阻塞 · 灰点线=关联；点节点开任务，可拖拽/缩放</span>
     </div>
     <div class="chart card" ref="el" />
   </div>
