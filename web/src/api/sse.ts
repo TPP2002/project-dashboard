@@ -54,6 +54,26 @@ export class BoardStream {
         this.stopReconnect()
         this.onState('sse')
       }
+      // hello:server 启动/重启时的握手,内含 pid。
+      // 记住第一次拿到的 pid,后续任何一次 pid 不同 = server 被重启过 → 强制 reload 拉最新前端。
+      // 治用户实测的"我改了代码你刷新没反应"——server 重启后前端自动跟上,不再需要用户手动 F5。
+      es.addEventListener('hello', (e: MessageEvent) => {
+        try {
+          const d = JSON.parse(e.data)
+          const pid = String(d?.pid ?? '')
+          if (pid) {
+            const KEY = '__dashboardServerPid'
+            const prev = sessionStorage.getItem(KEY)
+            if (prev && prev !== pid) {
+              // server 换新进程了 → 前端一定过期 → 硬 reload
+              sessionStorage.setItem(KEY, pid)
+              window.location.reload()
+              return
+            }
+            if (!prev) sessionStorage.setItem(KEY, pid)
+          }
+        } catch { /* 忽略 hello 解析错 */ }
+      })
       es.addEventListener('board:changed', (e: MessageEvent) => {
         let pid = '*'
         try {
