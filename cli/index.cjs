@@ -45,6 +45,7 @@ const REGISTRY = {
   'sync-progress': ['./commands.cjs', 'syncProgress'],
   // —— 由并行对话实现（惰性；文件未建时触发会提示"尚未实现"）——
   'hooks-install': ['./hooksInstall.cjs', 'hooksInstall'],
+  'hooks-global': ['./hooksInstall.cjs', 'hooksGlobal'],
   import: ['./importCmd.cjs', 'importCmd'],
   backfill: ['./backfill.cjs', 'backfill'],
   'render-index': ['./renderIndex.cjs', 'renderIndex'],

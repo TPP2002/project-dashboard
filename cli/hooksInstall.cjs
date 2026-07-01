@@ -204,6 +204,67 @@ function todoWriteCommand(id, registryFwd) {
   return `node -e "${prog}" || true`;
 }
 
+/**
+ * 全局版 TodoWrite 命令:不带 --project(sync-progress 按当前 git 仓自动认项目)、
+ * 不带 --registry(用默认全局 registry)。装进 ~/.claude/settings.json 后,
+ * 【所有对话(含 worktree 平行会话)】更新待办清单都会自动同步进度。
+ */
+function todoWriteCommandGlobal() {
+  const prog =
+    "var s='';" +
+    "process.stdin.on('data',function(d){s+=d;});" +
+    "process.stdin.on('end',function(){" +
+      "try{" +
+        "var j=JSON.parse(s);" +
+        "var a=(j.tool_input&&j.tool_input.todos)||[];" +
+        "if(!a.length)return;" +
+        "var done=a.filter(function(t){return t.status==='completed';}).length;" +
+        "var p=Math.round(done*100/a.length);" +
+        `require('child_process').execFileSync('node',['${CLI}','sync-progress','--percent',String(p)],{stdio:'ignore'});` +
+      "}catch(e){}" +
+    "});";
+  return `node -e "${prog}" || true`;
+}
+
+/**
+ * 装全局自动进度钩子到 ~/.claude/settings.json（对所有 CC 对话生效，含 worktree）。
+ * 幂等：只剔除本工具此前装的同类条目再插新块，不动用户其它 hook。
+ */
+function installGlobalProgressHook() {
+  const os = require('node:os');
+  const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  let settings = {};
+  if (fs.existsSync(settingsPath)) {
+    const raw = fs.readFileSync(settingsPath, 'utf8').trim();
+    if (raw) {
+      try { settings = JSON.parse(raw); }
+      catch (e) { throw new Error(`${settingsPath} 不是合法 JSON，拒绝覆盖（请先修复/备份后重试）：${e.message}`); }
+    }
+  }
+  settings.hooks = settings.hooks || {};
+  const isMineProgress = (entry) => entry && Array.isArray(entry.hooks)
+    && entry.hooks.some((h) => h && typeof h.command === 'string'
+      && h.command.includes(MARK) && h.command.includes('sync-progress'));
+  const keepOthers = (arr) => (Array.isArray(arr) ? arr.filter((e) => !isMineProgress(e)) : []);
+  settings.hooks.PostToolUse = keepOthers(settings.hooks.PostToolUse);
+  settings.hooks.PostToolUse.push({
+    matcher: 'TodoWrite',
+    hooks: [{ type: 'command', command: todoWriteCommandGlobal() }],
+  });
+  atomicWriteJsonSync(settingsPath, settings);
+  return { settingsPath };
+}
+
+function hooksGlobal(_flags) {
+  const r = installGlobalProgressHook();
+  return { ok: true, text:
+    `✔ 全局自动进度钩子已装 → ${r.settingsPath}\n` +
+    '  从此所有 CC 对话(含 worktree 平行会话)更新待办清单时,\n' +
+    '  自动按当前 git 仓认出看板项目 + 按分支找施工中任务 + 同步进度。\n' +
+    '  非看板项目里会静默跳过,不影响。' };
+}
+
 /** 读-合并-写 <mainRepo>/.claude/settings.json：并入 Stop + PostToolUse hook，不覆盖既有键。 */
 function installCcSettings(mainRepo, id, registryFwd) {
   const settingsPath = path.join(mainRepo, '.claude', 'settings.json');
@@ -350,4 +411,4 @@ function hooksInstall(flags) {
   return { ok: true, text, gitHooks: git.written, hooksDir: git.hooksDir, settings: cc.settingsPath, claudeMd: cmd };
 }
 
-module.exports = { hooksInstall };
+module.exports = { hooksInstall, hooksGlobal };

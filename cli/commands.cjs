@@ -113,8 +113,36 @@ function progress(flags) {
  * 治"进度纯靠对话记得调 cli progress、不报就冻住"——挂在对话每次更新待办上,全自动。
  * 规则:只进不退(max)、自动进度封顶 95(真完工靠 cli done 置 100)、找不到任务静默跳过。
  */
+/**
+ * 按当前工作目录的 git 仓,反查它属于哪个已注册看板项目(返回 id 或 null)。
+ * 关键:worktree 的 --git-common-dir 指向【主仓】的 .git,故 worktree 与主仓都能认到同一项目。
+ * 用于全局钩子——不带 --project 时自动定位。
+ */
+function detectProjectId(registryPath) {
+  const cp = require('node:child_process');
+  let mainRoot = '';
+  try {
+    const commonDir = cp.execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
+    const abs = path.isAbsolute(commonDir) ? commonDir : path.resolve(process.cwd(), commonDir);
+    mainRoot = path.dirname(abs); // 去掉尾部 .git → 主仓根
+  } catch (_) { return null; }
+  const norm = (p) => { try { return normalizeReal(p); } catch (_) { return path.resolve(p); } };
+  const target = norm(mainRoot);
+  let reg;
+  try { reg = readRegistry(registryPath); } catch (_) { return null; }
+  for (const [id, entry] of Object.entries((reg && reg.projects) || {})) {
+    if (entry && entry.mainRepo && norm(entry.mainRepo) === target) return id;
+  }
+  return null;
+}
+
 function syncProgress(flags) {
-  const proj = resolveProj(flags);
+  // 项目:显式 --project 优先;否则按当前 git 仓自动认(支持 worktree→主仓),
+  // 让装到全局的钩子在任何对话里都能认出自己在哪个看板项目。
+  let projId = flags.project;
+  if (!projId) projId = detectProjectId(getRegistryPath(flags));
+  if (!projId) return { ok: true, skipped: '当前目录不属于任何看板项目' };
+  const proj = resolveProject(projId, { registryPath: getRegistryPath(flags) });
   const pct = flags.percent !== undefined ? parseInt(flags.percent, 10) : undefined;
   if (pct === undefined || isNaN(pct)) return { ok: true, skipped: '缺 --percent' };
   // 分支:优先 --branch,否则读当前 git 分支(钩子在对话 cwd 里跑)
