@@ -596,9 +596,14 @@ function handleMarkLanded(req, res, projectId, taskId) {
 
 function streamFile(res, fullPath, status) {
   const ext = path.extname(fullPath).toLowerCase();
+  const isHtml = ext === '.html';
+  // HTML 永不缓存(它引用哪个 hash chunk 变化频繁);带 hash 的 assets 也 no-cache,免得旧代码卡住用户。
+  // 治用户实测的"浏览器一直显示旧界面"问题——之前只 no-cache 不够硬,加 no-store + must-revalidate 双保险。
   res.writeHead(status || 200, {
     'content-type': MIME[ext] || 'application/octet-stream',
-    'cache-control': 'no-cache',
+    'cache-control': isHtml ? 'no-store, no-cache, must-revalidate, max-age=0' : 'no-cache, must-revalidate',
+    'pragma': 'no-cache',
+    'expires': '0',
   });
   const stream = fs.createReadStream(fullPath);
   stream.on('error', () => { try { res.destroy(); } catch (_) {} });
