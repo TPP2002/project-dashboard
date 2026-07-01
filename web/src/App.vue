@@ -22,11 +22,8 @@ onBeforeUnmount(() => store.stopStream())
         <span class="spacer" />
         <button class="btn btn-sm btn-ghost" @click="store.error = null">✕</button>
       </div>
-      <router-view v-slot="{ Component }">
-        <transition name="fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
+      <!-- 裸 router-view：视图切换即时可靠，不依赖 transitionend（out-in 在异步组件/受限动画环境会卡住） -->
+      <router-view />
     </main>
     <TaskDrawer />
   </div>
