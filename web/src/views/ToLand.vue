@@ -11,6 +11,8 @@ const store = useBoardStore()
 const items = computed(() => store.unlandedDecisions)
 const copied = ref<Record<string, boolean>>({})
 const marking = ref<Record<string, boolean>>({})
+const dispatching = ref<Record<string, boolean>>({})
+const dispatched = ref<Record<string, string>>({})
 
 const keyOf = (it: PendingItem) => `${it.projectId}:${it.task.id}:${it.decision.id}`
 
@@ -66,6 +68,25 @@ async function copy(it: PendingItem) {
   }
 }
 
+async function dispatch(it: PendingItem) {
+  const k = keyOf(it)
+  if (!confirm(`确认要看板一键开新 Claude Code 对话去做「${it.task.id}·${it.decision.id}」?\n\n将开一个新终端窗口、启动 claude、注入完整任务上下文。`)) return
+  dispatching.value[k] = true
+  try {
+    const res = await fetch('/api/dispatch', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pid: it.projectId, tid: it.task.id, did: it.decision.id }),
+    })
+    const data = await res.json()
+    if (!res.ok || !data.ok) throw new Error(data.error || '派单失败')
+    dispatched.value[k] = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  } catch (e) {
+    alert('派单失败:' + (e instanceof Error ? e.message : String(e)))
+  } finally {
+    dispatching.value[k] = false
+  }
+}
+
 async function markLanded(it: PendingItem) {
   const k = keyOf(it)
   if (!confirm(`确认「${it.task.id}·${it.decision.id}」已经代码落地了?`)) return
@@ -112,18 +133,24 @@ async function markLanded(it: PendingItem) {
           <span class="ans-label">你的答案 →</span>
           <span class="ans-body">{{ it.decision.answer }}</span>
         </div>
-        <details class="cmd-details">
-          <summary>📋 派单启动指令（点开看/复制）</summary>
-          <pre class="cmd">{{ launchCommand(it) }}</pre>
-        </details>
+        <div v-if="dispatched[keyOf(it)]" class="dispatched-note">
+          ✓ 已派单开新 Claude Code 对话于 {{ dispatched[keyOf(it)] }}——新窗口应已在跑
+        </div>
         <div class="actions">
-          <button class="btn" @click="copy(it)">
-            {{ copied[keyOf(it)] ? '✓ 已复制到剪贴板' : '📋 复制启动指令派单' }}
+          <button class="btn btn-primary-strong" :disabled="dispatching[keyOf(it)]" @click="dispatch(it)">
+            {{ dispatching[keyOf(it)] ? '开对话中…' : '🚀 一键开 Claude Code 对话派单' }}
           </button>
           <button class="btn btn-outline" :disabled="marking[keyOf(it)]" @click="markLanded(it)">
             {{ marking[keyOf(it)] ? '标记中…' : '✓ 已落地(标记完成)' }}
           </button>
         </div>
+        <details class="cmd-details">
+          <summary class="muted">📋 备用:如果一键开对话不成功,展开手动复制启动指令</summary>
+          <pre class="cmd">{{ launchCommand(it) }}</pre>
+          <button class="btn btn-mini" @click="copy(it)">
+            {{ copied[keyOf(it)] ? '✓ 已复制' : '📋 复制' }}
+          </button>
+        </details>
       </div>
     </div>
   </div>
@@ -153,6 +180,9 @@ async function markLanded(it: PendingItem) {
 .btn:hover { opacity: 0.9; }
 .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
 .btn-outline:hover { background: var(--panel-2); }
+.btn-primary-strong { background: linear-gradient(90deg, #4c8ce0, #6c9ce8); font-weight: 500; }
+.btn-mini { padding: 4px 10px; font-size: 11px; margin-top: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+.dispatched-note { padding: 8px 12px; background: rgba(76, 140, 224, 0.15); border-left: 3px solid #4c8ce0; border-radius: var(--radius-sm); color: #4c8ce0; font-size: 13px; }
 .empty { padding: 40px; text-align: center; }
 .empty .big { font-size: 48px; margin-bottom: 8px; }
 </style>
