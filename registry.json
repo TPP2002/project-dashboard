@@ -6,6 +6,16 @@
       "mainRepo": "F:\\game",
       "board": "F:\\game\\.dashboard\\board.json",
       "docsRoot": "F:\\game"
+    },
+    "questline": {
+      "name": "Questline",
+      "mainRepo": "F:\\Questline",
+      "board": "F:\\Questline\\.dashboard\\board.json"
+    },
+    "lhjy": {
+      "name": "量化A股助手",
+      "mainRepo": "F:\\lhjy",
+      "board": "F:\\lhjy\\.dashboard\\board.json"
     }
   }
 }

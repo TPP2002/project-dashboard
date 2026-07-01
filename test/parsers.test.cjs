@@ -14,7 +14,7 @@ test('parseIndexTable 剥删除线 + 抽可靠字段', () => {
     '| P09 | [标题B](P09-y.md) | ✅ 真实待开工 | 没开始 |',
     '', '## 二、别的', 'xxx',
   ].join('\n');
-  const { tasks } = parseIndexTable(md);
+  const { tasks } = parseIndexTable(md, 'docs/plans/股市清零工程');
   assert.equal(tasks.length, 2);
   const p1 = tasks.find((t) => t.id === 'P01');
   assert.equal(p1.status, '已完工');
