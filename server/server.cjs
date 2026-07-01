@@ -337,6 +337,36 @@ function handleDecide(req, res, projectId, taskId) {
   });
 }
 
+function handleMarkLanded(req, res, projectId, taskId) {
+  if (!projectId || !taskId) return sendJson(res, 400, { ok: false, error: '缺 projectId 或 taskId' });
+  readBody(req, BODY_MAX, (err, raw) => {
+    if (err) return sendJson(res, 413, { ok: false, error: err.message });
+    let body;
+    try { body = raw ? JSON.parse(raw) : {}; }
+    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+    const did = typeof body.did === 'string' ? body.did.trim() : '';
+    const author = (typeof body.author === 'string' && body.author.trim()) ? body.author.trim() : '看板';
+    if (!did) return sendJson(res, 400, { ok: false, error: '缺 did' });
+
+    const args = [CLI_INDEX, 'mark-landed', '--project', projectId, taskId, '--did', did, '--author', author, '--json'];
+    if (REGISTRY !== REGISTRY_PATH) { args.push('--registry', REGISTRY); }
+    execFile(process.execPath, args, {
+      cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
+    }, (e, stdout, stderr) => {
+      if (e) {
+        const isCliReject = typeof e.code === 'number';
+        const msg = (String(stderr || '').trim()) || e.message || 'mark-landed 失败';
+        return sendJson(res, isCliReject ? 400 : 500, { ok: false, error: msg });
+      }
+      let parsed;
+      try { parsed = JSON.parse(stdout); }
+      catch (_) { return sendJson(res, 500, { ok: false, error: 'CLI 输出非 JSON' }); }
+      try { pollBoards(); } catch (_) {}
+      sendJson(res, 200, parsed);
+    });
+  });
+}
+
 // ============ 静态托管（web/dist + SPA 回退） ============
 
 function streamFile(res, fullPath, status) {
@@ -409,6 +439,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'doc' && req.method === 'GET') return handleDoc(req, res, parsed.query || {});
       if (sub === 'board' && req.method === 'GET') return handleBoard(req, res, segs[2]);
       if (sub === 'decide' && req.method === 'POST') return handleDecide(req, res, segs[2], segs[3]);
+      if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
     }

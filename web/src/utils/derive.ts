@@ -85,6 +85,27 @@ export function collectPending(boards: Board[]): PendingItem[] {
   return out
 }
 
+/** 收集所有已拍板决策（answer !== null），按 decidedAt 倒序 */
+export function collectDecided(boards: Board[]): PendingItem[] {
+  const out: PendingItem[] = []
+  for (const b of boards) {
+    for (const t of b.tasks ?? []) {
+      for (const d of t.decisions ?? []) {
+        if (d.answer !== null && d.answer !== undefined) {
+          out.push({ projectId: b.project.id, projectName: b.project.name, task: t, decision: d })
+        }
+      }
+    }
+  }
+  out.sort((a, b) => (b.decision.decidedAt || '').localeCompare(a.decision.decidedAt || ''))
+  return out
+}
+
+/** 收集"已拍板但未落地"的决策——需要新对话去执行 */
+export function collectUnlanded(boards: Board[]): PendingItem[] {
+  return collectDecided(boards).filter((it) => !(it.decision as any).landed)
+}
+
 export type ActivityWithProject = Activity & { projectId: string; projectName: string }
 
 /** 合并各项目 activity，按时间倒序取前 limit 条 */
