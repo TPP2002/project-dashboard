@@ -217,6 +217,23 @@ function decide(flags) {
   return okTask(board, id);
 }
 
+// ---------- mark-landed（拍板已代码落地，从"待落地队列"消失）----------
+function markLanded(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'mark-landed <taskId> --did <dN> [--commit <sha>]');
+  const did = need(flags.did, '--did <dN>');
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, id);
+    const d = (t.decisions || []).find((x) => x.id === did);
+    if (!d) throw new Error(`decision ${did} 不存在`);
+    if (d.answer === null || d.answer === undefined) throw new Error(`decision ${did} 还没拍板,不能标已落地`);
+    d.landed = true;
+    d.landedAt = today();
+    if (flags.commit) d.landedCommit = String(flags.commit);
+  }, act('note', flags.author || 'cli', `拍板 ${id}·${did} 已代码落地`, id));
+  return okTask(board, id);
+}
+
 // ---------- park / block ----------
 function park(flags) {
   const proj = resolveProj(flags);
@@ -301,4 +318,4 @@ function show(flags) {
   return { ok: true, text: JSON.stringify(findTask(b, id), null, 2) };
 }
 
-module.exports = { register, add, claim, progress, pending, decide, park, block, done, note, set, list, show, deriveStats };
+module.exports = { register, add, claim, progress, pending, decide, markLanded, park, block, done, note, set, list, show, deriveStats };
