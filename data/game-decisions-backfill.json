@@ -1,0 +1,16 @@
+{
+  "P09": { "decisions": [
+    { "id": "d1", "question": "范围只做 divergence 回写、sentiment 侧视为已覆盖(R13.9)？", "options": ["只做 divergence 回写", "扩到 sentiment 侧"], "recommended": "只做 divergence 回写", "answer": null, "decidedAt": null }
+  ] },
+  "P10": { "decisions": [
+    { "id": "d1", "question": "price_time_priority 对玩家插队的豁免口径？", "options": ["玩家插队豁免", "严格不豁免"], "recommended": "严格不豁免", "answer": null, "decidedAt": null },
+    { "id": "d2", "question": "orderbook.ts 是否首次引入 invariants 依赖？", "options": ["引入", "不引入"], "recommended": "引入", "answer": null, "decidedAt": null },
+    { "id": "d3", "question": "排期是否必须在长测基线落定后？", "options": ["基线落定后", "可提前"], "recommended": "基线落定后", "answer": null, "decidedAt": null }
+  ] },
+  "P12": { "decisions": [
+    { "id": "d1", "question": "market.ts 拆分：拆 / 不拆 / 只做一期？（若拆必须最后施工）", "options": ["拆（最后施工）", "不拆", "只做一期"], "recommended": "待负责人定", "answer": null, "decidedAt": null }
+  ] },
+  "P15": { "decisions": [
+    { "id": "d1", "question": "维持暂缓，还是拍全局难度三档临时版？", "options": ["维持暂缓", "难度三档临时版"], "recommended": "维持暂缓", "answer": null, "decidedAt": null }
+  ] }
+}

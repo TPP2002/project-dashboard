@@ -1,0 +1,22 @@
+{
+  "P01": { "wave": 2 },
+  "P02": { "wave": 1 },
+  "P03": { "wave": 2 },
+  "P04": { "wave": 2 },
+  "P05": { "wave": 2 },
+  "P06": { "wave": 2 },
+  "P07": { "wave": 1, "deps.relatedTasks": ["P08"] },
+  "P08": { "wave": 1, "deps.relatedTasks": ["P07"] },
+  "P09": { "wave": 2 },
+  "P10": { "wave": 3 },
+  "P11": { "wave": 1 },
+  "P12": { "wave": 3, "status": "压轴" },
+  "P13": { "wave": 1 },
+  "P14": { "wave": 0 },
+  "P15": { "wave": 3 },
+  "P16": { "wave": 0 },
+  "P17": { "wave": 2 },
+  "P18": { "wave": 2 },
+  "P20": { "wave": 2, "deps.relatedTasks": ["P17"] },
+  "P21": { "wave": 1, "deps.relatedTasks": ["P11"] }
+}
