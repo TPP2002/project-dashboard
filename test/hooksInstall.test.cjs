@@ -77,7 +77,9 @@ test('幂等：装两次不重复锚块 / 不重复 settings 条目', () => {
 
   const st = readJson(t.settings);
   assert.equal(st.hooks.Stop.length, 1, 'Stop 不累积');
-  assert.equal(st.hooks.PostToolUse.length, 1, 'PostToolUse 不累积');
+  // PostToolUse 固定两条(Bash·git commit 同步 + TodoWrite·自动进度),装两次仍是两条
+  assert.equal(st.hooks.PostToolUse.length, 2, 'PostToolUse 不累积(Bash+TodoWrite 各一)');
+  assert.ok(st.hooks.PostToolUse.some((e) => e.matcher === 'TodoWrite'), '含 TodoWrite 自动进度钩子');
   clean(t.dir);
 });
 

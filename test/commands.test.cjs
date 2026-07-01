@@ -99,3 +99,29 @@ test('park 转暂缓并记理由', () => {
   assert.equal(b.task.blockReason, '等上游');
   clean(dir);
 });
+
+test('sync-progress 按分支找施工中任务、只进不退、封顶 95', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-x', ...P });
+  // 显式传 --branch 免得读到真实 git 分支
+  let b = cmds.syncProgress({ _: [], branch: 'feat-x', percent: '40', ...P });
+  assert.equal(b.task.percent, 40, '首次同步应设 40');
+  assert.ok((b.task).lastProgressAt, '应盖进度时间戳');
+  // 只进不退:报更低时跳过(不覆盖、无 task 字段)
+  const r = cmds.syncProgress({ _: [], branch: 'feat-x', percent: '20', ...P });
+  assert.ok(r.skipped, '报更低应被跳过(只进不退)');
+  // 封顶 95:待办全完成=100 也只到 95(真完工靠 cli done)
+  b = cmds.syncProgress({ _: [], branch: 'feat-x', percent: '100', ...P });
+  assert.equal(b.task.percent, 95, '自动进度封顶 95');
+  clean(dir);
+});
+
+test('sync-progress 无匹配分支/无施工中任务时静默跳过、不写坏数据', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-x', ...P });
+  const r = cmds.syncProgress({ _: [], branch: 'other-branch', percent: '50', ...P });
+  assert.ok(r.skipped, '分支不匹配应跳过');
+  clean(dir);
+});

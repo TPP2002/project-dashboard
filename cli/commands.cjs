@@ -84,6 +84,7 @@ function claim(flags) {
     if (!ALLOWED.includes(t.status)) throw new Error(`claim 非法迁移：${t.status} → 施工中（只能从 ${ALLOWED.join('/')}）`);
     t.status = '施工中';
     t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = today();
+    t.lastProgressAt = nowIso(); // 认领即盖戳,施工中卡片一开始就能显示"更新于 X 前"
     if (branches.length) t.gitBranch = unionBy([...(t.gitBranch || []), ...branches], String);
     if (scopes.length) t.fileScope = unionBy([...(t.fileScope || []), ...scopes], String);
   }, act('claim', author, `认领 ${id}：分支 ${branches.join(',') || '-'}${scopes.length ? '，文件域 ' + scopes.join(',') : ''}`, id));
@@ -101,8 +102,41 @@ function progress(flags) {
     if (flags.next !== undefined) t.nextMilestone = String(flags.next);
     if (flags.tests) { const [tot, pass, mff] = String(flags.tests).split('/').map(Number); t.tests = { total: tot || 0, passing: pass || 0, mustFailFirst: mff || 0 }; }
     if (flags.typecheck !== undefined) t.typecheck = flags.typecheck === true || flags.typecheck === 'true';
+    t.lastProgressAt = nowIso(); // 盖"进度更新时间"戳,前端据此显示"更新于 X 前",让陈旧可见
   }, act('progress', flags.author, `进度 ${id}${pct !== undefined ? ' ' + pct + '%' : ''}${flags.next ? '：' + flags.next : ''}`, id));
   return okTask(board, id);
+}
+
+/**
+ * sync-progress —— 自动进度同步(TodoWrite 钩子调用):
+ * 按当前 git 分支找到"施工中"的任务,把对话待办清单的完成比同步成 percent。
+ * 治"进度纯靠对话记得调 cli progress、不报就冻住"——挂在对话每次更新待办上,全自动。
+ * 规则:只进不退(max)、自动进度封顶 95(真完工靠 cli done 置 100)、找不到任务静默跳过。
+ */
+function syncProgress(flags) {
+  const proj = resolveProj(flags);
+  const pct = flags.percent !== undefined ? parseInt(flags.percent, 10) : undefined;
+  if (pct === undefined || isNaN(pct)) return { ok: true, skipped: '缺 --percent' };
+  // 分支:优先 --branch,否则读当前 git 分支(钩子在对话 cwd 里跑)
+  let branch = flags.branch ? String(asArray(flags.branch)[0]) : '';
+  if (!branch) {
+    try { branch = require('node:child_process').execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim(); }
+    catch (_) { branch = ''; }
+  }
+  if (!branch || branch === 'HEAD') return { ok: true, skipped: '无有效分支' };
+  // 先只读:找匹配的施工中任务,没有就不写(免 activity 噪音)
+  const board0 = readBoard(proj.board);
+  const cand = (board0.tasks || []).find((t) =>
+    t.status === '施工中' && (t.gitBranch || []).map(String).includes(branch));
+  if (!cand) return { ok: true, skipped: `无施工中任务匹配分支 ${branch}` };
+  const target = Math.max(cand.percent || 0, Math.min(95, Math.max(0, pct))); // 只进不退、封顶 95
+  if (target <= (cand.percent || 0)) return { ok: true, skipped: `进度未前进(当前 ${cand.percent || 0}%)` };
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, cand.id);
+    t.percent = target;
+    t.lastProgressAt = nowIso();
+  }, act('progress', flags.author || 'todo-hook', `进度(自动) ${cand.id} ${target}%`, cand.id));
+  return okTask(board, cand.id);
 }
 
 // ---------- pending（登记待拍板问题） ----------
@@ -318,4 +352,4 @@ function show(flags) {
   return { ok: true, text: JSON.stringify(findTask(b, id), null, 2) };
 }
 
-module.exports = { register, add, claim, progress, pending, decide, markLanded, park, block, done, note, set, list, show, deriveStats };
+module.exports = { register, add, claim, progress, syncProgress, pending, decide, markLanded, park, block, done, note, set, list, show, deriveStats };
