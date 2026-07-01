@@ -194,34 +194,45 @@ function installClaudeMd(mainRepo, projId, projName) {
   const BEGIN = '<!-- dashboard-protocol: begin -->';
   const END = '<!-- dashboard-protocol: end -->';
   const block = `${BEGIN}
-## 项目管理看板 · 本项目已接入（自动装于 dashboard hooks-install）
+## 🎯 项目管理看板 · 本项目已接入(自动装于 dashboard hooks-install)
 
-**你（AI 对话）在本项目施工时必须遵守以下同步纪律**——本项目已注册进全局项目管理看板（项目 id: \`${projId}\`）。
+**本项目已注册进全局项目管理看板(项目 id: \`${projId}\`)。本节是【硬约束】,不是建议。**
 
-- **认领任务**：\`node ~/.claude/dashboard/cli/index.cjs claim <任务id> --project ${projId} --branch <分支>\`
-- **里程碑/进度回写**：\`... progress <任务id> --project ${projId} --percent <n> --next "<下一步>"\`
-- **收官**：\`... done <任务id> --project ${projId} --pr <n> --commit <sha>\`
-- **登记新待拍板问题时【必须】给全"三件套"**——用 \`pending --json\` 从 stdin 读整块 JSON：
-  \`\`\`
-  cat <<'JSON' | node ~/.claude/dashboard/cli/index.cjs pending <任务id> --project ${projId} --json
-  {
-    "question": "一句大白话问题",
-    "options": ["选项A", "选项B"],
-    "recommended": "选项A",
-    "background": "【场景】...\\n【问题】...\\n【要做的事】...\\n【为什么这重要】...",
-    "optionPros": {
-      "选项A": "【好处】...\\n【代价】...",
-      "选项B": "【好处】...\\n【代价】..."
-    },
-    "recommendReason": "讲透为什么推这个（历史教训/前置条件/机会成本/风险权衡）"
-  }
-  JSON
-  \`\`\`
-  缺 background / optionPros / recommendReason 任何一项，CLI 会直接拒绝——**这是硬规则**，见 skill \`project-build-workflow\` §6.2 / §6.3。默认允许用户在看板界面写自定义答案（\`allowCustom: true\`）。
+### 第 0 步:接到任何施工/修 bug 类任务后,动代码之前先 claim(强制)
 
-**为什么这样**：git 自动同步只能补分支/PR/提交号；任务状态、进度、拍板这些"语义"必须靠你主动报，git 推不出来。看板不更新 = 用户在看板上看到的是过时/错误的信息 → 决策失效。
+**除非用户明确说"不用登记看板",否则接到任何以下类型的任务,你必须先跑 \`cli claim\`:**
+- 认领某个已存在的任务(用户给了任务号 P__/M__/T__/HOTFIX-\_\_ 等)
+- 用户口述让你做一件需要写代码的活(即便没给任务号——你自己给它编一个 id,比如 \`AD-<今日>-<关键词>\`,先建再 claim)
+- 修 bug、加功能、跑测试、任何涉及 \`git commit\` 的动作
 
-跳过本节 = 违反 skill §11.9。
+**具体步骤**(动代码之前跑):
+\`\`\`bash
+# 若任务还不在看板 → 先 add(用你自己编的 id 或用户给的 id)
+node ~/.claude/dashboard/cli/index.cjs add <任务id> --project ${projId} --title "<一句话标题>"
+
+# claim(必做)——本次施工的正式认领凭据
+node ~/.claude/dashboard/cli/index.cjs claim <任务id> --project ${projId} --branch <本次分支名>
+\`\`\`
+
+**不 claim 就动代码 = 违反 skill §11.2/§11.9**,即便代码写对了,施工也不合规——因为看板上看不到你在干活,用户没法实时掌控。
+
+### 施工中的其他同步动作
+
+- **里程碑/进度回写**:\`... progress <任务id> --project ${projId} --percent <n> --next "<下一步>"\`
+- **收官**:\`... done <任务id> --project ${projId} --pr <n> --commit <sha>\`
+- **登记新待拍板问题**(施工中冒出的新决策点):必须用 \`pending --json\` 从 stdin 读整块 JSON,且必须包含 background/optionPros/recommendReason 三件套(缺就被 CLI 拒),见 skill §6.2/§6.3。默认 allowCustom=true。
+
+### 用户给你的启动指令若没提"cli claim",怎么办?
+
+**你主动补上,别偷懒**——启动指令是用户便捷起草的,他可能忘了写,不代表可以跳过。你的回复第一句应该是:
+
+> "已按看板纪律领取任务:\`cli claim ... --project ${projId} --branch ...\` — 输出 xxx。开始施工。"
+
+然后再开始动代码。**这是 skill §11.9 硬规则**,不是可选。
+
+### 为什么这么严
+
+git 自动同步只能补分支/PR/提交号;任务状态、进度、拍板这些"语义"必须靠对话主动报,git 推不出来。你不 claim,用户在看板上看到的就是"过时/错误"的全景——决策失效。
 ${END}`;
 
   let src = '';
