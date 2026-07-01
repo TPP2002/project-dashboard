@@ -337,6 +337,108 @@ function handleDecide(req, res, projectId, taskId) {
   });
 }
 
+/**
+ * handleDispatch —— 一键派单启动 Claude Code 对话（治用户"拍板了没人做"痛点）。
+ * body:{ pid, tid, did } → 找到该 decision + task + project 元数据 → 生成"启动指令"文本
+ *   → spawn 新 Windows 终端窗口跑 `claude "启动指令"`（cwd=项目根，让新对话进对的项目）
+ * 前一版"复制粘贴"根本不算派单;这才是真正让新对话被启动。
+ */
+function handleDispatch(req, res) {
+  readBody(req, BODY_MAX, (err, raw) => {
+    if (err) return sendJson(res, 413, { ok: false, error: err.message });
+    let body;
+    try { body = raw ? JSON.parse(raw) : {}; }
+    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+    const pid = String(body.pid || '').trim();
+    const tid = String(body.tid || '').trim();
+    const did = String(body.did || '').trim();
+    if (!pid || !tid || !did) return sendJson(res, 400, { ok: false, error: '缺 pid/tid/did' });
+
+    // 从 registry 拿项目根、从 board 拿 task+decision
+    let projects;
+    try { projects = readRegistrySafe(); }
+    catch (e) { return sendJson(res, 500, { ok: false, error: 'registry 读不出:' + e.message }); }
+    const proj = projects.projects && projects.projects[pid];
+    if (!proj) return sendJson(res, 404, { ok: false, error: `项目 ${pid} 未注册` });
+    let board;
+    try { board = JSON.parse(fs.readFileSync(proj.board, 'utf8')); }
+    catch (_) { return sendJson(res, 404, { ok: false, error: `${pid} 的 board.json 读不出` }); }
+    const task = (board.tasks || []).find((t) => t.id === tid);
+    if (!task) return sendJson(res, 404, { ok: false, error: `任务 ${tid} 不存在` });
+    const decision = (task.decisions || []).find((d) => d.id === did);
+    if (!decision) return sendJson(res, 404, { ok: false, error: `decision ${did} 不存在` });
+    if (decision.answer === null || decision.answer === undefined) {
+      return sendJson(res, 400, { ok: false, error: `decision ${did} 还没拍板,无法派单` });
+    }
+
+    // 生成启动指令(含"看板派单 header"让新对话认得出自己是被派来的)
+    const prompt = buildDispatchPrompt(pid, proj, task, decision);
+
+    // 在 Windows 打开新 cmd 窗口跑 claude,cwd=项目主仓,让 CLAUDE.md 协议锚生效
+    const cwd = proj.mainRepo;
+    const cmdArgs = ['/c', 'start', '"看板派单·' + tid + '·' + did + '"', 'cmd', '/k',
+      'chcp 65001 >nul && claude ' + JSON.stringify(prompt)];
+    let child;
+    try {
+      child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+      });
+      child.unref();
+    } catch (e) {
+      return sendJson(res, 500, { ok: false, error: '派单失败:' + e.message });
+    }
+    sendJson(res, 200, {
+      ok: true, dispatched: { pid, tid, did },
+      msg: '已开新 Claude Code 对话窗口,该对话已收到派单指令、正在启动',
+    });
+  });
+}
+
+function buildDispatchPrompt(pid, proj, task, decision) {
+  const CLI = 'node ~/.claude/dashboard/cli/index.cjs';
+  return [
+    '# 【看板派单】此对话由项目管理看板一键启动',
+    '',
+    '你是被【项目管理看板】自动派来落地一条已拍板决策的。用户拍板后点了"一键开对话",看板启动了本对话并把完整任务上下文注入这条 prompt。你不需要问用户"要做什么"——下面就是完整任务书。',
+    '',
+    `**项目**:${proj.name || pid}(项目 id: \`${pid}\`,已接入看板)`,
+    `**任务**:${task.id} · ${task.title}`,
+    `**待落地决策**:#${decision.id}`,
+    `**用户拍板于**:${decision.decidedAt}`,
+    '',
+    '## 决策详情',
+    '',
+    `**问题**:${decision.question}`,
+    '',
+    `**用户拍的答案**:${decision.answer}`,
+    '',
+    decision.recommendReason ? `**当时看板给的推荐理由**(仅参考,你要落地用户拍的答案):\n${decision.recommendReason}\n` : '',
+    '',
+    '## 你的施工职责',
+    '',
+    '1. 读项目根 `CLAUDE.md` 里"看板协议"锚段——本项目的看板同步纪律',
+    '2. 阅读该任务的设计文档(见看板/`board.json` 里 task.docs 字段)',
+    '3. 按 skill `project-build-workflow` §11.2 认领协议做:',
+    '   - 先 `git fetch` 核对 worktree 新鲜度',
+    '   - 建独立分支(顺延项目分支命名规则)',
+    '   - **动代码前跑 cli claim**(pre-commit 硬闸门会拦你,不 claim 无法 commit):',
+    '     ```',
+    `     ${CLI} claim ${task.id} --project ${pid} --branch <你的分支名>`,
+    '     ```',
+    '4. 按用户拍的答案「' + decision.answer + '」落地实现',
+    '5. 施工完成后:',
+    '   ```',
+    `   ${CLI} done ${task.id} --project ${pid} --pr <PR号> --commit <sha>`,
+    `   ${CLI} mark-landed ${task.id} --did ${decision.id} --project ${pid}`,
+    '   ```',
+    '6. 达标自动 push + gh pr create + auto-merge to main(见 skill §11.7)',
+    '',
+    '## 现在开始',
+    '',
+    '别问我"要不要开始"、别问"具体做什么"——上面就是完整任务书。请开始阶段①对账。',
+  ].filter((x) => x !== undefined).join('\n');
+}
+
 function handleMarkLanded(req, res, projectId, taskId) {
   if (!projectId || !taskId) return sendJson(res, 400, { ok: false, error: '缺 projectId 或 taskId' });
   readBody(req, BODY_MAX, (err, raw) => {
@@ -440,6 +542,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'board' && req.method === 'GET') return handleBoard(req, res, segs[2]);
       if (sub === 'decide' && req.method === 'POST') return handleDecide(req, res, segs[2], segs[3]);
       if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
+      if (sub === 'dispatch' && req.method === 'POST') return handleDispatch(req, res);
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
     }
