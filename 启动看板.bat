@@ -41,11 +41,22 @@ if not exist "web\node_modules" (
   echo [1/3] 界面依赖已就绪。
 )
 
-rem ---- 生成最新界面 ----
+rem ---- 生成最新界面（build 失败必须停下，不然拿旧 dist 凑合用，用户看不到最新改动）----
 echo [2/3] 正在生成最新界面（npm run build）...
 pushd web
 call npm run build
+set "BUILD_ERR=!errorlevel!"
 popd
+
+if not "!BUILD_ERR!"=="0" (
+  echo.
+  echo [X] 界面构建失败（错误码 !BUILD_ERR!）。上面 npm 输出里有编译错误详情。
+  echo     常见原因：Vue/TS 编译错误，或某个视图文件语法错。
+  echo     修复后再双击本文件重试。
+  echo.
+  pause
+  exit /b 1
+)
 
 rem ---- 构建后仍无界面产物 → 友好提示 ----
 if not exist "web\dist\index.html" (
