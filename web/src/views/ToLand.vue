@@ -29,11 +29,37 @@ const projDispatched = ref<Record<string, string>>({})
 const marking = ref<Record<string, boolean>>({})
 
 const nowHM = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+const copiedTrigger = ref<Record<string, boolean>>({})
 
-// 任务级派单:一个任务一个对话,含该任务所有已拍板决策
+// 短触发指令:新对话粘贴这一句,自己去读看板拿完整任务书(避开命令行长度/转义,可靠)
+function triggerText(t: UnlandedTask): string {
+  return [
+    `你被【项目管理看板】指派接手任务 ${t.task.id}(项目 ${t.projectId})。`,
+    `请立刻运行下面命令拿到完整任务书,然后严格按它执行(先 cli claim 再动代码):`,
+    '',
+    `node ~/.claude/dashboard/cli/index.cjs inbox --project ${t.projectId} --tid ${t.task.id}`,
+  ].join('\n')
+}
+
+// 【主路·可靠】复制接单指令 → 用户在桌面 App 新开对话粘贴 → 那对话读看板开干
+async function copyTrigger(t: UnlandedTask) {
+  const k = taskKey(t)
+  const text = triggerText(t)
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text; document.body.appendChild(ta); ta.select()
+    document.execCommand('copy'); document.body.removeChild(ta)
+  }
+  copiedTrigger.value[k] = true
+  setTimeout(() => { copiedTrigger.value[k] = false }, 4000)
+}
+
+// 【次要·实验】试试自动开终端(开的是终端里的 claude,不是桌面 App;可能因环境失败)
 async function dispatchTask(t: UnlandedTask) {
   const k = taskKey(t)
-  if (!confirm(`确认开新 Claude Code 对话落地【${t.task.id} ${t.task.title}】?\n\n该任务有 ${t.decisions.length} 条已拍板决策,会一起交给这一个对话。`)) return
+  if (!confirm(`试试自动开【终端】跑 Claude Code 落地 ${t.task.id}?\n\n注意:开的是"终端里的 Claude Code",不是你常用的桌面 App——你要在弹出的终端窗口里看它。\n若没反应,请改用上面的"复制接单指令"在桌面 App 新开对话粘贴。`)) return
   dispatching.value[k] = true
   try {
     const res = await fetch('/api/dispatch-task', {
@@ -44,7 +70,7 @@ async function dispatchTask(t: UnlandedTask) {
     if (!res.ok || !data.ok) throw new Error(data.error || '派单失败')
     dispatched.value[k] = nowHM()
   } catch (e) {
-    alert('派单失败:' + (e instanceof Error ? e.message : String(e)))
+    alert('自动开终端失败:' + (e instanceof Error ? e.message : String(e)) + '\n请改用"复制接单指令"。')
   } finally {
     dispatching.value[k] = false
   }
@@ -99,6 +125,12 @@ async function markTaskLanded(t: UnlandedTask) {
       <span class="hint muted">已拍板但还没落地——按任务派单,一个任务交给一个新对话</span>
     </div>
 
+    <div v-if="tasks.length" class="howto card">
+      <b>怎么派单(可靠做法):</b> 点任务卡上的 <span class="kbd">📋 复制接单指令</span> → 在 Claude Code
+      <b>新开一个对话</b> → 粘贴(Ctrl+V)发送。那对话会自己 <code>读看板</code> 拿到完整任务书、认领、开工。
+      <span class="muted">("自动开终端"是实验功能,开的是终端里的 Claude Code、不是你常用的桌面 App,可能因环境打不开——打不开就用复制。)</span>
+    </div>
+
     <div v-if="!tasks.length" class="empty card">
       <div class="big">✨</div>
       <div>所有拍板都已落地——干净</div>
@@ -132,16 +164,24 @@ async function markTaskLanded(t: UnlandedTask) {
             </li>
           </ul>
 
-          <div v-if="dispatched[taskKey(t)]" class="dispatched-note">
-            ✓ 已开新对话落地本任务于 {{ dispatched[taskKey(t)] }}——新窗口应已启动
+          <div v-if="copiedTrigger[taskKey(t)]" class="copied-note">
+            ✓ 接单指令已复制！在 Claude Code <b>新开一个对话</b>,粘贴(Ctrl+V)发送即可——那对话会自己读看板拿到完整任务开干。
+          </div>
+          <div v-else-if="dispatched[taskKey(t)]" class="dispatched-note">
+            ✓ 已尝试开终端于 {{ dispatched[taskKey(t)] }}——看弹出的<b>终端窗口</b>(不是桌面 App)。没弹出就用"复制接单指令"。
           </div>
 
           <div class="actions">
-            <button class="btn btn-primary-strong" :disabled="dispatching[taskKey(t)]" @click="dispatchTask(t)">
-              {{ dispatching[taskKey(t)] ? '开对话中…' : '🚀 派单本任务给一个对话' }}
+            <button class="btn btn-primary-strong" @click="copyTrigger(t)">
+              {{ copiedTrigger[taskKey(t)] ? '✓ 已复制,去新对话粘贴' : '📋 复制接单指令(新对话粘贴)' }}
             </button>
             <button class="btn btn-outline" :disabled="marking[taskKey(t)]" @click="markTaskLanded(t)">
               {{ marking[taskKey(t)] ? '标记中…' : '✓ 本任务已落地' }}
+            </button>
+          </div>
+          <div class="alt-row">
+            <button class="btn-link" :disabled="dispatching[taskKey(t)]" @click="dispatchTask(t)">
+              {{ dispatching[taskKey(t)] ? '开终端中…' : '⚙ 或:试试自动开终端(实验,开的是终端非桌面App)' }}
             </button>
           </div>
         </div>
@@ -183,6 +223,14 @@ async function markTaskLanded(t: UnlandedTask) {
 .a-arrow { color: var(--muted-2); margin-right: 4px; }
 
 .dispatched-note { padding: 8px 12px; background: rgba(76,140,224,0.15); border-left: 3px solid #4c8ce0; border-radius: var(--radius-sm); color: #4c8ce0; font-size: 13px; }
+.copied-note { padding: 8px 12px; background: rgba(90,200,120,0.15); border-left: 3px solid #5ac878; border-radius: var(--radius-sm); color: #5ac878; font-size: 13px; line-height: 1.5; }
+.howto { padding: 12px 14px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; max-width: 920px; background: rgba(90,200,120,0.06); border-left: 3px solid #5ac878; }
+.howto .kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }
+.howto code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px; }
+.alt-row { margin-top: 2px; }
+.btn-link { background: none; border: none; color: var(--muted-2); font-size: 11px; cursor: pointer; padding: 2px 0; text-decoration: underline; }
+.btn-link:hover { color: var(--muted); }
+.btn-link:disabled { opacity: 0.5; cursor: not-allowed; }
 .actions { display: flex; gap: 8px; }
 .btn { padding: 8px 14px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; border: none; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }

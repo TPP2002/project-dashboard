@@ -43,6 +43,7 @@ const REGISTRY = {
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
   'mark-landed': ['./commands.cjs', 'markLanded'],
   'sync-progress': ['./commands.cjs', 'syncProgress'],
+  inbox: ['./inboxCmd.cjs', 'inbox'],
   // —— 由并行对话实现（惰性；文件未建时触发会提示"尚未实现"）——
   'hooks-install': ['./hooksInstall.cjs', 'hooksInstall'],
   'hooks-global': ['./hooksInstall.cjs', 'hooksGlobal'],
