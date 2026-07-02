@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import StatusBadge from '@/components/StatusBadge.vue'
+import ScopeToggle from '@/components/ScopeToggle.vue'
 import type { Board, Task } from '@/types'
 
 const store = useBoardStore()
@@ -13,6 +14,8 @@ const groups = computed(() => {
   const blocked: Row[] = []
   const pending: Row[] = []
   for (const b of store.allBoards as Board[]) {
+    // 默认只看当前项目（跟随顶栏项目切换）；「全部项目」开关可跨项目聚合。
+    if (!store.centerScopeAll && b.project.id !== store.currentProjectId) continue
     for (const t of b.tasks) {
       const row = { pid: b.project.id, pname: b.project.name, task: t }
       if (t.status === '暂缓') parked.push(row)
@@ -27,7 +30,7 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
 
 <template>
   <div>
-    <div class="head"><h2>⚠️ 风险面板</h2></div>
+    <div class="head"><h2>⚠️ 风险面板</h2><span class="spacer" /><ScopeToggle /></div>
 
     <div class="cols">
       <section class="col">
@@ -66,8 +69,9 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
 </template>
 
 <style scoped>
-.head { margin-bottom: 16px; }
+.head { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
 .head h2 { font-size: 18px; }
+.spacer { flex: 1; }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; }
 .col { display: flex; flex-direction: column; gap: 10px; }
 .col-t { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }

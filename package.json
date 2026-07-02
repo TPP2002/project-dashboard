@@ -1,6 +1,6 @@
 {
   "name": "claude-dashboard",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "多项目管理可视化看板（全局工具）：零依赖 CLI + 零依赖 server + Vite/Vue 前端",
   "scripts": {

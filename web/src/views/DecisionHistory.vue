@@ -3,13 +3,19 @@
 // 治的病:"我拍了没?拍了啥?什么时候拍的?"——之前完全没记录。
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import ScopeToggle from '@/components/ScopeToggle.vue'
 
 const store = useBoardStore()
 const search = ref('')
 const showLanded = ref(true)  // 已落地也显示（默认全显示）
 
+// 默认只看当前项目（跟随顶栏项目切换）；「全部项目」开关可跨项目聚合。
+const base = computed(() =>
+  store.decidedHistory.filter((it) => store.centerScopeAll || it.projectId === store.currentProjectId),
+)
+
 const items = computed(() => {
-  let arr = store.decidedHistory
+  let arr = base.value
   if (!showLanded.value) arr = arr.filter((it) => !(it.decision as any).landed)
   const s = search.value.trim().toLowerCase()
   if (s) arr = arr.filter((it) =>
@@ -21,7 +27,7 @@ const items = computed(() => {
   return arr
 })
 const stats = computed(() => {
-  const all = store.decidedHistory
+  const all = base.value
   const landed = all.filter((it) => (it.decision as any).landed).length
   return { total: all.length, landed, unlanded: all.length - landed }
 })
@@ -32,6 +38,7 @@ const stats = computed(() => {
     <div class="head">
       <h2>📜 拍板历史</h2>
       <span class="pill">{{ stats.total }} 条 · 待落地 {{ stats.unlanded }} · 已落地 {{ stats.landed }}</span>
+      <ScopeToggle />
       <span class="spacer" />
       <label class="toggle">
         <input type="checkbox" v-model="showLanded" />
@@ -42,7 +49,7 @@ const stats = computed(() => {
 
     <div v-if="!items.length" class="empty card">
       <div class="big">🎯</div>
-      <div>{{ store.decidedHistory.length ? '没匹配的记录' : '还没拍过板' }}</div>
+      <div>{{ base.length ? '没匹配的记录' : '还没拍过板' }}</div>
     </div>
 
     <div class="list">

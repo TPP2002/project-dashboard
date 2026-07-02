@@ -2,6 +2,7 @@
 // 待拍板中心：列所有 answer===null 的 decision（跨项目）；界面点选 → POST /api/decide。
 import { ref, reactive, computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import ScopeToggle from '@/components/ScopeToggle.vue'
 import type { PendingItem } from '@/utils/derive'
 
 const store = useBoardStore()
@@ -12,7 +13,12 @@ const submitting = reactive<Record<string, boolean>>({})
 const errors = reactive<Record<string, string>>({})
 const CUSTOM = '__custom__'
 
-const items = computed(() => store.pendingDecisions)
+// 默认只看当前项目（跟随顶栏项目切换）；「全部项目」开关可跨项目聚合。
+const items = computed(() =>
+  store.pendingDecisions.filter((it) => store.centerScopeAll || it.projectId === store.currentProjectId),
+)
+// 作用域为「当前项目」时，其他项目还剩多少待拍板（提示用户别漏了）
+const otherCount = computed(() => store.pendingDecisions.length - items.value.length)
 const keyOf = (it: PendingItem) => `${it.projectId}:${it.task.id}:${it.decision.id}`
 
 function incomplete(it: PendingItem): boolean {
@@ -69,15 +75,21 @@ async function submit(it: PendingItem) {
     <div class="head">
       <h2>❓ 待拍板中心</h2>
       <span class="pill">{{ items.length }} 条</span>
+      <ScopeToggle />
       <span class="spacer" />
       <label class="author">拍板人
         <input v-model="author" placeholder="署名" />
       </label>
     </div>
 
+    <div v-if="!store.centerScopeAll && otherCount" class="other-note card">
+      其他项目还有 <b>{{ otherCount }}</b> 条待拍板
+      <button class="link" @click="store.centerScopeAll = true">查看全部项目 →</button>
+    </div>
+
     <div v-if="!items.length" class="empty card">
       <div class="big">🎉</div>
-      <div>当前没有待拍板事项。</div>
+      <div>{{ store.centerScopeAll ? '所有项目都没有待拍板事项。' : '当前项目没有待拍板事项。' }}</div>
     </div>
 
     <div class="list">
@@ -151,6 +163,10 @@ async function submit(it: PendingItem) {
 </template>
 
 <style scoped>
+.other-note { padding: 9px 14px; margin-bottom: 12px; font-size: 13px; color: var(--muted); background: rgba(245, 166, 35, 0.08); border-left: 3px solid var(--warn); }
+.other-note b { color: var(--warn); }
+.link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; padding: 0 0 0 6px; }
+.link:hover { text-decoration: underline; }
 .head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .head h2 { font-size: 18px; }
 .author { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
