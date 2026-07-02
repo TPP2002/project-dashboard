@@ -59,7 +59,19 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      chunkSizeWarningLimit: 900,
+      // echarts 懒加载 chunk 约 1MB 属预期（仅甘特/依赖图访问时才载、绝不进首屏），抬高阈值免误报
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          // 把 vue 核心运行时拆成稳定的 vendor chunk（应用代码更新不失效其缓存）；
+          // echarts 家族刻意不并入 vendor，交给 Rollup 默认按动态 import 保持懒加载。
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return
+            if (/[\\/]node_modules[\\/](echarts|zrender|vue-echarts|resize-detector)[\\/]/.test(id)) return
+            if (/[\\/]node_modules[\\/](@vue[\\/]|vue[\\/]|vue-router[\\/]|pinia[\\/])/.test(id)) return 'vendor'
+          },
+        },
+      },
     },
   }
 })
