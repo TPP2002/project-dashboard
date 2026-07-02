@@ -1,15 +1,20 @@
 <script setup lang="ts">
 // 依赖关系图（echarts force graph）。依赖=实线箭头，阻塞=红色虚线。echarts 按需 import()。
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
-import { statusColor } from '@/api/schema'
+import { statusColor, DONE_STATUSES } from '@/api/schema'
 import { useEchart } from '@/charts/useEcharts'
+import DoneToggle from '@/components/DoneToggle.vue'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
+// 默认折叠已完工节点(连带其依赖线),只看活跃任务的关系网
+const showDone = ref(false)
+const doneCount = computed(() => (store.currentBoard?.tasks ?? []).filter((t) => DONE_STATUSES.has(t.status)).length)
 
 function buildOption() {
-  const tasks = store.currentBoard?.tasks ?? []
+  const allTasks = store.currentBoard?.tasks ?? []
+  const tasks = showDone.value ? allTasks : allTasks.filter((t) => !DONE_STATUSES.has(t.status))
   const ids = new Set(tasks.map((t) => t.id))
   const nodes = tasks.map((t) => ({
     name: t.id,
@@ -62,6 +67,7 @@ const { el, update } = useEchart(buildOption, (chart) =>
   }),
 )
 watch(() => store.currentBoard, update, { deep: true })
+watch(showDone, update)
 </script>
 
 <template>
@@ -69,6 +75,7 @@ watch(() => store.currentBoard, update, { deep: true })
     <div class="head">
       <h2>🕸️ 依赖关系图</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
+      <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
       <span class="muted small">蓝实线=依赖 · 红虚线=阻塞 · 灰点线=关联；点节点开任务，可拖拽/缩放</span>
     </div>
     <div class="chart card" ref="el" />

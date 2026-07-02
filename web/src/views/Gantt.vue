@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { statusColor, DONE_STATUSES } from '@/api/schema'
 import { useEchart } from '@/charts/useEcharts'
+import DoneToggle from '@/components/DoneToggle.vue'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
@@ -179,11 +180,7 @@ watch(showDone, update)
     <div class="head">
       <h2>📅 施工波次甘特</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
-      <label class="done-toggle" :class="{ on: showDone }">
-        <input type="checkbox" v-model="showDone" />
-        <span v-if="!showDone">🗂️ 显示已完工（{{ doneCount }} 个已折叠）</span>
-        <span v-else>✅ 已显示全部（{{ doneCount }} 个已完工）· 点此收起</span>
-      </label>
+      <DoneToggle v-model="showDone" :count="doneCount" />
       <span class="muted small">横轴=施工波次 · 进度块长度=完成度 · 颜色=状态 · 点条打开任务</span>
     </div>
     <div class="chart card" ref="el" />
@@ -197,9 +194,6 @@ watch(showDone, update)
 .wrap { display: flex; flex-direction: column; height: 100%; }
 .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .head h2 { font-size: 18px; }
-.done-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; user-select: none; }
-.done-toggle:hover { border-color: var(--accent); color: var(--text); }
-.done-toggle.on { background: rgba(46,160,67,0.12); border-color: rgba(46,160,67,0.4); color: #2ea043; }
 .small { font-size: 12px; margin-left: auto; }
 .chart { flex: 1; min-height: 480px; padding: 8px; }
 .legend { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.6; }

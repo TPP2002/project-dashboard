@@ -1,14 +1,21 @@
 <script setup lang="ts">
 // 波次视图：当前项目按 wave 分组，每波进度 + 任务列表。点任务开抽屉。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { statusColor, emojiFor } from '@/api/schema'
+import { statusColor, emojiFor, DONE_STATUSES } from '@/api/schema'
+import DoneToggle from '@/components/DoneToggle.vue'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
-const waves = computed(() => derive.groupByWave(store.currentBoard))
+// 默认折叠已完工:每波只显示活跃任务,整波全完工则该波不显示;
+// 但进度 done/total 仍按全量算(不因折叠而失真)。
+const showDone = ref(false)
+const doneCount = computed(() => (store.currentBoard?.tasks ?? []).filter((t) => DONE_STATUSES.has(t.status)).length)
+const waves = computed(() => derive.groupByWave(store.currentBoard)
+  .map((w) => ({ ...w, visible: showDone.value ? w.tasks : w.tasks.filter((t) => !DONE_STATUSES.has(t.status)) }))
+  .filter((w) => w.visible.length > 0))
 function prog(tasks: Task[]) {
   const done = tasks.filter((t) => t.status === '已完工').length
   return { done, total: tasks.length, percent: tasks.length ? Math.round((done / tasks.length) * 100) : 0 }
@@ -17,7 +24,11 @@ function prog(tasks: Task[]) {
 
 <template>
   <div>
-    <div class="head"><h2>🌊 波次视图</h2><span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span></div>
+    <div class="head">
+      <h2>🌊 波次视图</h2>
+      <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
+      <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
+    </div>
 
     <div v-if="!waves.length" class="empty card"><div class="big">🌊</div><div>暂无任务。</div></div>
 
@@ -32,7 +43,7 @@ function prog(tasks: Task[]) {
         <div class="progress"><i :style="{ width: prog(w.tasks).percent + '%' }" /></div>
         <div class="w-tasks">
           <div
-            v-for="t in w.tasks" :key="t.id" class="wt"
+            v-for="t in w.visible" :key="t.id" class="wt"
             :style="{ borderLeft: '3px solid ' + statusColor(t.status) }"
             @click="store.openTask(t.id, pid)"
           >
