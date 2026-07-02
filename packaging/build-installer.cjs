@@ -26,6 +26,9 @@ const PKG = __dirname;                                  // packaging/
 const STAGING = path.join(PKG, 'staging');              // 暂存区（安装目录的镜像）
 const ROOT = path.join(STAGING, 'root');                // 将成为安装目录的内容
 const OUTDIR = path.join(PKG, 'dist');                  // 安装器 exe 输出目录
+const ASSETS = path.join(PKG, 'assets');                // 图标等素材
+const ICON = path.join(ASSETS, 'icon.ico');             // 品牌图标
+const TRAY_SRC = path.join(PKG, 'tray', 'Dashboard.cs');// 托盘启动器源码
 const NODE_EXE = process.execPath;                      // 本机 node.exe，直接当运行时打包
 
 // ---------- 版本 ----------
@@ -53,6 +56,20 @@ function findMakensis() {
   candidates.push('C:\\Program Files (x86)\\NSIS\\makensis.exe');
   candidates.push('C:\\Program Files\\NSIS\\makensis.exe');
   for (const c of candidates) { if (fs.existsSync(c)) return c; }
+  return null;
+}
+
+// ---------- 找 csc（.NET 编译器，用于编托盘启动器；缺则回退 .bat）----------
+function findCsc() {
+  const fw = 'C:\\Windows\\Microsoft.NET\\Framework64';
+  const cands = [];
+  try {
+    for (const d of fs.readdirSync(fw)) {
+      if (d.startsWith('v4.')) cands.push(path.join(fw, d, 'csc.exe'));
+    }
+  } catch (_) { /* 无 .NET */ }
+  cands.sort().reverse(); // 取较新的 v4.x
+  for (const c of cands) { if (fs.existsSync(c)) return c; }
   return null;
 }
 
@@ -206,6 +223,34 @@ ${'='.repeat(40)}
 `;
 writeUtf8Bom(path.join(ROOT, '开始使用.txt'), quickstart);
 
+// —— 品牌图标 + 托盘启动器 ——
+let hasIcon = fs.existsSync(ICON);
+if (hasIcon) copy(ICON, path.join(ROOT, 'icon.ico'));
+else console.warn('  [!] 缺 assets/icon.ico，将用默认图标（可先跑 packaging/make-icon.ps1 生成）。');
+
+let useTray = false;
+const csc = findCsc();
+if (csc && fs.existsSync(TRAY_SRC)) {
+  const trayOut = path.join(ROOT, 'Dashboard.exe');
+  const cscArgs = ['/nologo', '/target:winexe', '/codepage:65001',
+    '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.dll',
+    '/out:' + trayOut, TRAY_SRC];
+  if (hasIcon) cscArgs.splice(3, 0, '/win32icon:' + ICON);
+  const rc = cp.spawnSync(csc, cscArgs, { encoding: 'utf8' });
+  if (rc.status === 0 && fs.existsSync(trayOut)) {
+    useTray = true;
+    console.log('  ✔ 托盘启动器 Dashboard.exe 已编译（隐藏黑窗口 + 托盘图标）。');
+  } else {
+    console.warn('  [!] 托盘启动器编译失败，回退到 启动看板.bat（带控制台窗口）。');
+    if (rc.stderr) console.warn('      ' + rc.stderr.split('\n').slice(0, 4).join('\n      '));
+  }
+} else {
+  console.warn('  [!] 没找到 csc（.NET 编译器）或托盘源码，用 启动看板.bat（带控制台窗口）。');
+}
+// 主启动目标：有托盘用 Dashboard.exe，否则用 .bat
+const LAUNCH_TARGET = useTray ? 'Dashboard.exe' : '启动看板.bat';
+const ICON_REF = hasIcon ? '$INSTDIR\\icon.ico' : (useTray ? '$INSTDIR\\Dashboard.exe' : '$INSTDIR\\node-runtime\\node.exe');
+
 // ============ 4. 生成 NSIS 脚本 ============
 console.log('[3/5] 生成 NSIS 脚本 ...');
 mkdirp(OUTDIR);
@@ -232,11 +277,13 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 BrandingText "\${APPNAME} v\${VERSION}"
 
-!define MUI_ABORTWARNING
+${hasIcon ? `!define MUI_ICON "${bs(ICON)}"
+!define MUI_UNICON "${bs(ICON)}"
+` : ''}!define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_RUN "$INSTDIR\\启动看板.bat"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\\${LAUNCH_TARGET}"
 !define MUI_FINISHPAGE_RUN_TEXT "立即启动 \${APPNAME}"
 !define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\\使用手册.md"
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "打开使用手册"
@@ -253,11 +300,12 @@ Section "Install"
 
   ; —— 快捷方式（图标暂用 node.exe 自带；品牌图标见打磨清单）——
   CreateDirectory "$SMPROGRAMS\\\${APPNAME}"
-  CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\\${APPNAME}.lnk" "$INSTDIR\\启动看板.bat" "" "$INSTDIR\\node-runtime\\node.exe" 0
-  CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\添加项目.lnk" "$INSTDIR\\添加项目.bat" "" "$INSTDIR\\node-runtime\\node.exe" 0
+  CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\\${APPNAME}.lnk" "$INSTDIR\\${LAUNCH_TARGET}" "" "${ICON_REF}" 0
+  CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\添加项目.lnk" "$INSTDIR\\添加项目.bat" "" "${ICON_REF}" 0
   CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\使用手册.lnk" "$INSTDIR\\使用手册.md"
-  CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\卸载 \${APPNAME}.lnk" "$INSTDIR\\uninstall.exe"
-  CreateShortcut "$DESKTOP\\\${APPNAME}.lnk" "$INSTDIR\\启动看板.bat" "" "$INSTDIR\\node-runtime\\node.exe" 0
+${useTray ? `  CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\启动看板（控制台调试）.lnk" "$INSTDIR\\启动看板.bat" "" "${ICON_REF}" 0
+` : ''}  CreateShortcut "$SMPROGRAMS\\\${APPNAME}\\卸载 \${APPNAME}.lnk" "$INSTDIR\\uninstall.exe"
+  CreateShortcut "$DESKTOP\\\${APPNAME}.lnk" "$INSTDIR\\${LAUNCH_TARGET}" "" "${ICON_REF}" 0
 
   ; —— 卸载信息 + 控制面板「程序和功能」——
   WriteRegStr HKCU "Software\\${APPID}" "InstallDir" "$INSTDIR"
@@ -265,7 +313,7 @@ Section "Install"
   WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "DisplayName" "\${APPNAME}"
   WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "DisplayVersion" "\${VERSION}"
   WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "UninstallString" "$\\"$INSTDIR\\uninstall.exe$\\""
-  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "DisplayIcon" "$INSTDIR\\node-runtime\\node.exe"
+  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "DisplayIcon" "${ICON_REF}"
   WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "Publisher" "\${APPNAME}"
   WriteRegDWORD HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "NoModify" 1
   WriteRegDWORD HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${APPID}" "NoRepair" 1
