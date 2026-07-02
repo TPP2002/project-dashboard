@@ -1,19 +1,30 @@
 <script setup lang="ts">
 // AI 开发用「施工波次甘特」：横轴=波次(0/1/2/3)，纵轴=任务，进度块=percent 长度+状态色，箭头=依赖。
 // 传统按日甘特对 AI 开发无用（一个任务可能几小时就完工），这里改用「进度感」而不是「时间感」。
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
-import { statusColor } from '@/api/schema'
+import { statusColor, DONE_STATUSES } from '@/api/schema'
 import { useEchart } from '@/charts/useEcharts'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
-const tasks = computed<Task[]>(() => store.currentBoard?.tasks ?? [])
+const allTasks = computed<Task[]>(() => store.currentBoard?.tasks ?? [])
+// 默认折叠已完工——只显示进行中/刚开工/待办,避免完工任务堆积看着累。
+const showDone = ref(false)
+const doneCount = computed(() => allTasks.value.filter((t) => DONE_STATUSES.has(t.status)).length)
+const tasks = computed<Task[]>(() =>
+  showDone.value ? allTasks.value : allTasks.value.filter((t) => !DONE_STATUSES.has(t.status)),
+)
 
 function buildOption() {
   const list = tasks.value
-  if (!list.length) return { title: { text: '无任务', left: 'center', top: 'center', textStyle: { color: '#8b98a9', fontSize: 13 } } }
+  if (!list.length) {
+    const txt = allTasks.value.length && !showDone.value
+      ? '当前没有进行中的任务（已完工的已折叠，点上方"显示已完工"查看）'
+      : '无任务'
+    return { title: { text: txt, left: 'center', top: 'center', textStyle: { color: '#8b98a9', fontSize: 13 } } }
+  }
 
   // 按波次分组，波次内按 id 排序
   const byWave = new Map<number, Task[]>()
@@ -160,6 +171,7 @@ const { el, update } = useEchart(buildOption, (chart) =>
   }),
 )
 watch(() => store.currentBoard, update, { deep: true })
+watch(showDone, update)
 </script>
 
 <template>
@@ -167,11 +179,16 @@ watch(() => store.currentBoard, update, { deep: true })
     <div class="head">
       <h2>📅 施工波次甘特</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
+      <label class="done-toggle" :class="{ on: showDone }">
+        <input type="checkbox" v-model="showDone" />
+        <span v-if="!showDone">🗂️ 显示已完工（{{ doneCount }} 个已折叠）</span>
+        <span v-else>✅ 已显示全部（{{ doneCount }} 个已完工）· 点此收起</span>
+      </label>
       <span class="muted small">横轴=施工波次 · 进度块长度=完成度 · 颜色=状态 · 点条打开任务</span>
     </div>
     <div class="chart card" ref="el" />
     <div class="legend">
-      <span class="tip">💡 <b>为什么不按日期？</b> AI 开发一个任务可能几小时就完工，按日甘特意义不大。这里换成"波次+进度"，一眼看到"第几波在做、每个做到哪了、下一步该做谁"。</span>
+      <span class="tip">💡 <b>为什么不按日期？</b> AI 开发一个任务可能几小时就完工，按日甘特意义不大。这里换成"波次+进度"，一眼看到"第几波在做、每个做到哪了、下一步该做谁"。<br/><b>已完工默认折叠</b>——只看进行中/刚开工,清爽;想回顾历史完工点上方"显示已完工"即可（不会丢，随时能调出来）。</span>
     </div>
   </div>
 </template>
@@ -180,6 +197,9 @@ watch(() => store.currentBoard, update, { deep: true })
 .wrap { display: flex; flex-direction: column; height: 100%; }
 .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 .head h2 { font-size: 18px; }
+.done-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; user-select: none; }
+.done-toggle:hover { border-color: var(--accent); color: var(--text); }
+.done-toggle.on { background: rgba(46,160,67,0.12); border-color: rgba(46,160,67,0.4); color: #2ea043; }
 .small { font-size: 12px; margin-left: auto; }
 .chart { flex: 1; min-height: 480px; padding: 8px; }
 .legend { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.6; }
