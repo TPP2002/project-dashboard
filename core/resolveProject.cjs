@@ -33,7 +33,7 @@ function readRegistry(registryPath = REGISTRY_PATH) {
  * 解析 projectId → 路径集合。
  * @param {string} projectId
  * @param {{registryPath?: string}} [opts]
- * @returns {{id:string,name:string,mainRepo:string,board:string,lock:string,docsRoot:string}}
+ * @returns {{id:string,name:string,mainRepo:string,board:string,lock:string,docsRoot:string,indexPath:string|null}}
  */
 function resolveProject(projectId, opts = {}) {
   if (!projectId) throw new Error('必须指定 --project <id>（禁止按 cwd 猜项目）');
@@ -52,6 +52,9 @@ function resolveProject(projectId, opts = {}) {
     board,
     lock: board + '.lock',
     docsRoot: entry.docsRoot ? normalizeReal(entry.docsRoot) : mainRepo,
+    // indexPath：render-index 目标台账（治本——docsRoot 被 web 白名单占用，不能挪去指子目录，
+    // 故单列一个 index 让 render-index 落进真台账；缺省回落 docsRoot/INDEX.md，向后兼容）。
+    indexPath: entry.index ? normalizeReal(entry.index) : null,
   };
 }
 
