@@ -1,15 +1,20 @@
 <script setup lang="ts">
 // 单项目 Kanban：按 STATUS 泳道（只显示非空泳道），横向滚动。
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { statusColor, emojiFor } from '@/api/schema'
+import { statusColor, emojiFor, DONE_STATUSES } from '@/api/schema'
 import TaskCard from '@/components/TaskCard.vue'
+import DoneToggle from '@/components/DoneToggle.vue'
 
 const store = useBoardStore()
 const board = computed(() => store.currentBoard)
 const pid = computed(() => store.currentProjectId || '')
-const columns = computed(() => derive.groupByStatus(board.value).filter((c) => c.tasks.length > 0))
+// 默认折叠"已完工"泳道,只显示活跃泳道;doneCount 供开关显示折叠数
+const showDone = ref(false)
+const doneCount = computed(() => (board.value?.tasks ?? []).filter((t) => DONE_STATUSES.has(t.status)).length)
+const columns = computed(() => derive.groupByStatus(board.value)
+  .filter((c) => c.tasks.length > 0 && (showDone.value || !DONE_STATUSES.has(c.status))))
 const prog = computed(() => derive.progress(board.value))
 </script>
 
@@ -18,6 +23,7 @@ const prog = computed(() => derive.progress(board.value))
     <div v-if="board" class="head">
       <h2>{{ board.project.name }}</h2>
       <span class="pill">{{ prog.done }}/{{ prog.total }} 完工 · {{ prog.percent }}%</span>
+      <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
       <span class="spacer" />
     </div>
 
