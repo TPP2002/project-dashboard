@@ -5,7 +5,8 @@
       "name": "A股模拟器",
       "mainRepo": "F:\\game",
       "board": "F:\\game\\.dashboard\\board.json",
-      "docsRoot": "F:\\game"
+      "docsRoot": "F:\\game",
+      "index": "F:\\game\\docs\\plans\\股市清零工程\\INDEX.md"
     },
     "questline": {
       "name": "Questline",

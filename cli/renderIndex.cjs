@@ -33,7 +33,7 @@ function buildStatusMarkdown(board) {
 
 function renderIndex(flags) {
   const proj = resolveProj(flags);
-  const indexPath = flags.index ? path.resolve(flags.index) : path.join(proj.docsRoot, 'INDEX.md');
+  const indexPath = flags.index ? path.resolve(flags.index) : (proj.indexPath || path.join(proj.docsRoot, 'INDEX.md'));
   const board = readBoard(proj.board);
   const generated = buildStatusMarkdown(board);
   let src = '';
