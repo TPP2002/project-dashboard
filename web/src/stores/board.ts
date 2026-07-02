@@ -19,6 +19,9 @@ export const useBoardStore = defineStore('board', () => {
   const error = ref<string | null>(null)
   const initialized = ref(false)
   const pulses = reactive(new Set<string>())
+  // 中心/聚合视图（待拍板 / 待落地 / 拍板历史 / 风险）的项目范围：
+  // false = 只看顶栏当前项目（跟随项目切换，默认）；true = 跨全部项目聚合。
+  const centerScopeAll = ref(false)
 
   let stream: BoardStream | null = null
 
@@ -150,7 +153,7 @@ export const useBoardStore = defineStore('board', () => {
 
   return {
     projects, boards, currentProjectId, selectedTaskId, selectedTaskProjectId,
-    conn, loading, error, initialized,
+    conn, loading, error, initialized, centerScopeAll,
     projectList, allBoards, currentBoard, currentTasks, currentStatusCounts,
     currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, globalActivity, selectedBoard, selectedTask,
     isPulsing,

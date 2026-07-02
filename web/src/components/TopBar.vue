@@ -19,7 +19,8 @@ function onProject(e: Event) {
     <span class="spacer" />
     <ConnDot :state="store.conn" />
     <button class="btn btn-sm btn-ghost refresh" @click="store.refresh()" title="刷新全部">↻</button>
-    <router-link to="/approvals" class="bell" :class="{ hot: store.pendingCount > 0 }" title="待拍板中心">
+    <router-link to="/approvals" class="bell" :class="{ hot: store.pendingCount > 0 }"
+      title="待拍板中心（全部项目）" @click="store.centerScopeAll = true">
       ❓<span v-if="store.pendingCount" class="dot">{{ store.pendingCount }}</span>
     </router-link>
   </header>

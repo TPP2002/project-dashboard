@@ -5,10 +5,14 @@
 // 正确粒度:一个任务 = 一份启动指令,含该任务所有已拍板决策,一个对话接手。
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import ScopeToggle from '@/components/ScopeToggle.vue'
 import type { UnlandedTask } from '@/utils/derive'
 
 const store = useBoardStore()
-const tasks = computed(() => store.unlandedByTask)
+// 默认只看当前项目（跟随顶栏项目切换）；「全部项目」开关可跨项目聚合。
+const tasks = computed(() =>
+  store.unlandedByTask.filter((t) => store.centerScopeAll || t.projectId === store.currentProjectId),
+)
 // 按项目再分组:{ pid: {name, tasks: [...] } }
 const grouped = computed(() => {
   const g: Record<string, { name: string; tasks: UnlandedTask[] }> = {}
@@ -122,8 +126,10 @@ async function markTaskLanded(t: UnlandedTask) {
     <div class="head">
       <h2>🚀 待落地队列</h2>
       <span class="pill">{{ tasks.length }} 个任务 · {{ totalDecisions }} 条决策</span>
-      <span class="hint muted">已拍板但还没落地——按任务派单,一个任务交给一个新对话</span>
+      <span class="spacer" />
+      <ScopeToggle />
     </div>
+    <div class="hint muted subhint">已拍板但还没落地——按任务派单,一个任务交给一个新对话</div>
 
     <div v-if="tasks.length" class="howto card">
       <b>怎么派单(可靠做法):</b> 点任务卡上的 <span class="kbd">📋 复制接单指令</span> → 在 Claude Code
@@ -194,7 +200,9 @@ async function markTaskLanded(t: UnlandedTask) {
 .wrap { display: flex; flex-direction: column; height: 100%; }
 .head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .head h2 { font-size: 18px; }
+.spacer { flex: 1; }
 .hint { font-size: 12px; }
+.subhint { margin: -4px 0 14px; }
 .empty { padding: 40px; text-align: center; }
 .empty .big { font-size: 48px; margin-bottom: 8px; }
 
