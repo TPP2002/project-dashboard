@@ -10,7 +10,14 @@ const path = require('node:path');
 const os = require('node:os');
 const { normalizeReal } = require('./safePath.cjs');
 
-const DASHBOARD_HOME = path.join(os.homedir(), '.claude', 'dashboard');
+// DASHBOARD_HOME = 看板"数据根"（registry.json + snapshots/ 落此处）。
+// 默认 ~/.claude/dashboard（Claude Code 集成布局）；standalone 分发版由启动器
+// 把 DASHBOARD_HOME 指向安装目录，从而脱离 ~/.claude 耦合、在任意社区机器上可写。
+// 注意：代码定位（core/cli/server/web 的 require）一律走 __dirname 相对路径，
+// 不受本变量影响——DASHBOARD_HOME 只决定"数据往哪读/写"。
+const DASHBOARD_HOME = process.env.DASHBOARD_HOME
+  ? path.resolve(process.env.DASHBOARD_HOME)
+  : path.join(os.homedir(), '.claude', 'dashboard');
 const REGISTRY_PATH = path.join(DASHBOARD_HOME, 'registry.json');
 
 function readRegistry(registryPath = REGISTRY_PATH) {
