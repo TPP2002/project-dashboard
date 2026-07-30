@@ -21,7 +21,7 @@ const totals = computed(() => {
     total += p.total
     done += p.done
   }
-  return { projects: boards.value.length, total, done, pending: store.pendingCount }
+  return { projects: boards.value.length, total, done, today: store.todayDoneCount, pending: store.pendingCount }
 })
 
 function progressOf(b: Board) {
@@ -32,6 +32,11 @@ function countsOf(b: Board) {
 }
 function pendingOf(b: Board) {
   return derive.collectPending([b]).length
+}
+// 各项目今日（本地日）完工数——早上开看板一眼看到昨晚/今天哪个项目动了
+function todayOf(b: Board) {
+  const today = derive.todayLocal()
+  return derive.collectDoneRecords([b]).records.filter((r) => r.day === today).length
 }
 function recentOf(b: Board) {
   return (b.activity ?? [])
@@ -51,6 +56,9 @@ function open(b: Board) {
       <div class="sum"><b>{{ totals.projects }}</b><span>项目</span></div>
       <div class="sum"><b>{{ totals.total }}</b><span>任务</span></div>
       <div class="sum"><b class="ok">{{ totals.done }}</b><span>已完工</span></div>
+      <div class="sum sum-link" :class="{ lit: totals.today }" title="点击看每日成果" @click="router.push('/daily')">
+        <b class="ok">{{ totals.today }}</b><span>今日完成 →</span>
+      </div>
       <div class="sum" :class="{ hot: totals.pending }">
         <b>{{ totals.pending }}</b><span>待拍板</span>
       </div>
@@ -66,7 +74,9 @@ function open(b: Board) {
         <div class="pc-top">
           <ProgressRing :percent="progressOf(b).percent" :size="86" :sub="progressOf(b).done + '/' + progressOf(b).total" />
           <div class="pc-info">
-            <div class="pc-name">{{ b.project.name }}</div>
+            <div class="pc-name">{{ b.project.name }}
+              <span v-if="todayOf(b)" class="pc-today">今日 +{{ todayOf(b) }}</span>
+            </div>
             <div class="pc-repo mono">{{ b.project.mainRepo || b.project.id }}</div>
             <div v-if="pendingOf(b)" class="pc-alert">❓ {{ pendingOf(b) }} 条待拍板</div>
           </div>
@@ -105,6 +115,14 @@ function open(b: Board) {
 .sum b.ok { color: var(--ok); }
 .sum span { font-size: 12px; color: var(--muted); }
 .sum.hot b { color: var(--warn); }
+.sum-link { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+.sum-link:hover { border-color: var(--ok); transform: translateY(-1px); }
+.sum-link.lit { border-color: rgba(46, 160, 67, 0.5); box-shadow: 0 0 12px rgba(46, 160, 67, 0.12); }
+.pc-today {
+  font-size: 11px; font-weight: 600; color: var(--ok); vertical-align: 2px;
+  background: rgba(46, 160, 67, 0.14); border: 1px solid rgba(46, 160, 67, 0.4);
+  border-radius: 999px; padding: 1px 7px; margin-left: 6px;
+}
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .pcard { padding: 16px; cursor: pointer; transition: transform 0.1s, border-color 0.15s; display: flex; flex-direction: column; gap: 12px; }

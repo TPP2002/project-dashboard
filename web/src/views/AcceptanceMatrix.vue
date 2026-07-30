@@ -1,12 +1,20 @@
 <script setup lang="ts">
 // 验收矩阵：当前项目 task × 维度（状态/测试/类型检查/待拍板）红黄绿灯。点行开抽屉。
-import { computed } from 'vue'
+// 已完工默认折叠（体检 U1）：132 张完工卡淹没活跃任务，与看板/波次/甘特统一用 DoneToggle。
+import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import { DONE_STATUSES } from '@/api/schema'
+import DoneToggle from '@/components/DoneToggle.vue'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
-const tasks = computed(() => store.currentBoard?.tasks ?? [])
+const allTasks = computed(() => store.currentBoard?.tasks ?? [])
+const showDone = ref(false)
+const doneCount = computed(() => allTasks.value.filter((t) => DONE_STATUSES.has(t.status)).length)
+const tasks = computed(() =>
+  showDone.value ? allTasks.value : allTasks.value.filter((t) => !DONE_STATUSES.has(t.status)),
+)
 
 type Light = 'ok' | 'warn' | 'bad' | 'na'
 const LIGHT: Record<Light, string> = { ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--danger)', na: 'var(--muted-2)' }
@@ -35,9 +43,17 @@ function pendLight(t: Task): [Light, string] {
 
 <template>
   <div>
-    <div class="head"><h2>🚦 验收矩阵</h2><span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span></div>
+    <div class="head">
+      <h2>🚦 验收矩阵</h2>
+      <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
+      <span class="pill">{{ tasks.length }} 行</span>
+      <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
+    </div>
 
-    <div v-if="!tasks.length" class="empty card"><div class="big">🚦</div><div>暂无任务。</div></div>
+    <div v-if="!tasks.length" class="empty card">
+      <div class="big">🚦</div>
+      <div>{{ allTasks.length ? '活跃任务全部清零——已完工的已折叠，点上方开关查看' : '暂无任务。' }}</div>
+    </div>
 
     <div v-else class="tablewrap card">
       <table>

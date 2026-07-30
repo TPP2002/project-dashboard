@@ -40,7 +40,13 @@ export const useBoardStore = defineStore('board', () => {
   const unlandedDecisions = computed(() => derive.collectUnlanded(allBoards.value))
   const unlandedCount = computed(() => unlandedDecisions.value.length)
   const unlandedByTask = computed(() => derive.collectUnlandedByTask(allBoards.value))
-  const globalActivity = computed(() => derive.mergeActivity(allBoards.value))
+  // 全量派生（不截断）：活动流页要"先筛选再分页"，截断会让筛选漏旧记录（体检 B1）
+  const globalActivity = computed(() => derive.mergeActivity(allBoards.value, 0))
+  // 今日（本地时区）完工卡数：侧栏「每日成果」徽章 + 总览「今日完成」卡
+  const todayDoneCount = computed(() => {
+    const today = derive.todayLocal()
+    return derive.collectDoneRecords(allBoards.value).records.filter((r) => r.day === today).length
+  })
   const selectedBoard = computed<Board | null>(() =>
     selectedTaskProjectId.value ? boards.value[selectedTaskProjectId.value] ?? null : null,
   )
@@ -155,7 +161,7 @@ export const useBoardStore = defineStore('board', () => {
     projects, boards, currentProjectId, selectedTaskId, selectedTaskProjectId,
     conn, loading, error, initialized, centerScopeAll,
     projectList, allBoards, currentBoard, currentTasks, currentStatusCounts,
-    currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, globalActivity, selectedBoard, selectedTask,
+    currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, globalActivity, todayDoneCount, selectedBoard, selectedTask,
     isPulsing,
     init, loadProjects, loadBoard, loadAllBoards, selectProject,
     openTask, closeTask, decide, startStream, stopStream, refresh,

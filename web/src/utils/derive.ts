@@ -161,3 +161,93 @@ export function riskTasks(board: Board | null | undefined): Task[] {
       (t.decisions ?? []).some((d) => d.answer === null || d.answer === undefined),
   )
 }
+
+// ==================== 每日成果（Daily Output） ====================
+// 完工日口径：卡当前状态 ∈ DONE_STATUSES 才计入；完工日优先取该卡活动流里最后一条
+// type='done' 事件的精确时间戳（转【本地时区】日期），无 done 事件时兜底 dates.done。
+// 为什么不直接用 dates.done：CLI 旧版 today() 用 UTC 日期，北京凌晨完工会被记成前一天；
+// activity ts 是精确 ISO 时刻，转本地日永远准确。
+
+/** ISO 时间戳 → 本地日 YYYY-MM-DD（无效输入返回 ''） */
+export function localDay(ts: string | Date): string {
+  const d = ts instanceof Date ? ts : new Date(ts)
+  if (isNaN(d.getTime())) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+/** 今天的本地日 YYYY-MM-DD */
+export function todayLocal(): string {
+  return localDay(new Date())
+}
+
+export interface DoneRecord {
+  projectId: string
+  projectName: string
+  task: Task
+  /** 完工归属日（本地时区 YYYY-MM-DD） */
+  day: string
+  /** 精确完工时刻（activity done 事件的 ISO ts），无 done 事件时为 null */
+  ts: string | null
+}
+
+/** 收集所有已完工卡的完工记录（跨项目）；无任何完工日期线索的卡收进 undated */
+export function collectDoneRecords(boards: Board[]): { records: DoneRecord[]; undated: number } {
+  const records: DoneRecord[] = []
+  let undated = 0
+  for (const b of boards) {
+    // 每任务最后一条 done 活动的 ts
+    const lastDone = new Map<string, string>()
+    for (const a of b.activity ?? []) {
+      if (a.type === 'done' && a.taskId && a.ts) {
+        const prev = lastDone.get(a.taskId)
+        if (!prev || a.ts > prev) lastDone.set(a.taskId, a.ts)
+      }
+    }
+    for (const t of b.tasks ?? []) {
+      if (!DONE_STATUSES.has(t.status)) continue
+      const ts = lastDone.get(t.id) ?? null
+      const day = ts ? localDay(ts) : (t.dates?.done || '')
+      if (!day) { undated++; continue }
+      records.push({ projectId: b.project.id, projectName: b.project.name, task: t, day, ts })
+    }
+  }
+  // 同日内按精确时刻倒序（无 ts 的排后面）
+  records.sort((a, z) => z.day.localeCompare(a.day) || (z.ts || '').localeCompare(a.ts || ''))
+  return { records, undated }
+}
+
+/** 按日聚合完工数：day → 该日完工记录列表（倒序遍历安全，Map 保插入序=日期倒序） */
+export function groupDoneByDay(records: DoneRecord[]): Map<string, DoneRecord[]> {
+  const m = new Map<string, DoneRecord[]>()
+  for (const r of records) {
+    if (!m.has(r.day)) m.set(r.day, [])
+    m.get(r.day)!.push(r)
+  }
+  return m
+}
+
+/** 某日（本地日）各类型活动计数：day → { done: 3, decide: 2, ... }（当日明细的动作统计） */
+export function activityCountsOfDay(boards: Board[], day: string): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const b of boards) {
+    for (const a of b.activity ?? []) {
+      if (!a.ts || localDay(a.ts) !== day) continue
+      const ty = a.type || 'note'
+      out[ty] = (out[ty] || 0) + 1
+    }
+  }
+  return out
+}
+
+/** 连续产出天数（今天没有完工则从昨天起算；遇到 0 完工的一天即停） */
+export function doneStreak(byDay: Map<string, DoneRecord[]>): number {
+  const d = new Date()
+  if (!byDay.get(localDay(d))?.length) d.setDate(d.getDate() - 1) // 今天还没出货，从昨天起算
+  let streak = 0
+  while (byDay.get(localDay(d))?.length) {
+    streak++
+    d.setDate(d.getDate() - 1)
+  }
+  return streak
+}

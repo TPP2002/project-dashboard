@@ -59,6 +59,8 @@ export interface Task {
   forbiddenZones?: string[]
   fileScope?: string[]
   docs?: DocRef[]
+  /** CLI progress 时更新的进度时间戳（施工中卡的"多久没动了"提醒用） */
+  lastProgressAt?: string
 }
 
 export interface Activity {

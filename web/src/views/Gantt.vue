@@ -58,29 +58,7 @@ function buildOption() {
     style: { text: `第 ${w} 波 · ${byWave.get(w)!.length} 任务`, fill: '#7a8a9c', fontSize: 12 },
   }))
 
-  // 依赖箭头：dependsOn 和 blockedBy 都画
-  const arrows: { type: string; shape: object; style: object; z: number }[] = []
-  for (const t of ordered) {
-    const to = idIdx.get(t.id); if (to === undefined) continue
-    const ttWave = t.wave ?? 0
-    for (const src of t.deps?.dependsOn ?? []) {
-      const from = idIdx.get(src); if (from === undefined) continue
-      const s = ordered[from]; const sWave = s.wave ?? 0
-      // 只画跨波次或跨相近任务的箭头（避免视觉混乱）
-      arrows.push({
-        type: 'line',
-        shape: {},
-        style: { stroke: '#4c8ce0', lineWidth: 1.4, opacity: 0.55 },
-        z: 2,
-      })
-      // 具体坐标由 graphic 转换器算，这里塞入 meta 给 setOption
-      Object.assign(arrows[arrows.length - 1], {
-        _from: [sWave + 0.5, from],
-        _to: [ttWave, to],
-        _kind: 'depend',
-      })
-    }
-  }
+  // 依赖箭头不在甘特上画（有专门的「依赖」页；此处画线只会糊成一团）——体检 B4 清除了从未渲染的死代码
 
   return {
     grid: { left: 68, right: 24, top: 42, bottom: 32 },
