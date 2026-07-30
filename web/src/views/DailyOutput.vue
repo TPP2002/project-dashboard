@@ -11,14 +11,14 @@ import { fmtShort } from '@/utils/format'
 import type { Board } from '@/types'
 
 const store = useBoardStore()
-// 本页局部范围开关（不与中心视图的 centerScopeAll 混用：本页默认全部项目）
-const scopeAll = ref(true)
-const boards = computed<Board[]>(() =>
-  scopeAll.value ? store.allBoards : store.currentBoard ? [store.currentBoard] : [],
-)
-const curName = computed(
-  () => store.projectList.find((p) => p.id === store.currentProjectId)?.name ?? '当前项目',
-)
+// 本页局部项目选择：默认「全部项目」（一天的总产出），也可点任意单个项目单看——
+// 负责人点名要能逐项目查看，不跟顶栏下拉绑定（那个是"当前项目"语义，这里是自由挑选）。
+const selectedPid = ref<string>('all')
+const boards = computed<Board[]>(() => {
+  if (selectedPid.value === 'all') return store.allBoards
+  const b = store.boards[selectedPid.value]
+  return b ? [b] : []
+})
 
 // ---------- 完工记录派生 ----------
 const doneData = computed(() => derive.collectDoneRecords(boards.value))
@@ -200,8 +200,12 @@ watch([byDay], update)
       >{{ doneData.undated }} 张无日期</span>
       <span class="spacer" />
       <div class="scope">
-        <button class="seg" :class="{ on: scopeAll }" @click="scopeAll = true">全部项目</button>
-        <button class="seg" :class="{ on: !scopeAll }" @click="scopeAll = false">{{ curName }}</button>
+        <button class="seg" :class="{ on: selectedPid === 'all' }" @click="selectedPid = 'all'">全部项目</button>
+        <button
+          v-for="p in store.projectList" :key="p.id"
+          class="seg" :class="{ on: selectedPid === p.id }"
+          @click="selectedPid = p.id"
+        >{{ p.name }}</button>
       </div>
     </div>
 
@@ -295,11 +299,15 @@ watch([byDay], update)
 .head h2 { font-size: 18px; }
 .undated { color: var(--muted-2); cursor: help; }
 
-.scope { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
-.seg { background: var(--panel-2); color: var(--muted); border: none; padding: 4px 12px; font-size: 12px; cursor: pointer; }
-.seg + .seg { border-left: 1px solid var(--border); }
-.seg:hover { color: var(--text); }
-.seg.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+/* 项目选择：圆角小片按钮，可换行（7 个选项一排放不下时自动折行） */
+.scope { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.seg {
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 999px; padding: 3px 11px; font-size: 12px; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.seg:hover { color: var(--text); border-color: var(--accent); }
+.seg.on { background: var(--accent-soft); color: var(--text); font-weight: 600; border-color: var(--accent); }
 
 .statbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .stat {
