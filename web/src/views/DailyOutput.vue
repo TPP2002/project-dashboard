@@ -126,13 +126,30 @@ function fmtDayCN(day: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 · 周${wd}`
 }
 
-// ---------- 近30天柱状图 ----------
+// ---------- 完工趋势柱状图（档位可切：30/60/90天/全部） ----------
+const RANGES = [
+  { days: 30, label: '近30天' },
+  { days: 60, label: '近60天' },
+  { days: 90, label: '近90天' },
+  { days: 0, label: '全部' },
+] as const
+const rangeDays = ref<number>(30)
+/** 当前档位实际天数（全部=从最早完工记录到今天，至少30天） */
+function actualDays(): number {
+  if (rangeDays.value > 0) return rangeDays.value
+  const recs = doneData.value.records
+  if (!recs.length) return 30
+  const earliest = recs[recs.length - 1].day // records 按日倒序，末位最早
+  const span = Math.ceil((Date.now() - new Date(earliest).getTime()) / 86400000) + 1
+  return Math.max(span, 30)
+}
 function buildOption() {
+  const n = actualDays()
   const days: string[] = []
   const counts: number[] = []
   const d = new Date()
-  d.setDate(d.getDate() - 29)
-  for (let i = 0; i < 30; i++) {
+  d.setDate(d.getDate() - (n - 1))
+  for (let i = 0; i < n; i++) {
     const day = derive.localDay(d)
     days.push(day)
     counts.push(countOf(day))
@@ -146,7 +163,12 @@ function buildOption() {
     return Math.round((s / 7) * 10) / 10
   })
   return {
-    grid: { left: 40, right: 16, top: 30, bottom: 26 },
+    grid: { left: 40, right: 16, top: 30, bottom: n > 90 ? 46 : 26 },
+    // 长档位加缩放：滚轮/捏合可缩放（inside），超90天再给底部滑条
+    dataZoom: [
+      { type: 'inside' },
+      ...(n > 90 ? [{ type: 'slider', height: 16, bottom: 4 }] : []),
+    ],
     tooltip: {
       trigger: 'axis',
       backgroundColor: '#1a2029', borderColor: '#2a3341', textStyle: { color: '#e6edf3' },
@@ -185,7 +207,7 @@ const { el, update } = useEchart(buildOption, (chart) =>
     if (q.name) selectedDay.value = q.name
   }),
 )
-watch([byDay], update)
+watch([byDay, rangeDays], update)
 </script>
 
 <template>
@@ -256,9 +278,20 @@ watch([byDay], update)
       </div>
     </div>
 
-    <!-- 近30天柱状图 -->
+    <!-- 完工趋势柱状图（档位可切） -->
     <div class="card block">
-      <div class="block-t">近 30 天完工趋势 <span class="muted small">绿柱=当日完工卡 · 蓝虚线=7日均 · 点柱子看明细</span></div>
+      <div class="block-t">
+        完工趋势
+        <span class="muted small">绿柱=当日完工卡 · 蓝虚线=7日均 · 点柱子看明细 · 滚轮可缩放</span>
+        <span class="spacer" />
+        <div class="scope">
+          <button
+            v-for="r in RANGES" :key="r.days"
+            class="seg" :class="{ on: rangeDays === r.days }"
+            @click="rangeDays = r.days"
+          >{{ r.label }}</button>
+        </div>
+      </div>
       <div class="chart" ref="el" />
     </div>
 
