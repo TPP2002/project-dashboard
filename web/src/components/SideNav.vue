@@ -9,6 +9,7 @@ const NAV: NavItem[] = [
   { to: '/approvals', icon: '❓', title: '待拍板', badge: 'pending' },
   { to: '/toland', icon: '🚀', title: '待落地', badge: 'unlanded' },
   { to: '/daily', icon: '📆', title: '每日成果', badge: 'today' },
+  { to: '/insights', icon: '📊', title: '洞察' },
   { to: '/history', icon: '🗂️', title: '拍板历史' },
   { sep: '视图' },
   { to: '/activity', icon: '📜', title: '活动流' },
