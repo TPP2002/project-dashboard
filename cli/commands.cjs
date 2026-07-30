@@ -13,7 +13,13 @@ const { normalizeReal } = require('../core/safePath.cjs');
 const { withLock } = require('../core/lock.cjs');
 
 // ---------- helpers ----------
-const today = () => new Date().toISOString().slice(0, 10);
+// today = 本地时区日期。旧版用 toISOString()(UTC)——北京凌晨 0:00-7:59 的完工/开工/拍板
+// 全被记成前一天（体检 B3）。activity 时间戳仍存 ISO UTC（精确时刻，展示端自行转本地）。
+const today = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
 const nowIso = () => new Date().toISOString();
 function need(v, usage) { if (v === undefined || v === true || v === '') throw new Error('缺参数。用法: ' + usage); return v; }
 function asArray(v) { return v === undefined ? [] : Array.isArray(v) ? v : [v]; }

@@ -14,7 +14,11 @@ const pid = computed(() => store.currentProjectId || '')
 const showDone = ref(false)
 const doneCount = computed(() => (board.value?.tasks ?? []).filter((t) => DONE_STATUSES.has(t.status)).length)
 const columns = computed(() => derive.groupByStatus(board.value)
-  .filter((c) => c.tasks.length > 0 && (showDone.value || !DONE_STATUSES.has(c.status))))
+  .filter((c) => c.tasks.length > 0 && (showDone.value || !DONE_STATUSES.has(c.status)))
+  // 完工泳道按完工日倒序（最新完工在最上面），找"最近干完的那张"不用翻全列（体检 U2）
+  .map((c) => DONE_STATUSES.has(c.status)
+    ? { ...c, tasks: [...c.tasks].sort((a, b) => (b.dates?.done || '').localeCompare(a.dates?.done || '')) }
+    : c))
 const prog = computed(() => derive.progress(board.value))
 </script>
 

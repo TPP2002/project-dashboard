@@ -2,12 +2,13 @@
 import { useBoardStore } from '@/stores/board'
 
 const store = useBoardStore()
-interface NavItem { to?: string; icon?: string; title?: string; badge?: 'pending' | 'unlanded'; sep?: string }
+interface NavItem { to?: string; icon?: string; title?: string; badge?: 'pending' | 'unlanded' | 'today'; sep?: string }
 const NAV: NavItem[] = [
   { to: '/overview', icon: '🏠', title: '总览' },
   { to: '/kanban', icon: '📋', title: '看板' },
   { to: '/approvals', icon: '❓', title: '待拍板', badge: 'pending' },
   { to: '/toland', icon: '🚀', title: '待落地', badge: 'unlanded' },
+  { to: '/daily', icon: '📆', title: '每日成果', badge: 'today' },
   { to: '/history', icon: '🗂️', title: '拍板历史' },
   { sep: '视图' },
   { to: '/activity', icon: '📜', title: '活动流' },
@@ -30,10 +31,11 @@ const NAV: NavItem[] = [
         <span class="tt">{{ it.title }}</span>
         <span v-if="it.badge === 'pending' && store.pendingCount" class="cnt">{{ store.pendingCount }}</span>
         <span v-if="it.badge === 'unlanded' && store.unlandedCount" class="cnt cnt-blue">{{ store.unlandedCount }}</span>
+        <span v-if="it.badge === 'today' && store.todayDoneCount" class="cnt cnt-green">{{ store.todayDoneCount }}</span>
       </router-link>
     </template>
     <div class="spacer" />
-    <div class="foot mono">v0.1 · 全局看板</div>
+    <div class="foot mono">v1.0 · 全局看板</div>
   </aside>
 </template>
 
@@ -70,6 +72,7 @@ const NAV: NavItem[] = [
   line-height: 16px;
 }
 .cnt-blue { background: #4c8ce0; color: #fff; }
+.cnt-green { background: var(--ok); color: #fff; }
 .sep { font-size: 11px; color: var(--muted-2); padding: 10px 10px 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 .foot { font-size: 10px; color: var(--muted-2); padding: 8px 10px; }
 </style>

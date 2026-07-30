@@ -1,6 +1,8 @@
 <script setup lang="ts">
-// 全局活动流：跨项目 activity 合并倒序 + 项目/类型筛选。点条目开对应任务抽屉。
-import { ref, computed } from 'vue'
+// 全局活动流：跨项目 activity 合并倒序 + 项目/类型筛选 + 分页加载。点条目开对应任务抽屉。
+// 修复（体检 B1/B2）：旧版先截断 60 条再筛选，筛"done"看不到历史记录、类型下拉也不全；
+// 现在筛选作用于全量（数千条纯内存过滤毫秒级），显示端分页防 DOM 过大。
+import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { fmtDateTime, relTime } from '@/utils/format'
 import type { ActivityWithProject } from '@/utils/derive'
@@ -8,17 +10,24 @@ import type { ActivityWithProject } from '@/utils/derive'
 const store = useBoardStore()
 const fType = ref('')
 const fProj = ref('')
+const PAGE = 100
+const shown = ref(PAGE)
 
 const TYPE_EMOJI: Record<string, string> = {
   claim: '🙋', progress: '📈', pending: '❓', decide: '✅',
   done: '🏁', park: '🚫', block: '⛔', note: '📝',
 }
 const types = computed(() => [...new Set(store.globalActivity.map((a) => a.type).filter(Boolean))] as string[])
-const list = computed(() =>
+const filtered = computed(() =>
   store.globalActivity.filter(
     (a) => (!fType.value || a.type === fType.value) && (!fProj.value || a.projectId === fProj.value),
   ),
 )
+const list = computed(() => filtered.value.slice(0, shown.value))
+const hasMore = computed(() => filtered.value.length > shown.value)
+// 换筛选条件时回到第一页
+watch([fType, fProj], () => { shown.value = PAGE })
+const keyOf = (a: ActivityWithProject, i: number) => `${a.projectId}|${a.ts}|${a.taskId ?? ''}|${i}`
 function open(a: ActivityWithProject) {
   if (a.taskId) store.openTask(a.taskId, a.projectId)
 }
@@ -28,7 +37,7 @@ function open(a: ActivityWithProject) {
   <div>
     <div class="head">
       <h2>📜 活动流</h2>
-      <span class="pill">{{ list.length }} 条</span>
+      <span class="pill">{{ filtered.length }} 条{{ hasMore ? ` · 已显示 ${list.length}` : '' }}</span>
       <span class="spacer" />
       <select v-model="fProj" class="sel">
         <option value="">全部项目</option>
@@ -43,7 +52,7 @@ function open(a: ActivityWithProject) {
     <div v-if="!list.length" class="empty card"><div class="big">📭</div><div>暂无活动。</div></div>
 
     <div class="tl card" v-else>
-      <div v-for="(a, i) in list" :key="i" class="item" :class="{ clickable: a.taskId }" @click="open(a)">
+      <div v-for="(a, i) in list" :key="keyOf(a, i)" class="item" :class="{ clickable: a.taskId }" @click="open(a)">
         <span class="ic">{{ TYPE_EMOJI[a.type || ''] || '·' }}</span>
         <div class="main">
           <div class="text">{{ a.text }}</div>
@@ -56,6 +65,9 @@ function open(a: ActivityWithProject) {
           </div>
         </div>
       </div>
+      <button v-if="hasMore" class="btn more" @click="shown += PAGE">
+        ↓ 加载更早的 {{ Math.min(PAGE, filtered.length - shown) }} 条（还剩 {{ filtered.length - shown }} 条）
+      </button>
     </div>
   </div>
 </template>
@@ -76,4 +88,5 @@ function open(a: ActivityWithProject) {
 .meta .proj { color: var(--accent); }
 .meta .tid { color: var(--muted); }
 .meta .rel { color: var(--muted); }
+.more { margin: 8px; align-self: center; }
 </style>

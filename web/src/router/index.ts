@@ -10,6 +10,7 @@ const routes = [
   { path: '/approvals', name: 'approvals', component: () => import('@/views/ApprovalCenter.vue'), meta: { title: '待拍板', icon: '❓' } },
   { path: '/toland', name: 'toland', component: () => import('@/views/ToLand.vue'), meta: { title: '待落地', icon: '🚀' } },
   { path: '/history', name: 'history', component: () => import('@/views/DecisionHistory.vue'), meta: { title: '拍板历史', icon: '📜' } },
+  { path: '/daily', name: 'daily', component: () => import('@/views/DailyOutput.vue'), meta: { title: '每日成果', icon: '📆' } },
   // 增强视图（MVP 后逐步填充；懒加载）
   { path: '/activity', name: 'activity', component: () => import('@/views/ActivityFeed.vue'), meta: { title: '活动流', icon: '📜' } },
   { path: '/risk', name: 'risk', component: () => import('@/views/RiskPanel.vue'), meta: { title: '风险', icon: '⚠️' } },
