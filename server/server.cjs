@@ -32,6 +32,7 @@ const { execFile } = require('child_process');
 const { resolveProject, readRegistry, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
+const cpuBudget = require('../core/cpuBudget.cjs');
 
 // ============ 常量 ============
 
@@ -299,6 +300,40 @@ function readBody(req, maxBytes, cb) {
   });
   req.on('end', () => finish(null, Buffer.concat(chunks).toString('utf8')));
   req.on('error', (e) => finish(e));
+}
+
+/**
+ * 本机算力账本快照(GET /api/cpu)。
+ * 只读账本文件,不动任何进程;看板据此显示"当前谁占了多少核、还剩多少"。
+ */
+function handleCpuStatus(req, res) {
+  try { return sendJson(res, 200, { ok: true, cpu: cpuBudget.cpuStatus() }); }
+  catch (e) { return sendJson(res, 500, { ok: false, error: '读算力账本失败：' + (e && e.message) }); }
+}
+
+/**
+ * 设置/释放负责人预留(POST /api/cpu,body: { cores, minutes? })。
+ *
+ * 写的就是账本里一条普通占用记录,所有跑测试的进程下次启动读到它就自动让路——
+ * 不需要通知谁、也不会打断正在跑的活(不抢已发出去的活,只影响之后启动的)。
+ * cores<=0 = 释放;minutes 给了就设到期时间,防"设了忘了释放"长期空占。
+ */
+function handleCpuReserve(req, res) {
+  readBody(req, BODY_MAX, (err, raw) => {
+    if (err) return sendJson(res, 413, { ok: false, error: err.message });
+    let body;
+    try { body = raw ? JSON.parse(raw) : {}; }
+    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+
+    const cores = Number(body.cores);
+    if (!Number.isFinite(cores)) return sendJson(res, 400, { ok: false, error: '缺 cores（要预留的核数，0=释放）' });
+    const minutes = Number(body.minutes);
+    const opts = Number.isFinite(minutes) && minutes > 0
+      ? { expiresAtMs: Date.now() + minutes * 60 * 1000 }
+      : {};
+    try { return sendJson(res, 200, { ok: true, cpu: cpuBudget.setReserve(cores, opts) }); }
+    catch (e) { return sendJson(res, 500, { ok: false, error: '写算力账本失败：' + (e && e.message) }); }
+  });
 }
 
 function handleDecide(req, res, projectId, taskId) {
@@ -725,6 +760,8 @@ const server = http.createServer((req, res) => {
       if (sub === 'board' && req.method === 'GET') return handleBoard(req, res, segs[2]);
       if (sub === 'decide' && req.method === 'POST') return handleDecide(req, res, segs[2], segs[3]);
       if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
+      if (sub === 'cpu' && req.method === 'GET') return handleCpuStatus(req, res);
+      if (sub === 'cpu' && req.method === 'POST') return handleCpuReserve(req, res);
       if (sub === 'dispatch' && req.method === 'POST') return handleDispatch(req, res);
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
