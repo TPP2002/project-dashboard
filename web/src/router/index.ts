@@ -21,6 +21,8 @@ const routes = [
   { path: '/gantt', name: 'gantt', component: () => import('@/views/Gantt.vue'), meta: { title: '甘特', icon: '📅' } },
   { path: '/deps', name: 'deps', component: () => import('@/views/DependencyGraph.vue'), meta: { title: '依赖', icon: '🕸️' } },
   { path: '/search', name: 'search', component: () => import('@/views/SearchFilter.vue'), meta: { title: '搜索', icon: '🔍' } },
+  // 算力面板:给负责人一个「我要用电脑,留点资源给我」的开关(写进全机 CPU 账本,测试自动让路)。
+  { path: '/cpu', name: 'cpu', component: () => import('@/views/CpuBudget.vue'), meta: { title: '算力', icon: '⚡' } },
 ]
 
 const router = createRouter({
