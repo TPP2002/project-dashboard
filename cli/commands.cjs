@@ -345,9 +345,22 @@ function done(flags) {
 // ---------- note（全局活动流） ----------
 function note(flags) {
   const proj = resolveProj(flags);
-  const text = need(flags.text, 'note --text <文本> [--task <id>]');
-  mutate(proj, () => {}, act('note', flags.author, text, flags.task || null));
-  return { ok: true };
+  const text = need(flags.text, 'note --text <文本> [--task <卡ID>]；卡号也可写成位置参数：note <卡ID> --text <文本>');
+  // 卡号两种写法等价。原先只读 flags.task，位置参数落进 flags._[0] 从没被碰过，
+  // 而 claim/progress/done 都吃位置参数 —— 同一个 CLI 两种约定。写成位置参数时
+  // taskId 被静默丢成 null，而 null 是假值、恰好绕过 boardSchema 的引用完整性校验
+  // （那道校验是 `if (a.taskId && !ids.has(a.taskId))`），于是不报错、退出码 0、
+  // CLI 照常打印 ✔，note 却挂在 taskId=null 上，任何卡都看不到。
+  if (flags.task === true) throw new Error('缺参数。用法: --task <卡ID>（--task 后面漏写卡号了）');
+  const 位置卡号 = (flags._ || [])[0];
+  const 标志卡号 = typeof flags.task === 'string' ? flags.task : undefined;
+  if (位置卡号 && 标志卡号 && 位置卡号 !== 标志卡号) {
+    throw new Error(`卡号写了两个且不一致：位置参数「${位置卡号}」与 --task「${标志卡号}」，只写一个`);
+  }
+  const taskId = 标志卡号 || 位置卡号 || null;
+  // 卡号打错时由 boardSchema 的引用完整性校验在写前拦下（锁内校验，坏数据绝不落盘）。
+  mutate(proj, () => {}, act('note', flags.author, text, taskId));
+  return { ok: true, taskId, text: `✔ note${taskId ? ` → ${taskId}` : ' → （项目级留言，未挂任何卡）'}` };
 }
 
 // ---------- set（通用兜底赋值） ----------

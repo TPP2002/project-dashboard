@@ -162,3 +162,76 @@ test('sync-progress 无匹配分支/无施工中任务时静默跳过、不写�
   assert.ok(r.skipped, '分支不匹配应跳过');
   clean(dir);
 });
+
+// ---------------------------------------------------------------------------
+// note 的卡号绑定（治本：静默丢弃 → 要么挂上、要么报错）
+// 病根：note 原先只读 flags.task，位置参数落进 flags._[0] 从没被碰过；
+// 而 claim/progress/done 都吃位置参数 —— 同一个 CLI 两种约定，写错不报错、
+// 退出码 0、CLI 照常打印 ✔，note 却挂在 taskId=null 上，任何卡都看不到。
+// 实测存量：某项目 1177 条 note 里 409 条（34.7%）是这样变成孤儿的。
+// ---------------------------------------------------------------------------
+
+function _notes(P) {
+  const { readBoard } = require('../cli/store.cjs');
+  const { resolveProject } = require('../core/resolveProject.cjs');
+  const proj = resolveProject(P.project, { registryPath: P.registry });
+  return readBoard(proj.board).activity.filter((a) => a.type === 'note');
+}
+
+test('note 位置参数写卡号也能挂上卡（与 claim/progress/done 约定一致）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.note({ _: ['P01'], text: '位置参数写法', ...P });
+  const n = _notes(P).filter((a) => a.text === '位置参数写法');
+  assert.equal(n.length, 1);
+  assert.equal(n[0].taskId, 'P01', 'note 的卡号被静默丢弃了');
+  clean(dir);
+});
+
+test('note --task 写法保持不变（回归）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.note({ task: 'P01', text: 'flag 写法', ...P });
+  assert.equal(_notes(P).find((a) => a.text === 'flag 写法').taskId, 'P01');
+  clean(dir);
+});
+
+test('note 卡号不存在要报错，且一条都不许落盘', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  const 之前 = _notes(P).length;
+  assert.throws(() => cmds.note({ task: 'P99', text: '打错卡号', ...P }), /P99/);
+  assert.equal(_notes(P).length, 之前, '校验失败却把 note 写进去了');
+  clean(dir);
+});
+
+test('note 位置参数与 --task 同时给且不一致要报错（防歧义）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.add({ _: ['P02'], title: 'y', ...P });
+  assert.throws(() => cmds.note({ _: ['P01'], task: 'P02', text: '两个卡号', ...P }), /P01|P02/);
+  clean(dir);
+});
+
+test('note 两处都写同一个卡号是允许的（不算歧义）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.note({ _: ['P01'], task: 'P01', text: '一致', ...P });
+  assert.equal(_notes(P).find((a) => a.text === '一致').taskId, 'P01');
+  clean(dir);
+});
+
+test('note 不给卡号仍可写项目级留言（向后兼容，taskId 为 null）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.note({ text: '项目级留言', ...P });
+  assert.equal(_notes(P).find((a) => a.text === '项目级留言').taskId, null);
+  clean(dir);
+});
+
+test('note --task 后面漏写值要报错，不许当成没给卡号', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  assert.throws(() => cmds.note({ task: true, text: '漏写值', ...P }), /task/);
+  clean(dir);
+});
