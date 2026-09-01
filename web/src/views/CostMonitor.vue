@@ -12,6 +12,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import type { Task } from '@/types'
+import CodexCostSummary from '@/components/codex/CodexCostSummary.vue'
+import type { CodexUsage, CombinedUsage, QuotaSnapshot } from '@/types/codex'
 
 interface Tally { input: number; output: number; cacheRead: number; cacheWrite: number; msgs: number }
 interface UsdRow { actual: number; noCache: number; saved: number }
@@ -29,6 +31,9 @@ interface Usage {
 
 const store = useBoardStore()
 const usage = ref<Usage | null>(null)
+const codex = ref<CodexUsage | null>(null)
+const quota = ref<QuotaSnapshot | null>(null)
+const combined = ref<CombinedUsage | null>(null)
 const days = ref(30)
 const loading = ref(false)
 const error = ref('')
@@ -44,6 +49,9 @@ async function load() {
     const body = await res.json()
     if (!body.ok) throw new Error(body.error || '读取失败')
     usage.value = body.usage
+    codex.value = body.codex
+    quota.value = body.quota
+    combined.value = body.combined
     error.value = ''
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -118,6 +126,13 @@ const agentsText = (e: { agents?: Record<string, number> }) =>
     <div v-else-if="loading && !usage" class="muted">扫描对话流水中…(首次约几秒)</div>
 
     <template v-if="usage">
+      <CodexCostSummary
+        v-if="codex && quota && combined"
+        :codex="codex"
+        :quota="quota"
+        :combined="combined"
+        :days="days"
+      />
       <!-- 统计卡 -->
       <div class="cards">
         <div class="card"><div class="c-num">{{ fmt(usage.totals.output) }}</div><div class="c-lbl">期间输出 token(最贵的那类)</div></div>

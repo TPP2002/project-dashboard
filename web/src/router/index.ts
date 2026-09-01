@@ -25,6 +25,7 @@ const routes = [
   { path: '/cpu', name: 'cpu', component: () => import('@/views/CpuBudget.vue'), meta: { title: '算力', icon: '⚡' } },
   // 成本监管:本机对话流水的真实 token 消耗(按天/按模型/主·子agent)+ 各卡施工成本登记(0901)。
   { path: '/cost', name: 'cost', component: () => import('@/views/CostMonitor.vue'), meta: { title: '成本', icon: '💰' } },
+  { path: '/codex', name: 'codex', component: () => import('@/views/CodexPanel.vue'), meta: { title: 'Codex', icon: '🤖' } },
 ]
 
 const router = createRouter({

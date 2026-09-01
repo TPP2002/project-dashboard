@@ -1,7 +1,37 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import type { QuotaSnapshot } from '@/types/codex'
 
 const store = useBoardStore()
+const quota = ref<QuotaSnapshot | null>(null)
+const quotaLoading = ref(false)
+let quotaTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadQuota() {
+  if (document.visibilityState !== 'visible' || quotaLoading.value) return
+  quotaLoading.value = true
+  try {
+    const response = await fetch('/api/codex/quota')
+    if (response.ok) quota.value = await response.json() as QuotaSnapshot
+  } catch (_) { /* 全局提示条保持“未知”，不干扰其它导航。 */ }
+  finally { quotaLoading.value = false }
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') loadQuota()
+}
+
+onMounted(() => {
+  loadQuota()
+  quotaTimer = setInterval(loadQuota, 60_000)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+})
+onUnmounted(() => {
+  if (quotaTimer) clearInterval(quotaTimer)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
+
 interface NavItem { to?: string; icon?: string; title?: string; badge?: 'pending' | 'unlanded' | 'today'; sep?: string }
 const NAV: NavItem[] = [
   { to: '/overview', icon: '🏠', title: '总览' },
@@ -13,6 +43,7 @@ const NAV: NavItem[] = [
   { to: '/history', icon: '🗂️', title: '拍板历史' },
   { to: '/cpu', icon: '⚡', title: '算力' },
   { to: '/cost', icon: '💰', title: '成本' },
+  { to: '/codex', icon: '🤖', title: 'Codex' },
   { sep: '视图' },
   { to: '/activity', icon: '📜', title: '活动流' },
   { to: '/risk', icon: '⚠️', title: '风险' },
@@ -38,6 +69,15 @@ const NAV: NavItem[] = [
       </router-link>
     </template>
     <div class="spacer" />
+    <router-link
+      to="/codex"
+      class="quota-strip"
+      :title="quota?.sampledAt ? `上次 Codex 活动快照：${new Date(quota.sampledAt).toLocaleString()}` : '尚无 Codex 额度快照'"
+    >
+      <i class="quota-dot" :class="quota?.band || 'unknown'" />
+      <span>Codex 额度</span>
+      <b>{{ quota?.usedPercent == null ? '未知' : quota.usedPercent + '%' }}</b>
+    </router-link>
     <div class="foot mono">v1.0 · 全局看板</div>
   </aside>
 </template>
@@ -77,5 +117,13 @@ const NAV: NavItem[] = [
 .cnt-blue { background: #4c8ce0; color: #fff; }
 .cnt-green { background: var(--ok); color: #fff; }
 .sep { font-size: 11px; color: var(--muted-2); padding: 10px 10px 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.quota-strip { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--muted); font-size: 10px; }
+.quota-strip:hover { background: var(--panel); color: var(--text); text-decoration: none; }
+.quota-strip span { flex: 1; }
+.quota-strip b { font-family: var(--mono); }
+.quota-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--muted-2); }
+.quota-dot.green { background: var(--ok); }
+.quota-dot.yellow { background: var(--warn); }
+.quota-dot.red { background: var(--danger); }
 .foot { font-size: 10px; color: var(--muted-2); padding: 8px 10px; }
 </style>
