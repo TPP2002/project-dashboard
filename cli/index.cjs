@@ -76,6 +76,17 @@ function main() {
   if (typeof fn !== 'function') { console.error(`✖ 命令 ${cmd} 尚未实现（${entry[0]} 未导出 ${entry[1]}）`); process.exit(3); }
 
   const flags = parseFlags(rest);
+  // ADD-MODEL-GATE(0901 负责人拍板):命令行建卡必须标建议档位——纪律靠自觉必失守,机器闸兜底。
+  // 只拦 CLI 入口;内部编程调用 cmds.add(importCmd 历史导入/docsAudit 自动巡检卡/测试)不经此处。
+  if (cmd === 'add' && (flags.model === undefined || flags.model === true || String(flags.model).trim() === '')) {
+    console.error('✖ 建卡必须带 --model <建议档位>(0901 拍板,机器闸)。按模型路由表(skill §12.2)照抄一个:\n' +
+      '  机械执行/清单/一行修 → --model "sonnet·低"\n' +
+      '  照单施工/接线/修复   → --model "opus·中"\n' +
+      '  设计/评审/校准/疑难  → --model "fable·高"\n' +
+      '  负责人亲办不开对话   → --model "负责人本人办"\n' +
+      '  (编排型可组合,如 "fable·高编排+opus施工";≤40 字符)');
+    process.exit(1);
+  }
   try {
     const res = fn(flags) || { ok: true };
     if (flags.json) console.log(JSON.stringify(res));
