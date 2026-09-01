@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 多项目总览：进度环 / 状态计数 / 最近动态 / 待拍板告警。首屏，纯 SVG 进度环、无 echarts。
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
@@ -12,6 +12,21 @@ import type { Board } from '@/types'
 const store = useBoardStore()
 const router = useRouter()
 const boards = computed(() => store.allBoards)
+
+// 当前项目近 30 天成本摘要(API 牌价等价折算;拉不到就静默不显示)
+const costSum = ref<{ output: number; actual: number; saved: number } | null>(null)
+async function loadCost() {
+  const pid = store.currentProjectId
+  if (!pid) return
+  try {
+    const res = await fetch(`/api/cost?project=${encodeURIComponent(pid)}&days=30`)
+    const body = await res.json()
+    if (body.ok) costSum.value = { output: body.usage.totals.output, actual: body.usage.usd.actual, saved: body.usage.usd.saved }
+  } catch { costSum.value = null }
+}
+onMounted(loadCost)
+watch(() => store.currentProjectId, loadCost)
+const fmtWan = (n: number) => (n >= 1e8 ? (n / 1e8).toFixed(1) + '亿' : n >= 1e4 ? (n / 1e4).toFixed(0) + '万' : String(n))
 
 const totals = computed(() => {
   let total = 0
@@ -61,6 +76,10 @@ function open(b: Board) {
       </div>
       <div class="sum" :class="{ hot: totals.pending }">
         <b>{{ totals.pending }}</b><span>待拍板</span>
+      </div>
+      <div v-if="costSum" class="sum sum-link" title="当前项目近30天:输出 token / API牌价折算 / 缓存净省(点击看成本页)" @click="router.push('/cost')">
+        <b class="cost-b">{{ fmtWan(costSum.output) }}<i class="cost-usd">≈${{ Math.round(costSum.actual).toLocaleString() }} · 省${{ Math.round(costSum.saved).toLocaleString() }}</i></b>
+        <span>💰 本月成本 →</span>
       </div>
     </div>
 
@@ -118,6 +137,8 @@ function open(b: Board) {
 .sum-link { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
 .sum-link:hover { border-color: var(--ok); transform: translateY(-1px); }
 .sum-link.lit { border-color: rgba(46, 160, 67, 0.5); box-shadow: 0 0 12px rgba(46, 160, 67, 0.12); }
+.cost-b { display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
+.cost-usd { font-style: normal; font-size: 11px; font-weight: 500; color: var(--muted); }
 .pc-today {
   font-size: 11px; font-weight: 600; color: var(--ok); vertical-align: 2px;
   background: rgba(46, 160, 67, 0.14); border: 1px solid rgba(46, 160, 67, 0.4);

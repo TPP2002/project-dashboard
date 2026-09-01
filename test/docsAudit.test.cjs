@@ -75,3 +75,19 @@ test('docs-audit:三桶全空时不建卡', () => {
   assert.match(r.text, /三桶全空,本月无需巡检卡/);
   clean(dir);
 });
+
+test('docs-audit --monthly-tick:首跑记账,30天内秒退,状态文件顺延', () => {
+  const { dir, root, P } = setup();
+  md(root, 'plans/x.md', '裸文档');
+  const r1 = docsAudit({ ...P, 'monthly-tick': true });
+  assert.match(r1.text, /节拍已记账/);
+  const statePath = path.join(root, '.dashboard', 'docs-audit-state.json');
+  assert.ok(fs.existsSync(statePath), '状态文件应落盘');
+  const r2 = docsAudit({ ...P, 'monthly-tick': true });
+  assert.match(r2.text, /未到期.*0 天前/);
+  // 把 lastSuccessAt 拨回 31 天前 → 应到期真跑
+  fs.writeFileSync(statePath, JSON.stringify({ lastSuccessAt: new Date(Date.now() - 31 * 86400000).toISOString() }));
+  const r3 = docsAudit({ ...P, 'monthly-tick': true });
+  assert.match(r3.text, /节拍已记账/, '拨回31天后应再次真跑');
+  clean(dir);
+});

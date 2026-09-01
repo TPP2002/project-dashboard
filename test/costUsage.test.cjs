@@ -36,6 +36,14 @@ test('cost 登记追加 entries 且各字段落地', () => {
   clean(dir);
 });
 
+test('add --model 建议档位落卡,超长被拒', () => {
+  const { dir, P } = setup();
+  const r = cmds.add({ _: ['M1'], title: 'x', model: 'sonnet·低', ...P });
+  assert.equal(r.task.modelHint, 'sonnet·低');
+  assert.throws(() => cmds.add({ _: ['M2'], title: 'x', model: 'x'.repeat(41), ...P }), /太长/);
+  clean(dir);
+});
+
 test('cost 同模型重复段累加、非法格式与负 tokens 被拒', () => {
   const { dir, P } = setup();
   cmds.add({ _: ['P01'], title: 'x', ...P });
@@ -115,4 +123,24 @@ test('getUsage:前缀匹配 worktree 目录、分桶聚合、坏行跳过、增�
 test('mapRepoToPrefix:非字母数字一律变 -(与 Claude Code 目录编码一致)', () => {
   assert.equal(mapRepoToPrefix('F:\\stock-rogue'), 'F--stock-rogue');
   assert.equal(mapRepoToPrefix('C:\\Users\\Administrator\\Documents\\自动化求职'), 'C--Users-Administrator-Documents------');
+});
+
+test('getUsage:美元折算(缓存价生效,无TTL细分保守归1h桶)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usd-'));
+  const root = path.join(dir, 'projects');
+  fs.mkdirSync(path.join(root, 'Z--p'), { recursive: true });
+  const ts = new Date().toISOString();
+  // fable 牌价 in$10/out$50:input10 + cacheRead1000 + cacheWrite50(无细分→1h桶×2) + output100
+  fs.writeFileSync(path.join(root, 'Z--p', 'a.jsonl'),
+    jsonlLine({ ts, model: 'claude-fable-5', input: 10, output: 100, cacheRead: 1000, cacheWrite: 50 }));
+  const r = await getUsage({ prefix: 'Z--p', days: 30, projectsRoot: root, cachePath: path.join(dir, 'c.json') });
+  assert.equal(r.totals.cw1h, 50, '无细分应全归 1h 桶');
+  assert.equal(r.totals.cw5m, 0);
+  // actual = (10×10 + 1000×0.1×10 + 50×2×10 + 100×50)/1e6 = 0.0071
+  assert.ok(Math.abs(r.usd.actual - 0.0071) < 1e-9, `actual=${r.usd.actual}`);
+  // noCache = ((10+1000+50)×10 + 100×50)/1e6 = 0.0156
+  assert.ok(Math.abs(r.usd.noCache - 0.0156) < 1e-9, `noCache=${r.usd.noCache}`);
+  assert.ok(Math.abs(r.usd.saved - 0.0085) < 1e-9, `saved=${r.usd.saved}`);
+  assert.ok(r.byDay[0].usdActual > 0, '按天也应带折算');
+  clean(dir);
 });

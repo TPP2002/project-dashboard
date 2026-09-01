@@ -37,10 +37,11 @@ const stale = () => {
         {{ stale() ? '⚠ ' : '' }}{{ relTime(lastProgressAt()) }}
       </span>
     </div>
-    <div class="row gap-2 wrap meta" v-if="(task.gitBranch?.length || task.prNumbers?.length || task.wave)">
+    <div class="row gap-2 wrap meta" v-if="(task.gitBranch?.length || task.prNumbers?.length || task.wave || task.modelHint)">
       <span v-for="b in task.gitBranch || []" :key="b" class="pill">🌿 {{ b }}</span>
       <span v-for="p in task.prNumbers || []" :key="p" class="pill">PR #{{ p }}</span>
       <span v-if="task.wave" class="pill">W{{ task.wave }}</span>
+      <span v-if="task.modelHint" class="pill model-hint" :title="'建议施工档位:' + task.modelHint">🤖 {{ task.modelHint }}</span>
     </div>
   </div>
 </template>
@@ -58,4 +59,5 @@ const stale = () => {
 .pct { font-size: 11px; color: var(--muted); min-width: 30px; text-align: right; }
 .prog-time { font-size: 10px; color: var(--muted-2); white-space: nowrap; }
 .prog-time.stale { color: var(--warn); }
+.model-hint { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-soft); }
 </style>

@@ -109,6 +109,7 @@ onUnmounted(() => {
             <!-- 元信息 -->
             <section class="sec">
               <div class="kv" v-if="task.wave"><span>波次</span><b>W{{ task.wave }}</b></div>
+              <div class="kv" v-if="task.modelHint"><span>建议档位</span><b>🤖 {{ task.modelHint }}</b></div>
               <div class="kv" v-if="task.dates?.design"><span>设计</span><b>{{ task.dates.design }}</b></div>
               <div class="kv" v-if="task.dates?.start"><span>开工</span><b>{{ task.dates.start }}</b></div>
               <div class="kv" v-if="task.dates?.done"><span>完工</span><b>{{ task.dates.done }}</b></div>
