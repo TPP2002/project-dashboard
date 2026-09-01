@@ -399,4 +399,30 @@ function show(flags) {
   return { ok: true, text: JSON.stringify(findTask(b, id), null, 2) };
 }
 
-module.exports = { register, add, claim, progress, syncProgress, pending, decide, markLanded, park, block, done, note, set, list, show, deriveStats };
+// ---------- cost(施工成本登记:每卡记录用了哪些 agent/模型档;BOARD-COST-MONITOR 0901)----------
+function cost(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'cost <taskId> --agents "<模型:个数,…>" [--tokens <n>] [--note <一句话>]');
+  const agentsRaw = need(flags.agents, '--agents "<模型:个数,…>"(如 "sonnet:3,opus:1";纯主对话施工写 "main:1")');
+  const agents = {};
+  for (const part of String(agentsRaw).split(',')) {
+    const m = part.trim().match(/^([A-Za-z0-9._-]+):(\d+)$/);
+    if (!m) throw new Error(`--agents 格式非法:「${part.trim()}」应为 模型:个数(如 sonnet:3)`);
+    agents[m[1]] = (agents[m[1]] || 0) + parseInt(m[2], 10);
+  }
+  const tokens = flags.tokens !== undefined ? parseInt(flags.tokens, 10) : undefined;
+  if (flags.tokens !== undefined && (!Number.isInteger(tokens) || tokens < 0)) throw new Error('--tokens 应为非负整数');
+  const entry = { date: today(), author: flags.author || 'cli', agents };
+  if (tokens !== undefined) entry.tokens = tokens;
+  if (flags.note) entry.note = String(flags.note);
+  const agentsText = Object.entries(agents).map(([k, v]) => `${k}×${v}`).join(' + ');
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, id);
+    t.cost = t.cost || { entries: [] };
+    if (!Array.isArray(t.cost.entries)) t.cost.entries = [];
+    t.cost.entries.push(entry);
+  }, act('cost', flags.author, `登记施工成本 ${id}：${agentsText}${tokens !== undefined ? '，约 ' + tokens + ' tokens' : ''}`, id));
+  return okTask(board, id);
+}
+
+module.exports = { register, add, claim, progress, syncProgress, pending, decide, markLanded, park, block, done, note, set, list, show, cost, deriveStats };

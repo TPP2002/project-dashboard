@@ -7,3 +7,4 @@ approvals/
 status-drafts/
 *.lock
 *.exe
+data/costUsageCache.json

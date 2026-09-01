@@ -36,6 +36,20 @@ export interface TaskDates {
 // docs 兼容"纯路径字符串"与"{title,path}"两种形态
 export type DocRef = string | { title?: string; path: string }
 
+/** 施工成本登记(CLI `cost` 命令写入;BOARD-COST-MONITOR 0901) */
+export interface CostEntry {
+  date: string
+  author?: string
+  /** 模型档 → 个数,如 { sonnet: 3, opus: 1 } 或主对话直施的 { fable: 1 } */
+  agents?: Record<string, number>
+  /** 可选:自报的大约 token 数 */
+  tokens?: number
+  note?: string
+}
+export interface TaskCost {
+  entries?: CostEntry[]
+}
+
 export interface Task {
   id: string
   title: string
@@ -61,6 +75,8 @@ export interface Task {
   docs?: DocRef[]
   /** CLI progress 时更新的进度时间戳（施工中卡的"多久没动了"提醒用） */
   lastProgressAt?: string
+  /** 施工成本登记(每卡用了哪些 agent/模型档) */
+  cost?: TaskCost
 }
 
 export interface Activity {

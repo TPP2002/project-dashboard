@@ -40,6 +40,7 @@ const REGISTRY = {
   park: ['./commands.cjs', 'park'], block: ['./commands.cjs', 'block'],
   done: ['./commands.cjs', 'done'], note: ['./commands.cjs', 'note'],
   set: ['./commands.cjs', 'set'], list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
+  cost: ['./commands.cjs', 'cost'],
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
   'mark-landed': ['./commands.cjs', 'markLanded'],
   'sync-progress': ['./commands.cjs', 'syncProgress'],

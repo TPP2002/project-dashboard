@@ -33,6 +33,7 @@ const { resolveProject, readRegistry, REGISTRY_PATH } = require('../core/resolve
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const cpuBudget = require('../core/cpuBudget.cjs');
+const costUsage = require('../core/costUsage.cjs');
 
 // ============ 常量 ============
 
@@ -309,6 +310,22 @@ function readBody(req, maxBytes, cb) {
 function handleCpuStatus(req, res) {
   try { return sendJson(res, 200, { ok: true, cpu: cpuBudget.cpuStatus() }); }
   catch (e) { return sendJson(res, 500, { ok: false, error: '读算力账本失败：' + (e && e.message) }); }
+}
+
+/**
+ * token 成本聚合(GET /api/cost?project=<id>&days=<n>)。
+ * 读 ~/.claude/projects 下该项目(含其 worktree 目录)的对话流水,按天/按模型/主·子agent聚合;
+ * 订阅套餐看不到美元,这里给的是本机流水里的真实 token 数(BOARD-COST-MONITOR,0901)。
+ */
+function handleCostUsage(req, res, query) {
+  const pid = String(query.project || '');
+  const proj = resolveProjectSafe(pid);
+  if (!proj) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
+  const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
+  const prefix = costUsage.mapRepoToPrefix(proj.mainRepo);
+  return costUsage.getUsage({ prefix, days })
+    .then((usage) => sendJson(res, 200, { ok: true, usage }))
+    .catch((e) => sendJson(res, 500, { ok: false, error: '聚合成本失败：' + (e && e.message) }));
 }
 
 /**
@@ -762,6 +779,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
       if (sub === 'cpu' && req.method === 'GET') return handleCpuStatus(req, res);
       if (sub === 'cpu' && req.method === 'POST') return handleCpuReserve(req, res);
+      if (sub === 'cost' && req.method === 'GET') return handleCostUsage(req, res, parsed.query || {});
       if (sub === 'dispatch' && req.method === 'POST') return handleDispatch(req, res);
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
