@@ -70,8 +70,23 @@ function daysSince(dateStr) {
 
 function docsAudit(flags) {
   const pid = flags.project;
-  if (!pid || pid === true) throw new Error('缺参数。用法: docs-audit --project <id> [--create-card] [--stale-days 30] [--recheck-days 90]');
+  if (!pid || pid === true) throw new Error('缺参数。用法: docs-audit --project <id> [--create-card] [--monthly-tick] [--stale-days 30] [--recheck-days 90]');
   const proj = resolveProject(pid, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
+
+  // --monthly-tick:月度节拍器(给计划任务用,幂等可反复触发)。
+  // 距上次成功巡检不足 30 天 → 秒退零成本;到期才真跑,成功后写 lastSuccessAt ⇒ 下次自动从成功日顺延 30 天。
+  // 配合计划任务「每日多个触发点 + 错过开机补跑」= 负责人要的「没开机就下次试、失败当日重试、成功即顺延」。
+  const statePath = path.join(path.dirname(proj.board), 'docs-audit-state.json');
+  if (flags['monthly-tick']) {
+    let st = null;
+    try { st = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch (_) { /* 无状态 = 从未成功跑过 → 到期 */ }
+    if (st && st.lastSuccessAt) {
+      const days = (Date.now() - new Date(st.lastSuccessAt).getTime()) / 86400000;
+      if (days < 30) {
+        return { ok: true, text: `月度巡检未到期(上次成功 ${st.lastSuccessAt.slice(0, 10)},${Math.floor(days)} 天前;满 30 天后触发)` };
+      }
+    }
+  }
   const staleDays = parseInt(flags['stale-days'], 10) || 30;
   const recheckDays = parseInt(flags['recheck-days'], 10) || 90;
   const docsRoot = path.join(proj.mainRepo, 'docs');
@@ -146,6 +161,16 @@ function docsAudit(flags) {
         author: 'docs-audit',
       });
       L.push(`已建巡检卡 ${cardId}(未开工,待派发)`);
+    }
+  }
+
+  // monthly-tick 走到这里 = 本次巡检真跑成功 → 记账,下个节拍从今天顺延 30 天
+  if (flags['monthly-tick']) {
+    try {
+      fs.writeFileSync(statePath, JSON.stringify({ lastSuccessAt: new Date().toISOString() }), 'utf8');
+      L.push(`节拍已记账:下次月度巡检自 ${new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)} 起触发`);
+    } catch (e) {
+      L.push(`⚠ 节拍状态写入失败(${e.message})——下次触发会再跑一遍,不丢巡检只多跑`);
     }
   }
   return { ok: true, text: L.join('\n') };

@@ -77,6 +77,8 @@ export interface Task {
   lastProgressAt?: string
   /** 施工成本登记(每卡用了哪些 agent/模型档) */
   cost?: TaskCost
+  /** 建议施工档位(建卡时由梳理对话按路由表标注,如 "sonnet·低" / "fable·max") */
+  modelHint?: string
 }
 
 export interface Activity {

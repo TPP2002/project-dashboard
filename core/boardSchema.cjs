@@ -83,6 +83,9 @@ function validateTask(t, p, errs, ids) {
     if (d.decidedAt && !DATE.test(d.decidedAt)) errs.push(`${dp}.decidedAt: 日期格式错误`);
   });
   if (t.deps !== undefined && !isType(t.deps, 'object')) errs.push(`${p}.deps: 应为对象`);
+  if (t.modelHint !== undefined && (!isType(t.modelHint, 'string') || t.modelHint.length > 40)) {
+    errs.push(`${p}.modelHint: 应为 ≤40 字符的字符串(建议施工档位,如 "sonnet·低")`);
+  }
   if (t.cost !== undefined) {
     if (!isType(t.cost, 'object')) errs.push(`${p}.cost: 应为对象`);
     else if (t.cost.entries !== undefined) {

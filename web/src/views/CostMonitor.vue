@@ -14,11 +14,13 @@ import { useBoardStore } from '@/stores/board'
 import type { Task } from '@/types'
 
 interface Tally { input: number; output: number; cacheRead: number; cacheWrite: number; msgs: number }
-interface DayRow { date: string; models: Record<string, Tally>; side: Tally; main: Tally }
+interface UsdRow { actual: number; noCache: number; saved: number }
+interface DayRow { date: string; models: Record<string, Tally>; side: Tally; main: Tally; usdActual?: number }
 interface Usage {
   byDay: DayRow[]
   totals: Tally & { sideOutput: number; mainOutput: number; cacheHitRate: number }
   models: Record<string, Tally>
+  usd: UsdRow & { byModel: Record<string, UsdRow> }
   dirs: string[]
   scanned: number
   cachedFiles: number
@@ -58,6 +60,10 @@ function fmt(n: number): string {
   if (n >= 1e8) return (n / 1e8).toFixed(2) + ' 亿'
   if (n >= 1e4) return (n / 1e4).toFixed(1) + ' 万'
   return n.toLocaleString()
+}
+/** 美元取整千分位(数额大,分位无意义) */
+function usd0(n: number): string {
+  return Math.round(n).toLocaleString()
 }
 function shortModel(m: string): string {
   return m.replace(/^claude-/, '').replace(/-\d{8}$/, '')
@@ -116,10 +122,15 @@ const agentsText = (e: { agents?: Record<string, number> }) =>
       <div class="cards">
         <div class="card"><div class="c-num">{{ fmt(usage.totals.output) }}</div><div class="c-lbl">期间输出 token(最贵的那类)</div></div>
         <div class="card"><div class="c-num">{{ fmt(todayOutput) }}</div><div class="c-lbl">今日输出</div></div>
-        <div class="card"><div class="c-num">{{ fmt(usage.totals.cacheRead) }}</div><div class="c-lbl">缓存读(省钱的部分)</div></div>
+        <div class="card"><div class="c-num money">${{ usd0(usage.usd.actual) }}</div><div class="c-lbl">折算成本(API 牌价等价)</div></div>
+        <div class="card"><div class="c-num money-save">${{ usd0(usage.usd.saved) }}</div><div class="c-lbl">缓存净省(已扣写缓存溢价)</div></div>
         <div class="card"><div class="c-num">{{ (usage.totals.cacheHitRate * 100).toFixed(1) }}%</div><div class="c-lbl">缓存命中率</div></div>
         <div class="card"><div class="c-num">{{ sidePct }}%</div><div class="c-lbl">子 agent 输出占比</div></div>
       </div>
+      <p class="fine">
+        💡 折算口径:你实付的是订阅费——上面的美元是「同样的量若按 API 牌价直购值多少钱」的等价参考
+        (无缓存假想 ${{ usd0(usage.usd.noCache) }} − 折后 ${{ usd0(usage.usd.actual) }} = 净省 ${{ usd0(usage.usd.saved) }};牌价缓存于 2026-06,变价改 core/costUsage.cjs 的 PRICE 表)。
+      </p>
 
       <!-- 按天条形 -->
       <section class="sec">
@@ -132,6 +143,7 @@ const agentsText = (e: { agents?: Record<string, number> }) =>
             <div class="b-side" :style="{ width: (d.side.output / maxDayOutput) * 100 + '%' }" />
           </div>
           <span class="mono b-num">{{ fmt(d.main.output + d.side.output) }}</span>
+          <span class="mono b-usd" v-if="d.usdActual !== undefined">${{ usd0(d.usdActual) }}</span>
         </div>
       </section>
 
@@ -199,6 +211,10 @@ const agentsText = (e: { agents?: Record<string, number> }) =>
 .b-main { background: var(--accent); }
 .b-side { background: #7fd3c4; }
 .b-num { width: 76px; text-align: right; font-size: 12px; }
+.b-usd { width: 58px; text-align: right; font-size: 11px; color: var(--muted); }
+.money { color: var(--warn); }
+.money-save { color: var(--ok); }
+.fine { color: var(--muted-2); font-size: 11px; margin: -4px 0 0; line-height: 1.6; }
 .tbl { border-collapse: collapse; font-size: 13px; width: 100%; }
 .tbl th { text-align: left; font-size: 11px; color: var(--muted-2); font-weight: 600; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border-soft); }
 .tbl td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--border-soft); }

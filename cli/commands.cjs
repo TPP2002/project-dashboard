@@ -58,22 +58,29 @@ function register(flags) {
 // ---------- add（新建 task） ----------
 function add(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'add <taskId> --title <标题> [--status <状态>] [--wave <n>] [--desc <一句话>]');
+  const id = need(flags._[0], 'add <taskId> --title <标题> [--status <状态>] [--wave <n>] [--desc <一句话>] [--model <建议档位>]');
   const title = need(flags.title, '--title <标题>');
   const status = flags.status || '未开工';
   if (!STATUS.includes(status)) throw new Error(`--status 非法，允许: ${STATUS.join('/')}`);
+  let modelHint;
+  if (flags.model !== undefined && flags.model !== true) {
+    modelHint = String(flags.model).trim();
+    if (modelHint.length > 40) throw new Error('--model 建议档位太长(≤40 字符,如 "sonnet·低" / "opus" / "fable·max")');
+  }
   const board = mutate(proj, (b) => {
     b.tasks = b.tasks || [];
     if (b.tasks.find((t) => t.id === id)) throw new Error(`任务 ${id} 已存在`);
-    b.tasks.push({
+    const t = {
       id, title, description: flags.desc || '', status,
       percent: status === '已完工' ? 100 : 0,
       wave: flags.wave !== undefined ? parseInt(flags.wave, 10) : 0,
       dates: { design: today(), start: null, done: null },
       gitBranch: [], worktree: [], prNumbers: [], commitShas: [], decisions: [],
       deps: { dependsOn: [], blockedBy: [], relatedTasks: [] }, docs: [],
-    });
-  }, act('note', flags.author, `新建任务 ${id}：${title}`, id));
+    };
+    if (modelHint) t.modelHint = modelHint;
+    b.tasks.push(t);
+  }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}`, id));
   return okTask(board, id);
 }
 
