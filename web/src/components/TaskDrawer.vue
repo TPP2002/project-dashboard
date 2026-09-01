@@ -141,6 +141,17 @@ onUnmounted(() => {
               </div>
             </section>
 
+            <!-- 施工成本 -->
+            <section v-if="hasArr(task.cost?.entries)" class="sec block">
+              <div class="sec-t">施工成本</div>
+              <div v-for="(e, i) in task.cost!.entries" :key="i" class="cost-row">
+                <span class="mono cost-date">{{ e.date }}</span>
+                <span class="pill">{{ Object.entries(e.agents || {}).map(([m, n]) => `${m}×${n}`).join(' + ') || '—' }}</span>
+                <span v-if="e.tokens" class="pill">≈{{ e.tokens.toLocaleString() }} tok</span>
+                <span v-if="e.note" class="cost-note">{{ e.note }}</span>
+              </div>
+            </section>
+
             <!-- 依赖 / 阻塞 -->
             <section v-if="task.deps && (hasArr(task.deps.dependsOn) || hasArr(task.deps.blockedBy) || hasArr(task.deps.relatedTasks)) || task.blockReason || task.parkedNote" class="sec block">
               <div class="sec-t">依赖 / 阻塞</div>
@@ -258,6 +269,9 @@ onUnmounted(() => {
 .tl-main { flex: 1; }
 .tl-text { font-size: 13px; }
 .tl-meta { font-size: 11px; color: var(--muted-2); margin-top: 2px; }
+.cost-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.cost-date { color: var(--muted); font-size: 12px; }
+.cost-note { color: var(--muted-2); font-size: 12px; flex-basis: 100%; padding-left: 2px; }
 
 /* 抽屉过渡 */
 .drawer-enter-active, .drawer-leave-active { transition: opacity 0.2s ease; }

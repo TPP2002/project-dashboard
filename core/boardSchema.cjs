@@ -83,6 +83,18 @@ function validateTask(t, p, errs, ids) {
     if (d.decidedAt && !DATE.test(d.decidedAt)) errs.push(`${dp}.decidedAt: 日期格式错误`);
   });
   if (t.deps !== undefined && !isType(t.deps, 'object')) errs.push(`${p}.deps: 应为对象`);
+  if (t.cost !== undefined) {
+    if (!isType(t.cost, 'object')) errs.push(`${p}.cost: 应为对象`);
+    else if (t.cost.entries !== undefined) {
+      if (!Array.isArray(t.cost.entries)) errs.push(`${p}.cost.entries: 应为数组`);
+      else t.cost.entries.forEach((e, i) => {
+        const ep = `${p}.cost.entries[${i}]`;
+        if (e.date && !DATE.test(e.date)) errs.push(`${ep}.date: 日期应为 YYYY-MM-DD，实为「${e.date}」`);
+        if (e.agents !== undefined && !isType(e.agents, 'object')) errs.push(`${ep}.agents: 应为对象（模型→个数）`);
+        if (e.tokens !== undefined && (!Number.isInteger(e.tokens) || e.tokens < 0)) errs.push(`${ep}.tokens: 应为非负整数`);
+      });
+    }
+  }
   if (t.id) {
     if (ids.has(t.id)) errs.push(`${p}.id: 重复 id「${t.id}」`);
     ids.add(t.id);
