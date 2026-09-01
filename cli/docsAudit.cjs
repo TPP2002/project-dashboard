@@ -159,6 +159,7 @@ function docsAudit(flags) {
         title: `月度文档巡检 ${ym}:疑似过期 ${stale.length} + 核对过期 ${recheck.length} + 无标签 ${untagged.length}`,
         desc: `docs-audit 探雷清单(机械比对,未判内容):A 疑似该转历史 ${stale.length} 篇 / B 核对过期 ${recheck.length} 篇 / C 无标签 ${untagged.length} 篇。完整清单:${reportPath}。施工=低档对话过清单逐篇确认改标签(§5.7 口径),拿不准的登记待拍板;完毕后重跑 docs-audit 验三桶归零并销卡。`,
         author: 'docs-audit',
+        model: 'sonnet·低', // 巡检=过清单改标签的机械活,自动建卡天生带档位徽章(ADD-MODEL-GATE 配套)
       });
       L.push(`已建巡检卡 ${cardId}(未开工,待派发)`);
     }
