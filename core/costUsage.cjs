@@ -56,6 +56,26 @@ function usdNoCacheOf(t, p) {
   return ((t.input + t.cacheRead + t.cacheWrite) * p.in + t.output * p.out) / 1e6;
 }
 
+/** Claude 侧所有 token 类别的同期总量，供跨模型平均单价口径复用。 */
+function totalClaudeTokens(claudeUsage) {
+  const totals = claudeUsage && claudeUsage.totals;
+  return totals
+    ? Number(totals.input || 0) + Number(totals.output || 0)
+      + Number(totals.cacheRead || 0) + Number(totals.cacheWrite || 0)
+    : 0;
+}
+
+/** Codex token 按同期 Claude 平均 API 等价单价折算；无有效分母时不制造假数字。 */
+function estimateCodexSavings(codexTokens, claudeUsage) {
+  const tokens = Number(codexTokens);
+  const claudeTokens = totalClaudeTokens(claudeUsage);
+  const actualUsd = Number(claudeUsage?.usd?.actual);
+  if (!Number.isFinite(tokens) || tokens < 0 || claudeTokens <= 0 || !Number.isFinite(actualUsd) || actualUsd <= 0) {
+    return null;
+  }
+  return tokens * (actualUsd / claudeTokens);
+}
+
 /** mainRepo 绝对路径 → transcript 目录名前缀(与 Claude Code 的编码规则一致)。 */
 function mapRepoToPrefix(mainRepo) {
   return String(mainRepo || '').replace(/[^A-Za-z0-9]/g, '-');
@@ -224,4 +244,13 @@ async function getUsage({ prefix, days = 30, projectsRoot = PROJECTS_ROOT, cache
   return { byDay, totals, models, usd, dirs: dirNames, scanned, cachedFiles, sessions };
 }
 
-module.exports = { getUsage, mapRepoToPrefix, priceFor, usdActualOf, usdNoCacheOf, PROJECTS_ROOT };
+module.exports = {
+  estimateCodexSavings,
+  getUsage,
+  mapRepoToPrefix,
+  priceFor,
+  totalClaudeTokens,
+  usdActualOf,
+  usdNoCacheOf,
+  PROJECTS_ROOT,
+};

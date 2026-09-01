@@ -34,6 +34,7 @@ const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
+const { createCodexApi } = require('./codexApi.cjs');
 
 // ============ 常量 ============
 
@@ -303,6 +304,21 @@ function readBody(req, maxBytes, cb) {
   req.on('error', (e) => finish(e));
 }
 
+const codexApi = createCodexApi({
+  resolveRogueRepo: () => {
+    const project = resolveProjectSafe('rogue');
+    return project && project.mainRepo;
+  },
+  readRegistry: readRegistrySafe,
+  dashboardRoot: DASH_ROOT,
+  sessionsRoot: process.env.DASHBOARD_CODEX_SESSIONS
+    ? path.resolve(process.env.DASHBOARD_CODEX_SESSIONS) : undefined,
+  readBody,
+  sendJson,
+  sendText,
+  bodyMax: BODY_MAX,
+});
+
 /**
  * 本机算力账本快照(GET /api/cpu)。
  * 只读账本文件,不动任何进程;看板据此显示"当前谁占了多少核、还剩多少"。
@@ -323,8 +339,27 @@ function handleCostUsage(req, res, query) {
   if (!proj) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   const prefix = costUsage.mapRepoToPrefix(proj.mainRepo);
-  return costUsage.getUsage({ prefix, days })
-    .then((usage) => sendJson(res, 200, { ok: true, usage }))
+  return Promise.all([
+    costUsage.getUsage({ prefix, days }),
+    codexApi.getCostUsage(days, proj.name || pid),
+  ])
+    .then(([usage, codex]) => {
+      const quota = codexApi.getQuota();
+      const claudeTokens = costUsage.totalClaudeTokens(usage);
+      const codexTokens = codex.selected.tokens;
+      sendJson(res, 200, {
+        ok: true,
+        usage,
+        codex,
+        quota,
+        combined: {
+          claudeTokens,
+          codexTokens,
+          totalTokens: claudeTokens + codexTokens,
+          savingsEstimateUsd: costUsage.estimateCodexSavings(codexTokens, usage),
+        },
+      });
+    })
     .catch((e) => sendJson(res, 500, { ok: false, error: '聚合成本失败：' + (e && e.message) }));
 }
 
@@ -783,6 +818,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'dispatch' && req.method === 'POST') return handleDispatch(req, res);
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
+      if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
     }
