@@ -28,6 +28,9 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions) {
     '',
     `**项目**:${projName || pid} (项目 id: \`${pid}\`,已接入看板)`,
     `**任务**:${task.id} · ${task.title}`,
+    ...(task.modelHint ? [
+      `**建议档位**:🤖 ${task.modelHint}(第一段是主对话档,负责人开对话时已按它选;「+」后的子 agent 档由你施工中按 skill §12.2 路由表自行派发,不必请示)`,
+    ] : []),
     `**本任务有 ${decisions.length} 条已拍板决策要落地**(都是这一个任务的决策,由你一个对话统一施工):`,
     '',
     '---',
