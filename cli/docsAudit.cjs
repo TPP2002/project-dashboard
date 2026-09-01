@@ -54,13 +54,51 @@ function readStatusLine(file) {
   } catch (_) { return null; }
   const lines = head.split('\n').slice(0, 12).map((l) => l.trim());
   for (const line of lines) {
-    if (/^>.*状态\s*[::]/.test(line)) return { line, legacy: false };
+    if (/^>.*状态\s*[:：]/.test(line)) return { line, legacy: false };
   }
   // 旧式:头部前 12 行里的定稿/废弃/取代/评估件标注(只认强词,防误配正文)
   for (const line of lines) {
     if (/定稿|已废弃|已被.+取代|评估件/.test(line)) return { line, legacy: true };
   }
   return null;
+}
+
+/**
+ * 字节冻结件豁免集(DOCS-AUDIT-FROZEN-EXCLUDE,0901 负责人拍板:机械推导)。
+ *
+ * 【为什么要豁免】项目侧「集群生命周期协议」把**已终止任务**的施工记录当历史凭据,
+ * 单测按 git blob 哈希把它们字节冻死(工作区字节必须 == 终止那一刻 commit 里的字节),
+ * 永远不许再改一个字节——连给它加一行装饰性状态行都会当场把那个测试改红(0901 回填战役
+ * 亲踩,已原样还原)。这类文档若算进 C 桶,该桶会恒定挂着一批**清不掉**的,久了没人再
+ * 认真看这个桶,巡检器等于失效。
+ *
+ * 【判据】机械推导,不要人维护名单:扫 <repo>/docs/plans/*-任务合同.json,凡
+ * `lineage.state`(缺失则回退 `taskStatus`)以 `TERMINATED_` 开头的任务,其
+ * `<taskId>-设计与施工记录.md` 即冻结件。新终止一个任务自动进名单,漏不了。
+ *
+ * 【故意放宽的一侧】合同缺失 / json 损坏 / 读不出终止态 → 一律**不豁免**,照常进 C 桶。
+ * 宁可多催一篇(人看一眼就知道跳过),不可少看一篇(漏催 = 探雷器失明)。
+ *
+ * 【口径出处】判据字段与项目侧单测 tests/unit/bot/clusterLifecycleTaskBinding.test.ts
+ * 的 lineageState() 一致(`contract.lineage?.state ?? contract.taskStatus`)。
+ */
+function frozenExemptSet(mainRepo) {
+  const SUFFIX = '-任务合同.json';
+  const set = new Set();
+  const plansDir = path.join(mainRepo, 'docs', 'plans');
+  let names = [];
+  try { names = fs.readdirSync(plansDir); } catch (_) { return set; } // 没有 plans 目录 = 别的项目,豁免集空
+  for (const name of names) {
+    if (!name.endsWith(SUFFIX)) continue;
+    let c;
+    try { c = JSON.parse(fs.readFileSync(path.join(plansDir, name), 'utf8')); } catch (_) { continue; }
+    if (c === null || typeof c !== 'object' || Array.isArray(c)) continue;
+    const state = (c.lineage && c.lineage.state) || c.taskStatus;
+    if (typeof state !== 'string' || !state.startsWith('TERMINATED_')) continue;
+    const taskId = (typeof c.taskId === 'string' && c.taskId) ? c.taskId : name.slice(0, -SUFFIX.length);
+    set.add(`docs/plans/${taskId}-设计与施工记录.md`);
+  }
+  return set;
 }
 
 function daysSince(dateStr) {
@@ -99,10 +137,12 @@ function docsAudit(flags) {
     if (fs.existsSync(dir)) files.push(...listMd(dir));
   }
 
+  const frozen = frozenExemptSet(proj.mainRepo); // 字节冻结件:不催、不算桶(见 frozenExemptSet 注释)
   const stale = [], recheck = [], untagged = [], legacy = [];
-  let archived = 0, tagged = 0;
+  let archived = 0, tagged = 0, frozenSkipped = 0;
   for (const f of files) {
     const rel = path.relative(proj.mainRepo, f).replace(/\\/g, '/');
+    if (frozen.has(rel)) { frozenSkipped += 1; continue; } // 已终止任务的历史凭据,字节冻死,不许贴标签也不该催
     const st = readStatusLine(f);
     if (!st) { untagged.push(rel); continue; }
     if (st.legacy) { legacy.push(rel); continue; } // 旧式定稿标注:不算裸奔,升级 §5.7 格式归回填战役顺手做
@@ -115,7 +155,7 @@ function docsAudit(flags) {
         const t = taskById.get(m[1]);
         if (t && t.status === '已完工' && t.dates && t.dates.done) {
           const d = daysSince(t.dates.done);
-          if (d !== null && d > staleDays) stale.push(`${rel} —— 标「${(sl.match(/状态\s*[::]\s*([^·]+)/) || [, '?'])[1].trim()}」但关联卡 ${m[1]} 已完工 ${d} 天`);
+          if (d !== null && d > staleDays) stale.push(`${rel} —— 标「${(sl.match(/状态\s*[:：]\s*([^·]+)/) || [, '?'])[1].trim()}」但关联卡 ${m[1]} 已完工 ${d} 天`);
         }
       }
     }
@@ -129,7 +169,7 @@ function docsAudit(flags) {
   const ym = (() => { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`; })();
   const L = [];
   L.push(`═══ 文档新鲜度巡检 · 项目 ${pid} · ${ym} ═══`);
-  L.push(`扫描域:docs/{${AUDIT_DIRS.join(',')}} 共 ${files.length} 篇;标准状态行 ${tagged}(其中已归档态 ${archived});旧式定稿标注 ${legacy.length};无标签 ${untagged.length}`);
+  L.push(`扫描域:docs/{${AUDIT_DIRS.join(',')}} 共 ${files.length} 篇;标准状态行 ${tagged}(其中已归档态 ${archived});旧式定稿标注 ${legacy.length};无标签 ${untagged.length};冻结豁免 ${frozenSkipped}`);
   L.push('');
   L.push(`【A 疑似该转历史】${stale.length} 篇(标着现行,关联卡却完工超 ${staleDays} 天——请逐篇确认是否改标「已被 X 取代/评估件」)`);
   for (const s of stale) L.push(`  · ${s}`);
@@ -138,6 +178,7 @@ function docsAudit(flags) {
   L.push('', `【C 无标签】${untagged.length} 篇(头部无状态行;存量回填战役范围,战役后此桶应趋零)`);
   for (const s of untagged.slice(0, 15)) L.push(`  · ${s}`);
   if (untagged.length > 15) L.push(`  · …… 另 ${untagged.length - 15} 篇(全量见报告文件)`);
+  if (frozenSkipped > 0) L.push('', `【冻结豁免】${frozenSkipped} 篇(已终止任务的施工记录,被项目侧单测按 git blob 哈希字节冻死,加一个字都会把测试改红——不催、不算 C 桶;判据=同名任务合同的 lineage.state 以 TERMINATED_ 开头)`);
   L.push('', '处置口径:本清单只是疑似名单,改标签前先看内容;拿不准的登记待拍板,别硬改。状态行规矩 = docs/开工须知.md §5.7。');
 
   // 报告落盘(board 同目录,本机不入库)

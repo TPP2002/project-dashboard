@@ -91,3 +91,92 @@ test('docs-audit --monthly-tick:首跑记账,30天内秒退,状态文件顺延',
   assert.match(r3.text, /节拍已记账/, '拨回31天后应再次真跑');
   clean(dir);
 });
+
+// ── DOCS-STATUS-LINE-COLON-DIVERGENCE(0901 拍板:两条分歧一起对齐)──────────
+// 巡检器与项目侧索引器(scripts/docs-index.lib.ts)必须用同一套状态行判据,
+// 否则同一篇文档会「一台看得见、另一台看不见」,人眼看索引还看不出问题。
+test('docs-audit:状态行判据 —— 全角冒号与 ** 加粗前缀都认(与 docs-index 对齐)', () => {
+  const { dir, root, P } = setup();
+  const today = new Date().toISOString().slice(0, 10);
+  md(root, 'design/全角冒号.md', '> 状态：正本 · 最后核对 ' + today);
+  md(root, 'design/加粗前缀.md', '> **状态:正本 · 最后核对 ' + today + '**');
+  md(root, 'design/全角加加粗.md', '> **状态：正本 · 最后核对 ' + today + '**');
+  md(root, 'design/半角基线.md', '> 状态:正本 · 最后核对 ' + today);
+
+  const r = docsAudit({ ...P });
+  assert.match(r.text, /【C 无标签】0 篇/, '四种写法都该算「有状态行」,C 桶应为空');
+  assert.match(r.text, /标准状态行 4/);
+  clean(dir);
+});
+
+test('docs-audit:全角冒号写法也能抽出状态词参与 A 桶判定', () => {
+  const { dir, root, P } = setup();
+  const old = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+  cmds.add({ _: ['CARD-F'], title: 'x', ...P });
+  cmds.done({ _: ['CARD-F'], ...P });
+  const boardPath = path.join(root, '.dashboard', 'board.json');
+  const b = JSON.parse(fs.readFileSync(boardPath, 'utf8'));
+  b.tasks.find((t) => t.id === 'CARD-F').dates.done = old;
+  fs.writeFileSync(boardPath, JSON.stringify(b));
+
+  md(root, 'design/全角该转历史.md', '> 状态：正本 · 关联卡 CARD-F · 最后核对 ' + new Date().toISOString().slice(0, 10));
+  const r = docsAudit({ ...P });
+  assert.match(r.text, /【A 疑似该转历史】1 篇/);
+  assert.match(r.text, /全角该转历史.*标「正本」.*CARD-F 已完工/, '状态词应能从全角冒号行里抽出来');
+  clean(dir);
+});
+
+// ── DOCS-AUDIT-FROZEN-EXCLUDE(0901 拍板:机械推导,修正公式)──────────────
+// 已终止任务的施工记录是「历史凭据」,被项目侧单测按 git blob 哈希字节冻死,
+// 永远不许再加状态行 ⇒ 不能算进 C 桶,否则该桶恒定挂着一批清不掉的,巡检器失效。
+// 判据 = 合同 json 的 lineage.state(缺失则回退 taskStatus)以 TERMINATED_ 开头。
+const contract = (root, taskId, body) =>
+  fs.writeFileSync(path.join(root, 'docs', 'plans', `${taskId}-任务合同.json`), JSON.stringify({ taskId, ...body }));
+
+test('docs-audit:已终止任务的施工记录进「冻结豁免」,不算 C 桶', () => {
+  const { dir, root, P } = setup();
+  contract(root, 'LC-DEAD', { taskStatus: 'RECHARTER_REQUIRED', lineage: { state: 'TERMINATED_REJECTED_RECHARTERED' } });
+  md(root, 'plans/LC-DEAD-设计与施工记录.md', '(字节冻结件,一个字都不许改)');
+  md(root, 'plans/普通无标签.md', '(该进 C 桶的裸文档)');
+
+  const r = docsAudit({ ...P });
+  assert.match(r.text, /无标签 1;冻结豁免 1/, '摘要行应单列冻结豁免计数');
+  assert.match(r.text, /【冻结豁免】1 篇/, '报告应单列冻结豁免桶');
+  assert.match(r.text, /【C 无标签】1 篇/, 'C 桶只该剩那篇普通裸文档');
+  assert.match(r.text, /普通无标签/);
+  assert.ok(!/【C 无标签】[\s\S]*LC-DEAD-设计与施工记录/.test(r.text), '冻结件不许出现在 C 桶清单里');
+  clean(dir);
+});
+
+test('docs-audit:仍在进行(ACTIVE)的任务不豁免 —— 防过度豁免', () => {
+  const { dir, root, P } = setup();
+  contract(root, 'LC-ALIVE', { taskStatus: 'ACTIVE', lineage: { state: 'ACTIVE' } });
+  md(root, 'plans/LC-ALIVE-设计与施工记录.md', '(活着的任务,该照常催它贴标签)');
+
+  const r = docsAudit({ ...P });
+  assert.match(r.text, /【C 无标签】1 篇/);
+  assert.match(r.text, /LC-ALIVE-设计与施工记录/);
+  assert.ok(!/冻结豁免 [1-9]/.test(r.text), 'ACTIVE 任务不该被豁免');
+  clean(dir);
+});
+
+test('docs-audit:合同 json 损坏/缺字段不炸,退回现状', () => {
+  const { dir, root, P } = setup();
+  fs.writeFileSync(path.join(root, 'docs', 'plans', 'LC-BROKEN-任务合同.json'), '{ 这不是合法 json');
+  contract(root, 'LC-NOSTATE', {}); // 既无 lineage 也无 taskStatus
+  md(root, 'plans/LC-BROKEN-设计与施工记录.md', '裸文档');
+  md(root, 'plans/LC-NOSTATE-设计与施工记录.md', '裸文档');
+
+  const r = docsAudit({ ...P });
+  assert.match(r.text, /【C 无标签】2 篇/, '解析不出终止态的一律不豁免,照常进 C 桶');
+  clean(dir);
+});
+
+test('docs-audit:冻结豁免件不参与建卡判据(只剩冻结件时不建卡)', () => {
+  const { dir, root, P } = setup();
+  contract(root, 'LC-DEAD2', { taskStatus: 'RECHARTER_REQUIRED', lineage: { state: 'TERMINATED_T1_GREEN_FAILED_RECHARTERED' } });
+  md(root, 'plans/LC-DEAD2-设计与施工记录.md', '字节冻结件');
+  const r = docsAudit({ ...P, 'create-card': true });
+  assert.match(r.text, /三桶全空,本月无需巡检卡/);
+  clean(dir);
+});
