@@ -118,26 +118,28 @@ watch(() => [props.requestedSessionId, props.jumpNonce], () => {
 
 <template>
   <div>
-    <p v-if="error" class="err">⚠️ {{ error }}</p>
+    <p v-if="error" class="error-note"><span class="badge bad">读取失败</span>{{ error }}</p>
     <div class="layout">
       <aside class="sessions card">
-        <button v-for="session in sessions" :key="session.sessionId" class="session" :class="{ on: selectedId === session.sessionId }" @click="selectSession(session.sessionId)">
-          <span class="session-top"><b>{{ session.project }}</b><i v-if="session.active" title="最后一条事件在 120 秒内">● 最近还在动</i></span>
+        <button v-for="session in sessions" :key="session.sessionId" class="session row" :class="{ on: selectedId === session.sessionId }" @click="selectSession(session.sessionId)">
+          <span v-if="session.active" class="glow-edge" />
+          <span class="session-top"><b>{{ session.project }}</b><i v-if="session.active" class="badge ok" title="最后一条事件在 120 秒内">● 最近还在动</i></span>
           <span class="cwd" :title="session.cwd">{{ cwdTail(session.cwd) }}</span>
           <span class="session-meta"><span>{{ formatAt(session.startedAt) }}</span><span>{{ fmt(session.tokensUsed) }} token</span></span>
-          <span class="model">{{ session.model }} · {{ session.reasoningEffort }}</span>
+          <span class="badge info model">{{ session.model }} · {{ session.reasoningEffort }}</span>
         </button>
-        <div v-if="!sessions.length && !loading" class="empty"><span class="big">📭</span><span>最近没有 Codex 会话</span></div>
+        <div v-if="!sessions.length && loading" class="sessions-loading" aria-label="正在加载 Codex 会话"><div class="skel wide" /><div class="skel session-skel" /><div class="skel session-skel" /></div>
+        <div v-else-if="!sessions.length" class="empty"><span class="big">📭</span><span>最近没有 Codex 会话</span><small>本机产生 Codex 活动后，会按时间列在这里。</small></div>
       </aside>
 
       <main class="detail card">
-        <div v-if="detailLoading && !detail" class="empty">读取会话详情…</div>
-        <div v-else-if="!detail" class="empty"><span class="big">🤖</span><span>从左边选择一个会话</span></div>
+        <div v-if="detailLoading && !detail" class="detail-loading" aria-label="正在读取会话详情"><div class="skel medium" /><div class="skel wide" /><div class="skel detail-skel" /></div>
+        <div v-else-if="!detail" class="empty"><span class="big">🤖</span><span>从左边选择一个会话</span><small>选中后会显示最近事件、原始信息和续聊入口。</small></div>
         <template v-else>
           <header class="detail-head">
             <div><h2>{{ detail.project }}</h2><p><code>{{ detail.sessionId }}</code></p></div>
-            <span class="model big-model">{{ detail.model }} · {{ detail.reasoningEffort }}</span>
-            <span v-if="detail.active" class="active">● 最近还在动</span>
+            <span class="badge info model big-model">{{ detail.model }} · {{ detail.reasoningEffort }}</span>
+            <span v-if="detail.active" class="badge ok active">● 最近还在动</span>
           </header>
           <dl class="facts">
             <div><dt>开始</dt><dd>{{ formatAt(detail.startedAt) }}</dd></div>
@@ -173,7 +175,7 @@ watch(() => [props.requestedSessionId, props.jumpNonce], () => {
             <h3>续聊这个会话</h3>
             <pre v-if="notice" class="notice">{{ notice }}</pre>
             <form class="composer" @submit.prevent="sendMessage">
-              <textarea v-model="message" maxlength="8000" rows="4" placeholder="给这个 Codex 会话补发一条消息…" aria-label="发给 Codex 会话的消息" />
+              <textarea v-model="message" class="field" maxlength="8000" rows="4" placeholder="给这个 Codex 会话补发一条消息…" aria-label="发给 Codex 会话的消息" />
               <label class="write-warning"><input v-model="allowWrite" type="checkbox"> 允许本次续聊修改文件（默认关闭；开启后发送前还会再次确认）</label>
               <div class="compose-actions"><span class="muted">{{ message.length }} / 8000</span><button class="btn btn-primary" :disabled="!canSend || sending">{{ sending ? '发送中…' : '发给 Codex' }}</button></div>
             </form>
@@ -185,32 +187,56 @@ watch(() => [props.requestedSessionId, props.jumpNonce], () => {
 </template>
 
 <style scoped>
-.err { margin: 0 0 10px; color: var(--danger); }
-.layout { min-width: 0; display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr); gap: 14px; align-items: start; }
-.sessions { max-height: 760px; overflow-y: auto; box-shadow: none; }
-.session { width: 100%; display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
-.session:hover, .session.on { background: var(--accent-soft); } .session.on { box-shadow: inset 3px 0 var(--accent); }
-.session-top, .session-meta, .detail-head, .compose-actions { display: flex; align-items: center; gap: 8px; }
-.session-top { justify-content: space-between; } .session-top i, .active { color: var(--ok); font-size: 10px; font-style: normal; }
-.cwd { overflow: hidden; color: var(--muted); font: 11px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-.session-meta { justify-content: space-between; color: var(--muted-2); font-size: 10px; }
-.model { align-self: flex-start; padding: 2px 6px; border: 1px solid var(--border); border-radius: 999px; color: var(--accent); font: 10px var(--mono); }
-.detail { min-width: 0; padding: 16px; box-shadow: none; } .detail-head { align-items: flex-start; } .detail-head > div { min-width: 0; flex: 1; }
-.detail-head h2 { font-size: 18px; } .detail-head p { margin: 3px 0 0; } .big-model { flex: none; font-size: 11px; }
-code { font-family: var(--mono); color: var(--muted); overflow-wrap: anywhere; }
-.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 14px; margin: 14px 0; }
-.facts div { min-width: 0; } .facts dt { color: var(--muted-2); font-size: 10px; } .facts dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: 12px; }
-.section { min-width: 0; border-top: 1px solid var(--border-soft); margin-top: 14px; padding-top: 12px; }
-.section h3 { margin-bottom: 8px; color: var(--muted); font-size: 13px; }
-.events { display: flex; flex-direction: column; gap: 7px; max-height: 520px; overflow-y: auto; }
-.bubble { max-width: 92%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
-.bubble.user { align-self: flex-end; background: var(--accent-soft); } .bubble > span, .tool-event > span { color: var(--muted-2); font-size: 10px; }
-.bubble p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tool-event { min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.event-scroll { max-width: 100%; overflow-x: auto; } .event-scroll pre { width: max-content; min-width: 100%; max-height: 260px; margin: 5px 0 0; padding: 7px; background: var(--bg-soft); color: var(--muted); font: 11px/1.5 var(--mono); white-space: pre; }
-.folded { color: var(--muted-2); font-size: 10px; } .meta-raw summary { color: var(--muted); cursor: pointer; font-size: 12px; }
-.notice { max-height: 240px; margin: 0 0 8px; padding: 8px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--muted); white-space: pre-wrap; }
-.composer { display: flex; flex-direction: column; gap: 7px; } textarea { width: 100%; resize: vertical; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text); padding: 9px; font: inherit; }
-textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); } .write-warning { color: var(--warn); font-size: 11px; } .compose-actions { justify-content: flex-end; font-size: 11px; }
-@media (max-width: 820px) { .layout { grid-template-columns: 1fr; } .sessions { max-height: 340px; } .facts { grid-template-columns: 1fr; } }
+.error-note { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s3); color: var(--bad); font-size: var(--fs-base); }
+.layout { min-width: 0; display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.sessions { max-height: 760px; padding: 0; overflow-y: auto; background: var(--surface); box-shadow: none; }
+.session { width: 100%; align-items: stretch; flex-direction: column; gap: var(--s1); padding: var(--s3); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.session:hover, .session.on { background: var(--surface-2); }
+.session.on { box-shadow: inset 2px 0 var(--info); }
+.session-top, .session-meta, .detail-head, .compose-actions { display: flex; align-items: center; gap: var(--s2); }
+.session-top { justify-content: space-between; }
+.session-top i { font-style: normal; }
+.cwd { overflow: hidden; color: var(--text-2); font: var(--fs-xs) var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.session-meta { justify-content: space-between; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.model { align-self: flex-start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.sessions-loading, .detail-loading { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); }
+.skel.wide { width: 86%; }
+.skel.medium { width: 48%; }
+.skel.session-skel { height: 68px; }
+.skel.detail-skel { height: 112px; }
+.empty { display: flex; flex-direction: column; align-items: center; }
+.empty small { margin-top: var(--s1); color: var(--text-3); font-size: var(--fs-sm); }
+.detail { min-width: 0; padding: var(--s4); background: var(--surface); box-shadow: none; }
+.detail-head { align-items: flex-start; flex-wrap: wrap; }
+.detail-head > div { min-width: 0; flex: 1; }
+.detail-head h2 { font-size: var(--fs-lg); }
+.detail-head p { margin: var(--s1) 0 0; }
+.big-model { flex: none; }
+code { font-family: var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2) var(--s4); margin: var(--s4) 0; }
+.facts div { min-width: 0; }
+.facts dt { color: var(--text-3); font-size: var(--fs-xs); }
+.facts dd { margin: var(--s1) 0 0; overflow-wrap: anywhere; font-size: var(--fs-base); }
+.section { min-width: 0; margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.section h3 { margin-bottom: var(--s2); color: var(--text-2); font-size: var(--fs-md); }
+.events { display: flex; flex-direction: column; gap: var(--s2); max-height: 520px; overflow-y: auto; }
+.bubble { max-width: 92%; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.bubble.user { align-self: flex-end; background: var(--info-bg); }
+.bubble > span, .tool-event > span { color: var(--text-3); font-size: var(--fs-xs); }
+.bubble p { margin: var(--s1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-event { min-width: 0; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); }
+.event-scroll { max-width: 100%; overflow-x: auto; }
+.event-scroll pre { width: max-content; min-width: 100%; max-height: 260px; margin: var(--s1) 0 0; padding: var(--s2); background: var(--surface-2); color: var(--text-2); font: var(--fs-xs)/1.5 var(--mono); white-space: pre; }
+.folded { color: var(--text-3); font-size: var(--fs-xs); }
+.meta-raw summary { color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); }
+.notice { max-height: 240px; margin: 0 0 var(--s2); padding: var(--s2); overflow: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); color: var(--text-2); white-space: pre-wrap; }
+.composer { display: flex; flex-direction: column; gap: var(--s2); }
+textarea.field { min-height: 88px; resize: vertical; }
+.write-warning { color: var(--warn); font-size: var(--fs-sm); }
+.compose-actions { justify-content: flex-end; font-size: var(--fs-xs); }
+@media (max-width: 820px) {
+  .layout { grid-template-columns: 1fr; }
+  .sessions { max-height: 340px; }
+  .facts { grid-template-columns: 1fr; }
+}
 </style>

@@ -49,8 +49,8 @@ onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
     <CodexReport :refresh-key="refreshKey" @open-job="openJob" />
 
     <div class="tabs" role="tablist" aria-label="Codex 数据范围">
-      <button :class="{ on: activeTab === 'jobs' }" role="tab" @click="activeTab = 'jobs'">工单</button>
-      <button :class="{ on: activeTab === 'sessions' }" role="tab" @click="activeTab = 'sessions'">全部会话</button>
+      <button class="btn quiet tab-button" :class="{ on: activeTab === 'jobs' }" role="tab" :aria-selected="activeTab === 'jobs'" @click="activeTab = 'jobs'">工单</button>
+      <button class="btn quiet tab-button" :class="{ on: activeTab === 'sessions' }" role="tab" :aria-selected="activeTab === 'sessions'" @click="activeTab = 'sessions'">全部会话</button>
     </div>
 
     <CodexJobsTab
@@ -67,12 +67,17 @@ onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 </template>
 
 <style scoped>
-.page { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-.toolbar { display: flex; align-items: center; gap: 10px; }
-.toolbar h1 { font-size: 20px; } .toolbar p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
-.auto { color: var(--muted); font-size: 12px; cursor: pointer; }
-.tabs { align-self: flex-start; display: flex; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.tabs button { border: 0; padding: 7px 18px; background: var(--panel); color: var(--muted); cursor: pointer; }
-.tabs button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
-@media (max-width: 820px) { .toolbar { flex-wrap: wrap; } }
+.page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
+.toolbar { display: flex; align-items: center; gap: var(--s3); }
+.toolbar > div:first-child { min-width: 0; }
+.toolbar p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
+.auto { display: inline-flex; align-items: center; gap: var(--s1); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+.tabs { align-self: flex-start; display: flex; gap: var(--s1); padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.tab-button { min-width: 92px; }
+.tab-button.on { background: var(--surface); color: var(--text); border-color: var(--line-strong); font-weight: 600; }
+@media (max-width: 820px) {
+  .toolbar { align-items: flex-start; flex-wrap: wrap; }
+  .toolbar .spacer { display: none; }
+  .auto { margin-left: 0; }
+}
 </style>
