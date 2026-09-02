@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { getJobDetail, isRedispatchBlocked, isValidSlug, listJobs, parseTaskJson } = require('./codexJobs.cjs');
+const { attachLiveness } = require('./codexJobHealth.cjs');
 const { spawnDispatchCli, waitForChild } = require('./codexProcess.cjs');
 const { createCodexSessionApi } = require('./codexSessionApi.cjs');
 
@@ -59,7 +60,10 @@ function createCodexApi({
 
   function currentJobs() {
     const repo = resolveRogueRepo();
-    return repo ? listJobs(path.join(repo, '.codex', 'jobs')) : [];
+    if (!repo) return [];
+    // 这里没有会话数据,只走「进程没了」「早该收工却没收尾」两条铁证;
+    // 「长时间没动静」这条软判据要扫会话文件,留给战报那条路径算。
+    return attachLiveness(listJobs(path.join(repo, '.codex', 'jobs')), { nowMs: Date.now() });
   }
 
   const sessionApi = createCodexSessionApi({
@@ -70,7 +74,7 @@ function createCodexApi({
   function handleJobs(res) {
     const ctx = context(res);
     if (!ctx) return;
-    sendJson(res, 200, listJobs(ctx.jobsRoot));
+    sendJson(res, 200, attachLiveness(listJobs(ctx.jobsRoot), { nowMs: Date.now() }));
   }
 
   function handleJob(res, query) {

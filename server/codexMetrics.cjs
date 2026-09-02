@@ -1,5 +1,7 @@
 'use strict';
 
+const { attachLiveness } = require('./codexJobHealth.cjs');
+
 function validTime(value) {
   const time = Date.parse(value || '');
   return Number.isFinite(time) ? time : null;
@@ -93,7 +95,12 @@ function aggregateCodexUsage(sessions, options = {}) {
   };
 }
 
-function buildCodexReport({ jobs = [], sessions = [], nowMs = Date.now(), windowMs, quotaUsedPercent = null }) {
+// isAlive / silenceMs / overdueGraceMs 都做成可注入:不注入就走真实进程探测与默认阈值,
+// 注入了才能拿假数据把三态逐条测死(否则单测会依赖本机此刻恰好有没有那个进程号)。
+function buildCodexReport({
+  jobs = [], sessions = [], nowMs = Date.now(), windowMs, quotaUsedPercent = null,
+  isAlive, silenceMs, overdueGraceMs,
+}) {
   const cutoff = nowMs - Math.max(1, Number(windowMs) || 24 * 60 * 60 * 1000);
   const recentJobs = jobs.filter((job) => {
     const time = validTime(job?.dispatchedAt);
@@ -106,6 +113,20 @@ function buildCodexReport({ jobs = [], sessions = [], nowMs = Date.now(), window
   const rejectedJobs = recentJobs
     .filter((job) => job.collected && job.passed === false)
     .map((job) => ({ slug: job.slug, title: job.title, reason: job.rejectionReason || '未通过最终验收' }));
+  // 失联单**不按时间窗筛**:一具挂了三天的尸体正是最该被看见的那种,按 24 小时窗一筛反而漏掉。
+  // 计数类指标仍按窗口口径,不动。
+  const livelyAll = attachLiveness(jobs, { nowMs, sessions, isAlive, silenceMs, overdueGraceMs });
+  const stalledJobs = livelyAll
+    .filter((job) => job.liveness === 'stalled')
+    .map((job) => ({
+      slug: job.slug,
+      title: job.title,
+      reason: job.stalledReason || '状态说还在跑，但已经联系不上',
+      lastActivityAt: job.lastActivityAt || null,
+      dispatchedAt: job.dispatchedAt || null,
+    }))
+    .sort((a, b) => String(a.dispatchedAt || '').localeCompare(String(b.dispatchedAt || '')));
+  const stalledSlugs = new Set(stalledJobs.map((job) => job.slug));
   const activityTimes = [
     ...sessions.map((session) => validTime(session?.lastActivityAt)),
     ...jobs.map((job) => validTime(job?.dispatchedAt)),
@@ -114,7 +135,9 @@ function buildCodexReport({ jobs = [], sessions = [], nowMs = Date.now(), window
     dispatched: recentJobs.length,
     passed: recentJobs.filter((job) => job.collected && job.passed === true).length,
     rejected: rejectedJobs.length,
-    running: recentJobs.filter((job) => job.running).length,
+    // 「还在跑」只数真在跑的:失联的那些 state 也说 running,混进来会让负责人以为活还有人干。
+    running: recentJobs.filter((job) => job.running && !stalledSlugs.has(job.slug)).length,
+    stalled: stalledJobs.length,
     tokensUsed: recentSessions.reduce((sum, session) => {
       const tokens = Number(session.tokensUsed);
       return sum + (Number.isFinite(tokens) && tokens > 0 ? tokens : 0);
@@ -123,6 +146,7 @@ function buildCodexReport({ jobs = [], sessions = [], nowMs = Date.now(), window
     quotaBand: quotaBand(quotaUsedPercent),
     lastActivityAt: activityTimes.length ? new Date(Math.max(...activityTimes)).toISOString() : null,
     rejectedJobs,
+    stalledJobs,
   };
 }
 

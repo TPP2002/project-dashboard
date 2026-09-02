@@ -67,14 +67,20 @@ watch(() => props.refreshKey, load)
       <div><strong>{{ report.passed }}</strong><span>通过</span></div>
       <div><strong>{{ report.rejected }}</strong><span>驳回</span></div>
       <div><strong>{{ report.running }}</strong><span>还在跑</span></div>
+      <div><strong :class="{ 'quota-red': report.stalled > 0 }">{{ report.stalled }}</strong><span>失联</span></div>
       <div><strong>{{ fmt(report.tokensUsed) }}</strong><span>token</span></div>
       <div><strong :class="`quota-${report.quotaBand}`">{{ report.quotaUsedPercent == null ? '—' : report.quotaUsedPercent + '%' }}</strong><span>额度已用</span></div>
     </div>
     <div v-else-if="loading" class="muted">整理昨夜战况…</div>
 
     <div class="rejected">
-      <h3>需要处理的驳回</h3>
-      <p v-if="report && !report.rejectedJobs.length" class="ok">✅ 没有需要处理的</p>
+      <h3>需要处理</h3>
+      <p v-if="report && !report.rejectedJobs.length && !report.stalledJobs.length" class="ok">✅ 没有需要处理的</p>
+      <!-- 失联的排在驳回前面:驳回至少是有结论的，失联是「以为还有人在干、其实早没了」，更耽误事。 -->
+      <button v-for="job in report?.stalledJobs || []" :key="'stalled-' + job.slug" class="stalled" @click="emit('openJob', job.slug)">
+        <strong>🚨 {{ job.title }}</strong>
+        <span>{{ job.reason }}<template v-if="job.lastActivityAt">（最后一次动静：{{ formatAt(job.lastActivityAt) }}）</template></span>
+      </button>
       <button v-for="job in report?.rejectedJobs || []" :key="job.slug" @click="emit('openJob', job.slug)">
         <strong>{{ job.title }}</strong><span>{{ job.reason }}</span>
       </button>
@@ -96,7 +102,9 @@ h2 { font-size: 15px; } .report-head p { margin: 2px 0 0; color: var(--muted); f
 .seg { display: flex; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .seg button { border: 0; padding: 5px 10px; background: var(--panel); color: var(--muted); cursor: pointer; }
 .seg button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
-.numbers { display: grid; grid-template-columns: repeat(6, minmax(85px, 1fr)); gap: 8px; margin-top: 12px; }
+.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)); gap: 8px; margin-top: 12px; }
+.rejected button.stalled { border-color: var(--danger); }
+.rejected button.stalled strong { color: var(--danger); }
 .numbers > div { padding: 9px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--bg-soft); }
 .numbers strong, .numbers span { display: block; } .numbers strong { font: 700 18px var(--mono); }
 .numbers span { margin-top: 3px; color: var(--muted); font-size: 10px; }

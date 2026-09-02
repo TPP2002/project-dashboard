@@ -76,6 +76,10 @@ function summarizeJob(files) {
     collected,
     passed: collected ? requiredAcceptancePassed(task, files.verdict) : null,
     exitCode: typeof state.exitCode === 'number' ? state.exitCode : null,
+    // 下面三个只是把落盘事实原样带出来,供 codexJobHealth.cjs 判三态用;本函数自己不解释它们。
+    pid: typeof state.pid === 'number' ? state.pid : null,
+    startedAt: typeof state.startedAt === 'string' ? state.startedAt : null,
+    timeoutSec: typeof task.timeoutSec === 'number' ? task.timeoutSec : null,
   };
   if (typeof state.threadId === 'string' && state.threadId) summary.threadId = state.threadId;
   if (collected && summary.passed === false) summary.rejectionReason = rejectedReason(task, files.verdict, state);

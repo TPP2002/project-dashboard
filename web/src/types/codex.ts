@@ -9,6 +9,10 @@ export interface JobSummary {
   exitCode: number | null
   threadId?: string
   rejectionReason?: string
+  /** 'stalled' = 状态说还在跑，但已经联系不上（进程没了/早该收工/长时间没动静）。 */
+  liveness?: 'running' | 'stalled' | 'finished'
+  stalledReason?: string | null
+  lastActivityAt?: string | null
 }
 
 export interface Acceptance {
@@ -89,7 +93,12 @@ export interface CodexReport {
   quotaUsedPercent: number | null
   quotaBand: 'green' | 'yellow' | 'red' | 'unknown'
   lastActivityAt: string | null
+  stalled: number
   rejectedJobs: Array<{ slug: string; title: string; reason: string }>
+  stalledJobs: Array<{
+    slug: string; title: string; reason: string
+    lastActivityAt: string | null; dispatchedAt: string | null
+  }>
 }
 
 export interface CodexUsage {

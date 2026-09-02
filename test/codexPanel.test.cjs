@@ -148,6 +148,9 @@ test('前端把验收、自述与四类工单状态翻译成人话', async () =>
   assert.equal(presentation.jobGroupKey({ running: false, collected: false, passed: null }), 'waiting');
   assert.equal(presentation.jobGroupKey({ running: false, collected: true, passed: false }), 'rejected');
   assert.equal(presentation.jobGroupKey({ running: false, collected: true, passed: true }), 'completed');
+  // 失联必须排在 running 之前判:这种单的 running 也是 true,先判 running 会把尸体混进「还在干」
+  assert.equal(presentation.jobGroupKey({ running: true, collected: false, passed: null, liveness: 'stalled' }), 'stalled');
+  assert.equal(presentation.jobGroupKey({ running: true, collected: false, passed: null, liveness: 'running' }), 'running');
 });
 
 test('工单目录存在但内部文件全缺时详情使用空值而不报错', (t) => {
@@ -157,6 +160,9 @@ test('工单目录存在但内部文件全缺时详情使用空值而不报错',
   assert.deepEqual(getJobDetail(root, 'empty-job'), {
     slug: 'empty-job', title: 'empty-job', taskId: null, dispatchedAt: null,
     running: true, collected: false, passed: null, exitCode: null,
+    // 三个原始事实字段供 codexJobHealth.cjs 判三态用(CODEX-DEAD-SESSION-DETECT);
+    // 全缺时仍是 null,断言强度不变,照旧是逐字段精确比对。
+    pid: null, startedAt: null, timeoutSec: null,
     goal: null, acceptance: [], plainSummary: null, selfReport: null, chat: [], tail: '',
   });
 });

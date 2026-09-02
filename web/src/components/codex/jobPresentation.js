@@ -27,8 +27,14 @@ export function selfReportStatusLabel(status) {
   return SELF_REPORT_STATUS_LABELS[value] || '它还没有明确说明是否做完'
 }
 
-/** @param {{ running: boolean, collected: boolean, passed: boolean | null }} job */
+/**
+ * @param {{ running: boolean, collected: boolean, passed: boolean | null,
+ *           liveness?: 'running' | 'stalled' | 'finished' }} job
+ */
 export function jobGroupKey(job) {
+  // 失联要排在 running 前面判:这种单的 running 也是 true(state.json 的收尾字段没人写),
+  // 先判 running 就会把尸体混进「还在干」,那正是这条要治的毛病。
+  if (job.liveness === 'stalled') return 'stalled'
   if (job.running) return 'running'
   if (!job.collected) return 'waiting'
   if (job.passed) return 'completed'

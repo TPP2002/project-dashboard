@@ -27,6 +27,7 @@ const logError = ref('')
 
 const canSend = computed(() => Boolean(detail.value && message.value.trim() && message.value.length <= 8000))
 const attentionGroups = computed(() => [
+  { key: 'stalled', title: '失联了', items: jobs.value.filter((job) => jobGroupKey(job) === 'stalled') },
   { key: 'running', title: '还在干', items: jobs.value.filter((job) => jobGroupKey(job) === 'running') },
   { key: 'waiting', title: '等你收', items: jobs.value.filter((job) => jobGroupKey(job) === 'waiting') },
   { key: 'rejected', title: '没通过', items: jobs.value.filter((job) => jobGroupKey(job) === 'rejected') },
@@ -36,6 +37,7 @@ const attentionCount = computed(() => attentionGroups.value.reduce((total, group
 
 function statusOf(job: JobSummary) {
   const group = jobGroupKey(job)
+  if (group === 'stalled') return { icon: '🚨', label: '失联了', cls: 'stalled' }
   if (group === 'running') return { icon: '🔄', label: '还在干', cls: 'running' }
   if (group === 'waiting') return { icon: '⏳', label: '等你收', cls: 'waiting' }
   if (group === 'completed') return { icon: '✅', label: '已完成', cls: 'passed' }
@@ -233,6 +235,7 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
             <button v-for="job in group.items" :key="job.slug" class="job" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
               <span class="job-title">{{ job.title }}</span>
               <span class="job-meta"><code>{{ job.slug }}</code><span class="badge" :class="statusOf(job).cls">{{ statusOf(job).icon }} {{ statusOf(job).label }}</span></span>
+              <span v-if="job.liveness === 'stalled' && job.stalledReason" class="job-stalled">{{ job.stalledReason }}</span>
             </button>
           </section>
           <section v-if="completedJobs.length" class="job-group completed-group">
@@ -352,6 +355,8 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
 .job-title { font-weight: 600; line-height: 1.35; } .job-meta, .compose-actions, .detail-head, .actions { display: flex; align-items: center; gap: 8px; }
 .job-meta { justify-content: space-between; color: var(--muted); font-size: 11px; }
 code { font-family: var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.job-stalled { display: block; margin-top: 3px; color: var(--danger); font-size: 11px; line-height: 1.4; }
+.badge.stalled { color: var(--danger); font-weight: 600; }
 .badge.running { color: var(--accent); } .badge.waiting { color: var(--warn); } .badge.passed { color: var(--ok); } .badge.rejected { color: var(--danger); }
 .detail { min-width: 0; padding: 16px; box-shadow: none; } .detail-head { align-items: flex-start; } .detail-head > div { min-width: 0; flex: 1; }
 .detail-head h2 { font-size: 18px; overflow-wrap: anywhere; } .detail-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
