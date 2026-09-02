@@ -165,6 +165,24 @@ function findSessionFile(sessionId, sessionsRoot = DEFAULT_SESSIONS_ROOT) {
   return listSessionFiles(sessionsRoot).find((file) => parseSessionIdFromFilename(path.basename(file)) === sessionId) || null;
 }
 
+/**
+ * 只查一个工单自己那份会话文件的活性摘要(CODEX-LIVENESS-VERDICT-SPLIT,2026-09-02)。
+ *
+ * 【为什么详情页配得起这个成本,列表页配不起】战报为了巡检全部工单,要把「多久没动静」这条软判据
+ * 算出来,只能扫一遍时间窗内的全部会话文件——这个代价列表接口(一次要列一堆工单)付不起,
+ * 所以列表故意不查。但详情页每次只看**一个**工单,只需要它自己那一份会话文件的最后动静时间,
+ * 不必付「扫全部」的代价——`findSessionFile` 只是按文件名匹配 threadId(纯目录列举,不读内容),
+ * 命中后只读那一个文件的头尾。这样详情页也能用上软判据,不再对着战报已经标红的工单说"还在干"。
+ */
+function getJobSessionSummary(threadId, options = {}) {
+  if (typeof threadId !== 'string' || !threadId) return null;
+  const context = contextWithDefaults(options);
+  const file = findSessionFile(threadId, context.sessionsRoot);
+  if (!file) return null;
+  try { return scanSessionFile(file, context).summary; }
+  catch (_) { return null; }
+}
+
 function readLastEvents(file, limit) {
   const size = fs.statSync(file).size;
   let position = size;
@@ -255,6 +273,7 @@ module.exports = {
   findSessionFile,
   getCodexReport,
   getCodexUsage,
+  getJobSessionSummary,
   getLatestQuota,
   getSessionDetail,
   listSessionFiles,

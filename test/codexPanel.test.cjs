@@ -272,6 +272,47 @@ test('GET /api/codex/job?tail=0 不返回日志，展开请求才返回', async 
   assert.equal(opened.tail, 'only-when-open\n');
 });
 
+// ── 详情页要和战报同一口径,不只是和列表同一口径(CODEX-LIVENESS-VERDICT-SPLIT,2026-09-02)──
+//
+// CODEX-DEAD-SESSION-DETECT 已经让"列表"和"详情"互相一致,但两者都没查会话文件,于是"战报"
+// (查了会话文件、能看出「很久没动静」)和"详情"(没查)还是会对同一张单说法相反:用户从战报点进
+// 一个被标🚨的工单去核实,详情却说"还在干"。这条断言钉住:详情页现在要能读到自己那份会话文件的
+// 静默证据,不再需要付"扫全部会话"的代价也能追上战报的判断。
+test('详情页读到自己的会话静默证据后,不再对战报已标红的工单说"还在干"', async (t) => {
+  const staleId = '11111111-1111-1111-1111-111111111111';
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  const year = String(now.getFullYear());
+  const month = pad(now.getMonth() + 1);
+  const dayNumber = pad(now.getDate());
+  const day = path.join(fixture.dir, 'sessions', year, month, dayNumber);
+  fs.mkdirSync(day, { recursive: true });
+  const staleAt = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
+  const staleFile = path.join(day, `rollout-2026-01-01T00-00-00-${staleId}.jsonl`);
+  // 这个会话文件只为本测试存在——sessionsRoot 是跨全文件共享的 fixture,留着不清会污染
+  // 后面"会话...API 返回同一份有界扫描结果"那条按数量断言的用例。
+  t.after(() => fs.rmSync(staleFile, { force: true }));
+  fs.writeFileSync(staleFile, JSON.stringify({
+    timestamp: staleAt, ordinal: 0, type: 'session_meta',
+    payload: { session_id: staleId, timestamp: staleAt, cwd: fixture.repo, originator: 'codex_exec', cli_version: 'test' },
+  }) + '\n');
+
+  const dir = path.join(fixture.repo, '.codex', 'jobs', 'stale-job');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'task.json'), JSON.stringify({
+    title: '静默测试', goal: '测详情页能不能读到软判据', acceptance: [{ id: 'A1', kind: 'typecheck', required: true }],
+  }));
+  // pid 用服务器子进程自己的号——它此刻必然存活，好把「进程还在」和「很久没动静」这两条证据分开测。
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({
+    finishedAt: null, pid: fixture.child.pid, startedAt: staleAt, threadId: staleId,
+  }));
+
+  const detail = await (await fetch(fixture.base + '/api/codex/job?slug=stale-job&tail=0')).json();
+  assert.equal(detail.liveness, 'stalled');
+  assert.equal(detail.stalledEvidence, 'silent');
+  assert.equal(detail.confirmedDead, false, '软判据只标红给人看，不该顺带放开复派闸');
+});
+
 test('GET /api/codex/job 拒绝四种非法 slug', async () => {
   for (const slug of ['../evil', 'a/b', '', 'Upper']) {
     const response = await fetch(fixture.base + '/api/codex/job?slug=' + encodeURIComponent(slug));

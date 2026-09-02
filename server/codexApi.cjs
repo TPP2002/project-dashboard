@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getJobDetail, isRedispatchBlocked, isValidSlug, listJobs, parseTaskJson } = require('./codexJobs.cjs');
 const { attachLiveness } = require('./codexJobHealth.cjs');
+const { getJobSessionSummary } = require('./codexSessions.cjs');
 const { spawnDispatchCli, waitForChild } = require('./codexProcess.cjs');
 const { createCodexSessionApi } = require('./codexSessionApi.cjs');
 
@@ -84,9 +85,11 @@ function createCodexApi({
     if (!ctx) return;
     const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: query.tail !== '0' });
     if (!detail) return sendJson(res, 404, { ok: false, error: `工单 ${slug} 不存在` });
-    // 详情也要走活性判定,口径与列表一致:否则左边列表标「失联了」、右边详情写「还在干」,
-    // 同一张单两个说法,负责人第一眼就会发现自相矛盾。
-    sendJson(res, 200, attachLiveness([detail], { nowMs: Date.now() })[0]);
+    // 详情只看这一个工单,查它自己那一份会话文件很便宜,不必像列表那样为了省成本放弃软判据
+    // (CODEX-LIVENESS-VERDICT-SPLIT,2026-09-02)——否则战报已经标红「很久没动静」,
+    // 用户从战报点进详情核实,详情却因为查不到这条软证据而说「还在干」,自相矛盾。
+    const session = detail.threadId ? getJobSessionSummary(detail.threadId, { sessionsRoot }) : null;
+    sendJson(res, 200, attachLiveness([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]);
   }
 
   function handleTask(res, query) {

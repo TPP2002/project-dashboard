@@ -25,7 +25,7 @@ const {
 } = require('../server/codexMetrics.cjs');
 const { estimateCodexSavings } = require('../core/costUsage.cjs');
 const { buildSessionResumeArgs, listCodexExecutables } = require('../server/codexProcess.cjs');
-const { listSessions } = require('../server/codexSessions.cjs');
+const { getJobSessionSummary, listSessions } = require('../server/codexSessions.cjs');
 const { scanTokenTotalsByDay } = require('../server/codexCostUsage.cjs');
 
 const UUID = '01a05d41-a29f-78f1-bcc6-3ccddd7ec86e';
@@ -160,6 +160,33 @@ test('额度解析容忍 secondary=null 与 credits 缺失，并能换算本地�
   assert.equal(snapshot.quotaSample.rateLimits.secondary, null);
   assert.equal(snapshot.quotaSample.rateLimits.credits, undefined);
   assert.match(formatResetLocal(0, 'Asia/Shanghai'), /1970.*08:00:00/);
+});
+
+// ── 详情页只查一个工单自己的会话文件(CODEX-LIVENESS-VERDICT-SPLIT,2026-09-02)──
+//
+// 战报为了巡检全部工单要扫一遍时间窗内的全部会话,列表接口付不起这个代价所以故意不查;
+// 但详情页每次只看一个工单,查它自己那一份文件不该有这个顾虑——这个函数就是那条"只查一个"的路径。
+
+test('getJobSessionSummary 按 threadId 只读一个会话文件，查不到时返回 null', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-single-session-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  const day = path.join(root, String(now.getFullYear()), pad(now.getMonth() + 1), pad(now.getDate()));
+  fs.mkdirSync(day, { recursive: true });
+  const id = '22222222-2222-2222-2222-222222222222';
+  const activityAt = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+  fs.writeFileSync(path.join(day, `rollout-2026-01-01T00-00-00-${id}.jsonl`), JSON.stringify({
+    timestamp: activityAt, ordinal: 0, type: 'session_meta',
+    payload: { session_id: id, timestamp: activityAt, cwd: 'D:\\work' },
+  }) + '\n');
+
+  const summary = getJobSessionSummary(id, { sessionsRoot: root });
+  assert.equal(summary.sessionId, id);
+  assert.equal(summary.lastActivityAt, activityAt);
+
+  assert.equal(getJobSessionSummary(null, { sessionsRoot: root }), null, '没有 threadId 时不查文件、直接返回 null');
+  assert.equal(getJobSessionSummary('not-found-id', { sessionsRoot: root }), null, '查不到匹配文件时返回 null');
 });
 
 test('额度色档边界为 59绿、60黄、85黄、86红', () => {
