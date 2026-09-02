@@ -51,8 +51,12 @@ export interface TaskCost {
 }
 
 export interface Task {
+  /** 任务卡编号:模型用来定位,如 NUMERIC-ROUND-FACADE-UNIFY */
   id: string
+  /** 任务详细说明:给模型读的技术描述 */
   title: string
+  /** 标题:一句人话,给不写代码的负责人看。老卡可能没有,界面要回落到 title */
+  plainTitle?: string
   description?: string
   status: Status
   percent?: number
