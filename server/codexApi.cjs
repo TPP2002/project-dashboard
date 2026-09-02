@@ -84,7 +84,9 @@ function createCodexApi({
     if (!ctx) return;
     const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: query.tail !== '0' });
     if (!detail) return sendJson(res, 404, { ok: false, error: `工单 ${slug} 不存在` });
-    sendJson(res, 200, detail);
+    // 详情也要走活性判定,口径与列表一致:否则左边列表标「失联了」、右边详情写「还在干」,
+    // 同一张单两个说法,负责人第一眼就会发现自相矛盾。
+    sendJson(res, 200, attachLiveness([detail], { nowMs: Date.now() })[0]);
   }
 
   function handleTask(res, query) {
