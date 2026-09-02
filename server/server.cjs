@@ -35,6 +35,7 @@ const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt
 const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
+const { buildParallelPlan } = require('./parallelPlan.cjs');
 
 // ============ 常量 ============
 
@@ -268,6 +269,26 @@ function handleBoard(req, res, projectId) {
   catch (e) { return sendJson(res, 500, { ok: false, error: `board.json 解析失败：${e.message}` }); }
   if (!board) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
   sendJson(res, 200, board);
+}
+
+/**
+ * 可并行清单 —— 现在哪几张卡能同时派给不同对话去做。
+ * 纯规则计算(依赖 / 施工占用 / 文件范围 / 卡号前缀),不调任何模型,零额度。
+ */
+function handleParallel(req, res, query) {
+  const projectId = query.project;
+  if (!projectId || typeof projectId !== 'string') return sendJson(res, 400, { ok: false, error: '缺 project' });
+  const proj = resolveProjectSafe(projectId);
+  if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
+  let board;
+  try { board = readBoardFile(proj.board); }
+  catch (e) { return sendJson(res, 500, { ok: false, error: `board.json 解析失败：${e.message}` }); }
+  if (!board) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在' });
+  try {
+    sendJson(res, 200, Object.assign({ ok: true }, buildParallelPlan(board.tasks)));
+  } catch (e) {
+    sendJson(res, 500, { ok: false, error: '并行清单计算失败：' + e.message });
+  }
 }
 
 function handleDoc(req, res, query) {
@@ -818,6 +839,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'dispatch' && req.method === 'POST') return handleDispatch(req, res);
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
+      if (sub === 'parallel' && req.method === 'GET') return handleParallel(req, res, parsed.query || {});
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
