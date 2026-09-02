@@ -41,17 +41,17 @@ function open(id: string) { store.openTask(id, pid.value) }
   <div>
     <div class="head">
       <h2>💥 占用防撞</h2>
-      <span class="pill" :class="{ bad: conflictCount }">{{ conflictCount ? conflictCount + ' 处冲突' : '无冲突' }}</span>
+      <span class="badge" :class="conflictCount ? 'bad' : 'ok'">{{ conflictCount ? conflictCount + ' 处冲突' : '无冲突' }}</span>
     </div>
 
     <div class="cols">
       <section v-for="s in SECTIONS" :key="s.title" class="sec card">
         <div class="sec-t">{{ s.title }}</div>
         <div v-if="!s.rows.length" class="muted small">无占用记录</div>
-        <div v-for="r in s.rows" :key="r.v" class="orow" :class="{ conflict: r.conflict }">
+        <div v-for="r in s.rows" :key="r.v" class="orow row" :class="{ conflict: r.conflict }">
           <div class="ov mono">{{ r.v }}</div>
           <div class="ots">
-            <span v-for="t in r.ts" :key="t.id" class="otag" @click="open(t.id)" :title="t.title">{{ t.id }}</span>
+            <button v-for="t in r.ts" :key="t.id" class="otag badge n" type="button" @click="open(t.id)" :title="t.title">{{ t.id }}</button>
           </div>
         </div>
       </section>
@@ -60,18 +60,20 @@ function open(id: string) { store.openTask(id, pid.value) }
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.head h2 { font-size: 18px; }
-.pill.bad { color: var(--danger); border-color: rgba(208, 99, 124, 0.5); background: rgba(208, 99, 124, 0.12); }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
-.sec { padding: 12px 14px; }
-.sec-t { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
-.orow { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: var(--radius-sm); }
-.orow + .orow { border-top: 1px solid var(--border-soft); }
-.orow.conflict { background: rgba(208, 99, 124, 0.1); border: 1px solid rgba(208, 99, 124, 0.35); }
-.ov { flex: 1; font-size: 12px; word-break: break-all; }
-.ots { display: flex; gap: 5px; flex-wrap: wrap; }
-.otag { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 7px; font-size: 11px; font-family: var(--mono); cursor: pointer; }
-.orow.conflict .otag { border-color: var(--danger); color: #f2b8c4; }
-.small { font-size: 12px; }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--s4); align-items: start; }
+.sec-t { margin-bottom: var(--s3); font-size: var(--fs-base); font-weight: 600; }
+.orow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s2);
+  align-items: start;
+}
+.orow + .orow { margin-top: var(--s2); }
+.orow.conflict { border-color: var(--bad); background: var(--bad-bg); }
+.ov { min-width: 0; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.ots { display: flex; gap: var(--s1); flex-wrap: wrap; }
+.otag { cursor: pointer; }
+.orow.conflict .otag { border-color: var(--bad); color: var(--bad); }
+.small { font-size: var(--fs-sm); }
 </style>

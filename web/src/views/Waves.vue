@@ -3,7 +3,7 @@
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { statusColor, emojiFor, DONE_STATUSES } from '@/api/schema'
+import { emojiFor, DONE_STATUSES } from '@/api/schema'
 import DoneToggle from '@/components/DoneToggle.vue'
 import type { Task } from '@/types'
 
@@ -40,13 +40,13 @@ function prog(tasks: Task[]) {
           <span class="spacer" />
           <span class="w-pct mono">{{ prog(w.tasks).percent }}%</span>
         </div>
-        <div class="progress"><i :style="{ width: prog(w.tasks).percent + '%' }" /></div>
+        <div class="glow-rail"><i :style="{ width: prog(w.tasks).percent + '%' }" /></div>
         <div class="w-tasks">
           <div
-            v-for="t in w.visible" :key="t.id" class="wt"
-            :style="{ borderLeft: '3px solid ' + statusColor(t.status) }"
+            v-for="t in w.visible" :key="t.id" class="wt row"
             @click="store.openTask(t.id, pid)"
           >
+            <span v-if="t.status === '施工中'" class="glow-edge" />
             <span class="e">{{ emojiFor(t.status) }}</span>
             <span class="tid mono">{{ t.id }}</span>
             <span class="tt">{{ t.title }}</span>
@@ -59,17 +59,15 @@ function prog(tasks: Task[]) {
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.head h2 { font-size: 18px; }
-.waves { display: flex; flex-direction: column; gap: 14px; max-width: 900px; }
-.wave { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
-.w-head { display: flex; align-items: center; gap: 10px; }
-.w-title { font-size: 15px; font-weight: 600; }
-.w-pct { color: var(--muted); font-size: 13px; }
-.w-tasks { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-.wt { display: flex; align-items: center; gap: 9px; padding: 7px 10px; background: var(--panel-2); border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; }
-.wt:hover { background: #2a3444; }
-.wt .tid { color: var(--muted); font-weight: 600; }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
+.waves { display: flex; flex-direction: column; gap: var(--s3); max-width: 900px; }
+.wave { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4); }
+.w-head { display: flex; align-items: center; gap: var(--s3); }
+.w-title { font-size: var(--fs-md); font-weight: 600; }
+.w-pct { color: var(--text-2); font-size: var(--fs-base); }
+.w-tasks { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s1); }
+.wt { cursor: pointer; }
+.wt .tid { color: var(--text-2); font-weight: 600; }
 .wt .tt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wt .pc { color: var(--muted); font-size: 12px; }
+.wt .pc { color: var(--text-2); font-size: var(--fs-sm); }
 </style>

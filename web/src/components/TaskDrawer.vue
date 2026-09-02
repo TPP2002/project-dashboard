@@ -3,7 +3,6 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { statusColor } from '@/api/schema'
 import { fetchDoc, docUrl } from '@/api/client'
 import { fmtDateTime, relTime } from '@/utils/format'
 import StatusBadge from './StatusBadge.vue'
@@ -85,19 +84,19 @@ onUnmounted(() => {
   <Teleport to="body">
     <Transition name="drawer">
       <div v-if="task" class="overlay" @click.self="store.closeTask()">
-        <aside class="drawer">
-          <header class="d-head" :style="{ borderTopColor: statusColor(task.status) }">
+        <aside class="drawer card" aria-label="任务详情">
+          <header class="d-head">
             <span class="d-id mono">{{ task.id }}</span>
             <StatusBadge :status="task.status" />
             <span class="spacer" />
-            <button class="btn btn-sm btn-ghost close" @click="store.closeTask()">✕</button>
+            <button class="btn btn-sm btn-ghost close" type="button" aria-label="关闭任务详情" @click="store.closeTask()">✕</button>
           </header>
 
           <div class="d-body">
             <h2 class="d-title">{{ task.title }}</h2>
 
             <div class="d-prog">
-              <div class="progress"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
+              <div class="glow-rail"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
               <span class="pct mono">{{ task.percent || 0 }}%</span>
               <span v-if="task.status === '施工中' && (task as any).lastProgressAt" class="prog-time" :class="{ stale: progStale }">
                 {{ progStale ? '⚠ 进度' : '进度更新于' }} {{ relTime((task as any).lastProgressAt) }}
@@ -120,7 +119,7 @@ onUnmounted(() => {
             <!-- 测试 -->
             <section v-if="task.tests" class="sec block">
               <div class="sec-t">测试</div>
-              <div class="row gap-2 wrap">
+              <div class="inline-list">
                 <span class="pill">共 {{ task.tests.total ?? 0 }}</span>
                 <span class="pill">通过 {{ task.tests.passing ?? 0 }}</span>
                 <span class="pill" v-if="task.tests.mustFailFirst">先失败 {{ task.tests.mustFailFirst }}</span>
@@ -130,15 +129,15 @@ onUnmounted(() => {
             <!-- 分支 / 占用 -->
             <section v-if="hasArr(task.gitBranch) || hasArr(task.worktree) || hasArr(task.prNumbers) || hasArr(task.commitShas) || hasArr(task.fileScope) || hasArr(task.forbiddenZones)" class="sec block">
               <div class="sec-t">分支 / 占用</div>
-              <div class="row gap-2 wrap">
+              <div class="inline-list">
                 <span v-for="b in task.gitBranch || []" :key="b" class="pill">🌿 {{ b }}</span>
                 <span v-for="w in task.worktree || []" :key="w" class="pill">🌲 {{ w }}</span>
                 <span v-for="p in task.prNumbers || []" :key="p" class="pill">PR #{{ p }}</span>
                 <span v-for="c in task.commitShas || []" :key="c" class="pill">⚙ {{ String(c).slice(0, 8) }}</span>
               </div>
-              <div class="row gap-2 wrap" v-if="hasArr(task.fileScope) || hasArr(task.forbiddenZones)" style="margin-top:6px">
-                <span v-for="f in task.fileScope || []" :key="f" class="pill scope">📁 {{ f }}</span>
-                <span v-for="f in task.forbiddenZones || []" :key="f" class="pill forbid">⛔ {{ f }}</span>
+              <div class="inline-list secondary-list" v-if="hasArr(task.fileScope) || hasArr(task.forbiddenZones)">
+                <span v-for="f in task.fileScope || []" :key="f" class="badge info">📁 {{ f }}</span>
+                <span v-for="f in task.forbiddenZones || []" :key="f" class="badge bad">⛔ {{ f }}</span>
               </div>
             </section>
 
@@ -166,19 +165,19 @@ onUnmounted(() => {
             <!-- 决策（含内联拍板） -->
             <section v-if="hasArr(task.decisions)" class="sec block">
               <div class="sec-t">决策</div>
-              <div v-for="d in task.decisions" :key="d.id" class="dec">
+              <div v-for="d in task.decisions" :key="d.id" class="dec card">
                 <div class="dec-q"><span class="did mono">#{{ d.id }}</span> {{ d.question }}</div>
                 <template v-if="d.answer == null">
                   <div class="opts">
                     <button
-                      v-for="o in d.options" :key="o" class="opt"
+                      v-for="o in d.options" :key="o" class="opt btn"
                       :class="{ on: (picked[d.id] ?? d.recommended) === o, rec: d.recommended === o }"
                       @click="picked[d.id] = o"
                     >{{ (picked[d.id] ?? d.recommended) === o ? '●' : '○' }} {{ o }}
-                      <span v-if="d.recommended === o" class="rectag">推荐</span>
+                      <span v-if="d.recommended === o" class="badge ok compact">推荐</span>
                     </button>
                   </div>
-                  <div class="row gap-2">
+                  <div class="decision-actions">
                     <span v-if="derr[d.id]" class="err">⚠️ {{ derr[d.id] }}</span>
                     <span class="spacer" />
                     <button class="btn btn-primary btn-sm" :disabled="submitting[d.id]" @click="decide(d.id, d.options, d.recommended)">
@@ -193,7 +192,7 @@ onUnmounted(() => {
             <!-- 文档 -->
             <section v-if="hasArr(task.docs)" class="sec block">
               <div class="sec-t">文档</div>
-              <div v-for="(d, i) in task.docs" :key="i" class="doc">
+              <div v-for="(d, i) in task.docs" :key="i" class="doc card">
                 <div class="doc-row">
                   <button class="doc-name" @click="preview(d)">📄 {{ docName(d) }}</button>
                   <a class="pill" :href="docUrl(pid, docPath(d))" target="_blank" rel="noopener">打开 ↗</a>
@@ -210,7 +209,7 @@ onUnmounted(() => {
             <section v-if="acts.length" class="sec block">
               <div class="sec-t">活动</div>
               <div class="tl">
-                <div v-for="(a, i) in acts" :key="i" class="tl-item">
+                <div v-for="(a, i) in acts" :key="i" class="tl-item row">
                   <span class="tl-dot" />
                   <div class="tl-main">
                     <div class="tl-text">{{ a.text }}</div>
@@ -227,56 +226,56 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: flex-end; z-index: 100; }
-.drawer { width: min(520px, 94vw); height: 100%; background: var(--bg-soft); border-left: 1px solid var(--border); display: flex; flex-direction: column; box-shadow: -10px 0 40px rgba(0, 0, 0, 0.4); }
-.d-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); border-top: 3px solid var(--border); }
-.d-id { color: var(--muted); font-weight: 700; }
-.d-body { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
-.d-title { font-size: 17px; line-height: 1.4; }
-.d-prog { display: flex; align-items: center; gap: 10px; }
-.d-prog .progress { flex: 1; }
-.d-prog .pct { font-size: 12px; color: var(--muted); }
-.d-prog .prog-time { font-size: 11px; color: var(--muted-2); margin-left: 4px; }
+.overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: flex-end; background: var(--overlay); }
+.drawer.card { display: flex; flex-direction: column; width: min(520px, 94vw); height: 100%; padding: 0; overflow: hidden; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: var(--surface); box-shadow: calc(-1 * var(--s3)) 0 var(--s7) var(--drawer-shadow); }
+.d-head { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); }
+.d-id { color: var(--text-2); font-weight: 700; }
+.d-body { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s4); overflow-y: auto; }
+.d-title { font-size: var(--fs-lg); line-height: 1.4; }
+.d-prog { display: flex; align-items: center; gap: var(--s3); }
+.d-prog .glow-rail { flex: 1; }
+.d-prog .pct { color: var(--text-2); font-size: var(--fs-sm); }
+.d-prog .prog-time { margin-left: var(--s1); color: var(--text-3); font-size: var(--fs-xs); }
 .d-prog .prog-time.stale { color: var(--warn); }
-.d-desc { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; white-space: pre-wrap; }
-.sec { display: flex; flex-wrap: wrap; gap: 8px 18px; }
-.sec.block { flex-direction: column; gap: 8px; border-top: 1px solid var(--border-soft); padding-top: 12px; }
-.sec-t { font-size: 12px; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-.kv { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
-.kv span { color: var(--muted); min-width: 62px; }
+.d-desc { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.6; white-space: pre-wrap; }
+.sec { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
+.sec.block { flex-direction: column; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.sec-t { color: var(--text-3); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.kv { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--fs-base); }
+.kv span { min-width: calc(var(--s7) + var(--s3)); color: var(--text-2); }
 .kv b { font-weight: 600; }
 .kv b.warn, .warn { color: var(--warn); }
-.note { font-size: 13px; color: var(--warn); background: rgba(245, 166, 35, 0.1); border-radius: var(--radius-sm); padding: 7px 10px; }
-.pill.scope { color: #7fd3c4; }
-.pill.forbid { color: var(--danger); border-color: rgba(208, 99, 124, 0.4); }
-.dec { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; display: flex; flex-direction: column; gap: 9px; background: var(--panel); }
-.dec-q { font-size: 13px; }
-.dec-q .did { color: var(--muted-2); margin-right: 4px; }
-.opts { display: flex; flex-direction: column; gap: 6px; }
-.opt { text-align: left; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 7px 10px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 7px; }
-.opt.on { border-color: var(--accent); background: var(--accent-soft); }
-.opt .rectag { margin-left: auto; font-size: 10px; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 0 6px; }
-.dec-done { font-size: 13px; color: var(--ok); }
-.err { color: var(--danger); font-size: 12px; }
-.small { font-size: 12px; }
-.doc { border: 1px solid var(--border-soft); border-radius: var(--radius-sm); overflow: hidden; }
-.doc-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; }
-.doc-name { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; flex: 1; text-align: left; }
-.doc-view { border-top: 1px solid var(--border-soft); padding: 10px; max-height: 260px; overflow: auto; background: var(--bg); }
-.doc-view pre { margin: 0; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--text); }
-.tl { display: flex; flex-direction: column; gap: 10px; }
-.tl-item { display: flex; gap: 9px; }
-.tl-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-top: 5px; flex: none; }
+.note { padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--warn-bg); color: var(--warn); font-size: var(--fs-base); }
+.inline-list, .decision-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.secondary-list { margin-top: var(--s2); }
+.dec { display: flex; flex-direction: column; gap: var(--s2); background: var(--surface-2); }
+.dec-q { font-size: var(--fs-base); }
+.dec-q .did { margin-right: var(--s1); color: var(--text-3); }
+.opts { display: flex; flex-direction: column; gap: var(--s2); }
+.opt { width: 100%; justify-content: flex-start; padding: var(--s2) var(--s3); background: var(--surface); text-align: left; }
+.opt.on { border-color: var(--info); background: var(--info-bg); }
+.opt .badge { margin-left: auto; }
+.dec-done { color: var(--ok); font-size: var(--fs-base); }
+.err { color: var(--bad); font-size: var(--fs-sm); }
+.small { font-size: var(--fs-sm); }
+.doc { padding: 0; background: var(--surface-2); }
+.doc-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); }
+.doc-name { flex: 1; border: 0; background: none; color: var(--info); cursor: pointer; font-size: var(--fs-base); text-align: left; }
+.doc-view { max-height: 260px; padding: var(--s3); overflow: auto; border-top: 1px solid var(--line); background: var(--bg); }
+.doc-view pre { margin: 0; color: var(--text); font-family: var(--mono); font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-word; }
+.tl { display: flex; flex-direction: column; gap: var(--s2); }
+.tl-item { align-items: flex-start; }
+.tl-dot { flex: none; width: var(--s2); height: var(--s2); margin-top: var(--s1); border-radius: 50%; background: var(--info); }
 .tl-main { flex: 1; }
-.tl-text { font-size: 13px; }
-.tl-meta { font-size: 11px; color: var(--muted-2); margin-top: 2px; }
-.cost-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
-.cost-date { color: var(--muted); font-size: 12px; }
-.cost-note { color: var(--muted-2); font-size: 12px; flex-basis: 100%; padding-left: 2px; }
+.tl-text { font-size: var(--fs-base); }
+.tl-meta { margin-top: var(--s1); color: var(--text-3); font-size: var(--fs-xs); }
+.cost-row { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: var(--fs-base); }
+.cost-date { color: var(--text-2); font-size: var(--fs-sm); }
+.cost-note { flex-basis: 100%; padding-left: var(--s1); color: var(--text-3); font-size: var(--fs-sm); }
 
 /* 抽屉过渡 */
-.drawer-enter-active, .drawer-leave-active { transition: opacity 0.2s ease; }
-.drawer-enter-active .drawer, .drawer-leave-active .drawer { transition: transform 0.22s ease; }
+.drawer-enter-active, .drawer-leave-active { transition: opacity .18s ease; }
+.drawer-enter-active .drawer, .drawer-leave-active .drawer { transition: transform .18s ease; }
 .drawer-enter-from, .drawer-leave-to { opacity: 0; }
 .drawer-enter-from .drawer, .drawer-leave-to .drawer { transform: translateX(30px); }
 </style>

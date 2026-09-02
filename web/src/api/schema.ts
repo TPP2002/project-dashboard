@@ -8,22 +8,28 @@ export { STATUS, STATUS_EMOJI, emojiFor }
 // 泳道 / 排序顺序沿用 core STATUS 顺序
 export const STATUS_ORDER: string[] = STATUS
 
-// 状态配色：贴合状态语义（待拍板=橙告警、完工/已拍板=绿、暂缓=红、施工中=琥珀、压轴=紫）
-export const STATUS_COLOR: Record<string, string> = {
-  未开工: '#8a94a6',
-  待开工: '#5b8def',
-  待拍板: '#f5a623',
-  已拍板: '#3fb950',
-  施工中: '#e3a008',
-  可复工: '#2bb0c9',
-  收官: '#2f9e6f',
-  已完工: '#2ea043',
-  暂缓: '#d0637c',
-  压轴: '#a371f7',
+// 状态只落到设计系统的五种语义色阶，避免组件各自维护一套颜色。
+export type StatusTone = 'n' | 'ok' | 'warn' | 'bad' | 'info'
+export const STATUS_TONE: Record<string, StatusTone> = {
+  未开工: 'n',
+  待开工: 'info',
+  待拍板: 'warn',
+  已拍板: 'ok',
+  施工中: 'info',
+  可复工: 'info',
+  收官: 'ok',
+  已完工: 'ok',
+  暂缓: 'bad',
+  压轴: 'warn',
+}
+
+export function statusTone(s: string): StatusTone {
+  return STATUS_TONE[s] || 'n'
 }
 
 export function statusColor(s: string): string {
-  return STATUS_COLOR[s] || '#8a94a6'
+  const tone = statusTone(s)
+  return tone === 'n' ? 'var(--text-3)' : `var(--${tone})`
 }
 
 // 完工类状态（用于进度派生：done 计数）

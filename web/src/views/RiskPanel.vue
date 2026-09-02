@@ -34,7 +34,7 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
 
     <div class="cols">
       <section class="col">
-        <div class="col-t">🚫 暂缓 <span class="n">{{ groups.parked.length }}</span></div>
+        <div class="col-t">🚫 暂缓 <span class="badge n">{{ groups.parked.length }}</span></div>
         <div v-if="!groups.parked.length" class="muted small">无</div>
         <div v-for="r in groups.parked" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span></div>
@@ -45,7 +45,7 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
       </section>
 
       <section class="col">
-        <div class="col-t">⛔ 阻塞 <span class="n">{{ groups.blocked.length }}</span></div>
+        <div class="col-t">⛔ 阻塞 <span class="badge n">{{ groups.blocked.length }}</span></div>
         <div v-if="!groups.blocked.length" class="muted small">无</div>
         <div v-for="r in groups.blocked" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span><StatusBadge :status="r.task.status" small /></div>
@@ -56,7 +56,7 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
       </section>
 
       <section class="col">
-        <div class="col-t">❓ 待拍板 <span class="n">{{ groups.pending.length }}</span></div>
+        <div class="col-t">❓ 待拍板 <span class="badge n">{{ groups.pending.length }}</span></div>
         <div v-if="!groups.pending.length" class="muted small">无</div>
         <div v-for="r in groups.pending" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span></div>
@@ -69,20 +69,17 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
 </template>
 
 <style scoped>
-.head { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
-.head h2 { font-size: 18px; }
-.spacer { flex: 1; }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; }
-.col { display: flex; flex-direction: column; gap: 10px; }
-.col-t { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.col-t .n { background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 0 8px; font-size: 12px; }
-.rcard { padding: 11px 13px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
-.rcard:hover { border-color: var(--accent); }
-.rtop { display: flex; align-items: center; gap: 8px; }
-.rtop .tid { color: var(--muted); font-weight: 600; font-size: 12px; }
-.rtitle { font-size: 13px; }
-.reason { font-size: 12px; color: var(--muted); }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--s4); align-items: start; }
+.col { display: flex; flex-direction: column; gap: var(--s2); }
+.col-t { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-base); font-weight: 600; }
+.rcard { display: flex; flex-direction: column; gap: var(--s2); cursor: pointer; }
+.rcard:hover { border-color: var(--line-strong); }
+.rtop { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.rtop .tid { color: var(--text-2); font-weight: 600; font-size: var(--fs-sm); }
+.rtitle { font-size: var(--fs-base); }
+.reason { color: var(--text-2); font-size: var(--fs-sm); }
 .reason.warn { color: var(--warn); }
-.reason.note { color: var(--muted-2); }
-.small { font-size: 12px; }
+.reason.note { color: var(--text-3); }
+.small { font-size: var(--fs-sm); }
 </style>

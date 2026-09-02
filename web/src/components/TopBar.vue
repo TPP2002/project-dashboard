@@ -223,7 +223,7 @@ export default defineComponent({
 }
 .theme-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s1); }
 .appearance-choice {
-  padding: 5px var(--s2);
+  padding: var(--s1) var(--s2);
   border: 1px solid var(--line);
   border-radius: var(--r);
   background: var(--surface-2);

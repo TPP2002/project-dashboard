@@ -17,7 +17,7 @@ const tasks = computed(() =>
 )
 
 type Light = 'ok' | 'warn' | 'bad' | 'na'
-const LIGHT: Record<Light, string> = { ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--danger)', na: 'var(--muted-2)' }
+const LIGHT: Record<Light, string> = { ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--bad)', na: 'var(--text-3)' }
 
 function statusLight(t: Task): Light {
   if (t.status === '已完工') return 'ok'
@@ -67,7 +67,7 @@ function pendLight(t: Task): [Light, string] {
             <td><span class="dot" :style="{ background: LIGHT[testLight(t)[0]] }" />{{ testLight(t)[1] }}</td>
             <td><span class="dot" :style="{ background: LIGHT[typeLight(t)[0]] }" />{{ typeLight(t)[1] }}</td>
             <td><span class="dot" :style="{ background: LIGHT[pendLight(t)[0]] }" />{{ pendLight(t)[1] }}</td>
-            <td class="mono">{{ t.percent || 0 }}%</td>
+            <td class="mono num">{{ t.percent || 0 }}%</td>
           </tr>
         </tbody>
       </table>
@@ -76,16 +76,13 @@ function pendLight(t: Task): [Light, string] {
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.head h2 { font-size: 18px; }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
 .tablewrap { overflow: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
-th { color: var(--muted); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--panel); }
+th, td { white-space: nowrap; }
+th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); }
 tbody tr { cursor: pointer; }
-tbody tr:hover { background: var(--panel-2); }
-.tcell { display: flex; gap: 8px; align-items: baseline; }
-.tcell .tid { color: var(--muted); font-weight: 600; }
+.tcell { display: flex; gap: var(--s2); align-items: baseline; }
+.tcell .tid { color: var(--text-2); font-weight: 600; }
 .tcell .tt { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+.dot { display: inline-block; width: var(--s2); height: var(--s2); margin-right: var(--s2); border-radius: 50%; vertical-align: middle; }
 </style>

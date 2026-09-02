@@ -5,10 +5,16 @@ import { ref, shallowRef, onMounted, onBeforeUnmount } from 'vue'
 // echarts 类型经动态 import 引入，这里用 any 避免首屏静态引用类型
 type AnyChart = { setOption: (o: unknown, notMerge?: boolean) => void; resize: () => void; dispose: () => void; on: (ev: string, cb: (p: unknown) => void) => void }
 
+export function cssVar(name: `--${string}`): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
 export function useEchart(optionFactory: () => unknown, onReady?: (chart: AnyChart) => void) {
   const el = ref<HTMLElement | null>(null)
   const chart = shallowRef<AnyChart | null>(null)
   let ro: ResizeObserver | null = null
+  let themeObserver: MutationObserver | null = null
+  let colorScheme: MediaQueryList | null = null
 
   async function init() {
     const echarts = await import('echarts')
@@ -23,9 +29,20 @@ export function useEchart(optionFactory: () => unknown, onReady?: (chart: AnyCha
   function update() {
     if (chart.value) chart.value.setOption(optionFactory(), true)
   }
-  onMounted(init)
+  onMounted(() => {
+    themeObserver = new MutationObserver(update)
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'data-spectrum'],
+    })
+    colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+    colorScheme.addEventListener('change', update)
+    void init()
+  })
   onBeforeUnmount(() => {
     ro?.disconnect()
+    themeObserver?.disconnect()
+    colorScheme?.removeEventListener('change', update)
     chart.value?.dispose()
     chart.value = null
   })

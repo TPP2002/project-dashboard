@@ -14,8 +14,8 @@ const model = defineModel<boolean>({ required: true })
 </template>
 
 <style scoped>
-.done-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; user-select: none; }
-.done-toggle:hover { border-color: var(--accent); color: var(--text); }
-.done-toggle.on { background: rgba(46,160,67,0.12); border-color: rgba(46,160,67,0.4); color: #2ea043; }
+.done-toggle { display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); user-select: none; }
+.done-toggle:hover { border-color: var(--line-strong); color: var(--text); }
+.done-toggle.on { border-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
 .done-toggle input { margin: 0; cursor: pointer; }
 </style>

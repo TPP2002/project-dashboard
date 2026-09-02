@@ -53,25 +53,25 @@ function exportSnapshot() {
     </div>
 
     <div class="filters card">
-      <input v-model="q" class="q" placeholder="搜索 任务号 / 标题 / 描述 / 分支 / 文件域…" />
-      <select v-model="fProj" class="sel">
+      <input v-model="q" class="field q" placeholder="搜索 任务号 / 标题 / 描述 / 分支 / 文件域…" />
+      <select v-model="fProj" class="field sel">
         <option value="">全部项目</option>
         <option v-for="p in store.projectList" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
-      <select v-model="fStatus" class="sel">
+      <select v-model="fStatus" class="field sel">
         <option value="">全部状态</option>
         <option v-for="s in STATUS" :key="s" :value="s">{{ s }}</option>
       </select>
       <span class="cnt pill">{{ results.length }} 条</span>
     </div>
 
-    <div v-if="!results.length" class="empty card"><div class="big">🔍</div><div>无匹配结果。</div></div>
+    <div v-if="!results.length" class="empty card"><div class="big">🔍</div><div>无匹配结果，清空关键词或筛选条件后可查看全部任务。</div></div>
 
-    <div v-else class="list card">
-      <div v-for="h in results" :key="h.pid + h.task.id" class="hit" @click="store.openTask(h.task.id, h.pid)">
+    <div v-else class="list">
+      <div v-for="h in results" :key="h.pid + h.task.id" class="hit row" @click="store.openTask(h.task.id, h.pid)">
         <StatusBadge :status="h.task.status" small />
         <span class="tid mono">{{ h.task.id }}</span>
-        <span class="tt">{{ h.task.title }}</span>
+        <span class="tt g">{{ h.task.title }}</span>
         <span class="spacer" />
         <span class="proj pill">{{ h.pname }}</span>
       </div>
@@ -80,15 +80,12 @@ function exportSnapshot() {
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.head h2 { font-size: 18px; }
-.filters { display: flex; gap: 10px; padding: 12px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
-.q { flex: 1; min-width: 220px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); padding: 8px 11px; font-size: 13px; }
-.sel { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 9px; font-size: 12px; }
-.list { padding: 6px; display: flex; flex-direction: column; }
-.hit { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); cursor: pointer; }
-.hit + .hit { border-top: 1px solid var(--border-soft); }
-.hit:hover { background: var(--panel-2); }
-.hit .tid { color: var(--muted); font-weight: 600; font-size: 12px; }
-.hit .tt { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); }
+.filters { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }
+.q { flex: 1; min-width: 220px; }
+.sel { width: auto; }
+.list { display: flex; flex-direction: column; gap: var(--s2); }
+.hit { cursor: pointer; }
+.hit .tid { color: var(--text-2); font-weight: 600; font-size: var(--fs-sm); }
+.hit .tt { font-size: var(--fs-base); }
 </style>
