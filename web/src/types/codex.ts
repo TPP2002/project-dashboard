@@ -12,6 +12,10 @@ export interface JobSummary {
   /** 'stalled' = 状态说还在跑，但已经联系不上（进程没了/早该收工/长时间没动静）。 */
   liveness?: 'running' | 'stalled' | 'finished'
   stalledReason?: string | null
+  /** 三条失联判据里命中的是哪一条。前两条是铁证,'silent' 是软判据。 */
+  stalledEvidence?: 'process-gone' | 'overdue' | 'silent' | null
+  /** 是否**确定**已经死了(只有两条铁证才 true)。复派闸只认这个,软判据不许放行。 */
+  confirmedDead?: boolean
   lastActivityAt?: string | null
 }
 

@@ -173,9 +173,39 @@ async function collectJob() {
   } finally { collecting.value = false }
 }
 
+/**
+ * 这单现在能不能复派(CODEX-STALLED-JOB-REDISPATCH,2026-09-02 拍板「只对两条铁证放开」)。
+ *
+ * 以前这里直接看 `detail.running`,而**尸体的 running 永远是 true** —— 监工被强杀/机器重启时
+ * 收尾记录写不下去,于是面板左边已经把它标红成「失联了」,右边的复派按钮却一直是灰的,没法处置。
+ * 现在改成看服务端给的「确定已死」:只有两条铁证(进程号没了 / 超时没收尾)才置它。
+ * 软判据「很久没动静」照旧标红给人看,但**不放开按钮** —— 那条对正在跑长活的单同样成立,
+ * 一旦误判就是对着还活着的单重复派出一单 Codex,直接烧额度。
+ */
+const canRedispatch = computed(() => {
+  if (!detail.value || redispatching.value) return false
+  if (!detail.value.running) return true
+  return detail.value.confirmedDead === true
+})
+
+/** 按钮灰着的时候告诉人为什么灰 —— 只给一个灰按钮,等于没解释。 */
+const redispatchBlockedWhy = computed(() => {
+  if (!detail.value || canRedispatch.value || redispatching.value) return ''
+  if (detail.value.liveness === 'stalled') {
+    return `这单看着像失联，但依据只是「${detail.value.stalledReason ?? '很久没有新动静'}」——`
+      + '也可能它正在跑一个很慢的活。硬派会有重复派单烧额度的风险，'
+      + '所以先确认它确实停了（进程没了，或超过了这单允许的时长），按钮才会亮。'
+  }
+  return '这单还在跑，跑完或确认它已经停了才能复派。'
+})
+
 async function dispatchAgain(modifiedText?: string) {
-  if (!detail.value || detail.value.running || redispatching.value) return
-  if (!window.confirm('复派会覆盖上一次的运行产物。确认继续吗？')) return
+  if (!canRedispatch.value || !detail.value) return
+  const dead = detail.value.confirmedDead === true
+  const confirmText = dead
+    ? `这单已确认停了（${detail.value.stalledReason ?? '进程不在了'}）。复派会覆盖上一次的运行产物，并真的再派出一单 Codex（要花额度）。确认继续吗？`
+    : '复派会覆盖上一次的运行产物。确认继续吗？'
+  if (!window.confirm(confirmText)) return
   const slug = detail.value.slug
   redispatching.value = true
   try {
@@ -194,7 +224,7 @@ async function dispatchAgain(modifiedText?: string) {
 }
 
 async function openTaskEditor() {
-  if (!detail.value || detail.value.running) return
+  if (!canRedispatch.value || !detail.value) return
   jsonError.value = ''
   try {
     const response = await fetch('/api/codex/task?slug=' + encodeURIComponent(detail.value.slug))
@@ -264,9 +294,10 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
           <div class="actions">
             <button v-if="detail.threadId" class="btn btn-sm" @click="emit('openSession', detail.threadId)">对应会话</button>
             <button v-if="!detail.running && !detail.collected" class="btn btn-primary btn-sm" :disabled="collecting" @click="collectJob">{{ collecting ? '收单中…' : '收单' }}</button>
-            <button class="btn btn-sm" :disabled="detail.running || redispatching" @click="dispatchAgain()">{{ redispatching ? '复派中…' : '复派' }}</button>
-            <button class="btn btn-sm" :disabled="detail.running || redispatching" @click="openTaskEditor">改了再派</button>
+            <button class="btn btn-sm" :disabled="!canRedispatch" @click="dispatchAgain()">{{ redispatching ? '复派中…' : '复派' }}</button>
+            <button class="btn btn-sm" :disabled="!canRedispatch" @click="openTaskEditor">改了再派</button>
           </div>
+          <p v-if="redispatchBlockedWhy" class="why-blocked">{{ redispatchBlockedWhy }}</p>
           <pre v-if="notice" class="notice">{{ notice }}</pre>
 
           <section class="section purpose">
@@ -362,6 +393,7 @@ code { font-family: var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 .detail-head h2 { font-size: 18px; overflow-wrap: anywhere; } .detail-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
 .actions { flex-wrap: wrap; margin-top: 10px; }
 .notice { margin: 12px 0 0; padding: 9px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--muted); white-space: pre-wrap; }
+.why-blocked { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .section { min-width: 0; border-top: 1px solid var(--border-soft); margin-top: 14px; padding-top: 12px; }
 .section h3 { margin-bottom: 8px; font-size: 13px; color: var(--muted); }
 .purpose p { margin: 0; font-size: 15px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }

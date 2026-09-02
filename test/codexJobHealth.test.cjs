@@ -121,3 +121,58 @@ test('战报：失联单不按时间窗筛掉，且不再被算进「还在跑�
   assert.match(report.stalledJobs[0].reason, /进程已经不在/);
   assert.strictEqual(report.dispatched, 1, '派出数仍按 24 小时窗口口径,不受影响');
 });
+
+// ── 证据强度:哪些失联单允许一键复派(CODEX-STALLED-JOB-REDISPATCH,2026-09-02 拍板"只对两条铁证放开")──
+//
+// 复派会真的再派出一单 Codex,烧的是七天窗口里的额度。所以放开复派的前提不是"看起来像死了",
+// 而是"确定死了"。三条判据里只有前两条够格:
+//   ① 进程号已经不在  —— 铁证(号被回收复用只会让它显示成"在",绝不会显示成"不在")
+//   ② 超时还没收尾    —— 铁证(监工超时会自己写收尾,没写说明监工本人没活到那一刻)
+//   ③ 很久没新动静    —— 软判据,**不够格**:一个真在跑长活的单也会很久没动静,
+//                        照它放开复派 = 有概率对活着的单重复派出一单,直接烧额度。
+
+test('铁证①进程号没了:标记为确定已死,允许复派', () => {
+  const health = classifyJobLiveness(runningJob(), { nowMs: NOW, isAlive: dead });
+  assert.strictEqual(health.stalledEvidence, 'process-gone');
+  assert.strictEqual(health.confirmedDead, true);
+});
+
+test('铁证②超时没收尾:标记为确定已死,允许复派', () => {
+  const health = classifyJobLiveness(
+    runningJob({ startedAt: minutesAgo(60), timeoutSec: 900 }),
+    { nowMs: NOW, isAlive: alive },
+  );
+  assert.strictEqual(health.stalledEvidence, 'overdue');
+  assert.strictEqual(health.confirmedDead, true);
+});
+
+test('软判据③久无动静:仍判失联(该显示),但不算确定已死(不许复派)', () => {
+  const health = classifyJobLiveness(runningJob(), {
+    nowMs: NOW, isAlive: alive, lastActivityAt: minutesAgo(90),
+  });
+  assert.strictEqual(health.liveness, 'stalled', '久无动静照旧要标红给人看');
+  assert.strictEqual(health.stalledEvidence, 'silent');
+  assert.strictEqual(health.confirmedDead, false, '软判据不得放开复派闸——会误判活着的慢单');
+});
+
+test('还在正常跑的单:既不失联也不算已死', () => {
+  const health = classifyJobLiveness(runningJob(), {
+    nowMs: NOW, isAlive: alive, lastActivityAt: minutesAgo(1),
+  });
+  assert.strictEqual(health.liveness, 'running');
+  assert.strictEqual(health.stalledEvidence, null);
+  assert.strictEqual(health.confirmedDead, false);
+});
+
+test('已收尾的单:不是"确定已死"那种死(它是正常完成的,走收单不走复派)', () => {
+  const health = classifyJobLiveness({ running: false, pid: 4321 }, { nowMs: NOW, isAlive: dead });
+  assert.strictEqual(health.confirmedDead, false);
+  assert.strictEqual(health.stalledEvidence, null);
+});
+
+test('attachLiveness 把证据强度一并带给接口调用方', () => {
+  const [job] = attachLiveness([{ slug: 'a', running: true, pid: 7, startedAt: minutesAgo(5), timeoutSec: 900 }],
+    { nowMs: NOW, isAlive: dead });
+  assert.strictEqual(job.confirmedDead, true);
+  assert.strictEqual(job.stalledEvidence, 'process-gone');
+});

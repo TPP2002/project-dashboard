@@ -135,8 +135,19 @@ function createCodexApi({
       const task = `.codex/jobs/${slug}.json`;
       const taskPath = path.join(ctx.repo, task);
       const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: false });
-      if (isRedispatchBlocked(detail ? { finishedAt: detail.running ? null : 'done' } : { finishedAt: 'new' }, activeDispatches.has(slug))) {
-        return sendJson(res, 409, { ok: false, error: `工单 ${slug} 仍在运行，不能重复派发` });
+      // 这一步以前漏了活性判定(列表接口和详情接口都做了,唯独派单这里没做),于是服务端看不见
+      // 「失联」这一态,把早就死掉的单一直当成仍在运行拦着 —— CODEX-STALLED-JOB-REDISPATCH。
+      const health = detail ? attachLiveness([detail], { nowMs: Date.now() })[0] : null;
+      const state = detail ? { finishedAt: detail.running ? null : 'done' } : { finishedAt: 'new' };
+      const inFlight = activeDispatches.has(slug);
+      if (isRedispatchBlocked(state, inFlight, health?.confirmedDead === true)) {
+        // 文案要说清「为什么拦」:对失联单只说"仍在运行"是误导 —— 面板明明已经标红说它失联了。
+        const reason = inFlight ? '已经有一个派单进程在跑'
+          : health?.liveness === 'stalled'
+            ? `只是很久没有新动静(${health.stalledReason})，还不能确定它真的死了；`
+              + '硬派会有重复派单烧额度的风险，请先确认它确实停了'
+            : '它还在跑';
+        return sendJson(res, 409, { ok: false, error: `工单 ${slug} 不能重复派发：${reason}` });
       }
       if (body.taskText !== undefined) {
         try { parseTaskJson(body.taskText); }
