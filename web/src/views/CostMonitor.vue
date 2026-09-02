@@ -41,13 +41,23 @@ const error = ref('')
 
 const DAY_OPTS = [7, 30, 90]
 
+/**
+ * 请求序号:切天数/切项目时会并发几个请求,**先发的未必先回**。
+ * 只认最后一次发出的那个结果,否则界面显示的可能是上一个区间的数字
+ * (0902 实测:点了近30天却显示近7天的数,还叠出重复行)。
+ */
+let reqSeq = 0
+
 async function load() {
   const pid = store.currentProjectId
   if (!pid) return
+  const seq = ++reqSeq
+  const wantDays = days.value
   loading.value = true
   try {
-    const res = await fetch(`/api/cost?project=${encodeURIComponent(pid)}&days=${days.value}`)
+    const res = await fetch(`/api/cost?project=${encodeURIComponent(pid)}&days=${wantDays}`)
     const body = await res.json()
+    if (seq !== reqSeq) return // 已经有更新的请求发出,这份结果作废
     if (!body.ok) throw new Error(body.error || '读取失败')
     usage.value = body.usage
     codex.value = body.codex
@@ -55,9 +65,15 @@ async function load() {
     combined.value = body.combined
     error.value = ''
   } catch (e) {
+    if (seq !== reqSeq) return
+    // 失败时清空旧数据:留着会让人以为看到的是当前区间的数,其实是上一次的
+    usage.value = null
+    codex.value = null
+    quota.value = null
+    combined.value = null
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
-    loading.value = false
+    if (seq === reqSeq) loading.value = false
   }
 }
 
@@ -100,14 +116,18 @@ const dailyRows = computed(() => {
   })
 })
 
-/** 写出来的字占总量多少——用来点明"量大不等于花得多"。 */
-const outputShare = computed(() => {
+/** 花销结构:摘要区第二行用。写出来的最贵、重复利用的几乎不花钱。 */
+const spendBreakdown = computed(() => {
   const t = usage.value?.totals
-  if (!t) return '—'
-  const all = t.output + t.input + t.cacheWrite + t.cacheRead
-  if (all <= 0) return '—'
-  const pct = (t.output / all) * 100
-  return pct < 0.1 ? '不到 0.1%' : `${pct.toFixed(1)}%`
+  const u = usage.value?.usd
+  if (!t || !u) return null
+  return {
+    output: t.output,
+    inputNew: t.input + t.cacheWrite,
+    reused: t.cacheRead,
+    hitRate: t.cacheHitRate,
+    savedUsd: u.saved,
+  }
 })
 
 const modelRows = computed(() =>
@@ -171,6 +191,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
         :quota="quota"
         :combined="combined"
         :days="days"
+        :spend="spendBreakdown"
       />
       <div v-else class="empty card">
         <span class="ic">📭</span>
@@ -178,37 +199,6 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
         <span class="empty-help">有可归属到当前项目的会话后，这里会出现 Claude、Codex 与合计摘要。</span>
       </div>
 
-      <section class="card cache-shell">
-        <header class="cache-head">
-          <h2>这些量里,哪部分才真花钱</h2>
-          <p>
-            单价差得很远:<b>写出来的字最贵</b>,读进去的新内容次之,而重复用到的旧内容几乎不要钱。
-            所以总量大不等于花得多。
-          </p>
-        </header>
-        <div class="cache-grid">
-          <div class="cache-cell accent">
-            <div class="cache-num">{{ fmt(usage.totals.output) }}</div>
-            <div class="cache-lbl">写出来的(最贵) · 占总量 {{ outputShare }}</div>
-          </div>
-          <div class="cache-cell">
-            <div class="cache-num">{{ fmt(usage.totals.input + usage.totals.cacheWrite) }}</div>
-            <div class="cache-lbl">读进去的新内容</div>
-          </div>
-          <div class="cache-cell">
-            <div class="cache-num">{{ fmt(usage.totals.cacheRead) }}</div>
-            <div class="cache-lbl">重复用到的旧内容(几乎不花钱)</div>
-          </div>
-          <div class="cache-cell">
-            <div class="cache-num">{{ (usage.totals.cacheHitRate * 100).toFixed(1) }}%</div>
-            <div class="cache-lbl">重复利用命中率 —— 越高越省</div>
-          </div>
-          <div class="cache-cell">
-            <div class="cache-num money-save">${{ usd0(usage.usd.saved) }}</div>
-            <div class="cache-lbl">靠重复利用省下的钱(已扣掉存起来的开销)</div>
-          </div>
-        </div>
-      </section>
 
       <p class="fine">
         💡 折算口径:你实付的是订阅费——美元是「同样的量若按 API 牌价直购值多少钱」的等价参考
@@ -335,19 +325,8 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .empty-help { font-size: var(--fs-sm); }
 code { padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-sm); }
 
-.cache-shell { display: flex; flex-direction: column; }
-.cache-head { padding: var(--s4) var(--s4) 0; }
-.cache-head p { margin-top: var(--s1); font-size: var(--fs-sm); color: var(--text-2); }
-.cache-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: var(--s2); padding: var(--s3) var(--s4) var(--s4); }
-.cache-cell { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); padding: var(--s3) var(--s4); }
-.cache-cell.accent { border-color: var(--line-strong); }
-.cache-head b { color: var(--text); font-weight: 600; }
-.cache-num { font-family: var(--mono); font-size: var(--fs-xl); font-variant-numeric: tabular-nums; line-height: 1.15; }
-.cache-num.money-save { color: var(--ok); }
-.cache-lbl { margin-top: var(--s1); font-size: var(--fs-sm); color: var(--text-2); }
 
 @media (max-width: 760px) {
-  .cache-grid { grid-template-columns: 1fr; }
   .page-head, .details-head { flex-direction: column; align-items: stretch; }
   .range-picker { justify-content: flex-start; }
   .summary-skeleton { grid-template-columns: 1fr 1fr; }

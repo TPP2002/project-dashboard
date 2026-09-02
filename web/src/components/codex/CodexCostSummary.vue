@@ -2,12 +2,32 @@
 import { computed } from 'vue'
 import type { CodexUsage, CombinedUsage, QuotaSnapshot } from '@/types/codex'
 
+/** 只取用得到的几项,避免把整个 usage 类型搬过来。 */
+interface SpendBreakdown {
+  output: number
+  inputNew: number
+  reused: number
+  hitRate: number
+  savedUsd: number
+}
+
 const props = defineProps<{
   codex: CodexUsage
   combined: CombinedUsage
   quota: QuotaSnapshot
   days: number
+  spend?: SpendBreakdown | null
 }>()
+
+/** 写出来的字占总量多少 —— 用来点明「量大不等于花得多」。 */
+const outputShare = computed(() => {
+  const s = props.spend
+  if (!s) return '—'
+  const all = s.output + s.inputNew + s.reused
+  if (all <= 0) return '—'
+  const pct = (s.output / all) * 100
+  return pct < 0.1 ? '不到 0.1%' : `${pct.toFixed(1)}%`
+})
 
 function fmt(value: number) {
   if (value >= 1e8) return (value / 1e8).toFixed(2) + ' 亿'
@@ -19,13 +39,23 @@ function money(value: number | null) {
   return value == null ? '数据不足' : '$' + value.toFixed(2)
 }
 
+const OTHER = '其它'
+
+/**
+ * 后端已经把匹配不上任何项目的会话合并成一条叫「其它」的记录,
+ * 这里再按 top5 收拢时**必须并进那一条**,不能另起一条同名的 ——
+ * 两条同名会让列表 key 撞车,页面上就会冒出重复的「其它」(0902 实测踩到)。
+ */
 const projectRows = computed(() => {
   const sorted = [...props.codex.byProject].sort((a, b) => b.tokens - a.tokens)
-  const visible = sorted.slice(0, 5)
-  const rest = sorted.slice(5)
+  const named = sorted.filter((row) => row.project !== OTHER)
+  const others = sorted.filter((row) => row.project === OTHER)
+
+  const visible = named.slice(0, 5)
+  const rest = [...named.slice(5), ...others]
   if (rest.length) {
     visible.push({
-      project: '其它',
+      project: OTHER,
       tokens: rest.reduce((sum, row) => sum + row.tokens, 0),
       sessions: rest.reduce((sum, row) => sum + row.sessions, 0),
     })
@@ -50,6 +80,20 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
       <div class="card"><div class="v">{{ fmt(combined.codexTokens) }}</div><div class="l">Codex 消耗</div></div>
       <div class="card"><div class="v">{{ fmt(combined.totalTokens) }}</div><div class="l">两者合计</div></div>
       <div class="card rough"><div class="v">{{ money(combined.savingsEstimateUsd) }}</div><div class="l">用 Codex 省下的 Claude 额度（粗估）</div></div>
+    </div>
+
+    <div v-if="spend" class="spend-row">
+      <p class="spend-note">
+        上面是<b>用量</b>,下面是<b>花销结构</b>——单价差得很远:写出来的字最贵,读进去的新内容次之,
+        重复用到的旧内容几乎不要钱。<b>所以总量大不等于花得多。</b>
+      </p>
+      <div class="summary-cards spend-cards">
+        <div class="card"><div class="v">{{ fmt(spend.output) }}</div><div class="l">写出来的(最贵) · 占总量 {{ outputShare }}</div></div>
+        <div class="card"><div class="v">{{ fmt(spend.inputNew) }}</div><div class="l">读进去的新内容</div></div>
+        <div class="card"><div class="v">{{ fmt(spend.reused) }}</div><div class="l">重复用到的旧内容(几乎不花钱)</div></div>
+        <div class="card"><div class="v">{{ (spend.hitRate * 100).toFixed(1) }}%</div><div class="l">重复利用命中率 —— 越高越省</div></div>
+        <div class="card saved"><div class="v">${{ Math.round(spend.savedUsd).toLocaleString() }}</div><div class="l">靠重复利用省下的钱</div></div>
+      </div>
     </div>
 
     <div class="card quota-card">
@@ -103,6 +147,12 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
 .summary-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
 .summary-cards .card { min-width: 0; background: var(--surface-2); }
 .rough .v { overflow-wrap: anywhere; }
+.spend-row { display: flex; flex-direction: column; gap: var(--s2); }
+.spend-note { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; }
+.spend-note b { color: var(--text); font-weight: 600; }
+.spend-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.spend-cards .v { font-size: var(--fs-lg); }
+.spend-cards .saved .v { color: var(--ok); }
 .quota-card { display: flex; flex-direction: column; gap: var(--s3); background: var(--surface); }
 .quota-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s3); }
 .quota-head strong, .quota-head span { display: block; }
