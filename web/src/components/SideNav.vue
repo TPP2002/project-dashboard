@@ -17,6 +17,7 @@ const NAV_ITEMS = {
   overview: { to: '/overview', icon: '⌂', title: '总览' },
   approvals: { to: '/approvals', icon: '?', title: '待拍板', badge: 'pending' },
   codex: { to: '/codex', icon: '◎', title: 'Codex' },
+  parallel: { to: '/parallel', icon: '⇉', title: '能同时派几张' },
   daily: { to: '/daily', icon: '☷︎', title: '每日成果', badge: 'today' },
   kanban: { to: '/kanban', icon: '▦', title: '看板' },
   toland: { to: '/toland', icon: '↗', title: '待落地', badge: 'unlanded' },
@@ -39,7 +40,7 @@ const KNOWN_NAV_IDS = new Set<NavItemId>(Object.keys(NAV_ITEMS) as NavItemId[])
 const DEFAULT_GROUPS: ReadonlyArray<NavGroupConfig<NavItemId>> = [
   { id: 'daily', name: '每天要看', collapsed: false, items: [
     { id: 'overview', visible: true }, { id: 'approvals', visible: true },
-    { id: 'codex', visible: true }, { id: 'daily', visible: true },
+    { id: 'codex', visible: true }, { id: 'parallel', visible: true }, { id: 'daily', visible: true },
   ] },
   { id: 'projects', name: '项目管理', collapsed: false, items: [
     { id: 'kanban', visible: true }, { id: 'toland', visible: true }, { id: 'history', visible: true },
