@@ -32,7 +32,9 @@ const stale = () => {
       <span class="spacer" />
       <span v-if="pending()" class="badge warn" :title="pending() + ' 条待拍板'">❓{{ pending() }}</span>
     </div>
-    <div class="ttitle">{{ task.title }}</div>
+    <!-- 三层结构:编号在上、人话标题居主位、技术说明退到小字(没写人话标题的老卡直接显示技术说明) -->
+    <div class="ttitle">{{ task.plainTitle || task.title }}</div>
+    <div v-if="task.plainTitle && task.title" class="tdesc" :title="task.title">{{ task.title }}</div>
     <div v-if="building() || (task.percent ?? 0) > 0" class="prog-wrap">
       <div class="glow-rail"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
       <span class="pct mono">{{ task.percent || 0 }}%</span>
@@ -50,13 +52,24 @@ const stale = () => {
 </template>
 
 <style scoped>
-.tcard { display: flex; flex-direction: column; gap: var(--s2); cursor: pointer; transition: transform .14s ease, border-color .14s ease; }
+/**
+ * flex: none 是必须的:卡片放在纵向 flex 的列里,不写它就会被 flex 压扁——
+ * 卡多的时候整张卡被挤成一行只剩编号,标题和进度全看不见(0902 负责人报的就是这个)。
+ * 卡片必须保持自然高度,由列自己滚动。
+ */
+.tcard { flex: none; display: flex; flex-direction: column; gap: var(--s2); cursor: pointer; transition: transform .14s ease, border-color .14s ease; }
 .tcard:hover { transform: translateY(-1px); border-color: var(--line-strong); }
 .tcard-head, .tcard-meta, .prog-wrap { display: flex; align-items: center; gap: var(--s2); }
 .tcard-head { font-size: var(--fs-sm); }
 .tcard-meta { flex-wrap: wrap; }
 .tid { color: var(--text-2); font-weight: 600; }
 .ttitle { font-size: var(--fs-base); line-height: 1.4; }
+/* 技术说明:给模型读的,负责人扫卡时不该被它挤占。压成两行,鼠标悬停看全文。 */
+.tdesc {
+  color: var(--text-3); font-size: var(--fs-sm); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
 .prog-wrap .glow-rail { flex: 1; }
 .pct { min-width: var(--s6); color: var(--text-2); font-size: var(--fs-xs); text-align: right; }
 .prog-time { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
