@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { CodexReport, QuotaSnapshot } from '@/types/codex'
 
 const props = defineProps<{ refreshKey: number }>()
@@ -9,6 +9,9 @@ const report = ref<CodexReport | null>(null)
 const quota = ref<QuotaSnapshot | null>(null)
 const loading = ref(false)
 const error = ref('')
+const quotaPercent = computed(() => report.value?.quotaUsedPercent == null
+  ? 0
+  : Math.max(0, Math.min(100, report.value.quotaUsedPercent)))
 
 function fmt(value: number) {
   if (value >= 1e8) return (value / 1e8).toFixed(2) + ' 亿'
@@ -57,31 +60,43 @@ watch(() => props.refreshKey, load)
     <header class="report-head">
       <div><h2>昨夜战报</h2><p>{{ days === 1 ? '最近 24 小时' : '最近 7 天' }}</p></div>
       <div class="seg">
-        <button :class="{ on: days === 1 }" @click="selectDays(1)">24 小时</button>
-        <button :class="{ on: days === 7 }" @click="selectDays(7)">7 天</button>
+        <button class="btn quiet btn-sm" :class="{ on: days === 1 }" @click="selectDays(1)">24 小时</button>
+        <button class="btn quiet btn-sm" :class="{ on: days === 7 }" @click="selectDays(7)">7 天</button>
       </div>
     </header>
     <p v-if="error" class="err">⚠️ {{ error }}</p>
     <div v-if="report" class="numbers">
-      <div><strong>{{ report.dispatched }}</strong><span>派出</span></div>
-      <div><strong>{{ report.passed }}</strong><span>通过</span></div>
-      <div><strong>{{ report.rejected }}</strong><span>驳回</span></div>
-      <div><strong>{{ report.running }}</strong><span>还在跑</span></div>
-      <div><strong :class="{ 'quota-red': report.stalled > 0 }">{{ report.stalled }}</strong><span>失联</span></div>
-      <div><strong>{{ fmt(report.tokensUsed) }}</strong><span>token</span></div>
-      <div><strong :class="`quota-${report.quotaBand}`">{{ report.quotaUsedPercent == null ? '—' : report.quotaUsedPercent + '%' }}</strong><span>额度已用</span></div>
+      <div class="card metric-card"><strong>{{ report.dispatched }}</strong><span>派出</span></div>
+      <div class="card metric-card"><strong>{{ report.passed }}</strong><span>通过</span></div>
+      <div class="card metric-card"><strong>{{ report.rejected }}</strong><span>驳回</span></div>
+      <div class="card metric-card"><strong>{{ report.running }}</strong><span>还在跑</span></div>
+      <div class="card metric-card"><strong :class="{ 'quota-red': report.stalled > 0 }">{{ report.stalled }}</strong><span>失联</span></div>
+      <div class="card metric-card"><strong>{{ fmt(report.tokensUsed) }}</strong><span>token</span></div>
+      <div class="card metric-card"><strong :class="`quota-${report.quotaBand}`">{{ report.quotaUsedPercent == null ? '—' : report.quotaUsedPercent + '%' }}</strong><span>额度已用</span></div>
     </div>
-    <div v-else-if="loading" class="muted">整理昨夜战况…</div>
+    <div v-if="report" class="quota-progress">
+      <div class="quota-head"><span>Codex 额度快照</span><span class="mono">{{ report.quotaUsedPercent == null ? '数据不足' : report.quotaUsedPercent + '%' }}</span></div>
+      <div class="glow-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="report.quotaUsedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
+        <i :style="{ width: quotaPercent + '%' }" />
+      </div>
+    </div>
+    <div v-else-if="loading" class="report-loading" aria-label="正在整理昨夜战况">
+      <div class="skel wide" /><div class="skel medium" /><div class="skel wide" />
+    </div>
+    <div v-else-if="!error" class="empty">
+      <span class="ic">📭</span>还没有可汇总的 Codex 活动<br>
+      <span class="empty-help">派出工单或产生会话后，战报和额度快照会出现在这里。</span>
+    </div>
 
     <div class="rejected">
       <h3>需要处理</h3>
       <p v-if="report && !report.rejectedJobs.length && !report.stalledJobs.length" class="ok">✅ 没有需要处理的</p>
       <!-- 失联的排在驳回前面:驳回至少是有结论的，失联是「以为还有人在干、其实早没了」，更耽误事。 -->
-      <button v-for="job in report?.stalledJobs || []" :key="'stalled-' + job.slug" class="stalled" @click="emit('openJob', job.slug)">
+      <button v-for="job in report?.stalledJobs || []" :key="'stalled-' + job.slug" class="row attention-row stalled" @click="emit('openJob', job.slug)">
         <strong>🚨 {{ job.title }}</strong>
         <span>{{ job.reason }}<template v-if="job.lastActivityAt">（最后一次动静：{{ formatAt(job.lastActivityAt) }}）</template></span>
       </button>
-      <button v-for="job in report?.rejectedJobs || []" :key="job.slug" @click="emit('openJob', job.slug)">
+      <button v-for="job in report?.rejectedJobs || []" :key="job.slug" class="row attention-row" @click="emit('openJob', job.slug)">
         <strong>{{ job.title }}</strong><span>{{ job.reason }}</span>
       </button>
     </div>
@@ -95,24 +110,38 @@ watch(() => props.refreshKey, load)
 </template>
 
 <style scoped>
-.report { padding: 14px; box-shadow: none; }
-.report-head { display: flex; align-items: center; gap: 12px; }
+.report { min-width: 0; padding: var(--s4); background: var(--surface); box-shadow: none; }
+.report-head { display: flex; align-items: center; gap: var(--s3); }
 .report-head > div:first-child { flex: 1; }
-h2 { font-size: 15px; } .report-head p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
-.seg { display: flex; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.seg button { border: 0; padding: 5px 10px; background: var(--panel); color: var(--muted); cursor: pointer; }
-.seg button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
-.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(85px, 1fr)); gap: 8px; margin-top: 12px; }
-.rejected button.stalled { border-color: var(--danger); }
-.rejected button.stalled strong { color: var(--danger); }
-.numbers > div { padding: 9px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--bg-soft); }
-.numbers strong, .numbers span { display: block; } .numbers strong { font: 700 18px var(--mono); }
-.numbers span { margin-top: 3px; color: var(--muted); font-size: 10px; }
-.quota-green { color: var(--ok); } .quota-yellow { color: var(--warn); } .quota-red { color: var(--danger); }
-.rejected { margin-top: 12px; } .rejected h3 { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
-.rejected button { width: 100%; display: flex; gap: 10px; padding: 7px 9px; border: 1px solid var(--danger); border-radius: var(--radius-sm); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
-.rejected button span { color: var(--muted); } .ok { margin: 0; color: var(--ok); font-size: 12px; }
-.quota-note { margin-top: 10px; color: var(--muted-2); font-size: 10px; line-height: 1.5; }
-.quota-note p { margin: 2px 0; } code { font-family: var(--mono); } .err { color: var(--danger); }
+.report-head h2 { font-size: var(--fs-lg); }
+.report-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-sm); }
+.seg { display: flex; gap: var(--s1); padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.seg .on { background: var(--surface); color: var(--text); border-color: var(--line-strong); font-weight: 600; }
+.numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: var(--s2); margin-top: var(--s3); }
+.metric-card { padding: var(--s2) var(--s3); background: var(--surface-2); box-shadow: none; }
+.metric-card strong, .metric-card span { display: block; }
+.metric-card strong { font-family: var(--mono); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.metric-card span { margin-top: var(--s1); color: var(--text-2); font-size: var(--fs-xs); }
+.quota-green { color: var(--ok); }
+.quota-yellow { color: var(--warn); }
+.quota-red { color: var(--bad); }
+.quota-progress { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); }
+.quota-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); color: var(--text-2); font-size: var(--fs-sm); }
+.report-loading { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s4); }
+.skel.wide { width: 86%; }
+.skel.medium { width: 54%; }
+.empty-help { font-size: var(--fs-sm); }
+.rejected { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s4); }
+.rejected h3 { margin-bottom: var(--s1); color: var(--text-2); font-size: var(--fs-md); }
+.attention-row { width: 100%; align-items: flex-start; flex-direction: column; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.attention-row strong { font-size: var(--fs-base); }
+.attention-row span { color: var(--text-2); font-size: var(--fs-sm); }
+.attention-row.stalled { border-color: var(--bad); }
+.attention-row.stalled strong { color: var(--bad); }
+.ok { margin: 0; color: var(--ok); font-size: var(--fs-sm); }
+.quota-note { margin-top: var(--s3); color: var(--text-3); font-size: var(--fs-xs); line-height: 1.55; }
+.quota-note p { margin: var(--s1) 0; }
+code { font-family: var(--mono); }
+.err { color: var(--bad); }
 @media (max-width: 900px) { .numbers { grid-template-columns: repeat(3, 1fr); } }
 </style>

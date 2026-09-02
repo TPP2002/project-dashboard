@@ -37,11 +37,11 @@ const attentionCount = computed(() => attentionGroups.value.reduce((total, group
 
 function statusOf(job: JobSummary) {
   const group = jobGroupKey(job)
-  if (group === 'stalled') return { icon: '🚨', label: '失联了', cls: 'stalled' }
-  if (group === 'running') return { icon: '🔄', label: '还在干', cls: 'running' }
-  if (group === 'waiting') return { icon: '⏳', label: '等你收', cls: 'waiting' }
-  if (group === 'completed') return { icon: '✅', label: '已完成', cls: 'passed' }
-  return { icon: '❌', label: '没通过', cls: 'rejected' }
+  if (group === 'stalled') return { icon: '🚨', label: '失联了', cls: 'bad' }
+  if (group === 'running') return { icon: '🔄', label: '还在干', cls: 'info' }
+  if (group === 'waiting') return { icon: '⏳', label: '等你收', cls: 'warn' }
+  if (group === 'completed') return { icon: '✅', label: '已完成', cls: 'ok' }
+  return { icon: '❌', label: '没通过', cls: 'bad' }
 }
 
 function resetLog() {
@@ -255,14 +255,15 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
 
 <template>
   <div>
-    <p v-if="error" class="err">⚠️ {{ error }}</p>
+    <p v-if="error" class="error-note"><span class="badge bad">读取失败</span>{{ error }}</p>
     <div class="layout">
       <aside class="jobs card">
         <template v-if="jobs.length">
           <div v-if="attentionCount === 0" class="attention-empty">目前没有需要你处理的工单</div>
           <section v-for="group in attentionGroups" v-show="group.items.length" :key="group.key" class="job-group">
             <h3>{{ group.title }}</h3>
-            <button v-for="job in group.items" :key="job.slug" class="job" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
+            <button v-for="job in group.items" :key="job.slug" class="job row" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
+              <span v-if="jobGroupKey(job) === 'running'" class="glow-edge" />
               <span class="job-title">{{ job.title }}</span>
               <span class="job-meta"><code>{{ job.slug }}</code><span class="badge" :class="statusOf(job).cls">{{ statusOf(job).icon }} {{ statusOf(job).label }}</span></span>
               <span v-if="job.liveness === 'stalled' && job.stalledReason" class="job-stalled">{{ job.stalledReason }}</span>
@@ -273,19 +274,22 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
               ✅ 已完成 {{ completedJobs.length }} 单{{ completedExpanded ? '(点一下收起)' : '(点开看)' }}
             </button>
             <div v-if="completedExpanded">
-              <button v-for="job in completedJobs" :key="job.slug" class="job" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
+              <button v-for="job in completedJobs" :key="job.slug" class="job row" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
                 <span class="job-title">{{ job.title }}</span>
-                <span class="job-meta"><code>{{ job.slug }}</code><span class="badge passed">✅ 已完成</span></span>
+                <span class="job-meta"><code>{{ job.slug }}</code><span class="badge ok">✅ 已完成</span></span>
               </button>
             </div>
           </section>
         </template>
-        <div v-if="!jobs.length && !refreshing" class="empty"><span class="big">📭</span><span>还没有 Codex 工单</span></div>
+        <div v-if="!jobs.length && refreshing" class="jobs-loading" aria-label="正在加载 Codex 工单">
+          <div class="skel wide" /><div class="skel job-skel" /><div class="skel job-skel" />
+        </div>
+        <div v-else-if="!jobs.length" class="empty"><span class="big">📭</span><span>还没有 Codex 工单</span><small>派出一张工单后，会按状态收纳在这里。</small></div>
       </aside>
 
       <main class="detail card">
-        <div v-if="detailLoading && !detail" class="empty">读取工单详情…</div>
-        <div v-else-if="!detail" class="empty"><span class="big">🤖</span><span>从左边选择一张工单</span></div>
+        <div v-if="detailLoading && !detail" class="detail-loading" aria-label="正在读取工单详情"><div class="skel medium" /><div class="skel wide" /><div class="skel detail-skel" /></div>
+        <div v-else-if="!detail" class="empty"><span class="big">🤖</span><span>从左边选择一张工单</span><small>选中后会显示大白话结果、检查项和续聊入口。</small></div>
         <template v-else>
           <header class="detail-head">
             <div><h2>{{ detail.title }}</h2><p><code>{{ detail.slug }}</code><span v-if="detail.taskId"> · {{ detail.taskId }}</span> · {{ formatAt(detail.dispatchedAt) }}</p></div>
@@ -352,7 +356,7 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
               <p v-if="!detail.chat.length" class="muted">还没有补发消息</p>
             </div>
             <form class="composer" @submit.prevent="sendMessage">
-              <textarea v-model="message" maxlength="8000" rows="4" placeholder="给这张工单补发一条消息…" aria-label="发给 Codex 的消息" />
+              <textarea v-model="message" class="field" maxlength="8000" rows="4" placeholder="给这张工单补发一条消息…" aria-label="发给 Codex 的消息" />
               <div class="compose-actions"><span class="muted">{{ message.length }} / 8000</span><button class="btn btn-primary" :disabled="!canSend || sending">{{ sending ? '发送中…' : '发给 Codex' }}</button></div>
             </form>
           </section>
@@ -364,7 +368,7 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
       <div class="editor card">
         <h2>修改工单 JSON 后复派</h2>
         <p>提交会保存这份 JSON，并覆盖上一次运行产物。</p>
-        <textarea v-model="taskText" rows="18" spellcheck="false" />
+        <textarea v-model="taskText" class="field" rows="18" spellcheck="false" />
         <p v-if="jsonError" class="err">{{ jsonError }}</p>
         <div class="compose-actions"><button class="btn" @click="editingTask = false">取消</button><button class="btn btn-primary" :disabled="redispatching" @click="submitEditedTask">校验并复派</button></div>
       </div>
@@ -373,51 +377,71 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
 </template>
 
 <style scoped>
-.err { margin: 0 0 10px; color: var(--danger); }
-.layout { min-width: 0; display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 14px; align-items: start; }
-.jobs { overflow: hidden; box-shadow: none; }
-.job-group + .job-group { border-top: 1px solid var(--border-soft); }
-.job-group > h3 { margin: 0; padding: 9px 12px 5px; color: var(--muted); font-size: 12px; }
-.attention-empty { padding: 12px; color: var(--ok); font-size: 12px; }
-.completed-toggle { width: 100%; padding: 11px 12px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font-weight: 600; }
-.completed-toggle:hover { background: var(--accent-soft); }
-.job { width: 100%; display: flex; flex-direction: column; gap: 7px; padding: 11px 12px; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
-.job:hover, .job.on { background: var(--accent-soft); } .job.on { box-shadow: inset 3px 0 var(--accent); }
-.job-title { font-weight: 600; line-height: 1.35; } .job-meta, .compose-actions, .detail-head, .actions { display: flex; align-items: center; gap: 8px; }
-.job-meta { justify-content: space-between; color: var(--muted); font-size: 11px; }
-code { font-family: var(--mono); color: var(--muted); overflow-wrap: anywhere; }
-.job-stalled { display: block; margin-top: 3px; color: var(--danger); font-size: 11px; line-height: 1.4; }
-.badge.stalled { color: var(--danger); font-weight: 600; }
-.badge.running { color: var(--accent); } .badge.waiting { color: var(--warn); } .badge.passed { color: var(--ok); } .badge.rejected { color: var(--danger); }
-.detail { min-width: 0; padding: 16px; box-shadow: none; } .detail-head { align-items: flex-start; } .detail-head > div { min-width: 0; flex: 1; }
-.detail-head h2 { font-size: 18px; overflow-wrap: anywhere; } .detail-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
-.actions { flex-wrap: wrap; margin-top: 10px; }
-.notice { margin: 12px 0 0; padding: 9px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--muted); white-space: pre-wrap; }
-.why-blocked { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.section { min-width: 0; border-top: 1px solid var(--border-soft); margin-top: 14px; padding-top: 12px; }
-.section h3 { margin-bottom: 8px; font-size: 13px; color: var(--muted); }
-.purpose p { margin: 0; font-size: 15px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.plain-summary { padding: 13px; border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent-soft); }
+.error-note { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s3); color: var(--bad); font-size: var(--fs-base); }
+.err { color: var(--bad); }
+.layout { min-width: 0; display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.jobs { padding: 0; overflow: hidden; background: var(--surface); box-shadow: none; }
+.job-group + .job-group { border-top: 1px solid var(--line); }
+.job-group > h3 { margin: 0; padding: var(--s2) var(--s3) var(--s1); color: var(--text-2); font-size: var(--fs-md); }
+.attention-empty { padding: var(--s3); color: var(--ok); font-size: var(--fs-sm); }
+.completed-toggle { width: 100%; padding: var(--s3); border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; font-size: var(--fs-base); font-weight: 600; }
+.completed-toggle:hover { background: var(--surface-2); }
+.job { width: 100%; align-items: stretch; flex-direction: column; gap: var(--s2); padding: var(--s3); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.job:hover, .job.on { background: var(--surface-2); }
+.job.on { box-shadow: inset 2px 0 var(--info); }
+.job-title { font-size: var(--fs-base); font-weight: 600; line-height: 1.4; }
+.job-meta, .compose-actions, .detail-head, .actions { display: flex; align-items: center; gap: var(--s2); }
+.job-meta { justify-content: space-between; color: var(--text-2); font-size: var(--fs-xs); }
+code { font-family: var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
+.job-stalled { display: block; margin-top: var(--s1); color: var(--bad); font-size: var(--fs-xs); line-height: 1.45; }
+.jobs-loading, .detail-loading { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); }
+.skel.wide { width: 86%; }
+.skel.medium { width: 48%; }
+.skel.job-skel { height: 58px; }
+.skel.detail-skel { height: 108px; }
+.empty { display: flex; flex-direction: column; align-items: center; }
+.empty small { margin-top: var(--s1); color: var(--text-3); font-size: var(--fs-sm); }
+.detail { min-width: 0; padding: var(--s4); background: var(--surface); box-shadow: none; }
+.detail-head { align-items: flex-start; }
+.detail-head > div { min-width: 0; flex: 1; }
+.detail-head h2 { font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.detail-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-sm); }
+.actions { flex-wrap: wrap; margin-top: var(--s3); }
+.notice { margin: var(--s3) 0 0; padding: var(--s2); overflow: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); color: var(--text-2); white-space: pre-wrap; }
+.why-blocked { margin: var(--s2) 0 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.55; }
+.section { min-width: 0; margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.section h3 { margin-bottom: var(--s2); color: var(--text-2); font-size: var(--fs-md); }
+.purpose p { margin: 0; font-size: var(--fs-md); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plain-summary { padding: var(--s3); border: 1px solid var(--line); border-left: 2px solid var(--info); border-radius: var(--r); background: var(--info-bg); }
 .plain-summary h3 { color: var(--text); }
-.plain-summary p { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.acceptance { display: flex; flex-direction: column; gap: 7px; }
-.check-result { display: flex; align-items: flex-start; gap: 7px; margin: 0; line-height: 1.45; }
-.self-status { margin: 0; font-size: 16px; font-weight: 600; }
-.technical-details { margin-top: 9px; color: var(--muted); font-size: 12px; }
+.plain-summary p { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.acceptance { display: flex; flex-direction: column; gap: var(--s2); }
+.check-result { display: flex; align-items: flex-start; gap: var(--s2); margin: 0; font-size: var(--fs-base); line-height: 1.5; }
+.self-status { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.technical-details { margin-top: var(--s2); color: var(--text-2); font-size: var(--fs-sm); }
 .technical-details > summary, .log-details > summary { cursor: pointer; }
-.technical-details ul { margin: 8px 0 0; padding-left: 20px; }
-.technical-details .summary { margin-top: 8px; padding: 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
+.technical-details ul { margin: var(--s2) 0 0; padding-left: var(--s5); }
+.technical-details .summary { margin-top: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
 .summary { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.log-details > summary { color: var(--muted); font-size: 13px; font-weight: 600; }
-.log-message { margin: 9px 0 0; }
-.log-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
-.log { width: max-content; min-width: 100%; max-height: 330px; margin: 0; padding: 10px; overflow-y: auto; color: var(--muted); font: 11px/1.55 var(--mono); white-space: pre; }
-.chat { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow: auto; padding: 2px; }
-.bubble { max-width: 88%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
-.bubble.out { align-self: flex-end; background: var(--accent-soft); } .bubble > span { color: var(--muted-2); font-size: 10px; } .bubble p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.composer { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; } textarea { width: 100%; resize: vertical; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--text); padding: 9px; font: inherit; }
-textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); } .compose-actions { justify-content: flex-end; font-size: 11px; }
-.modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, 0.55); }
-.editor { width: min(780px, 100%); padding: 16px; } .editor h2 { font-size: 16px; } .editor p { color: var(--muted); font-size: 12px; } .editor textarea { font: 12px/1.5 var(--mono); }
-@media (max-width: 820px) { .layout { grid-template-columns: 1fr; } .jobs { max-height: 300px; overflow-y: auto; } }
+.log-details > summary { color: var(--text-2); font-size: var(--fs-base); font-weight: 600; }
+.log-message { margin: var(--s2) 0 0; }
+.log-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.log { width: max-content; min-width: 100%; max-height: 330px; margin: 0; padding: var(--s3); overflow-y: auto; color: var(--text-2); font: var(--fs-xs)/1.55 var(--mono); white-space: pre; }
+.chat { display: flex; flex-direction: column; gap: var(--s2); max-height: 360px; overflow: auto; padding: 2px; }
+.bubble { max-width: 88%; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.bubble.out { align-self: flex-end; background: var(--info-bg); }
+.bubble > span { color: var(--text-3); font-size: var(--fs-xs); }
+.bubble p { margin: var(--s1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.composer { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); }
+textarea.field { min-height: 88px; resize: vertical; }
+.compose-actions { justify-content: flex-end; font-size: var(--fs-xs); }
+.modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: var(--s5); background: var(--bg); }
+.editor { width: min(780px, 100%); padding: var(--s4); background: var(--surface); }
+.editor h2 { font-size: var(--fs-lg); }
+.editor p { color: var(--text-2); font-size: var(--fs-sm); }
+.editor textarea { font: var(--fs-sm)/1.5 var(--mono); }
+@media (max-width: 820px) {
+  .layout { grid-template-columns: 1fr; }
+  .jobs { max-height: 320px; overflow-y: auto; }
+}
 </style>
