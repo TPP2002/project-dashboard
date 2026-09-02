@@ -1,0 +1,412 @@
+<title>看板设计规范</title>
+<style>
+/* ============================================================
+   看板设计系统 · 令牌层
+   深浅两套 + 四种光谱,全部靠 CSS 变量切换,组件永远只用语义变量
+   ============================================================ */
+:root{
+  /* —— 浅色(默认) —— */
+  --bg:#fbfbfa; --surface:#ffffff; --surface-2:#f6f6f5; --surface-3:#eeeeed;
+  --line:#e4e4e2; --line-strong:#d2d2cf;
+  --text:#1a1a19; --text-2:#5c5c58; --text-3:#8e8e89;
+  --ok:#2c7a45; --ok-bg:#e8f4ec;
+  --warn:#9a6b12; --warn-bg:#fdf3e0;
+  --bad:#b3382f; --bad-bg:#fdecea;
+  --info:#2b5fa8; --info-bg:#e8f0fb;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+
+  /* —— 尺度(深浅共用) —— */
+  --r-sm:4px; --r:6px; --r-lg:8px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+  --fs-xs:11px; --fs-sm:12.5px; --fs-base:14px; --fs-md:15px; --fs-lg:18px;
+  --fs-xl:22px; --fs-2xl:28px;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+  --cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+
+  /* —— 光谱(默认冷谱) —— */
+  --spectrum:linear-gradient(90deg,#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4);
+  --spectrum-v:linear-gradient(180deg,#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4);
+}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d0d0e; --surface:#151516; --surface-2:#1b1b1d; --surface-3:#232326;
+  --line:#242426; --line-strong:#343437;
+  --text:#e7e7e8; --text-2:#9a9a9e; --text-3:#6a6a6f;
+  --ok:#6fbf82; --ok-bg:#17251b;
+  --warn:#d9a441; --warn-bg:#241d10;
+  --bad:#e0736a; --bad-bg:#2a1715;
+  --info:#6d9eea; --info-bg:#141d2b;
+  --shadow:none;
+}}
+:root[data-theme="dark"]{
+  --bg:#0d0d0e; --surface:#151516; --surface-2:#1b1b1d; --surface-3:#232326;
+  --line:#242426; --line-strong:#343437;
+  --text:#e7e7e8; --text-2:#9a9a9e; --text-3:#6a6a6f;
+  --ok:#6fbf82; --ok-bg:#17251b;
+  --warn:#d9a441; --warn-bg:#241d10;
+  --bad:#e0736a; --bad-bg:#2a1715;
+  --info:#6d9eea; --info-bg:#141d2b;
+  --shadow:none;
+}
+[data-spectrum="warm"]{
+  --spectrum:linear-gradient(90deg,#f0b429,#f5825b,#e8619d,#a86fd8,#f0b429);
+  --spectrum-v:linear-gradient(180deg,#f0b429,#f5825b,#e8619d,#a86fd8,#f0b429);
+}
+[data-spectrum="full"]{
+  --spectrum:linear-gradient(90deg,#ff5f6d,#ffc371,#7ee8a2,#4a9eff,#a86fd8,#ff5f6d);
+  --spectrum-v:linear-gradient(180deg,#ff5f6d,#ffc371,#7ee8a2,#4a9eff,#a86fd8,#ff5f6d);
+}
+[data-spectrum="duo"]{
+  --spectrum:linear-gradient(90deg,#4ad9c4,#6d8cff,#4ad9c4);
+  --spectrum-v:linear-gradient(180deg,#4ad9c4,#6d8cff,#4ad9c4);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--cn);
+     font-size:var(--fs-md);line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:var(--s6) var(--s5) var(--s7)}
+
+/* ===== 切换器 ===== */
+.switcher{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line);
+          padding:var(--s3) 0;margin-bottom:var(--s5);display:flex;gap:var(--s4);flex-wrap:wrap;
+          align-items:center}
+.switcher .grp{display:flex;gap:var(--s1);align-items:center}
+.switcher .lbl{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.12em;
+               text-transform:uppercase;color:var(--text-3);margin-right:var(--s1)}
+.sbtn{font:inherit;font-size:var(--fs-sm);padding:5px 11px;border-radius:var(--r);cursor:pointer;
+      background:var(--surface-2);color:var(--text-2);border:1px solid var(--line);
+      transition:background .14s,color .14s,border-color .14s}
+.sbtn:hover{border-color:var(--line-strong);color:var(--text)}
+.sbtn[aria-pressed="true"]{background:var(--surface-3);color:var(--text);border-color:var(--line-strong)}
+.sbtn:focus-visible{outline:2px solid var(--info);outline-offset:1px}
+.swatch{width:44px;height:14px;border-radius:3px;padding:0;border:1px solid var(--line)}
+
+h1{font-size:var(--fs-2xl);line-height:1.25;margin:0 0 var(--s2);font-weight:600;letter-spacing:-.02em}
+.lede{color:var(--text-2);max-width:62ch;margin:0}
+h2{font-size:var(--fs-lg);font-weight:600;margin:0}
+h3{font-size:var(--fs-md);font-weight:600;margin:0 0 var(--s2)}
+.sec{margin-top:var(--s7)}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);flex-wrap:wrap;
+          border-bottom:1px solid var(--line);padding-bottom:var(--s2);margin-bottom:var(--s4)}
+.sec-head .note{color:var(--text-3);font-size:var(--fs-sm);font-family:var(--mono)}
+
+/* ===== 令牌展示 ===== */
+.tokens{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:var(--s2)}
+.tok{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s3);
+     box-shadow:var(--shadow)}
+.tok .chip{height:30px;border-radius:var(--r-sm);border:1px solid var(--line);margin-bottom:var(--s2)}
+.tok .nm{font-family:var(--mono);font-size:var(--fs-xs);color:var(--text)}
+.tok .use{font-size:var(--fs-sm);color:var(--text-3);margin-top:2px}
+
+/* ===== 组件展示 ===== */
+.demo{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+      padding:var(--s4);box-shadow:var(--shadow)}
+.demo+.demo{margin-top:var(--s3)}
+.demo-t{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase;
+        color:var(--text-3);margin-bottom:var(--s3)}
+.stack{display:flex;flex-direction:column;gap:var(--s2)}
+.inline{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}
+
+/* —— 流光 —— */
+.glow{background-image:var(--spectrum);background-size:220% 100%;animation:slide 3.4s linear infinite;
+      position:relative}
+@keyframes slide{to{background-position:-220% 0}}
+.glow-top{height:2px;border-radius:1px}
+.glow-rail{height:6px;border-radius:3px;background-color:var(--surface-3);overflow:hidden}
+.glow-rail>i{display:block;height:100%;border-radius:3px;background-image:var(--spectrum);
+             background-size:220% 100%;animation:slide 3.4s linear infinite}
+.glow-edge{position:absolute;left:0;top:0;bottom:0;width:2px;background-image:var(--spectrum-v);
+           background-size:100% 220%;animation:slideY 3.4s linear infinite}
+@keyframes slideY{to{background-position:0 -220%}}
+
+/* —— 卡片 —— */
+.card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);
+      padding:var(--s3) var(--s4);position:relative;overflow:hidden}
+.card .v{font-family:var(--mono);font-size:var(--fs-xl);font-variant-numeric:tabular-nums;line-height:1.15}
+.card .l{font-size:var(--fs-sm);color:var(--text-2);margin-top:var(--s1)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--s2)}
+
+/* —— 按钮 —— */
+.btn{font:inherit;font-size:var(--fs-base);padding:6px 13px;border-radius:var(--r);cursor:pointer;
+     border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);
+     transition:background .14s,border-color .14s}
+.btn:hover{background:var(--surface-3)}
+.btn:focus-visible{outline:2px solid var(--info);outline-offset:1px}
+.btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.btn.primary:hover{opacity:.88}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--text-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--text)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* —— 徽章 —— */
+.badge{font-family:var(--mono);font-size:var(--fs-xs);padding:2px 8px;border-radius:var(--r-sm);
+       border:1px solid transparent;white-space:nowrap;display:inline-block}
+.badge.n{background:var(--surface-3);color:var(--text-2)}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.bad{background:var(--bad-bg);color:var(--bad)}
+.badge.info{background:var(--info-bg);color:var(--info)}
+
+/* —— 列表行 —— */
+.row{display:flex;align-items:center;gap:var(--s3);background:var(--surface-2);
+     border:1px solid var(--line);border-radius:var(--r);padding:var(--s3);position:relative;
+     overflow:hidden;transition:border-color .14s}
+.row:hover{border-color:var(--line-strong)}
+.row .g{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-base)}
+.row .rt{font-family:var(--mono);font-size:var(--fs-sm);color:var(--text-3);
+         font-variant-numeric:tabular-nums}
+
+/* —— 表格 —— */
+table{width:100%;border-collapse:collapse;font-size:var(--fs-base)}
+th,td{text-align:left;padding:var(--s2) var(--s3);border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase;
+   color:var(--text-3);font-weight:500}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+tbody tr:hover{background:var(--surface-2)}
+
+/* —— 输入 —— */
+.field{width:100%;font:inherit;font-size:var(--fs-base);padding:7px 11px;border-radius:var(--r);
+       background:var(--surface-2);border:1px solid var(--line);color:var(--text)}
+.field:focus{outline:2px solid var(--info);outline-offset:-1px;border-color:transparent}
+
+/* —— 空态 —— */
+.empty{text-align:center;padding:var(--s6) var(--s4);color:var(--text-3);font-size:var(--fs-base)}
+.empty .ic{font-size:26px;opacity:.5;display:block;margin-bottom:var(--s2)}
+
+/* —— 骨架屏 —— */
+.skel{height:12px;border-radius:var(--r-sm);background:linear-gradient(90deg,var(--surface-2),
+      var(--surface-3),var(--surface-2));background-size:200% 100%;animation:shimmer 1.4s linear infinite}
+@keyframes shimmer{to{background-position:-200% 0}}
+
+.rule{font-size:var(--fs-base);color:var(--text-2)}
+.rule b{color:var(--text)}
+.rule code{font-family:var(--mono);font-size:var(--fs-sm);background:var(--surface-2);
+           padding:1px 5px;border-radius:var(--r-sm);border:1px solid var(--line)}
+ul.tight{margin:var(--s2) 0 0;padding-left:var(--s4)}
+ul.tight li{margin-bottom:var(--s1);color:var(--text-2)}
+ul.tight b{color:var(--text)}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:700px){.wrap{padding:var(--s5) var(--s4) var(--s6)}}
+</style>
+
+<div class="wrap">
+  <div class="switcher">
+    <div class="grp"><span class="lbl">主题</span>
+      <button class="sbtn" data-set-theme="light" aria-pressed="false">浅色</button>
+      <button class="sbtn" data-set-theme="dark" aria-pressed="false">深色</button>
+      <button class="sbtn" data-set-theme="system" aria-pressed="true">跟随系统</button>
+    </div>
+    <div class="grp"><span class="lbl">光谱</span>
+      <button class="sbtn swatch glow" data-set-spectrum="cool" aria-pressed="true" title="冷谱"></button>
+      <button class="sbtn swatch" data-set-spectrum="warm" title="暖谱"
+        style="background-image:linear-gradient(90deg,#f0b429,#f5825b,#e8619d,#a86fd8)"></button>
+      <button class="sbtn swatch" data-set-spectrum="full" title="全光谱"
+        style="background-image:linear-gradient(90deg,#ff5f6d,#ffc371,#7ee8a2,#4a9eff,#a86fd8)"></button>
+      <button class="sbtn swatch" data-set-spectrum="duo" title="双色"
+        style="background-image:linear-gradient(90deg,#4ad9c4,#6d8cff)"></button>
+    </div>
+  </div>
+
+  <h1>看板设计规范</h1>
+  <p class="lede">17 个页面照这一份实现。所有颜色、字号、间距都走变量，<b>组件里永远不写死颜色</b>——这样切主题和换光谱只改一处。上面的开关是活的，随便点。</p>
+
+  <section class="sec">
+    <div class="sec-head"><h2>颜色</h2><span class="note">语义命名 · 不叫"蓝色"叫"信息"</span></div>
+    <div class="tokens">
+      <div class="tok"><div class="chip" style="background:var(--bg)"></div>
+        <div class="nm">--bg</div><div class="use">页面底</div></div>
+      <div class="tok"><div class="chip" style="background:var(--surface)"></div>
+        <div class="nm">--surface</div><div class="use">卡片/面板</div></div>
+      <div class="tok"><div class="chip" style="background:var(--surface-2)"></div>
+        <div class="nm">--surface-2</div><div class="use">卡片内的块</div></div>
+      <div class="tok"><div class="chip" style="background:var(--surface-3)"></div>
+        <div class="nm">--surface-3</div><div class="use">悬浮/选中</div></div>
+      <div class="tok"><div class="chip" style="background:var(--ok)"></div>
+        <div class="nm">--ok</div><div class="use">通过/正常</div></div>
+      <div class="tok"><div class="chip" style="background:var(--warn)"></div>
+        <div class="nm">--warn</div><div class="use">该注意</div></div>
+      <div class="tok"><div class="chip" style="background:var(--bad)"></div>
+        <div class="nm">--bad</div><div class="use">失败/驳回</div></div>
+      <div class="tok"><div class="chip" style="background:var(--info)"></div>
+        <div class="nm">--info</div><div class="use">进行中/链接</div></div>
+    </div>
+    <p class="rule" style="margin-top:var(--s3)"><b>唯一的用色规矩</b>：状态色只在<b>表达状态</b>时出现。
+      标题、图标、边框、正文一律用 <code>--text</code> 系列。一屏里状态色出现超过三处，就说明用滥了。</p>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>流光</h2><span class="note">全站唯一的彩色</span></div>
+    <div class="demo">
+      <div class="demo-t">出现位置(仅此四处)</div>
+      <div class="stack">
+        <div><div class="rule" style="margin-bottom:6px">① 页面顶部 · 系统心跳（有活在跑才动）</div>
+          <div class="glow glow-top"></div></div>
+        <div style="margin-top:var(--s2)"><div class="rule" style="margin-bottom:6px">③ 进度条填充</div>
+          <div class="glow-rail"><i style="width:65%"></i></div></div>
+        <div style="margin-top:var(--s2)"><div class="rule" style="margin-bottom:6px">② 正在跑的那一行</div>
+          <div class="row"><span class="glow-edge"></span><span class="badge info">进行中</span>
+            <span class="g">把 17 个页面套上新设计规范</span><span class="rt">刚开始</span></div></div>
+        <div style="margin-top:var(--s2)"><div class="rule" style="margin-bottom:6px">④ 需要注意的卡片顶边</div>
+          <div class="card"><span class="glow glow-top" style="position:absolute;inset:0 0 auto 0"></span>
+            <div class="v">65%</div><div class="l">额度已用</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>字号与间距</h2><span class="note">只用表里的档,不许现编</span></div>
+    <div class="demo">
+      <div class="demo-t">字号七档</div>
+      <div class="stack">
+        <div style="font-size:var(--fs-2xl);font-weight:600">28 页面主标题</div>
+        <div style="font-size:var(--fs-xl);font-family:var(--mono)">22 关键数字</div>
+        <div style="font-size:var(--fs-lg);font-weight:600">18 区块标题</div>
+        <div style="font-size:var(--fs-md)">15 正文</div>
+        <div style="font-size:var(--fs-base)">14 列表与表格</div>
+        <div style="font-size:var(--fs-sm);color:var(--text-2)">12.5 辅助说明</div>
+        <div style="font-size:var(--fs-xs);font-family:var(--mono);color:var(--text-3);letter-spacing:.1em">
+          11 标签 · 全大写 · 带字距</div>
+      </div>
+    </div>
+    <div class="demo">
+      <div class="demo-t">间距七档 · 4 的倍数</div>
+      <div class="inline">
+        <span class="badge n">4</span><span class="badge n">8</span><span class="badge n">12</span>
+        <span class="badge n">16</span><span class="badge n">24</span><span class="badge n">32</span>
+        <span class="badge n">48</span>
+      </div>
+      <p class="rule" style="margin-top:var(--s3)">卡片内边距 <code>16</code>，卡片之间 <code>8</code>，
+        区块之间 <code>48</code>。<b>圆角只有三档</b>：<code>4</code> 徽章 / <code>6</code> 卡片按钮 /
+        <code>8</code> 大面板。不许出现别的值。</p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>组件</h2><span class="note">17 个页面只能用这些</span></div>
+
+    <div class="demo"><div class="demo-t">数字卡</div>
+      <div class="cards">
+        <div class="card"><div class="v">4</div><div class="l">派出</div></div>
+        <div class="card"><div class="v" style="color:var(--ok)">4</div><div class="l">通过</div></div>
+        <div class="card"><div class="v">0</div><div class="l">要你处理</div></div>
+        <div class="card"><div class="v" style="color:var(--warn)">65%</div><div class="l">额度已用</div></div>
+      </div>
+      <p class="rule" style="margin-top:var(--s3)">数字用等宽字体并开 <code>tabular-nums</code>，
+        列对齐才不会跳。<b>只有带状态含义的数字才上色。</b></p>
+    </div>
+
+    <div class="demo"><div class="demo-t">按钮四种</div>
+      <div class="inline">
+        <button class="btn primary">主操作</button>
+        <button class="btn">次操作</button>
+        <button class="btn quiet">弱操作</button>
+        <button class="btn" disabled>不可用</button>
+      </div>
+      <p class="rule" style="margin-top:var(--s3)">一屏<b>最多一个</b>主操作按钮。危险操作（删除、清空）
+        不给专门的红按钮——用次操作 + 二次确认，避免误点。</p>
+    </div>
+
+    <div class="demo"><div class="demo-t">状态徽章</div>
+      <div class="inline">
+        <span class="badge n">未开工</span><span class="badge info">进行中</span>
+        <span class="badge ok">已完成</span><span class="badge warn">待处理</span>
+        <span class="badge bad">失败</span>
+      </div>
+    </div>
+
+    <div class="demo"><div class="demo-t">列表行</div>
+      <div class="stack">
+        <div class="row"><span class="glow-edge"></span><span class="badge info">进行中</span>
+          <span class="g">把 17 个页面套上新设计规范</span><span class="rt">刚开始</span></div>
+        <div class="row"><span class="badge ok">已完成</span>
+          <span class="g">让 Codex 交活时写一句人话总结</span><span class="rt">12 分钟</span></div>
+      </div>
+    </div>
+
+    <div class="demo"><div class="demo-t">表格</div>
+      <table>
+        <tr><th>项目</th><th>消耗</th><th>占比</th></tr>
+        <tr><td>股市肉鸽</td><td class="num">85.5 亿</td><td class="num">45%</td></tr>
+        <tr><td>自动化求职</td><td class="num">25.7 亿</td><td class="num">13%</td></tr>
+      </table>
+      <p class="rule" style="margin-top:var(--s3)">数字列一律右对齐 + 等宽。
+        <b>表格超过 8 行就要分页或折叠</b>，不许无限往下堆。</p>
+    </div>
+
+    <div class="demo"><div class="demo-t">输入 · 空态 · 加载</div>
+      <input class="field" placeholder="给这单补发一条消息…">
+      <div style="margin-top:var(--s3);border:1px solid var(--line);border-radius:var(--r)">
+        <div class="empty"><span class="ic">🗂</span>还没有工单<br>
+          <span style="font-size:var(--fs-sm)">派出去的活会出现在这里</span></div>
+      </div>
+      <div class="stack" style="margin-top:var(--s3)">
+        <div class="skel" style="width:60%"></div>
+        <div class="skel" style="width:85%"></div>
+        <div class="skel" style="width:45%"></div>
+      </div>
+      <p class="rule" style="margin-top:var(--s3)"><b>空态必须说清两件事</b>：现在为什么空、
+        怎么才会有东西。加载用骨架屏不用转圈——转圈让人不知道要等多久。</p>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>动效</h2><span class="note">感觉得到,截图看不见</span></div>
+    <div class="demo">
+      <ul class="tight">
+        <li><b>过渡一律 140ms</b>，缓动 ease。悬停变色、展开折叠都用这个值</li>
+        <li><b>数字变化滚动跳</b>到新值，不硬切（300ms）</li>
+        <li><b>列表加载按顺序淡入</b>，每条错开 30ms，最多错开 10 条</li>
+        <li><b>刚完成的那一行短暂高亮</b>再回落（800ms），让人知道"刚刚有事发生"</li>
+        <li><b>切页面时内容轻微上移淡入</b>（180ms，位移 4px）</li>
+        <li>系统开了"减少动态效果"时，<b>以上全部关闭</b>，流光也静止</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>施工时的硬规矩</h2><span class="note">给写代码的看</span></div>
+    <div class="demo">
+      <ul class="tight">
+        <li><b>组件里禁止出现颜色字面量</b>——一律 <code>var(--xxx)</code>。
+          出现 <code>#</code> 开头的颜色就是违规</li>
+        <li><b>三态主题</b>：<code>:root</code> 定义浅色全集；
+          <code>@media(prefers-color-scheme:dark)</code> 里用
+          <code>:root:not([data-theme="light"])</code> 只改变量；
+          <code>:root[data-theme="dark"]</code> 再改一遍。颜色不许只定义在媒体查询里</li>
+        <li><b>主题与光谱存 localStorage</b>，读写包 try/catch（隐私模式会抛错）</li>
+        <li><b>宽内容自己滚</b>：表格、代码块、日志外层加
+          <code>overflow-x:auto</code>，页面本身永不横向滚动</li>
+        <li><b>键盘可达</b>：所有可点元素有 <code>:focus-visible</code> 描边</li>
+        <li><b>数字对齐</b>：凡是成列的数字都要 <code>font-variant-numeric:tabular-nums</code></li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  function save(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+  function load(k){try{return localStorage.getItem(k)}catch(e){return null}}
+  function press(sel,attr,val){
+    document.querySelectorAll(sel).forEach(function(b){
+      b.setAttribute('aria-pressed', String(b.getAttribute(attr)===val));
+    });
+  }
+  function setTheme(v){
+    if(v==='system'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',v)}
+    save('board-theme',v); press('[data-set-theme]','data-set-theme',v);
+  }
+  function setSpectrum(v){
+    root.setAttribute('data-spectrum',v); save('board-spectrum',v);
+    press('[data-set-spectrum]','data-set-spectrum',v);
+  }
+  document.querySelectorAll('[data-set-theme]').forEach(function(b){
+    b.addEventListener('click',function(){setTheme(b.getAttribute('data-set-theme'))});
+  });
+  document.querySelectorAll('[data-set-spectrum]').forEach(function(b){
+    b.addEventListener('click',function(){setSpectrum(b.getAttribute('data-set-spectrum'))});
+  });
+  setTheme(load('board-theme')||'system');
+  setSpectrum(load('board-spectrum')||'cool');
+})();
+</script>
