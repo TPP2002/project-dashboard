@@ -42,8 +42,26 @@ function requiredAcceptancePassed(task, verdict) {
   return requiredIds.every((id) => results.some((item) => item && item.id === id && item.passed === true));
 }
 
-function isRedispatchBlocked(state, dispatchInFlight = false) {
-  return dispatchInFlight || !state || state.finishedAt === null || state.finishedAt === undefined;
+/**
+ * 这单现在能不能派(复派 / 改了再派)。
+ *
+ * 【为什么要认"确定已死"(CODEX-STALLED-JOB-REDISPATCH,2026-09-02 拍板)】
+ * 工单的 finishedAt 只在监工正常收场时才写。监工被强杀、崩掉、机器重启,它就永远是 null,
+ * 于是这道闸把**早就死掉的单**一直当成"仍在运行"拦着 —— 面板已经能把它标红成"失联了",
+ * 却没有任何办法处置它。
+ *
+ * 现在多接一个 `confirmedDead`,由 codexJobHealth.cjs 给出,且**只有两条铁证才会置 true**
+ * (进程号已经不在 / 超时还没落盘收尾)。软判据"很久没动静"不置 —— 那条对一个正在跑长活的
+ * 单同样成立,照它放行就会对还活着的单重复派出一单 Codex,直接烧七天窗口里的额度。
+ *
+ * 【`dispatchInFlight` 仍然一票否决,铁证也越不过去】那是"本机此刻真的有一个派单进程在跑"
+ * 这个**进程表事实**,不是任何推断;它成立时再派必定是重复派单。
+ * 【读不到 state 一律拦】那意味着什么都不知道,不是"知道它死了"。
+ */
+function isRedispatchBlocked(state, dispatchInFlight = false, confirmedDead = false) {
+  if (dispatchInFlight || !state) return true;
+  if (state.finishedAt !== null && state.finishedAt !== undefined) return false;
+  return confirmedDead !== true;
 }
 
 function rejectedReason(task, verdict, state) {

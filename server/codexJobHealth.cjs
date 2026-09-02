@@ -24,6 +24,15 @@
  *      没写就说明监工本人没能活到那一刻)
  *   ③ 对应会话很久没有新事件了              —— 软判据(可能只是在跑一个很慢的活)
  *
+ * 【证据强度不只是给人看的措辞,它是一道闸(CODEX-STALLED-JOB-REDISPATCH,2026-09-02 拍板)】
+ * 本文件除了报"哪条命中"(`stalledEvidence`),还报一个 `confirmedDead` —— **只有 ①② 两条铁证
+ * 才置 true**。复派闸(server/codexJobs.cjs 的 isRedispatchBlocked)只认这个字段:
+ *   · 铁证判死  ⇒ 放开复派,负责人一键就能处置尸体;
+ *   · 软判据    ⇒ 照旧标红给人看,但复派按钮仍锁着。
+ * 为什么软判据不许放开:复派会真的再派出一单 Codex、烧七天窗口里的额度。而"很久没动静"对
+ * 一个正在跑长活的单同样成立 —— 一旦误判,就是对着还活着的单重复派一次。
+ * 显示归显示,动手归动手:标红的门槛可以低,动手的门槛必须高。
+ *
  * 判「有没有新动静」只能用会话文件里最后一条事件的 timestamp,**不许用文件修改时间**:
  * Windows 上文件句柄打开期间写入不刷新 LastWriteTime,实测能差十分钟。
  */
@@ -59,6 +68,7 @@ function pidAlive(pid, kill = process.kill.bind(process)) {
  * @param {{ running?: boolean, pid?: number|null, startedAt?: string|null,
  *           timeoutSec?: number|null }} job
  * @returns {{ liveness: 'running'|'stalled'|'finished', stalledReason: string|null,
+ *             stalledEvidence: 'process-gone'|'overdue'|'silent'|null, confirmedDead: boolean,
  *             lastActivityAt: string|null, silentForMs: number|null }}
  */
 function classifyJobLiveness(job = {}, options = {}) {
@@ -70,14 +80,27 @@ function classifyJobLiveness(job = {}, options = {}) {
   const lastActivityAt = typeof options.lastActivityAt === 'string' ? options.lastActivityAt : null;
   const lastActivityMs = parseTime(lastActivityAt);
   const silentForMs = lastActivityMs === null ? null : Math.max(0, nowMs - lastActivityMs);
-  const base = { liveness: 'running', stalledReason: null, lastActivityAt, silentForMs };
+  const base = {
+    liveness: 'running',
+    stalledReason: null,
+    stalledEvidence: null,
+    confirmedDead: false,
+    lastActivityAt,
+    silentForMs,
+  };
 
   if (!job.running) return { ...base, liveness: 'finished' };
 
   // ① 进程号没了 —— 铁证,优先报它
   const pid = Number.isFinite(job.pid) ? job.pid : null;
   if (pid !== null && !isAlive(pid)) {
-    return { ...base, liveness: 'stalled', stalledReason: '它的进程已经不在了,不会再有进展' };
+    return {
+      ...base,
+      liveness: 'stalled',
+      stalledReason: '它的进程已经不在了,不会再有进展',
+      stalledEvidence: 'process-gone',
+      confirmedDead: true,
+    };
   }
 
   // ② 早该收工却没留下收尾记录 —— 也是铁证:监工超时会自己写收尾,没写说明监工本人没活到那时候
@@ -88,6 +111,8 @@ function classifyJobLiveness(job = {}, options = {}) {
       ...base,
       liveness: 'stalled',
       stalledReason: '早就超过了这一单允许的时长,却没有留下收尾记录',
+      stalledEvidence: 'overdue',
+      confirmedDead: true,
     };
   }
 
@@ -97,6 +122,8 @@ function classifyJobLiveness(job = {}, options = {}) {
       ...base,
       liveness: 'stalled',
       stalledReason: `已经 ${Math.round(silentForMs / 60000)} 分钟没有任何新动静`,
+      stalledEvidence: 'silent',
+      confirmedDead: false,
     };
   }
 

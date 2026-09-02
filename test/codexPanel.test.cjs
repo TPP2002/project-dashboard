@@ -324,3 +324,30 @@ test('会话、详情、额度与成本 API 返回同一份有界扫描结果', 
     claudeTokens: 0, codexTokens: 321, totalTokens: 321, savingsEstimateUsd: null,
   });
 });
+
+// ── 失联工单的复派闸(CODEX-STALLED-JOB-REDISPATCH,2026-09-02 拍板"只对两条铁证放开")──
+//
+// 原来这道闸只问一件事:"这单自己说没说完"。可尸体永远说自己没说完 —— 监工被强杀/机器重启时
+// finishedAt 永远是 null,于是面板明明已经把它标红成"失联了",复派按钮却一直是灰的,没法处置。
+// 现在多接一个入参:活性判定给出的"确定已死"。只有两条铁证(进程号没了/超时没收尾)才置它,
+// 软判据(很久没动静)不置 —— 那条对正在跑长活的单同样成立,照它放开会重复派单烧额度。
+
+test('失联但只有软判据:闸门仍然拦住(不许对可能还活着的单重复派)', () => {
+  assert.equal(isRedispatchBlocked({ finishedAt: null }, false, false), true);
+});
+
+test('铁证判定已死:闸门放行,负责人能一键复派', () => {
+  assert.equal(isRedispatchBlocked({ finishedAt: null }, false, true), false);
+});
+
+test('已经有派单进程在跑:铁证也不许越过它(那是本机进程表的事实,不是推断)', () => {
+  assert.equal(isRedispatchBlocked({ finishedAt: null }, true, true), true);
+});
+
+test('确定已死这个入参不影响已收尾的单(它本来就放行)', () => {
+  assert.equal(isRedispatchBlocked({ finishedAt: '2026-09-01T02:00:00Z' }, false, false), false);
+});
+
+test('缺 state 一律拦住,不因"确定已死"而放行(读不到状态 = 什么都不知道)', () => {
+  assert.equal(isRedispatchBlocked(null, false, true), true);
+});
