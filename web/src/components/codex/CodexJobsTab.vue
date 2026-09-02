@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { JobDetail, JobSummary } from '@/types/codex'
+import { acceptanceLabel, jobGroupKey, selfReportStatusLabel } from './jobPresentation.js'
 
 const props = defineProps<{ refreshKey: number; requestedSlug: string; jumpNonce: number }>()
 const emit = defineEmits<{ openSession: [sessionId: string] }>()
@@ -18,14 +19,35 @@ const redispatching = ref(false)
 const editingTask = ref(false)
 const taskText = ref('')
 const jsonError = ref('')
+const completedExpanded = ref(false)
+const logOpen = ref(false)
+const logLoaded = ref(false)
+const logLoading = ref(false)
+const logError = ref('')
 
 const canSend = computed(() => Boolean(detail.value && message.value.trim() && message.value.length <= 8000))
+const attentionGroups = computed(() => [
+  { key: 'running', title: '还在干', items: jobs.value.filter((job) => jobGroupKey(job) === 'running') },
+  { key: 'waiting', title: '等你收', items: jobs.value.filter((job) => jobGroupKey(job) === 'waiting') },
+  { key: 'rejected', title: '没通过', items: jobs.value.filter((job) => jobGroupKey(job) === 'rejected') },
+])
+const completedJobs = computed(() => jobs.value.filter((job) => jobGroupKey(job) === 'completed'))
+const attentionCount = computed(() => attentionGroups.value.reduce((total, group) => total + group.items.length, 0))
 
 function statusOf(job: JobSummary) {
-  if (job.running) return { icon: '🔄', label: '跑着呢', cls: 'running' }
-  if (!job.collected) return { icon: '⏳', label: '跑完没收', cls: 'waiting' }
-  if (job.passed) return { icon: '✅', label: '过了', cls: 'passed' }
-  return { icon: '❌', label: '驳回', cls: 'rejected' }
+  const group = jobGroupKey(job)
+  if (group === 'running') return { icon: '🔄', label: '还在干', cls: 'running' }
+  if (group === 'waiting') return { icon: '⏳', label: '等你收', cls: 'waiting' }
+  if (group === 'completed') return { icon: '✅', label: '已完成', cls: 'passed' }
+  return { icon: '❌', label: '没通过', cls: 'rejected' }
+}
+
+function resetLog() {
+  logOpen.value = false
+  logLoaded.value = false
+  logLoading.value = false
+  logError.value = ''
+  if (detail.value) detail.value.tail = ''
 }
 
 function formatAt(value?: string | null) {
@@ -42,12 +64,17 @@ async function responseText(response: Response): Promise<string> {
   throw new Error(reason)
 }
 
-async function loadDetail(slug: string): Promise<boolean> {
+async function loadDetail(slug: string, includeTail = false): Promise<boolean> {
   detailLoading.value = true
   try {
-    const response = await fetch('/api/codex/job?slug=' + encodeURIComponent(slug))
+    const response = await fetch('/api/codex/job?slug=' + encodeURIComponent(slug) + '&tail=' + (includeTail ? '1' : '0'))
     const text = await responseText(response)
-    if (selectedSlug.value === slug) detail.value = JSON.parse(text) as JobDetail
+    if (selectedSlug.value === slug) {
+      const incoming = JSON.parse(text) as JobDetail
+      if (!includeTail || !logOpen.value) incoming.tail = ''
+      detail.value = incoming
+      logLoaded.value = includeTail && logOpen.value
+    }
     error.value = ''
     return true
   } catch (cause) {
@@ -63,10 +90,11 @@ async function loadJobs(withDetail = true) {
     const response = await fetch('/api/codex/jobs')
     jobs.value = JSON.parse(await responseText(response)) as JobSummary[]
     if (!jobs.value.some((job) => job.slug === selectedSlug.value)) {
-      selectedSlug.value = jobs.value[0]?.slug || ''
+      selectedSlug.value = jobs.value.find((job) => jobGroupKey(job) !== 'completed')?.slug || ''
+      resetLog()
       detail.value = null
     }
-    if (withDetail && selectedSlug.value) await loadDetail(selectedSlug.value)
+    if (withDetail && selectedSlug.value) await loadDetail(selectedSlug.value, logOpen.value)
     error.value = ''
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
@@ -74,9 +102,31 @@ async function loadJobs(withDetail = true) {
 }
 
 async function selectJob(slug: string) {
+  const selected = jobs.value.find((job) => job.slug === slug)
+  if (selected && jobGroupKey(selected) === 'completed') completedExpanded.value = true
+  resetLog()
   selectedSlug.value = slug
+  detail.value = null
   notice.value = ''
-  await loadDetail(slug)
+  await loadDetail(slug, false)
+}
+
+async function onLogToggle(event: Event) {
+  const target = event.currentTarget as HTMLDetailsElement
+  logOpen.value = target.open
+  if (!target.open) {
+    logLoaded.value = false
+    logError.value = ''
+    if (detail.value) detail.value.tail = ''
+    return
+  }
+  if (!detail.value || logLoaded.value || logLoading.value) return
+  const slug = detail.value.slug
+  logLoading.value = true
+  logError.value = ''
+  const loaded = await loadDetail(slug, true)
+  if (!loaded && selectedSlug.value === slug && logOpen.value) logError.value = error.value
+  if (selectedSlug.value === slug) logLoading.value = false
 }
 
 async function sendMessage() {
@@ -176,10 +226,27 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
     <p v-if="error" class="err">⚠️ {{ error }}</p>
     <div class="layout">
       <aside class="jobs card">
-        <button v-for="job in jobs" :key="job.slug" class="job" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
-          <span class="job-title">{{ job.title }}</span>
-          <span class="job-meta"><code>{{ job.slug }}</code><span class="badge" :class="statusOf(job).cls">{{ statusOf(job).icon }} {{ statusOf(job).label }}</span></span>
-        </button>
+        <template v-if="jobs.length">
+          <div v-if="attentionCount === 0" class="attention-empty">目前没有需要你处理的工单</div>
+          <section v-for="group in attentionGroups" v-show="group.items.length" :key="group.key" class="job-group">
+            <h3>{{ group.title }}</h3>
+            <button v-for="job in group.items" :key="job.slug" class="job" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
+              <span class="job-title">{{ job.title }}</span>
+              <span class="job-meta"><code>{{ job.slug }}</code><span class="badge" :class="statusOf(job).cls">{{ statusOf(job).icon }} {{ statusOf(job).label }}</span></span>
+            </button>
+          </section>
+          <section v-if="completedJobs.length" class="job-group completed-group">
+            <button class="completed-toggle" :aria-expanded="completedExpanded" @click="completedExpanded = !completedExpanded">
+              ✅ 已完成 {{ completedJobs.length }} 单{{ completedExpanded ? '(点一下收起)' : '(点开看)' }}
+            </button>
+            <div v-if="completedExpanded">
+              <button v-for="job in completedJobs" :key="job.slug" class="job" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
+                <span class="job-title">{{ job.title }}</span>
+                <span class="job-meta"><code>{{ job.slug }}</code><span class="badge passed">✅ 已完成</span></span>
+              </button>
+            </div>
+          </section>
+        </template>
         <div v-if="!jobs.length && !refreshing" class="empty"><span class="big">📭</span><span>还没有 Codex 工单</span></div>
       </aside>
 
@@ -199,21 +266,49 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
           </div>
           <pre v-if="notice" class="notice">{{ notice }}</pre>
 
+          <section class="section purpose">
+            <h3>这单要做什么</h3>
+            <p>{{ detail.goal || detail.title }}</p>
+          </section>
+          <section v-if="detail.plainSummary" class="section plain-summary">
+            <h3>这单结果</h3>
+            <p>{{ detail.plainSummary }}</p>
+          </section>
           <section class="section">
-            <h3>验收项</h3>
+            <h3>这单检查了什么</h3>
             <div v-if="detail.acceptance.length" class="acceptance">
-              <span v-for="item in detail.acceptance" :key="item.id" class="pill">{{ item.id }} {{ item.passed ? '✅' : '❌' }}<small v-if="item.required === false">可选</small><small v-if="item.exitCode != null">exit {{ item.exitCode }}</small></span>
+              <p v-for="item in detail.acceptance" :key="item.id" class="check-result">
+                <span aria-hidden="true">{{ item.passed ? '✅' : '❌' }}</span>
+                <span>{{ acceptanceLabel(item) }}</span>
+              </p>
             </div>
-            <p v-else class="muted">尚无验收结果</p>
+            <p v-else class="muted">还没有检查结果</p>
+            <details v-if="detail.acceptance.length" class="technical-details">
+              <summary>检查编号和退出码(给工程师看的)</summary>
+              <ul>
+                <li v-for="item in detail.acceptance" :key="'technical-' + item.id">
+                  <code>{{ item.id }}</code>
+                  <span v-if="item.kind"> · {{ item.kind }}</span>
+                  <span v-if="item.required === false"> · 可选</span>
+                  <span v-if="item.exitCode != null"> · 退出码 {{ item.exitCode }}</span>
+                </li>
+              </ul>
+            </details>
           </section>
-          <section class="section">
-            <h3>Codex 自述 <span v-if="detail.selfReport?.status" class="pill">{{ detail.selfReport.status }}</span></h3>
-            <p class="summary">{{ detail.selfReport?.summary || '尚无自述摘要' }}</p>
+          <section class="section self-report">
+            <h3>Codex 自己怎么判断</h3>
+            <p class="self-status">{{ selfReportStatusLabel(detail.selfReport?.status) }}</p>
+            <details v-if="detail.selfReport?.summary" class="technical-details">
+              <summary>Codex 的技术说明(看不懂可以跳过)</summary>
+              <p class="summary">{{ detail.selfReport.summary }}</p>
+            </details>
           </section>
-          <section class="section">
-            <h3>日志尾部（最后 80 行）</h3>
-            <div class="log-scroll"><pre class="log">{{ detail.tail || '暂无日志' }}</pre></div>
-          </section>
+          <details class="section log-details" :open="logOpen" @toggle="onLogToggle">
+            <summary>运行记录(出问题时给工程师看的)</summary>
+            <p v-if="logLoading" class="muted log-message">正在读取运行记录…</p>
+            <p v-else-if="logError" class="err log-message">{{ logError }}</p>
+            <div v-else-if="logOpen && logLoaded" class="log-scroll"><pre class="log">{{ detail.tail || '暂无运行记录' }}</pre></div>
+          </details>
           <section class="section">
             <h3>续聊</h3>
             <div class="chat">
@@ -247,6 +342,11 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
 .err { margin: 0 0 10px; color: var(--danger); }
 .layout { min-width: 0; display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 14px; align-items: start; }
 .jobs { overflow: hidden; box-shadow: none; }
+.job-group + .job-group { border-top: 1px solid var(--border-soft); }
+.job-group > h3 { margin: 0; padding: 9px 12px 5px; color: var(--muted); font-size: 12px; }
+.attention-empty { padding: 12px; color: var(--ok); font-size: 12px; }
+.completed-toggle { width: 100%; padding: 11px 12px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font-weight: 600; }
+.completed-toggle:hover { background: var(--accent-soft); }
 .job { width: 100%; display: flex; flex-direction: column; gap: 7px; padding: 11px 12px; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
 .job:hover, .job.on { background: var(--accent-soft); } .job.on { box-shadow: inset 3px 0 var(--accent); }
 .job-title { font-weight: 600; line-height: 1.35; } .job-meta, .compose-actions, .detail-head, .actions { display: flex; align-items: center; gap: 8px; }
@@ -258,8 +358,21 @@ code { font-family: var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 .actions { flex-wrap: wrap; margin-top: 10px; }
 .notice { margin: 12px 0 0; padding: 9px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); color: var(--muted); white-space: pre-wrap; }
 .section { min-width: 0; border-top: 1px solid var(--border-soft); margin-top: 14px; padding-top: 12px; }
-.section h3 { margin-bottom: 8px; font-size: 13px; color: var(--muted); } .acceptance { display: flex; flex-wrap: wrap; gap: 7px; } .pill small { margin-left: 4px; color: var(--muted-2); }
+.section h3 { margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+.purpose p { margin: 0; font-size: 15px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.plain-summary { padding: 13px; border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent-soft); }
+.plain-summary h3 { color: var(--text); }
+.plain-summary p { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.acceptance { display: flex; flex-direction: column; gap: 7px; }
+.check-result { display: flex; align-items: flex-start; gap: 7px; margin: 0; line-height: 1.45; }
+.self-status { margin: 0; font-size: 16px; font-weight: 600; }
+.technical-details { margin-top: 9px; color: var(--muted); font-size: 12px; }
+.technical-details > summary, .log-details > summary { cursor: pointer; }
+.technical-details ul { margin: 8px 0 0; padding-left: 20px; }
+.technical-details .summary { margin-top: 8px; padding: 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
 .summary { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-details > summary { color: var(--muted); font-size: 13px; font-weight: 600; }
+.log-message { margin: 9px 0 0; }
 .log-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
 .log { width: max-content; min-width: 100%; max-height: 330px; margin: 0; padding: 10px; overflow-y: auto; color: var(--muted); font: 11px/1.55 var(--mono); white-space: pre; }
 .chat { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow: auto; padding: 2px; }

@@ -78,7 +78,7 @@ function createCodexApi({
     if (!slug) return;
     const ctx = context(res);
     if (!ctx) return;
-    const detail = getJobDetail(ctx.jobsRoot, slug);
+    const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: query.tail !== '0' });
     if (!detail) return sendJson(res, 404, { ok: false, error: `工单 ${slug} 不存在` });
     sendJson(res, 200, detail);
   }
@@ -128,7 +128,7 @@ function createCodexApi({
       if (!ctx) return;
       const task = `.codex/jobs/${slug}.json`;
       const taskPath = path.join(ctx.repo, task);
-      const detail = getJobDetail(ctx.jobsRoot, slug);
+      const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: false });
       if (isRedispatchBlocked(detail ? { finishedAt: detail.running ? null : 'done' } : { finishedAt: 'new' }, activeDispatches.has(slug))) {
         return sendJson(res, 409, { ok: false, error: `工单 ${slug} 仍在运行，不能重复派发` });
       }

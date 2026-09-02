@@ -11,12 +11,22 @@ export interface JobSummary {
   rejectionReason?: string
 }
 
-export interface Acceptance { id: string; required?: boolean; passed?: boolean; exitCode?: number | null }
+export interface Acceptance {
+  id: string
+  kind?: string
+  target?: string
+  note?: string
+  required?: boolean
+  passed?: boolean
+  exitCode?: number | null
+}
 export interface SelfReport { status?: string; summary?: string }
 export interface ChatEntry { at?: string; direction: 'out' | 'in'; text: string }
 
 export interface JobDetail extends JobSummary {
+  goal: string | null
   acceptance: Acceptance[]
+  plainSummary: string | null
   selfReport: SelfReport | null
   chat: ChatEntry[]
   tail: string
