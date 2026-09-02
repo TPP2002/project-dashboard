@@ -130,6 +130,19 @@ const spendBreakdown = computed(() => {
   }
 })
 
+/**
+ * 这段区间一条记录都没有时,要说清"为什么是 0"。
+ * 光摆一排 0 会让人以为页面坏了(0902 负责人就这么误判过一次:
+ * 「为什么近7天和近30天没有数据?但是近90天有?」——其实那个项目最后一次活动在 54 天前)。
+ */
+const emptyReason = computed(() => {
+  if (!usage.value) return null
+  const hasClaude = (usage.value.byDay?.length ?? 0) > 0
+  const hasCodex = (codex.value?.byDay?.length ?? 0) > 0
+  if (hasClaude || hasCodex) return null
+  return `这个项目近 ${days.value} 天没有任何对话记录,所以下面都是 0。换更长的区间看看,或者确认最近是不是没在这个项目上干活。`
+})
+
 const modelRows = computed(() =>
   Object.entries(usage.value?.models ?? {})
     .filter(([, value]) => value.output > 0 || value.input > 0 || value.cacheRead > 0)
@@ -184,6 +197,12 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
         当前项目及其工作副本共 {{ usage.dirs.length }} 个目录、{{ usage.sessions }} 个会话。
         <span v-if="loading" class="badge info">正在刷新</span>
       </p>
+
+      <!-- 区间内没有任何记录时说清原因,别让一排 0 看起来像页面坏了 -->
+      <div v-if="emptyReason" class="card quiet-notice">
+        <span class="badge n">这段时间没有记录</span>
+        <span>{{ emptyReason }}</span>
+      </div>
 
       <CodexCostSummary
         v-if="codex && quota && combined"
@@ -301,6 +320,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .page-head { display: flex; align-items: flex-start; gap: var(--s4); justify-content: space-between; }
 .page-subtitle, .source-note, .fine, .details-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .source-note { margin: 0; font-size: var(--fs-sm); }
+.quiet-notice { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; padding: var(--s3) var(--s4); color: var(--text-2); font-size: var(--fs-base); }
 .range-picker { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s1); }
 .range-btn.active { background: var(--surface-3); border-color: var(--line-strong); font-weight: 600; }
 .error-state { display: flex; align-items: center; gap: var(--s3); color: var(--bad); }
