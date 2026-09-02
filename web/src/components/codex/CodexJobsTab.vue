@@ -427,7 +427,7 @@ code { font-family: var(--mono); color: var(--text-2); overflow-wrap: anywhere; 
 .log-message { margin: var(--s2) 0 0; }
 .log-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
 .log { width: max-content; min-width: 100%; max-height: 330px; margin: 0; padding: var(--s3); overflow-y: auto; color: var(--text-2); font: var(--fs-xs)/1.55 var(--mono); white-space: pre; }
-.chat { display: flex; flex-direction: column; gap: var(--s2); max-height: 360px; overflow: auto; padding: 2px; }
+.chat { display: flex; flex-direction: column; gap: var(--s2); max-height: 360px; overflow: auto; padding: var(--s1); }
 .bubble { max-width: 88%; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
 .bubble.out { align-self: flex-end; background: var(--info-bg); }
 .bubble > span { color: var(--text-3); font-size: var(--fs-xs); }

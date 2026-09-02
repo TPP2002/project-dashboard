@@ -291,7 +291,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .task-cost-table { min-width: 720px; }
 .total-cell { font-weight: 600; }
 .empty-help { font-size: var(--fs-sm); }
-code { padding: 1px var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-sm); }
+code { padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-sm); }
 
 @media (max-width: 760px) {
   .page-head, .details-head { flex-direction: column; align-items: stretch; }

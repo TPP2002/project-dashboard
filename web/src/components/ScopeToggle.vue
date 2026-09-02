@@ -11,20 +11,20 @@ const curName = computed(
 </script>
 
 <template>
-  <div v-if="store.projectList.length > 1" class="scope">
-    <button class="seg" :class="{ on: !store.centerScopeAll }" @click="store.centerScopeAll = false">
+  <div v-if="store.projectList.length > 1" class="scope" role="group" aria-label="项目范围">
+    <button class="seg" type="button" :class="{ on: !store.centerScopeAll }" :aria-pressed="!store.centerScopeAll" @click="store.centerScopeAll = false">
       {{ curName }}
     </button>
-    <button class="seg" :class="{ on: store.centerScopeAll }" @click="store.centerScopeAll = true">
+    <button class="seg" type="button" :class="{ on: store.centerScopeAll }" :aria-pressed="store.centerScopeAll" @click="store.centerScopeAll = true">
       全部项目
     </button>
   </div>
 </template>
 
 <style scoped>
-.scope { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
-.seg { background: var(--panel-2); color: var(--muted); border: none; padding: 4px 12px; font-size: 12px; cursor: pointer; }
-.seg + .seg { border-left: 1px solid var(--border); }
+.scope { display: inline-flex; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r); }
+.seg { padding: var(--s1) var(--s3); border: 0; background: var(--surface-2); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); }
+.seg + .seg { border-left: 1px solid var(--line); }
 .seg:hover { color: var(--text); }
-.seg.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.seg.on { background: var(--info-bg); color: var(--info); font-weight: 600; }
 </style>

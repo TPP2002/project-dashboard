@@ -12,6 +12,13 @@
   --bad: #b3382f; --bad-bg: #fdecea;
   --info: #2b5fa8; --info-bg: #e8f0fb;
   --shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 1px 3px rgba(0, 0, 0, .04);
+  --overlay: #00000080; --drawer-shadow: #00000040;
+
+  /* —— 图表与密度色阶（canvas 必须读取解析后的实色） —— */
+  --chart-1: #2b5fa8; --chart-2: #2c7a45; --chart-3: #9a6b12; --chart-4: #7257a8;
+  --chart-5: #247a78; --chart-6: #a94a65; --chart-7: #6d6d69; --chart-on-series: #ffffff;
+  --chart-area-neutral: #8e8e8920; --chart-area-warn: #9a6b1220; --chart-area-ok: #2c7a4529;
+  --heat-1: #dcece1; --heat-2: #b5d8c0; --heat-3: #76af88; --heat-4: #2c7a45;
 
   /* —— 尺度（深浅共用） —— */
   --r-sm: 4px; --r: 6px; --r-lg: 8px;
@@ -24,6 +31,10 @@
   /* —— 光谱（默认冷谱） —— */
   --spectrum: linear-gradient(90deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4);
   --spectrum-v: linear-gradient(180deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4);
+  --spectrum-preview-cool: linear-gradient(90deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8);
+  --spectrum-preview-warm: linear-gradient(90deg, #f0b429, #f5825b, #e8619d, #a86fd8);
+  --spectrum-preview-full: linear-gradient(90deg, #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8);
+  --spectrum-preview-duo: linear-gradient(90deg, #4ad9c4, #6d8cff);
 
   /* 旧页面过渡期别名：只指向新令牌，不保留第二套数值。 */
   --bg-soft: var(--surface); --panel: var(--surface); --panel-2: var(--surface-2);
@@ -44,6 +55,11 @@
     --bad: #e0736a; --bad-bg: #2a1715;
     --info: #6d9eea; --info-bg: #141d2b;
     --shadow: none;
+    --overlay: #00000099; --drawer-shadow: #00000066;
+    --chart-1: #6d9eea; --chart-2: #6fbf82; --chart-3: #d9a441; --chart-4: #a991e8;
+    --chart-5: #64bdb8; --chart-6: #e0879d; --chart-7: #9a9a9e; --chart-on-series: #0d0d0e;
+    --chart-area-neutral: #6a6a6f26; --chart-area-warn: #d9a44126; --chart-area-ok: #6fbf8230;
+    --heat-1: #193823; --heat-2: #245331; --heat-3: #3e7b50; --heat-4: #6fbf82;
   }
 }
 
@@ -56,6 +72,11 @@
   --bad: #e0736a; --bad-bg: #2a1715;
   --info: #6d9eea; --info-bg: #141d2b;
   --shadow: none;
+  --overlay: #00000099; --drawer-shadow: #00000066;
+  --chart-1: #6d9eea; --chart-2: #6fbf82; --chart-3: #d9a441; --chart-4: #a991e8;
+  --chart-5: #64bdb8; --chart-6: #e0879d; --chart-7: #9a9a9e; --chart-on-series: #0d0d0e;
+  --chart-area-neutral: #6a6a6f26; --chart-area-warn: #d9a44126; --chart-area-ok: #6fbf8230;
+  --heat-1: #193823; --heat-2: #245331; --heat-3: #3e7b50; --heat-4: #6fbf82;
 }
 
 [data-spectrum="warm"] {
@@ -121,7 +142,7 @@ h3 { font-size: var(--fs-md); }
   align-items: center;
   justify-content: center;
   gap: var(--s2);
-  padding: 6px 13px;
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--line-strong);
   border-radius: var(--r);
   background: var(--surface-2);
@@ -137,11 +158,11 @@ h3 { font-size: var(--fs-md); }
 .btn.quiet, .btn-quiet, .btn-ghost { background: transparent; border-color: transparent; color: var(--text-2); }
 .btn.quiet:hover, .btn-quiet:hover, .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
-.btn-sm { padding: 3px 9px; font-size: var(--fs-sm); }
+.btn-sm { padding: var(--s1) var(--s2); font-size: var(--fs-sm); }
 
 .badge {
   display: inline-block;
-  padding: 2px var(--s2);
+  padding: var(--s1) var(--s2);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   font-family: var(--mono);
@@ -154,6 +175,7 @@ h3 { font-size: var(--fs-md); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.bad { background: var(--bad-bg); color: var(--bad); }
 .badge.info { background: var(--info-bg); color: var(--info); }
+.badge.compact { padding: 0 var(--s1); }
 
 .row {
   position: relative;
@@ -180,7 +202,7 @@ tbody tr:hover { background: var(--surface-2); }
 
 .field {
   width: 100%;
-  padding: 7px 11px;
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--line);
   border-radius: var(--r);
   background: var(--surface-2);
@@ -191,7 +213,7 @@ tbody tr:hover { background: var(--surface-2); }
 .field:focus { border-color: transparent; outline: 2px solid var(--info); outline-offset: -1px; }
 
 .empty { padding: var(--s6) var(--s4); color: var(--text-3); font-size: var(--fs-base); text-align: center; }
-.empty .ic, .empty .big { display: block; margin-bottom: var(--s2); font-size: 26px; opacity: .5; }
+.empty .ic, .empty .big { display: block; margin-bottom: var(--s2); font-size: var(--fs-2xl); opacity: .5; }
 .skel { height: var(--s3); border-radius: var(--r-sm); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
@@ -206,13 +228,13 @@ tbody tr:hover { background: var(--surface-2); }
 
 /* 顶栏光谱预览：数值逐字取自规范，组件内不出现颜色字面量。 */
 .spectrum-swatch { width: 44px; height: 14px; padding: 0; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
-.spectrum-swatch[data-spectrum-choice="cool"] { background-image: linear-gradient(90deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8); }
-.spectrum-swatch[data-spectrum-choice="warm"] { background-image: linear-gradient(90deg, #f0b429, #f5825b, #e8619d, #a86fd8); }
-.spectrum-swatch[data-spectrum-choice="full"] { background-image: linear-gradient(90deg, #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8); }
-.spectrum-swatch[data-spectrum-choice="duo"] { background-image: linear-gradient(90deg, #4ad9c4, #6d8cff); }
+.spectrum-swatch[data-spectrum-choice="cool"] { background-image: var(--spectrum-preview-cool); }
+.spectrum-swatch[data-spectrum-choice="warm"] { background-image: var(--spectrum-preview-warm); }
+.spectrum-swatch[data-spectrum-choice="full"] { background-image: var(--spectrum-preview-full); }
+.spectrum-swatch[data-spectrum-choice="duo"] { background-image: var(--spectrum-preview-duo); }
 
 /* 旧页面仍在引用的基础工具类。 */
-.pill { display: inline-flex; align-items: center; gap: var(--s1); padding: 1px 7px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.25; white-space: nowrap; }
 .muted { color: var(--text-2); }
 .mono { font-family: var(--mono); }
 .gap-2 { gap: var(--s2); }

@@ -6,7 +6,7 @@
 import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { useEchart } from '@/charts/useEcharts'
+import { cssVar, useEchart } from '@/charts/useEcharts'
 import { fmtShort } from '@/utils/format'
 import type { Board } from '@/types'
 
@@ -144,6 +144,19 @@ function actualDays(): number {
   return Math.max(span, 30)
 }
 function buildOption() {
+  const theme = {
+    text: cssVar('--text'),
+    text3: cssVar('--text-3'),
+    line: cssVar('--line'),
+    lineStrong: cssVar('--line-strong'),
+    surface: cssVar('--surface'),
+    surface2: cssVar('--surface-2'),
+    info: cssVar('--chart-1'),
+    ok: cssVar('--chart-2'),
+    focus: cssVar('--chart-5'),
+    infoBg: cssVar('--info-bg'),
+    fsXs: Number.parseFloat(cssVar('--fs-xs')),
+  }
   const n = actualDays()
   const days: string[] = []
   const counts: number[] = []
@@ -167,11 +180,16 @@ function buildOption() {
     // 长档位加缩放：滚轮/捏合可缩放（inside），超90天再给底部滑条
     dataZoom: [
       { type: 'inside' },
-      ...(n > 90 ? [{ type: 'slider', height: 16, bottom: 4 }] : []),
+      ...(n > 90 ? [{
+        type: 'slider', height: 16, bottom: 4,
+        backgroundColor: theme.surface2, borderColor: theme.line,
+        fillerColor: theme.infoBg, textStyle: { color: theme.text3 },
+        handleStyle: { color: theme.info, borderColor: theme.lineStrong },
+      }] : []),
     ],
     tooltip: {
       trigger: 'axis',
-      backgroundColor: '#1a2029', borderColor: '#2a3341', textStyle: { color: '#e6edf3' },
+      backgroundColor: theme.surface, borderColor: theme.lineStrong, textStyle: { color: theme.text },
       formatter: (ps: { axisValue?: string; seriesName?: string; data?: unknown }[]) => {
         const day = ps[0]?.axisValue ?? ''
         const lines = ps.map((p) => `${p.seriesName}：${p.data ?? 0}`)
@@ -180,23 +198,23 @@ function buildOption() {
     },
     xAxis: {
       type: 'category', data: days,
-      axisLabel: { color: '#8b98a9', fontSize: 10, formatter: (v: string) => v.slice(5) },
-      axisLine: { lineStyle: { color: '#2a3341' } },
+      axisLabel: { color: theme.text3, fontSize: theme.fsXs, formatter: (v: string) => v.slice(5) },
+      axisLine: { lineStyle: { color: theme.lineStrong } },
     },
     yAxis: {
       type: 'value', minInterval: 1,
-      axisLabel: { color: '#8b98a9', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#1a2029' } },
+      axisLabel: { color: theme.text3, fontSize: theme.fsXs },
+      splitLine: { lineStyle: { color: theme.line } },
     },
     series: [
       {
         name: '完工卡', type: 'bar', data: counts, barMaxWidth: 16,
-        itemStyle: { color: '#2ea043', borderRadius: [3, 3, 0, 0] },
-        emphasis: { itemStyle: { color: '#3fb950' } },
+        itemStyle: { color: theme.ok, borderRadius: [3, 3, 0, 0] },
+        emphasis: { itemStyle: { color: theme.focus } },
       },
       {
         name: '7日均线', type: 'line', data: ma, smooth: true, symbol: 'none',
-        lineStyle: { color: '#4c8dff', width: 1.6, type: 'dashed' }, itemStyle: { color: '#4c8dff' },
+        lineStyle: { color: theme.info, width: 1.6, type: 'dashed' }, itemStyle: { color: theme.info },
       },
     ],
   }
@@ -233,15 +251,16 @@ watch([byDay, rangeDays], update)
 
     <!-- 统计卡 -->
     <div class="statbar">
-      <div class="stat" :class="{ glow: stats.todayN > 0 }">
-        <b class="ok">{{ stats.todayN }}</b><span>今日完成</span>
+      <div class="stat card">
+        <span v-if="stats.todayN > 0" class="glow glow-top stat-edge" />
+        <b class="v ok">{{ stats.todayN }}</b><span class="l">今日完成</span>
       </div>
-      <div class="stat"><b>{{ stats.week }}</b><span>本周</span></div>
-      <div class="stat"><b>{{ stats.month }}</b><span>本月</span></div>
-      <div class="stat" :class="{ fire: stats.streak >= 3 }">
-        <b>{{ stats.streak }}<i v-if="stats.streak >= 3" class="fi">🔥</i></b><span>连续产出（天）</span>
+      <div class="stat card"><b class="v">{{ stats.week }}</b><span class="l">本周</span></div>
+      <div class="stat card"><b class="v">{{ stats.month }}</b><span class="l">本月</span></div>
+      <div class="stat card" :class="{ fire: stats.streak >= 3 }">
+        <b class="v">{{ stats.streak }}<i v-if="stats.streak >= 3" class="fi">🔥</i></b><span class="l">连续产出（天）</span>
       </div>
-      <div class="stat"><b>{{ stats.avg30 }}</b><span>日均（近30天）</span></div>
+      <div class="stat card"><b class="v">{{ stats.avg30 }}</b><span class="l">日均（近30天）</span></div>
     </div>
 
     <!-- 热力日历 -->
@@ -299,7 +318,7 @@ watch([byDay, rangeDays], update)
     <div class="card block">
       <div class="block-t">
         {{ fmtDayCN(selectedDay) }}
-        <span class="pill" :class="{ okpill: selectedRecords.length }">完成 {{ selectedRecords.length }} 卡</span>
+        <span class="badge" :class="selectedRecords.length ? 'ok' : 'n'">完成 {{ selectedRecords.length }} 卡</span>
         <button v-if="selectedDay !== today" class="btn btn-sm btn-ghost" @click="selectedDay = today">回到今天</button>
       </div>
 
@@ -313,13 +332,13 @@ watch([byDay, rangeDays], update)
       <div v-else class="dlist">
         <div
           v-for="r in selectedRecords" :key="r.projectId + r.task.id"
-          class="drow" @click="store.openTask(r.task.id, r.projectId)"
+          class="drow row" @click="store.openTask(r.task.id, r.projectId)"
         >
           <span class="pill proj">{{ r.projectName }}</span>
           <span class="tid mono">{{ r.task.id }}</span>
-          <span class="tt">{{ r.task.title }}</span>
+          <span class="tt g">{{ r.task.title }}</span>
           <span class="spacer" />
-          <span v-if="r.ts" class="time mono muted">{{ fmtShort(r.ts).slice(6) }}</span>
+          <span v-if="r.ts" class="time mono rt">{{ fmtShort(r.ts).slice(6) }}</span>
           <span v-for="p in r.task.prNumbers || []" :key="p" class="pill">PR #{{ p }}</span>
         </div>
       </div>
@@ -328,81 +347,75 @@ watch([byDay, rangeDays], update)
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.head h2 { font-size: 18px; }
-.undated { color: var(--muted-2); cursor: help; }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
+.undated { color: var(--text-3); cursor: help; }
 
 /* 项目选择：圆角小片按钮，可换行（7 个选项一排放不下时自动折行） */
-.scope { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.scope { display: flex; flex-wrap: wrap; gap: var(--s1); justify-content: flex-end; }
 .seg {
-  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
-  border-radius: 999px; padding: 3px 11px; font-size: 12px; cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  padding: var(--s1) var(--s3); border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface-2); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm);
+  transition: border-color .14s, color .14s, background .14s;
 }
-.seg:hover { color: var(--text); border-color: var(--accent); }
-.seg.on { background: var(--accent-soft); color: var(--text); font-weight: 600; border-color: var(--accent); }
+.seg:hover { color: var(--text); border-color: var(--line-strong); }
+.seg.on { background: var(--info-bg); color: var(--info); font-weight: 600; border-color: var(--info); }
 
-.statbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.statbar { display: flex; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
 .stat {
-  display: flex; flex-direction: column; align-items: center;
-  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 10px 22px; min-width: 104px;
+  display: flex; flex-direction: column; align-items: center; min-width: 104px;
+  padding: var(--s3) var(--s5);
 }
-.stat b { font-size: 22px; display: inline-flex; align-items: center; gap: 3px; }
-.stat b.ok { color: var(--ok); }
-.stat span { font-size: 12px; color: var(--muted); }
-.stat.glow { border-color: rgba(46, 160, 67, 0.55); box-shadow: 0 0 14px rgba(46, 160, 67, 0.15); }
-.stat.fire b { color: #f5a623; }
-.fi { font-size: 14px; font-style: normal; }
+.stat .v { display: inline-flex; align-items: center; gap: var(--s1); }
+.stat .v.ok { color: var(--ok); }
+.stat-edge { position: absolute; inset: 0 0 auto; width: 100%; }
+.stat.fire .v { color: var(--warn); }
+.fi { font-size: var(--fs-base); font-style: normal; }
 
-.block { padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; }
-.block-t { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.small { font-size: 12px; font-weight: 400; }
+.block { display: flex; flex-direction: column; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s3) var(--s4); }
+.block-t { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; font-size: var(--fs-base); font-weight: 600; }
+.small { font-size: var(--fs-sm); font-weight: 400; }
 
 /* 热力日历 */
-.heat-wrap { --cell: 14px; --gap: 3px; overflow-x: auto; padding-bottom: 4px; }
-.heat-months { position: relative; height: 16px; margin-left: 26px; }
-.hm { position: absolute; top: 0; font-size: 10px; color: var(--muted-2); }
-.heat { display: flex; gap: 6px; }
+.heat-wrap { --cell: 14px; --gap: var(--s1); overflow-x: auto; padding-bottom: var(--s1); }
+.heat-months { position: relative; height: var(--s4); margin-left: var(--s5); }
+.hm { position: absolute; top: 0; color: var(--text-3); font-size: var(--fs-xs); }
+.heat { display: flex; gap: var(--s1); }
 .heat-dows {
   display: flex; flex-direction: column; justify-content: space-between;
-  font-size: 9px; color: var(--muted-2); padding: 1px 0; width: 20px; text-align: right;
-  height: calc(7 * var(--cell) + 6 * var(--gap));
+  width: 20px; height: calc(7 * var(--cell) + 6 * var(--gap)); padding: var(--s1) 0;
+  color: var(--text-3); font-size: var(--fs-xs); text-align: right;
 }
 .heat-grid { display: flex; gap: var(--gap); }
 .heat-col { display: flex; flex-direction: column; gap: var(--gap); }
 .cell {
-  width: var(--cell); height: var(--cell); border-radius: 3px; border: 1px solid transparent;
-  background: var(--panel-2); padding: 0; cursor: pointer;
+  width: var(--cell); height: var(--cell); padding: 0; border: 1px solid transparent;
+  border-radius: var(--r-sm); background: var(--surface-2); cursor: pointer;
 }
-.cell[data-level='1'] { background: #14432a; }
-.cell[data-level='2'] { background: #1a6334; }
-.cell[data-level='3'] { background: #2ea043; }
-.cell[data-level='4'] { background: #56d364; }
+.cell[data-level='1'] { background: var(--heat-1); }
+.cell[data-level='2'] { background: var(--heat-2); }
+.cell[data-level='3'] { background: var(--heat-3); }
+.cell[data-level='4'] { background: var(--heat-4); }
 .cell:hover:not(.future) { border-color: var(--text); }
-.cell.sel { border-color: #f5a623; box-shadow: 0 0 0 1px #f5a623; }
-.cell.today:not(.sel) { border-color: rgba(230, 237, 243, 0.45); }
+.cell.sel { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
+.cell.today:not(.sel) { border-color: var(--line-strong); }
 .cell.future { opacity: 0.25; cursor: default; }
-.lgd { display: inline-flex; align-items: center; gap: 3px; }
-.lgd-cell { width: 10px; height: 10px; border-radius: 2px; display: inline-block; background: var(--panel-2); }
-.lgd-cell[data-level='1'] { background: #14432a; }
-.lgd-cell[data-level='2'] { background: #1a6334; }
-.lgd-cell[data-level='3'] { background: #2ea043; }
-.lgd-cell[data-level='4'] { background: #56d364; }
+.lgd { display: inline-flex; align-items: center; gap: var(--s1); }
+.lgd-cell { display: inline-block; width: var(--s3); height: var(--s3); border-radius: var(--r-sm); background: var(--surface-2); }
+.lgd-cell[data-level='1'] { background: var(--heat-1); }
+.lgd-cell[data-level='2'] { background: var(--heat-2); }
+.lgd-cell[data-level='3'] { background: var(--heat-3); }
+.lgd-cell[data-level='4'] { background: var(--heat-4); }
 
 .chart { height: 240px; }
 
 /* 当日明细 */
-.okpill { color: var(--ok); border-color: rgba(46, 160, 67, 0.4); }
-.acts { display: flex; gap: 6px; flex-wrap: wrap; }
-.act { font-size: 11px; }
-.empty-day { font-size: 13px; padding: 14px 0 6px; }
+.acts { display: flex; gap: var(--s1); flex-wrap: wrap; }
+.act { font-size: var(--fs-xs); }
+.empty-day { padding: var(--s3) 0 var(--s2); font-size: var(--fs-base); }
 .dlist { display: flex; flex-direction: column; }
-.drow { display: flex; align-items: center; gap: 9px; padding: 8px 8px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; }
-.drow:hover { background: var(--panel-2); }
-.drow + .drow { border-top: 1px solid var(--border-soft); }
-.drow .proj { color: var(--accent); flex: none; }
-.drow .tid { color: var(--muted); font-weight: 600; flex: none; }
-.drow .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.drow .time { font-size: 11px; flex: none; }
+.drow { cursor: pointer; }
+.drow + .drow { margin-top: var(--s2); }
+.drow .proj { flex: none; color: var(--info); }
+.drow .tid { flex: none; color: var(--text-2); font-weight: 600; }
+.drow .time { flex: none; }
 </style>

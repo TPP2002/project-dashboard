@@ -7,7 +7,7 @@
 import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { useEchart } from '@/charts/useEcharts'
+import { cssVar, useEchart } from '@/charts/useEcharts'
 import type { Board } from '@/types'
 
 const store = useBoardStore()
@@ -19,15 +19,33 @@ const boards = computed<Board[]>(() => {
 })
 const doneRecords = computed(() => derive.collectDoneRecords(boards.value).records)
 
-// 项目固定配色（堆叠图用；与状态色错开）
-const PROJ_COLORS = ['#4c8dff', '#2ea043', '#f5a623', '#a371f7', '#2bb0c9', '#d0637c', '#8a94a6']
-const projColor = (i: number) => PROJ_COLORS[i % PROJ_COLORS.length]
+const projColor = (i: number) => cssVar(`--chart-${(i % 7) + 1}`)
 
-const AXIS = { color: '#8b98a9', fontSize: 10 }
-const TIP = { backgroundColor: '#1a2029', borderColor: '#2a3341', textStyle: { color: '#e6edf3' } }
+function chartStyle() {
+  const fsXs = Number.parseFloat(cssVar('--fs-xs'))
+  return {
+    axis: { color: cssVar('--text-3'), fontSize: fsXs },
+    tooltip: {
+      backgroundColor: cssVar('--surface'),
+      borderColor: cssVar('--line-strong'),
+      textStyle: { color: cssVar('--text') },
+    },
+    line: cssVar('--line'),
+    lineStrong: cssVar('--line-strong'),
+    neutral: cssVar('--chart-7'),
+    warn: cssVar('--chart-3'),
+    ok: cssVar('--chart-2'),
+    focus: cssVar('--chart-5'),
+    info: cssVar('--chart-1'),
+    areaNeutral: cssVar('--chart-area-neutral'),
+    areaWarn: cssVar('--chart-area-warn'),
+    areaOk: cssVar('--chart-area-ok'),
+  }
+}
 
 // ---------- 1) 累计流图 ----------
 function buildCfd() {
+  const theme = chartStyle()
   const N = 90
   const days: string[] = []
   const d = new Date()
@@ -57,14 +75,14 @@ function buildCfd() {
   const cn = cum(doneDays)
   return {
     grid: { left: 44, right: 16, top: 34, bottom: 26 },
-    legend: { top: 2, textStyle: { color: '#8b98a9', fontSize: 11 } },
-    tooltip: { trigger: 'axis', ...TIP },
-    xAxis: { type: 'category', data: days, axisLabel: { ...AXIS, formatter: (v: string) => v.slice(5) }, axisLine: { lineStyle: { color: '#2a3341' } } },
-    yAxis: { type: 'value', axisLabel: AXIS, splitLine: { lineStyle: { color: '#1a2029' } } },
+    legend: { top: 2, textStyle: theme.axis },
+    tooltip: { trigger: 'axis', ...theme.tooltip },
+    xAxis: { type: 'category', data: days, axisLabel: { ...theme.axis, formatter: (v: string) => v.slice(5) }, axisLine: { lineStyle: { color: theme.lineStrong } } },
+    yAxis: { type: 'value', axisLabel: theme.axis, splitLine: { lineStyle: { color: theme.line } } },
     series: [
-      { name: '已立案（累计）', type: 'line', data: cd, symbol: 'none', lineStyle: { color: '#8a94a6', width: 1.4 }, areaStyle: { color: 'rgba(138,148,166,0.10)' }, itemStyle: { color: '#8a94a6' } },
-      { name: '已开工（累计）', type: 'line', data: cs, symbol: 'none', lineStyle: { color: '#f5a623', width: 1.4 }, areaStyle: { color: 'rgba(245,166,35,0.10)' }, itemStyle: { color: '#f5a623' } },
-      { name: '已完工（累计）', type: 'line', data: cn, symbol: 'none', lineStyle: { color: '#2ea043', width: 2 }, areaStyle: { color: 'rgba(46,160,67,0.16)' }, itemStyle: { color: '#2ea043' } },
+      { name: '已立案（累计）', type: 'line', data: cd, symbol: 'none', lineStyle: { color: theme.neutral, width: 1.4 }, areaStyle: { color: theme.areaNeutral }, itemStyle: { color: theme.neutral } },
+      { name: '已开工（累计）', type: 'line', data: cs, symbol: 'none', lineStyle: { color: theme.warn, width: 1.4 }, areaStyle: { color: theme.areaWarn }, itemStyle: { color: theme.warn } },
+      { name: '已完工（累计）', type: 'line', data: cn, symbol: 'none', lineStyle: { color: theme.ok, width: 2 }, areaStyle: { color: theme.areaOk }, itemStyle: { color: theme.ok } },
     ],
   }
 }
@@ -86,6 +104,7 @@ function mondayOf(day: string): string {
   return derive.localDay(d)
 }
 function buildWeekly() {
+  const theme = chartStyle()
   const WEEKS = 12
   const mondays: string[] = []
   const d = new Date()
@@ -108,16 +127,17 @@ function buildWeekly() {
   }))
   return {
     grid: { left: 40, right: 16, top: 40, bottom: 26 },
-    legend: { top: 2, textStyle: { color: '#8b98a9', fontSize: 10 }, type: 'scroll' },
-    tooltip: { trigger: 'axis', ...TIP },
-    xAxis: { type: 'category', data: mondays.map((m) => m.slice(5) + '周'), axisLabel: AXIS, axisLine: { lineStyle: { color: '#2a3341' } } },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: AXIS, splitLine: { lineStyle: { color: '#1a2029' } } },
+    legend: { top: 2, textStyle: theme.axis, type: 'scroll' },
+    tooltip: { trigger: 'axis', ...theme.tooltip },
+    xAxis: { type: 'category', data: mondays.map((m) => m.slice(5) + '周'), axisLabel: theme.axis, axisLine: { lineStyle: { color: theme.lineStrong } } },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: theme.axis, splitLine: { lineStyle: { color: theme.line } } },
     series: series.length ? series : [{ type: 'bar', data: new Array(WEEKS).fill(0) }],
   }
 }
 
 // ---------- 3) 周内节奏 ----------
 function buildWeekday() {
+  const theme = chartStyle()
   const counts = new Array(7).fill(0) // 周一..周日
   for (const r of doneRecords.value) {
     const dow = (new Date(r.day).getDay() + 6) % 7
@@ -126,12 +146,12 @@ function buildWeekday() {
   const max = Math.max(...counts)
   return {
     grid: { left: 40, right: 16, top: 16, bottom: 26 },
-    tooltip: { trigger: 'axis', ...TIP },
-    xAxis: { type: 'category', data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'], axisLabel: AXIS, axisLine: { lineStyle: { color: '#2a3341' } } },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: AXIS, splitLine: { lineStyle: { color: '#1a2029' } } },
+    tooltip: { trigger: 'axis', ...theme.tooltip },
+    xAxis: { type: 'category', data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'], axisLabel: theme.axis, axisLine: { lineStyle: { color: theme.lineStrong } } },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: theme.axis, splitLine: { lineStyle: { color: theme.line } } },
     series: [{
       name: '完工卡', type: 'bar', data: counts, barMaxWidth: 30,
-      itemStyle: { color: (p: { value: number }) => p.value === max && max > 0 ? '#56d364' : '#2ea043', borderRadius: [3, 3, 0, 0] },
+      itemStyle: { color: (p: { value: number }) => p.value === max && max > 0 ? theme.focus : theme.ok, borderRadius: [3, 3, 0, 0] },
     }],
   }
 }
@@ -158,17 +178,18 @@ const cycleData = computed(() => {
   return { buckets, sampled, slow: slow.slice(0, 8) }
 })
 function buildCycle() {
+  const theme = chartStyle()
   const b = cycleData.value.buckets
   const keys = Object.keys(b) as (keyof typeof b)[]
   return {
     grid: { left: 58, right: 30, top: 16, bottom: 26 },
-    tooltip: { trigger: 'axis', ...TIP },
-    xAxis: { type: 'value', minInterval: 1, axisLabel: AXIS, splitLine: { lineStyle: { color: '#1a2029' } } },
-    yAxis: { type: 'category', data: keys, inverse: true, axisLabel: { ...AXIS, fontSize: 11 }, axisLine: { lineStyle: { color: '#2a3341' } } },
+    tooltip: { trigger: 'axis', ...theme.tooltip },
+    xAxis: { type: 'value', minInterval: 1, axisLabel: theme.axis, splitLine: { lineStyle: { color: theme.line } } },
+    yAxis: { type: 'category', data: keys, inverse: true, axisLabel: theme.axis, axisLine: { lineStyle: { color: theme.lineStrong } } },
     series: [{
       type: 'bar', data: keys.map((k) => b[k]), barMaxWidth: 20,
-      itemStyle: { color: '#4c8dff', borderRadius: [0, 3, 3, 0] },
-      label: { show: true, position: 'right', color: '#8b98a9', fontSize: 10 },
+      itemStyle: { color: theme.info, borderRadius: [0, 3, 3, 0] },
+      label: { show: true, position: 'right', ...theme.axis },
     }],
   }
 }
@@ -232,24 +253,23 @@ watch([boards], () => { updCfd(); updWeekly(); updWeekday(); updCycle() })
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.head h2 { font-size: 18px; }
-.small { font-size: 12px; }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
+.small { font-size: var(--fs-sm); }
 
-.scope { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.scope { display: flex; flex-wrap: wrap; gap: var(--s1); justify-content: flex-end; }
 .seg {
-  background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
-  border-radius: 999px; padding: 3px 11px; font-size: 12px; cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  padding: var(--s1) var(--s3); border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface-2); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm);
+  transition: border-color .14s, color .14s, background .14s;
 }
-.seg:hover { color: var(--text); border-color: var(--accent); }
-.seg.on { background: var(--accent-soft); color: var(--text); font-weight: 600; border-color: var(--accent); }
+.seg:hover { color: var(--text); border-color: var(--line-strong); }
+.seg.on { background: var(--info-bg); color: var(--info); font-weight: 600; border-color: var(--info); }
 
-.block { padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
-.block-t { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.hint { font-size: 12px; line-height: 1.6; }
+.block { display: flex; flex-direction: column; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s3) var(--s4); }
+.block-t { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; font-size: var(--fs-base); font-weight: 600; }
+.hint { font-size: var(--fs-sm); line-height: 1.6; }
 .chart { height: 260px; }
 .chart.sm { height: 220px; }
-.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
-.slow { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--s4); }
+.slow { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
 </style>

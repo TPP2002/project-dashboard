@@ -257,7 +257,7 @@ async function markTaskLanded(task: UnlandedTask) {
 .skel.row-skel { height: 52px; }
 .howto { position: relative; padding-top: var(--s4); background: var(--surface); font-size: var(--fs-base); line-height: 1.7; }
 .howto-glow { position: absolute; inset: 0 0 auto; }
-.kbd, code { padding: 1px var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font-family: var(--mono); font-size: var(--fs-sm); }
+.kbd, code { padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font-family: var(--mono); font-size: var(--fs-sm); }
 .empty-help { font-size: var(--fs-sm); }
 .project-group { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s3); }
 .project-head { display: flex; flex-direction: column; gap: var(--s2); background: var(--surface); }

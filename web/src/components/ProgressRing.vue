@@ -3,7 +3,7 @@
 import { computed } from 'vue'
 const props = withDefaults(
   defineProps<{ percent: number; size?: number; stroke?: number; color?: string; sub?: string }>(),
-  { size: 92, stroke: 9, color: '#4c8dff', sub: '' },
+  { size: 92, stroke: 9, color: 'var(--info)', sub: '' },
 )
 const clamped = computed(() => Math.max(0, Math.min(100, props.percent || 0)))
 const r = computed(() => (props.size - props.stroke) / 2)
@@ -13,8 +13,8 @@ const mid = computed(() => props.size / 2)
 </script>
 
 <template>
-  <svg :width="size" :height="size" :viewBox="`0 0 ${size} ${size}`">
-    <circle :cx="mid" :cy="mid" :r="r" :stroke-width="stroke" fill="none" stroke="var(--panel-2)" />
+  <svg :width="size" :height="size" :viewBox="`0 0 ${size} ${size}`" role="img" :aria-label="`完成 ${Math.round(clamped)}%`">
+    <circle :cx="mid" :cy="mid" :r="r" :stroke-width="stroke" fill="none" stroke="var(--surface-3)" />
     <circle
       :cx="mid" :cy="mid" :r="r" :stroke-width="stroke" fill="none" :stroke="color"
       stroke-linecap="round" :stroke-dasharray="circ" :stroke-dashoffset="offset"
@@ -29,6 +29,6 @@ const mid = computed(() => props.size / 2)
 
 <style scoped>
 .arc { transition: stroke-dashoffset 0.6s ease; }
-.pct { fill: var(--text); font-size: 19px; font-weight: 700; }
-.sub { fill: var(--muted); font-size: 10px; }
+.pct { fill: var(--text); font-size: var(--fs-lg); font-weight: 700; }
+.sub { fill: var(--text-2); font-size: var(--fs-xs); }
 </style>

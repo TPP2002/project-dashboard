@@ -114,7 +114,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="cpu-page">
     <header class="head">
       <h2>算力</h2>
       <span v-if="status" class="host mono">{{ status.hostname }} · {{ status.totalCores }} 核</span>
@@ -123,10 +123,10 @@ onUnmounted(() => {
     <p v-if="error" class="err">{{ error }}</p>
 
     <section v-if="status" class="card">
-      <div class="bar" :title="`整机 ${total} 核`">
-        <div class="seg seg-mine" :style="{ width: pctOf(reserved) + '%' }" />
-        <div class="seg seg-others" :style="{ width: pctOf(othersUsed) + '%' }" />
-        <div class="seg seg-free" :style="{ width: pctOf(freeCores) + '%' }" />
+      <div class="glow-rail budget-rail" :title="`整机 ${total} 核`">
+        <i :style="{ width: pctOf(reserved) + '%' }" />
+        <span class="rail-others" :style="{ width: pctOf(othersUsed) + '%' }" />
+        <span class="rail-free" :style="{ width: pctOf(freeCores) + '%' }" />
       </div>
       <div class="legend">
         <span><i class="dot dot-mine" />留给我 {{ reserved }} 核</span>
@@ -145,10 +145,11 @@ onUnmounted(() => {
         <button
           v-for="(p, i) in PRESETS"
           :key="p.label"
-          class="preset"
+          class="preset btn"
           :class="{ on: activePreset === i }"
           :disabled="busy"
           :title="p.hint"
+          type="button"
           @click="apply(coresOf(p.pct))"
         >
           <span class="pl">{{ p.label }}</span>
@@ -160,9 +161,9 @@ onUnmounted(() => {
       </p>
       <div class="timed">
         <span class="tl">临时预留(到点自动还给测试):</span>
-        <button class="mini" :disabled="busy" @click="apply(coresOf(0.5), 60)">留一半 · 1 小时</button>
-        <button class="mini" :disabled="busy" @click="apply(coresOf(0.5), 180)">留一半 · 3 小时</button>
-        <button class="mini danger" :disabled="busy || reserved === 0" @click="apply(0)">立刻释放</button>
+        <button class="btn btn-sm" type="button" :disabled="busy" @click="apply(coresOf(0.5), 60)">留一半 · 1 小时</button>
+        <button class="btn btn-sm" type="button" :disabled="busy" @click="apply(coresOf(0.5), 180)">留一半 · 3 小时</button>
+        <button class="btn btn-sm release" type="button" :disabled="busy || reserved === 0" @click="apply(0)">立刻释放</button>
       </div>
     </section>
 
@@ -175,7 +176,7 @@ onUnmounted(() => {
         <tbody>
           <tr v-for="l in status.leases" :key="l.holder + l.pid">
             <td>
-              <span v-if="l.isReserve" class="tag">我</span>
+              <span v-if="l.isReserve" class="badge info compact">我</span>
               <span class="mono">{{ l.isReserve ? '负责人预留' : l.holder }}</span>
             </td>
             <td class="r mono">{{ l.cores }}</td>
@@ -193,57 +194,40 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.wrap { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; max-width: 860px; }
-.head { display: flex; align-items: baseline; gap: 10px; }
-h2 { font-size: 18px; margin: 0; }
-h3 { font-size: 13px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
-.host { font-size: 12px; color: var(--muted-2); }
-.err { color: var(--warn); font-size: 13px; }
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+.cpu-page { display: flex; flex-direction: column; gap: var(--s4); max-width: 860px; min-width: 0; }
+.head { display: flex; align-items: baseline; gap: var(--s3); }
+h3 { margin-bottom: var(--s3); color: var(--text-2); }
+.host { color: var(--text-3); font-size: var(--fs-sm); }
+.err { color: var(--bad); font-size: var(--fs-base); }
 
-.bar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; background: var(--bg-soft); }
-.seg { height: 100%; transition: width 0.3s ease; }
-.seg-mine { background: #4c8ce0; }
-.seg-others { background: var(--warn); }
-.seg-free { background: #2f6f43; }
-.legend { display: flex; gap: 16px; margin-top: 8px; font-size: 12px; color: var(--muted); }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
-.dot-mine { background: #4c8ce0; }
+.budget-rail { display: flex; }
+.budget-rail > i, .budget-rail > span { height: 100%; transition: width .14s ease; }
+.rail-others { background: var(--warn); }
+.rail-free { background: var(--surface-3); }
+.legend { display: flex; gap: var(--s4); margin-top: var(--s2); color: var(--text-2); font-size: var(--fs-sm); flex-wrap: wrap; }
+.dot { display: inline-block; width: var(--s2); height: var(--s2); margin-right: var(--s1); border-radius: var(--r-sm); }
+.dot-mine { background: var(--info); }
 .dot-others { background: var(--warn); }
-.dot-free { background: #2f6f43; }
-.since { font-size: 12px; color: var(--muted-2); margin: 8px 0 0; }
+.dot-free { background: var(--ok); }
+.since { margin: var(--s2) 0 0; color: var(--text-3); font-size: var(--fs-sm); }
 
-.presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s2); }
 .preset {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
-  padding: 10px 12px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: var(--bg-soft); color: var(--text);
-  cursor: pointer; text-align: left;
+  flex-direction: column; align-items: flex-start; gap: var(--s1); padding: var(--s2) var(--s3); text-align: left;
 }
-.preset:hover:not(:disabled) { border-color: #4c8ce0; }
-.preset.on { border-color: #4c8ce0; background: var(--accent-soft); font-weight: 600; }
+.preset:hover:not(:disabled) { border-color: var(--line-strong); }
+.preset.on { border-color: var(--info); background: var(--info-bg); color: var(--info); font-weight: 600; }
 .preset:disabled { opacity: 0.5; cursor: default; }
-.pl { font-size: 13px; }
-.pc { font-size: 11px; color: var(--muted-2); }
+.pl { font-size: var(--fs-base); }
+.pc { color: var(--text-3); font-size: var(--fs-xs); }
 
-.note { font-size: 11px; color: var(--muted-2); margin: 10px 0 0; line-height: 1.6; }
-.timed { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.tl { font-size: 12px; color: var(--muted); }
-.mini {
-  padding: 5px 10px; font-size: 12px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: var(--bg-soft); color: var(--text); cursor: pointer;
-}
-.mini:hover:not(:disabled) { border-color: #4c8ce0; }
-.mini:disabled { opacity: 0.45; cursor: default; }
-.mini.danger:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
+.note { margin: var(--s3) 0 0; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.6; }
+.timed { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s3); }
+.tl { color: var(--text-2); font-size: var(--fs-sm); }
+.release:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
 
-.tb { width: 100%; border-collapse: collapse; font-size: 12px; }
-.tb th { text-align: left; color: var(--muted-2); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--border); }
-.tb td { padding: 5px 6px; border-bottom: 1px solid var(--border); }
+.tb { font-size: var(--fs-sm); }
 .r { text-align: right; }
-.tag {
-  display: inline-block; background: #4c8ce0; color: #fff; font-size: 10px;
-  border-radius: 3px; padding: 0 5px; margin-right: 6px; line-height: 15px;
-}
-.empty { font-size: 12px; color: var(--muted-2); margin: 0; }
+.tag { margin-right: var(--s2); }
+.empty { margin: 0; color: var(--text-3); font-size: var(--fs-sm); }
 </style>

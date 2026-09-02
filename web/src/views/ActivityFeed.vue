@@ -39,20 +39,20 @@ function open(a: ActivityWithProject) {
       <h2>📜 活动流</h2>
       <span class="pill">{{ filtered.length }} 条{{ hasMore ? ` · 已显示 ${list.length}` : '' }}</span>
       <span class="spacer" />
-      <select v-model="fProj" class="sel">
+      <select v-model="fProj" class="field sel">
         <option value="">全部项目</option>
         <option v-for="p in store.projectList" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
-      <select v-model="fType" class="sel">
+      <select v-model="fType" class="field sel">
         <option value="">全部类型</option>
         <option v-for="t in types" :key="t" :value="t">{{ TYPE_EMOJI[t] || '·' }} {{ t }}</option>
       </select>
     </div>
 
-    <div v-if="!list.length" class="empty card"><div class="big">📭</div><div>暂无活动。</div></div>
+    <div v-if="!list.length" class="empty card"><div class="big">📭</div><div>暂无活动，任务有新进展后会显示在这里。</div></div>
 
-    <div class="tl card" v-else>
-      <div v-for="(a, i) in list" :key="keyOf(a, i)" class="item" :class="{ clickable: a.taskId }" @click="open(a)">
+    <div class="tl" v-else>
+      <div v-for="(a, i) in list" :key="keyOf(a, i)" class="item row" :class="{ clickable: a.taskId }" @click="open(a)">
         <span class="ic">{{ TYPE_EMOJI[a.type || ''] || '·' }}</span>
         <div class="main">
           <div class="text">{{ a.text }}</div>
@@ -73,20 +73,15 @@ function open(a: ActivityWithProject) {
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.head h2 { font-size: 18px; }
-.sel { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 9px; font-size: 12px; }
-.tl { padding: 6px; display: flex; flex-direction: column; }
-.item { display: flex; gap: 10px; padding: 9px 10px; border-radius: var(--radius-sm); }
+.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
+.sel { width: auto; }
+.tl { display: flex; flex-direction: column; gap: var(--s2); }
+.item { align-items: flex-start; }
 .item.clickable { cursor: pointer; }
-.item.clickable:hover { background: var(--panel-2); }
-.item + .item { border-top: 1px solid var(--border-soft); }
-.ic { font-size: 15px; width: 20px; text-align: center; }
+.ic { width: 20px; font-size: var(--fs-md); text-align: center; }
 .main { flex: 1; min-width: 0; }
-.text { font-size: 13px; }
-.meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--muted-2); margin-top: 3px; }
-.meta .proj { color: var(--accent); }
-.meta .tid { color: var(--muted); }
-.meta .rel { color: var(--muted); }
-.more { margin: 8px; align-self: center; }
+.text { font-size: var(--fs-base); }
+.meta { display: flex; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s1); color: var(--text-3); font-size: var(--fs-xs); }
+.meta .proj, .meta .tid, .meta .rel { color: var(--text-2); }
+.more { align-self: center; margin: var(--s2); }
 </style>
