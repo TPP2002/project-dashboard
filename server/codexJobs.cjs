@@ -128,6 +128,25 @@ function readChat(filePath) {
   return chat;
 }
 
+/** 把 task.json 里的“检查什么”补到 verdict.json 的结果上，结果值仍以判决文件为准。 */
+function mergeAcceptanceResults(task, verdict) {
+  const declared = task && Array.isArray(task.acceptance) ? task.acceptance : [];
+  const results = verdict && Array.isArray(verdict.acceptance) ? verdict.acceptance : [];
+  const byId = new Map(declared.filter((item) => item && typeof item.id === 'string').map((item) => [item.id, item]));
+  return results.map((result) => {
+    if (!result || typeof result !== 'object') return result;
+    const source = byId.get(result.id);
+    if (!source) return result;
+    return {
+      ...result,
+      ...(typeof result.kind === 'string' ? {} : (typeof source.kind === 'string' ? { kind: source.kind } : {})),
+      ...(typeof result.target === 'string' ? {} : (typeof source.target === 'string' ? { target: source.target } : {})),
+      ...(typeof result.note === 'string' ? {} : (typeof source.note === 'string' ? { note: source.note } : {})),
+      ...(typeof result.required === 'boolean' ? {} : (typeof source.required === 'boolean' ? { required: source.required } : {})),
+    };
+  });
+}
+
 /** 从文件末尾逆向分块，只保留最后 N 行原始字节，绝不整份加载大型 exec.jsonl。 */
 function readTailLines(filePath, lineLimit = EXEC_TAIL_LINES) {
   let fd;
@@ -175,7 +194,7 @@ function readTailLines(filePath, lineLimit = EXEC_TAIL_LINES) {
   }
 }
 
-function getJobDetail(jobsRoot, slug) {
+function getJobDetail(jobsRoot, slug, options = {}) {
   const dir = path.join(jobsRoot, slug);
   let stat;
   try { stat = fs.statSync(dir); }
@@ -186,12 +205,17 @@ function getJobDetail(jobsRoot, slug) {
   if (!stat.isDirectory()) return null;
   const files = readJobFiles(jobsRoot, slug);
   const verdict = files.verdict || {};
+  const task = files.task || {};
   return {
     ...summarizeJob(files),
-    acceptance: Array.isArray(verdict.acceptance) ? verdict.acceptance : [],
+    goal: typeof task.goal === 'string' && task.goal.trim() ? task.goal.trim() : null,
+    acceptance: mergeAcceptanceResults(task, verdict),
+    plainSummary: typeof verdict.plainSummary === 'string' && verdict.plainSummary.trim()
+      ? verdict.plainSummary.trim()
+      : null,
     selfReport: verdict.selfReport && typeof verdict.selfReport === 'object' ? verdict.selfReport : null,
     chat: readChat(path.join(dir, 'chat.jsonl')),
-    tail: readTailLines(path.join(dir, 'exec.jsonl')),
+    tail: options.includeTail === false ? '' : readTailLines(path.join(dir, 'exec.jsonl')),
   };
 }
 
@@ -202,6 +226,7 @@ module.exports = {
   isRedispatchBlocked,
   isValidSlug,
   listJobs,
+  mergeAcceptanceResults,
   parseTaskJson,
   readTailLines,
   summarizeJob,

@@ -6,8 +6,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { pathToFileURL } = require('node:url');
 const {
-  EXEC_TAIL_MAX_BYTES, getJobDetail, isRedispatchBlocked, isValidSlug, parseTaskJson, readTailLines, summarizeJob,
+  EXEC_TAIL_MAX_BYTES, getJobDetail, isRedispatchBlocked, isValidSlug, mergeAcceptanceResults,
+  parseTaskJson, readTailLines, summarizeJob,
 } = require('../server/codexJobs.cjs');
 
 const DASH_ROOT = path.resolve(__dirname, '..');
@@ -86,6 +88,68 @@ test('exec.jsonl 尾读有字节上限，并丢掉截断的首行', (t) => {
   assert.equal(readTailLines(log), 'last\n');
 });
 
+test('工单声明里的验收 kind 会按编号合并进判决结果', () => {
+  const task = { acceptance: [
+    { id: 'A1', kind: 'test:targeted', target: 'test/one.test.cjs', required: true },
+    { id: 'A2', kind: 'typecheck', required: true },
+  ] };
+  const verdict = { acceptance: [
+    { id: 'A1', required: true, passed: true, exitCode: 0 },
+    { id: 'A2', required: true, passed: false, exitCode: 2 },
+  ] };
+  assert.deepEqual(mergeAcceptanceResults(task, verdict), [
+    { id: 'A1', kind: 'test:targeted', target: 'test/one.test.cjs', required: true, passed: true, exitCode: 0 },
+    { id: 'A2', kind: 'typecheck', required: true, passed: false, exitCode: 2 },
+  ]);
+});
+
+test('工单详情读取大白话总结，并允许初次加载跳过日志尾部', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-plain-detail-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'plain-job');
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, 'task.json'), JSON.stringify({
+    title: '让负责人看懂结果', goal: '把工单结果改成人能直接看懂的话。',
+    acceptance: [{ id: 'A1', kind: 'test:fast', required: true }],
+  }));
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ finishedAt: 'done', exitCode: 0 }));
+  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({
+    plainSummary: '这个面板已经改好，负责人打开就能看懂结果。',
+    acceptance: [{ id: 'A1', required: true, passed: true, exitCode: 0 }],
+    selfReport: { status: 'completed', summary: '技术说明' },
+  }));
+  fs.writeFileSync(path.join(dir, 'exec.jsonl'), '不应在初次加载时读取\n最后一行\n');
+
+  const initial = getJobDetail(root, 'plain-job', { includeTail: false });
+  assert.equal(initial.goal, '把工单结果改成人能直接看懂的话。');
+  assert.equal(initial.plainSummary, '这个面板已经改好，负责人打开就能看懂结果。');
+  assert.equal(initial.acceptance[0].kind, 'test:fast');
+  assert.equal(initial.tail, '');
+  assert.equal(getJobDetail(root, 'plain-job', { includeTail: true }).tail, '不应在初次加载时读取\n最后一行\n');
+});
+
+test('前端把验收、自述与四类工单状态翻译成人话', async () => {
+  const moduleUrl = pathToFileURL(path.join(
+    DASH_ROOT, 'web', 'src', 'components', 'codex', 'jobPresentation.js',
+  )).href;
+  const presentation = await import(moduleUrl);
+  assert.equal(presentation.acceptanceLabel({ kind: 'test:targeted', id: 'A1' }), '跑了指定的那部分测试');
+  assert.equal(presentation.acceptanceLabel({ kind: 'test:fast', id: 'A2' }), '跑了全部测试');
+  assert.equal(presentation.acceptanceLabel({ kind: 'typecheck', id: 'A3' }), '检查代码有没有写错类型');
+  assert.equal(presentation.acceptanceLabel({ kind: 'lint', id: 'A4' }), '检查代码/文案格式');
+  assert.equal(presentation.acceptanceLabel({ kind: 'lint:content', id: 'A5' }), '检查代码/文案格式');
+  assert.equal(presentation.acceptanceLabel({ kind: 'docs:index:check', id: 'A6' }), '检查文档目录对不对得上');
+  assert.equal(presentation.acceptanceLabel({ kind: 'manual', id: 'A7' }), '需要人工核对(机器没法自动查)');
+  assert.equal(presentation.acceptanceLabel({ kind: 'future:check', id: 'A8' }), 'future:check');
+  assert.equal(presentation.selfReportStatusLabel('completed'), '它说做完了');
+  assert.equal(presentation.selfReportStatusLabel('partial'), '它说只做了一部分');
+  assert.equal(presentation.selfReportStatusLabel('failed'), '它说没做成');
+  assert.equal(presentation.jobGroupKey({ running: true, collected: false, passed: null }), 'running');
+  assert.equal(presentation.jobGroupKey({ running: false, collected: false, passed: null }), 'waiting');
+  assert.equal(presentation.jobGroupKey({ running: false, collected: true, passed: false }), 'rejected');
+  assert.equal(presentation.jobGroupKey({ running: false, collected: true, passed: true }), 'completed');
+});
+
 test('工单目录存在但内部文件全缺时详情使用空值而不报错', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-empty-job-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -93,7 +157,7 @@ test('工单目录存在但内部文件全缺时详情使用空值而不报错',
   assert.deepEqual(getJobDetail(root, 'empty-job'), {
     slug: 'empty-job', title: 'empty-job', taskId: null, dispatchedAt: null,
     running: true, collected: false, passed: null, exitCode: null,
-    acceptance: [], selfReport: null, chat: [], tail: '',
+    goal: null, acceptance: [], plainSummary: null, selfReport: null, chat: [], tail: '',
   });
 });
 
@@ -164,7 +228,7 @@ before(async () => {
     schemaVersion: '1.0',
     projects: { rogue: { name: '测试项目', mainRepo: repo, board: path.join(repo, '.dashboard', 'board.json') } },
   }));
-  fixture = { dir, sessionId, ...(await startServer(registry, sessions)) };
+  fixture = { dir, repo, sessionId, ...(await startServer(registry, sessions)) };
 });
 
 after(async () => {
@@ -180,6 +244,26 @@ test('工单目录不存在时 GET /api/codex/jobs 返回空数组', async () =>
   const response = await fetch(fixture.base + '/api/codex/jobs');
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), []);
+});
+
+test('GET /api/codex/job?tail=0 不返回日志，展开请求才返回', async () => {
+  const dir = path.join(fixture.repo, '.codex', 'jobs', 'detail-job');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'task.json'), JSON.stringify({
+    title: '详情测试', goal: '让人看懂', acceptance: [{ id: 'A1', kind: 'typecheck', required: true }],
+  }));
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ finishedAt: 'done', exitCode: 0 }));
+  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({
+    plainSummary: '已经完成。', acceptance: [{ id: 'A1', required: true, passed: true, exitCode: 0 }],
+  }));
+  fs.writeFileSync(path.join(dir, 'exec.jsonl'), 'only-when-open\n');
+
+  const folded = await (await fetch(fixture.base + '/api/codex/job?slug=detail-job&tail=0')).json();
+  assert.equal(folded.tail, '');
+  assert.equal(folded.plainSummary, '已经完成。');
+  assert.equal(folded.acceptance[0].kind, 'typecheck');
+  const opened = await (await fetch(fixture.base + '/api/codex/job?slug=detail-job&tail=1')).json();
+  assert.equal(opened.tail, 'only-when-open\n');
 });
 
 test('GET /api/codex/job 拒绝四种非法 slug', async () => {
