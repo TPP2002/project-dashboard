@@ -313,6 +313,49 @@ test('详情页读到自己的会话静默证据后,不再对战报已标红的�
   assert.equal(detail.confirmedDead, false, '软判据只标红给人看，不该顺带放开复派闸');
 });
 
+// ── 复派确认要和详情页同一口径,不再是文案死代码(CODEX-DISPATCH-CONFIRM-MISSING-SESSION-DATA,2026-09-03)──
+//
+// CODEX-LIVENESS-VERDICT-SPLIT 把 sessions 接进了详情页(GET /api/codex/job),复派确认接口
+// (POST /api/codex/dispatch)调用的是同一个 attachLiveness,却漏了同样的 sessions 参数——于是
+// 「只是很久没有新动静,还不确定死没死」这句提示语在这条路径上永远查不到软证据,变成不可达的
+// 文案分支:用户点"复派"被拦时,只会看到和详情页矛盾的笼统提示"它还在跑"。
+test('复派被拦时,能看到和详情页一致的"久无动静"提示,而不是笼统的"它还在跑"', async (t) => {
+  const staleId = '22222222-2222-2222-2222-222222222222';
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  const year = String(now.getFullYear());
+  const month = pad(now.getMonth() + 1);
+  const dayNumber = pad(now.getDate());
+  const day = path.join(fixture.dir, 'sessions', year, month, dayNumber);
+  fs.mkdirSync(day, { recursive: true });
+  const staleAt = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
+  const staleFile = path.join(day, `rollout-2026-01-01T00-00-00-${staleId}.jsonl`);
+  // 会话文件只为本测试存在——sessionsRoot 是跨全文件共享的 fixture,留着不清会污染其它用例。
+  t.after(() => fs.rmSync(staleFile, { force: true }));
+  fs.writeFileSync(staleFile, JSON.stringify({
+    timestamp: staleAt, ordinal: 0, type: 'session_meta',
+    payload: { session_id: staleId, timestamp: staleAt, cwd: fixture.repo, originator: 'codex_exec', cli_version: 'test' },
+  }) + '\n');
+
+  const dir = path.join(fixture.repo, '.codex', 'jobs', 'stale-dispatch-job');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'task.json'), JSON.stringify({
+    title: '复派提示测试', goal: '测复派确认接口能不能读到软判据', acceptance: [{ id: 'A1', kind: 'typecheck', required: true }],
+  }));
+  // pid 用服务器子进程自己的号——它此刻必然存活，好把「进程还在」和「很久没动静」这两条证据分开测。
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({
+    finishedAt: null, pid: fixture.child.pid, startedAt: staleAt, threadId: staleId,
+  }));
+
+  const response = await fetch(fixture.base + '/api/codex/dispatch', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ slug: 'stale-dispatch-job' }),
+  });
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.match(body.error, /只是很久没有新动静/);
+});
+
 test('GET /api/codex/job 拒绝四种非法 slug', async () => {
   for (const slug of ['../evil', 'a/b', '', 'Upper']) {
     const response = await fetch(fixture.base + '/api/codex/job?slug=' + encodeURIComponent(slug));
