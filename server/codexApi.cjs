@@ -140,7 +140,12 @@ function createCodexApi({
       const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: false });
       // 这一步以前漏了活性判定(列表接口和详情接口都做了,唯独派单这里没做),于是服务端看不见
       // 「失联」这一态,把早就死掉的单一直当成仍在运行拦着 —— CODEX-STALLED-JOB-REDISPATCH。
-      const health = detail ? attachLiveness([detail], { nowMs: Date.now() })[0] : null;
+      // 同样要传 sessions,否则「久无动静」这条软判据在这条路径上永远查不到,下面的提示文案
+      // 分支成了死代码,和详情页(handleJob)各说各话 —— CODEX-DISPATCH-CONFIRM-MISSING-SESSION-DATA。
+      const session = detail?.threadId ? getJobSessionSummary(detail.threadId, { sessionsRoot }) : null;
+      const health = detail
+        ? attachLiveness([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]
+        : null;
       const state = detail ? { finishedAt: detail.running ? null : 'done' } : { finishedAt: 'new' };
       const inFlight = activeDispatches.has(slug);
       if (isRedispatchBlocked(state, inFlight, health?.confirmedDead === true)) {
