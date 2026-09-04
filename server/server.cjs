@@ -35,6 +35,7 @@ const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt
 const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
+const { createReaderApi } = require('./readerApi.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 
 // ============ 常量 ============
@@ -338,6 +339,19 @@ const codexApi = createCodexApi({
   sendJson,
   sendText,
   bodyMax: BODY_MAX,
+});
+
+// 审阅台(READER-INTO-BOARD):报告清单/正文/边注只读仓库文件,批注写看板 data/reader 账本并镜像到卡 note。
+const readerApi = createReaderApi({
+  resolveProjectSafe,
+  sendJson,
+  readBody,
+  bodyMax: BODY_MAX,
+  dashRoot: DASH_ROOT,
+  cliIndex: CLI_INDEX,
+  registry: REGISTRY,
+  registryPath: REGISTRY_PATH,
+  pollBoards: () => pollBoards(),
 });
 
 /**
@@ -841,6 +855,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
       if (sub === 'parallel' && req.method === 'GET') return handleParallel(req, res, parsed.query || {});
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
+      if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
     }
