@@ -8,6 +8,7 @@ const routes = [
   { path: '/overview', name: 'overview', component: () => import('@/views/Overview.vue'), meta: { title: '总览', icon: '🏠' } },
   { path: '/kanban', name: 'kanban', component: () => import('@/views/Kanban.vue'), meta: { title: '看板', icon: '📋' } },
   { path: '/approvals', name: 'approvals', component: () => import('@/views/ApprovalCenter.vue'), meta: { title: '待拍板', icon: '❓' } },
+  { path: '/reader', name: 'reader', component: () => import('@/views/Reader.vue'), meta: { title: '审阅台', icon: '📖' } },
   { path: '/toland', name: 'toland', component: () => import('@/views/ToLand.vue'), meta: { title: '待落地', icon: '🚀' } },
   { path: '/history', name: 'history', component: () => import('@/views/DecisionHistory.vue'), meta: { title: '拍板历史', icon: '📜' } },
   { path: '/daily', name: 'daily', component: () => import('@/views/DailyOutput.vue'), meta: { title: '每日成果', icon: '📆' } },

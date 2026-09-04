@@ -16,6 +16,7 @@ interface NavItemDefinition { to: string; icon: string; title: string; badge?: B
 const NAV_ITEMS = {
   overview: { to: '/overview', icon: '⌂', title: '总览' },
   approvals: { to: '/approvals', icon: '?', title: '待拍板', badge: 'pending' },
+  reader: { to: '/reader', icon: '▥', title: '审阅台' },
   codex: { to: '/codex', icon: '◎', title: 'Codex' },
   parallel: { to: '/parallel', icon: '⇉', title: '能同时派几张' },
   daily: { to: '/daily', icon: '☷︎', title: '每日成果', badge: 'today' },
@@ -39,7 +40,7 @@ const NAV_STORAGE_KEY = 'board-nav-config'
 const KNOWN_NAV_IDS = new Set<NavItemId>(Object.keys(NAV_ITEMS) as NavItemId[])
 const DEFAULT_GROUPS: ReadonlyArray<NavGroupConfig<NavItemId>> = [
   { id: 'daily', name: '每天要看', collapsed: false, items: [
-    { id: 'overview', visible: true }, { id: 'approvals', visible: true },
+    { id: 'overview', visible: true }, { id: 'approvals', visible: true }, { id: 'reader', visible: true },
     { id: 'codex', visible: true }, { id: 'parallel', visible: true }, { id: 'daily', visible: true },
   ] },
   { id: 'projects', name: '项目管理', collapsed: false, items: [
