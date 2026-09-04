@@ -247,6 +247,7 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
 .old .tag { display: inline-block; font-family: var(--mono); font-size: var(--fs-xs); color: var(--warn); margin-right: var(--s2); }
 .old.shown, .blk.open .old { display: block; }
 .old :deep(p) { margin: 0; }
+.old :deep(h1), .old :deep(h2), .old :deep(h3), .old :deep(h4) { font-size: 1em; margin: 0; font-weight: 600; }
 /* 标记改动 */
 .mode-marks .blk.changed, .mode-marks .blk.added { background: var(--info-bg); border-radius: var(--r-sm); }
 .mode-marks .blk :deep(ins) { background: color-mix(in srgb, var(--info) 22%, transparent); border-bottom: 1px solid var(--info); }
