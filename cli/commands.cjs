@@ -58,7 +58,7 @@ function register(flags) {
 // ---------- add（新建 task） ----------
 function add(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'add <taskId> --title <标题> [--status <状态>] [--wave <n>] [--desc <一句话>] [--model <建议档位>]');
+  const id = need(flags._[0], 'add <taskId> --title <标题> --plain-title <人话标题> [--status <状态>] [--wave <n>] [--desc <一句话>] [--model <建议档位>] [--scope <glob>...]');
   const title = need(flags.title, '--title <标题>');
   const status = flags.status || '未开工';
   if (!STATUS.includes(status)) throw new Error(`--status 非法，允许: ${STATUS.join('/')}`);
@@ -67,6 +67,12 @@ function add(flags) {
     modelHint = String(flags.model).trim();
     if (modelHint.length > 40) throw new Error('--model 建议档位太长(≤40 字符,如 "sonnet·低" / "opus" / "fable·max")');
   }
+  let plainTitle;
+  if (flags['plain-title'] !== undefined && flags['plain-title'] !== true) {
+    plainTitle = String(flags['plain-title']).trim();
+    if (!plainTitle) throw new Error('--plain-title 不能是空字符串');
+  }
+  const scopes = asArray(flags.scope);
   const board = mutate(proj, (b) => {
     b.tasks = b.tasks || [];
     if (b.tasks.find((t) => t.id === id)) throw new Error(`任务 ${id} 已存在`);
@@ -79,8 +85,10 @@ function add(flags) {
       deps: { dependsOn: [], blockedBy: [], relatedTasks: [] }, docs: [],
     };
     if (modelHint) t.modelHint = modelHint;
+    if (plainTitle) t.plainTitle = plainTitle;
+    if (scopes.length) t.fileScope = scopes;
     b.tasks.push(t);
-  }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}`, id));
+  }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}${plainTitle ? '（人话标题 ' + plainTitle + '）' : ''}`, id));
   return okTask(board, id);
 }
 

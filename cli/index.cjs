@@ -87,6 +87,18 @@ function main() {
       '  (编排型可组合,如 "fable·高编排+opus施工";≤40 字符)');
     process.exit(1);
   }
+  // ADD-PLAINTITLE-GATE(CLI-ADD-NO-PLAINTITLE-FILESCOPE):建卡三件套(skill §11.9)要求
+  // plainTitle(负责人看的人话标题)与 title(模型看的技术说明)都要给——纪律靠自觉必失守,
+  // --model 闸已证明有效,同样机器闸兜底。只拦 CLI 入口,内部编程调用不经此处。
+  if (cmd === 'add' && (flags['plain-title'] === undefined || flags['plain-title'] === true || String(flags['plain-title']).trim() === '')) {
+    console.error('✖ 建卡必须带 --plain-title <人话标题>(skill §11.9 建卡三件套,机器闸兜底)。\n' +
+      '  --title 是给模型看的技术详细说明(照旧不变),--plain-title 是另加给负责人看的一句人话\n' +
+      '  (20~35 字,禁文件名/路径/函数名/类名/命令/英文缩写/内部编号)。例:\n' +
+      '  add T1 --model "sonnet·低" --title "统一 roundToTick 的实现" \\\n' +
+      '         --plain-title "价格计算的四舍五入有五套规则并存,可能算出对不上的数字"\n' +
+      '  （顺手可加 --scope "<glob>"（可重复）登记这张卡大概会改哪些文件，不必等 claim 才补）');
+    process.exit(1);
+  }
   try {
     const res = fn(flags) || { ok: true };
     if (flags.json) console.log(JSON.stringify(res));
