@@ -51,9 +51,9 @@ test('CLI add 裸 --model(无值)→ 同样拒收', () => {
   clean(dir);
 });
 
-test('CLI add 带 --model → 建卡成功且徽章落库', () => {
+test('CLI add 带 --model 与 --plain-title → 建卡成功且徽章落库', () => {
   const { dir, reg, board } = setup();
-  const r = cli(reg, 'add', 'T1', '--project', 't', '--title', 'x', '--model', 'sonnet·低');
+  const r = cli(reg, 'add', 'T1', '--project', 't', '--title', 'x', '--model', 'sonnet·低', '--plain-title', 'ph');
   assert.equal(r.code, 0, '带 --model 应成功,输出:' + r.out);
   const b = JSON.parse(fs.readFileSync(board, 'utf8'));
   assert.equal(b.tasks[0].modelHint, 'sonnet·低');
