@@ -44,6 +44,7 @@ const REGISTRY = {
   precheck: ['./precheck.cjs', 'precheck'], cleanup: ['./cleanup.cjs', 'cleanup'],
   'docs-audit': ['./docsAudit.cjs', 'docsAudit'],
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
+  'claim-check': ['./claimCheck.cjs', 'claimCheck'],
   'mark-landed': ['./commands.cjs', 'markLanded'],
   'sync-progress': ['./commands.cjs', 'syncProgress'],
   inbox: ['./inboxCmd.cjs', 'inbox'],
