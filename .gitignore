@@ -8,3 +8,5 @@ status-drafts/
 *.lock
 *.exe
 data/costUsageCache.json
+.dashboard/
+data/reader/

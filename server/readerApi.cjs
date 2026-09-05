@@ -10,6 +10,8 @@
  *   · 报告正文/上一版/边注 = 清单里写的相对路径,一律经 resolveInsideRoot 白名单根校验(与 /api/doc 同规矩)
  *   · 批注主存 = <看板根>/data/reader/<project>/<key>.json(与 board.json 同级的本机账本:加锁 + 原子写)
  *   · 批注镜像 = 对应看板卡的 note(经 CLI,和 decide 一样只经 execFile 数组传参,不拼 shell)
+ *   · 荧光笔与「已审阅」标记(READER-USABILITY-ROUND2)同住这份账本、同一把锁:
+ *     荧光笔是纯阅读痕迹不镜像看板;「已审阅」只记在本机,不回写仓库 reader.json 的 status。
  *
  * 明确不做:不 commit / 不 push。进仓库那一步只提供「导出」,由回流对话随 PR 提交(负责人 2026-09-05 质疑后定)。
  */
@@ -24,6 +26,10 @@ const MANIFEST_REL = 'docs/design/审计回流/reader.json';
 const EXPORT_DIR_REL = 'docs/design/审计回流/批注';
 const KEY_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const NOTE_TIMEOUT_MS = 15000;
+/** 荧光笔可选颜色(存色名不存色值,好让深浅两套主题各自配色) */
+const HL_COLORS = new Set(['yellow', 'green', 'blue', 'pink']);
+/** 「已审阅」只有两态;未标记 = review 为 null */
+const REVIEW_STATES = new Set(['已审阅', '未审阅']);
 
 function createReaderApi(deps) {
   const { resolveProjectSafe, sendJson, readBody, bodyMax, dashRoot, cliIndex, registry, registryPath, pollBoards } = deps;
@@ -54,9 +60,16 @@ function createReaderApi(deps) {
 
   // ---------- 批注账本 ----------
   function annoPath(projectId, key) { return path.join(DATA_DIR, projectId, key + '.json'); }
+  function emptyDoc(projectId, key) { return { schemaVersion: 2, project: projectId, key, annos: [], highlights: [], review: null }; }
   function readAnnos(projectId, key) {
-    try { return JSON.parse(fs.readFileSync(annoPath(projectId, key), 'utf8')); }
-    catch (e) { if (e.code === 'ENOENT') return { schemaVersion: 1, project: projectId, key, annos: [] }; throw e; }
+    let doc;
+    try { doc = JSON.parse(fs.readFileSync(annoPath(projectId, key), 'utf8')); }
+    catch (e) { if (e.code === 'ENOENT') return emptyDoc(projectId, key); throw e; }
+    // v1 账本没有荧光笔与审阅状态:读时补默认,盘上文件等下一次写入时自然升到 v2
+    if (!Array.isArray(doc.annos)) doc.annos = [];
+    if (!Array.isArray(doc.highlights)) doc.highlights = [];
+    if (!doc.review || typeof doc.review !== 'object') doc.review = null;
+    return doc;
   }
   function writeAnnos(projectId, key, mutate) {
     const file = annoPath(projectId, key);
@@ -64,16 +77,31 @@ function createReaderApi(deps) {
     return withLock(file + '.lock', () => {
       const doc = readAnnos(projectId, key);       // 锁内重读 → 改 → 原子写(与 board 同纪律)
       mutate(doc);
+      doc.schemaVersion = 2;
       atomicWriteJsonSync(file, doc);
       return doc;
     });
   }
-  function annoCounts(projectId, manifest) {
-    const out = {};
+  /** 报告架要的两份汇总:每份报告的批注数、荧光笔数与「已审阅」标记 */
+  function shelfSummary(projectId, manifest) {
+    const counts = {}; const marks = {}; const reviews = {};
     for (const batch of manifest.batches || []) for (const rep of batch.reports || []) {
-      try { out[rep.key] = readAnnos(projectId, rep.key).annos.length; } catch (_) { out[rep.key] = 0; }
+      try {
+        const doc = readAnnos(projectId, rep.key);
+        counts[rep.key] = doc.annos.length;
+        marks[rep.key] = doc.highlights.length;
+        if (doc.review) reviews[rep.key] = doc.review;
+      } catch (_) { counts[rep.key] = 0; marks[rep.key] = 0; }
     }
-    return out;
+    return { annoCounts: counts, markCounts: marks, reviews };
+  }
+
+  /** 选区偏移:必须是一段合法的非空区间,否则当「整段」处理(返回 null),不让脏数据进账本 */
+  function readSpan(o) {
+    const s = Number(o && o.start); const e = Number(o && o.end);
+    if (!Number.isInteger(s) || !Number.isInteger(e)) return null;
+    if (s < 0 || e <= s) return null;
+    return { start: s, end: e };
   }
 
   // ---------- 边注层 ----------
@@ -98,7 +126,7 @@ function createReaderApi(deps) {
     if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
     const m = readManifest(proj);
     if (m.error) return sendJson(res, m.error, { ok: false, error: m.message, manifestPath: MANIFEST_REL });
-    return sendJson(res, 200, { ok: true, project: projectId, manifest: m.manifest, annoCounts: annoCounts(projectId, m.manifest) });
+    return sendJson(res, 200, { ok: true, project: projectId, manifest: m.manifest, ...shelfSummary(projectId, m.manifest) });
   }
 
   function handleReport(res, query) {
@@ -114,10 +142,11 @@ function createReaderApi(deps) {
     if (md.error) return sendJson(res, md.error, { ok: false, error: md.message });
     let prevMd = null;
     if (hit.report.prevMd) { const p = readRepoText(proj, hit.report.prevMd); prevMd = p.error ? null : p.text; }
+    const doc = readAnnos(projectId, key);
     return sendJson(res, 200, {
       ok: true, project: projectId, batch: { id: hit.batch.id, name: hit.batch.name, baseline: hit.batch.baseline },
       report: hit.report, md: md.text, prevMd, notes: loadNoteLayers(proj, hit.batch, key),
-      annos: readAnnos(projectId, key).annos,
+      annos: doc.annos, highlights: doc.highlights, review: doc.review,
     });
   }
 
@@ -125,7 +154,8 @@ function createReaderApi(deps) {
     const projectId = String(query.project || ''); const key = String(query.key || '');
     if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
     if (!resolveProjectSafe(projectId)) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
-    return sendJson(res, 200, { ok: true, annos: readAnnos(projectId, key).annos });
+    const doc = readAnnos(projectId, key);
+    return sendJson(res, 200, { ok: true, annos: doc.annos, highlights: doc.highlights, review: doc.review });
   }
 
   /** 镜像一条批注到看板卡 note(失败不阻塞主存,回包里如实标 mirror:false) */
@@ -165,6 +195,7 @@ function createReaderApi(deps) {
       const text = typeof a.text === 'string' ? a.text.trim() : '';
       if (!text) return sendJson(res, 400, { ok: false, error: '批注内容为空' });
       if (text.length > 4000) return sendJson(res, 400, { ok: false, error: '批注太长(>4000 字)' });
+      const span = readSpan(a);
       const anno = {
         id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
         blockId: typeof a.blockId === 'string' ? a.blockId.slice(0, 40) : '',
@@ -173,12 +204,72 @@ function createReaderApi(deps) {
         text,
         author: (typeof a.author === 'string' && a.author.trim()) ? a.author.trim().slice(0, 40) : '负责人',
         at: new Date().toISOString(),
+        // 框选批注带上选区在本段纯文本里的偏移,正文才能把被批的那句标出来(整段批注则没有这两个字段)
+        ...(span ? { start: span.start, end: span.end } : {}),
       };
       const doc = writeAnnos(projectId, key, (d) => { d.annos.push(anno); });
       const noteText = `【审阅台批注·${key}${anno.anchor ? ' §' + anno.anchor : ''}】${text}${anno.quote ? `(段:「${anno.quote.slice(0, 60)}…」)` : ''}`;
       mirrorNote(projectId, taskId, noteText, (mirrored, mirrorError) => {
         sendJson(res, 200, { ok: true, anno, annos: doc.annos, mirror: mirrored, mirrorError: mirrorError || undefined, task: taskId });
       });
+    });
+  }
+
+  /** 荧光笔:纯阅读痕迹,只落本机账本,不镜像看板卡(不是「意见」,镜像过去只会刷屏) */
+  function handleMarks(req, res) {
+    readBody(req, bodyMax, (err, raw) => {
+      if (err) return sendJson(res, 413, { ok: false, error: err.message });
+      let body; try { body = raw ? JSON.parse(raw) : {}; } catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+      const projectId = String(body.project || ''); const key = String(body.key || ''); const op = body.op || 'add';
+      if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+      if (!resolveProjectSafe(projectId)) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
+
+      if (op === 'delete') {
+        const id = String(body.id || '');
+        if (!id) return sendJson(res, 400, { ok: false, error: '缺 id' });
+        let removed = false;
+        const doc = writeAnnos(projectId, key, (d) => { const n = d.highlights.length; d.highlights = d.highlights.filter((h) => h.id !== id); removed = d.highlights.length !== n; });
+        return sendJson(res, removed ? 200 : 404, { ok: removed, highlights: doc.highlights, error: removed ? undefined : '没有这条荧光笔' });
+      }
+      if (op !== 'add') return sendJson(res, 400, { ok: false, error: `未知 op:${op}` });
+
+      const m = body.mark || {};
+      const span = readSpan(m);
+      if (!span) return sendJson(res, 400, { ok: false, error: '荧光笔缺合法的选区范围' });
+      const blockId = typeof m.blockId === 'string' ? m.blockId.slice(0, 40) : '';
+      if (!blockId) return sendJson(res, 400, { ok: false, error: '荧光笔缺所在段落' });
+      const color = HL_COLORS.has(m.color) ? m.color : 'yellow';
+      const mark = {
+        id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        blockId, start: span.start, end: span.end, color,
+        quote: typeof m.quote === 'string' ? m.quote.slice(0, 160) : '',
+        anchor: typeof m.anchor === 'string' ? m.anchor.slice(0, 120) : '',
+        at: new Date().toISOString(),
+      };
+      const doc = writeAnnos(projectId, key, (d) => {
+        // 同段落里与新选区重叠的旧笔先撤掉:重复涂色只会叠成一团看不出颜色
+        d.highlights = d.highlights.filter((h) => !(h.blockId === blockId && h.start < mark.end && mark.start < h.end));
+        d.highlights.push(mark);
+      });
+      return sendJson(res, 200, { ok: true, mark, highlights: doc.highlights });
+    });
+  }
+
+  /** 「已审阅」标记:只记本机(仓库 reader.json 是回流对话维护的正本,看板不回写它) */
+  function handleReview(req, res) {
+    readBody(req, bodyMax, (err, raw) => {
+      if (err) return sendJson(res, 413, { ok: false, error: err.message });
+      let body; try { body = raw ? JSON.parse(raw) : {}; } catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+      const projectId = String(body.project || ''); const key = String(body.key || '');
+      if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+      if (!resolveProjectSafe(projectId)) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
+      const state = String(body.state || '');
+      if (!REVIEW_STATES.has(state)) return sendJson(res, 400, { ok: false, error: `未知状态「${state}」(只认 已审阅 / 未审阅)` });
+      const review = state === '已审阅'
+        ? { state, at: new Date().toISOString(), by: (typeof body.by === 'string' && body.by.trim()) ? body.by.trim().slice(0, 40) : '负责人' }
+        : null;
+      const doc = writeAnnos(projectId, key, (d) => { d.review = review; });
+      return sendJson(res, 200, { ok: true, review: doc.review });
     });
   }
 
@@ -208,6 +299,8 @@ function createReaderApi(deps) {
     if (action === 'report' && req.method === 'GET') { handleReport(res, query); return true; }
     if (action === 'annos' && req.method === 'GET') { handleAnnosGet(res, query); return true; }
     if (action === 'annos' && req.method === 'POST') { handleAnnosPost(req, res); return true; }
+    if (action === 'marks' && req.method === 'POST') { handleMarks(req, res); return true; }
+    if (action === 'review' && req.method === 'POST') { handleReview(req, res); return true; }
     if (action === 'export' && req.method === 'POST') { handleExport(req, res); return true; }
     return false;
   }

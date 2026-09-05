@@ -1,35 +1,52 @@
 <script setup lang="ts">
 // 报告正文:干净读法为主(负责人 2026-09-05 拍),改动段只留左侧细条;点条看旧文。
 // 其它读法(标记改动 / 只看改动 / 并排)与边注摆法(折叠 / 全展 / 只在右栏)由 prefs 切换。
+//
+// 2026-09-06(READER-USABILITY-ROUND2)三处返工,都是负责人实测撞出来的:
+//  ① 段落工具原来悬在段落盒子外 36px 处,中间隔着 10px 死区——鼠标一离开文字按钮就没了,永远点不到。
+//     现在按钮落在段落自己的 padding 里,悬停区连成一片。
+//  ② 只能整段批注。现在框选文字即弹工具条:批注 / 荧光笔,批注还会记住选区,回来能看见批的是哪句。
+//  ③ 荧光笔:选区偏移存本机账本,换读法、换字号都标得回来。
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import type { DocBlock } from '@/utils/reader/diff'
-import type { ReaderNoteLayer, ReaderAnno } from '@/api/reader'
+import type { ReaderNoteLayer, ReaderAnno, ReaderHighlight, MarkColor } from '@/api/reader'
 import type { DiffMode, NotesLayout } from '@/stores/reader'
 import { renderMarkdown } from '@/utils/reader/markdown'
 import { anchorMatch, plainText } from '@/utils/reader/anchors'
+import { applyMarks, offsetIn, type MarkSpan } from '@/utils/reader/marks'
 
 const props = defineProps<{
   blocks: DocBlock[]
   noteLayers: ReaderNoteLayer[]
   annos: ReaderAnno[]
+  highlights: ReaderHighlight[]
   mode: DiffMode
   notesLayout: NotesLayout
   fontSize: number
+  markColor: MarkColor
   prevLabel?: string
   scrollTo?: string | null
 }>()
 const emit = defineEmits<{
   (e: 'active-heading', id: string | null): void
   (e: 'progress', ratio: number): void
-  (e: 'add-anno', payload: { blockId: string; anchor: string; quote: string; text: string }): void
+  (e: 'add-anno', payload: { blockId: string; anchor: string; quote: string; text: string; start?: number; end?: number }): void
   (e: 'delete-anno', id: string): void
+  (e: 'add-mark', payload: { blockId: string; anchor: string; quote: string; start: number; end: number; color: MarkColor }): void
+  (e: 'delete-mark', id: string): void
+  (e: 'pick-color', color: MarkColor): void
 }>()
 
 const root = ref<HTMLElement | null>(null)
 const openOld = ref<Set<string>>(new Set())
 const openNotes = ref<Set<string>>(new Set())
-const composing = ref<string | null>(null)
+/** 正在写的批注:整段批注只有 blockId,框选批注还带选区 */
+const composing = ref<{ blockId: string; quote: string; start?: number; end?: number } | null>(null)
 const draft = ref('')
+
+const COLORS: { id: MarkColor; label: string }[] = [
+  { id: 'yellow', label: '黄' }, { id: 'green', label: '绿' }, { id: 'blue', label: '蓝' }, { id: 'pink', label: '粉' },
+]
 
 /** 每段的渲染 HTML(缓存按 block id) */
 const html = computed(() => {
@@ -87,19 +104,130 @@ const heavy = (b: DocBlock) => (b.charDiff?.ratio ?? 0) > 0.5
 
 function toggleOld(id: string) { const s = new Set(openOld.value); s.has(id) ? s.delete(id) : s.add(id); openOld.value = s }
 function toggleNotes(id: string) { const s = new Set(openNotes.value); s.has(id) ? s.delete(id) : s.add(id); openNotes.value = s }
-function startAnno(id: string) { composing.value = id; draft.value = ''; nextTick(() => root.value?.querySelector<HTMLTextAreaElement>(`#anno-editor-${id} textarea`)?.focus()) }
-function submitAnno(b: DocBlock) {
+
+function focusEditor(id: string) {
+  nextTick(() => root.value?.querySelector<HTMLTextAreaElement>(`#anno-editor-${id} textarea`)?.focus())
+}
+function startAnno(b: DocBlock) {
+  composing.value = { blockId: b.id, quote: plainText(b.md || b.old || '').slice(0, 120) }
+  draft.value = ''
+  focusEditor(b.id)
+}
+function submitAnno() {
+  const c = composing.value
   const text = draft.value.trim()
-  if (!text) return
-  emit('add-anno', { blockId: b.id, anchor: sectionOf.value.get(b.id) || '', quote: plainText(b.md || b.old || '').slice(0, 120), text })
+  if (!c || !text) return
+  emit('add-anno', { blockId: c.blockId, anchor: sectionOf.value.get(c.blockId) || '', quote: c.quote, text, start: c.start, end: c.end })
   composing.value = null
   draft.value = ''
 }
 const fmtAt = (iso: string) => iso.replace('T', ' ').slice(0, 16)
 
+/* ---------------- 框选工具条 ---------------- */
+type SelInfo = { blockId: string; start: number; end: number; text: string; x: number; y: number }
+/** 选区工具条;markId 有值时是「点在已有荧光笔上」的那一档,只给取消/换色 */
+const bar = ref<(SelInfo & { markId?: string }) | null>(null)
+
+function hostOf(node: Node | null): HTMLElement | null {
+  const el = node ? (node.nodeType === 1 ? (node as Element) : node.parentElement) : null
+  return (el?.closest('.blk .body') as HTMLElement) || null
+}
+function readSelection(): SelInfo | null {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null
+  const range = sel.getRangeAt(0)
+  const host = hostOf(range.startContainer)
+  // 只支持段内选区:跨段的偏移没有共同基准,存下来也标不回去
+  if (!host || !host.contains(range.endContainer)) return null
+  const start = offsetIn(host, range.startContainer, range.startOffset)
+  const end = offsetIn(host, range.endContainer, range.endOffset)
+  const text = range.toString().trim()
+  if (start < 0 || end <= start || !text) return null
+  const blk = host.closest('.blk') as HTMLElement | null
+  if (!blk?.id) return null
+  const r = range.getBoundingClientRect()
+  return { blockId: blk.id, start, end, text, x: r.left + r.width / 2, y: r.top }
+}
+function onSelect() {
+  // 让浏览器先把这一下的选区结算完再读(拖选到边界时 mouseup 与 selection 更新有先后)
+  setTimeout(() => {
+    const s = readSelection()
+    bar.value = s ? { ...s } : (bar.value?.markId ? bar.value : null)
+  }, 0)
+}
+/** 点在已有荧光笔上:直接给取消/换色,不用先框选一遍 */
+function onDocClick(e: MouseEvent) {
+  const sel = window.getSelection()
+  if (sel && !sel.isCollapsed && sel.toString().trim()) return // 正在框选,这一档归 onSelect 管
+  const el = (e.target as HTMLElement)?.closest?.('mark.hl') as HTMLElement | null
+  if (!el) { bar.value = null; return }
+  const h = props.highlights.find((x) => x.id === el.dataset.markId)
+  if (!h) { bar.value = null; return }
+  const r = el.getBoundingClientRect()
+  bar.value = { blockId: h.blockId, start: h.start, end: h.end, text: el.textContent || '', x: r.left + r.width / 2, y: r.top, markId: h.id }
+}
+function barAnno() {
+  const s = bar.value
+  if (!s || s.markId) return
+  composing.value = { blockId: s.blockId, quote: s.text.slice(0, 160), start: s.start, end: s.end }
+  draft.value = ''
+  bar.value = null
+  window.getSelection()?.removeAllRanges()
+  focusEditor(s.blockId)
+}
+/** 涂色;点在已有荧光笔上时就是换色——服务端 add 会把重叠的旧笔顶掉,不用先删一次 */
+function barMark(color: MarkColor) {
+  const s = bar.value
+  if (!s || s.end <= s.start) return
+  emit('pick-color', color)
+  emit('add-mark', { blockId: s.blockId, anchor: sectionOf.value.get(s.blockId) || '', quote: s.text.slice(0, 160), start: s.start, end: s.end, color })
+  bar.value = null
+  window.getSelection()?.removeAllRanges()
+}
+function barClear() {
+  const s = bar.value
+  if (!s) return
+  if (s.markId) emit('delete-mark', s.markId)
+  else for (const h of props.highlights) if (h.blockId === s.blockId && h.start < s.end && s.start < h.end) emit('delete-mark', h.id)
+  bar.value = null
+  window.getSelection()?.removeAllRanges()
+}
+/** 选区内是否已经有荧光笔(决定要不要给「取消高亮」) */
+const barHasMark = computed(() => {
+  const s = bar.value
+  if (!s) return false
+  if (s.markId) return true
+  return props.highlights.some((h) => h.blockId === s.blockId && h.start < s.end && s.start < h.end)
+})
+
+/* ---------------- 标记回画 ---------------- */
+function redraw() {
+  const el = root.value
+  if (!el) return
+  const byBlock = new Map<string, MarkSpan[]>()
+  const push = (id: string, s: MarkSpan) => { const arr = byBlock.get(id) || []; arr.push(s); byBlock.set(id, arr) }
+  for (const h of props.highlights) push(h.blockId, { id: h.id, start: h.start, end: h.end, cls: `hl hl-${h.color}`, title: '荧光笔 · 点一下可取消' })
+  for (const a of props.annos) {
+    if (typeof a.start !== 'number' || typeof a.end !== 'number') continue
+    push(a.blockId, { id: a.id, start: a.start, end: a.end, cls: 'anno-anchor', title: `批注:${a.text}` })
+  }
+  // 每段都要走一趟:没有标记的段也得把上一版留下的 <mark> 清干净
+  for (const b of props.blocks) {
+    const hostEl = el.querySelector<HTMLElement>(`#${b.id} .body`)
+    if (!hostEl) continue
+    applyMarks(hostEl, (byBlock.get(b.id) || []).slice().sort((x, y) => x.start - y.start))
+  }
+}
+watch(
+  () => [props.highlights, props.annos, props.blocks, props.mode, props.notesLayout] as const,
+  () => nextTick(redraw),
+  { deep: false },
+)
+
 // 滚动:进度 + 当前标题
 let raf = 0
 function onScroll() {
+  if (bar.value) bar.value = null // 工具条是钉在视口坐标上的,滚了就不准,直接收起
   if (raf) return
   raf = requestAnimationFrame(() => {
     raf = 0
@@ -126,13 +254,36 @@ watch(() => props.scrollTo, (id) => {
     if (notesByBlock.value.has(id)) { const s = new Set(openNotes.value); s.add(id); openNotes.value = s }
   })
 })
-watch(() => props.blocks, () => { openOld.value = new Set(); openNotes.value = new Set(); composing.value = null; root.value?.scrollTo({ top: 0 }) })
-onMounted(() => root.value?.addEventListener('scroll', onScroll, { passive: true }))
-onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
+watch(() => props.blocks, () => {
+  openOld.value = new Set(); openNotes.value = new Set(); composing.value = null; bar.value = null
+  root.value?.scrollTo({ top: 0 })
+})
+/** 点到正文之外(右栏、页头)也要收起工具条 */
+function onDocMouseDown(e: MouseEvent) {
+  const t = e.target as HTMLElement | null
+  if (bar.value && !t?.closest?.('.selbar') && !root.value?.contains(t as Node)) bar.value = null
+}
+onMounted(() => {
+  root.value?.addEventListener('scroll', onScroll, { passive: true })
+  document.addEventListener('mousedown', onDocMouseDown)
+  nextTick(redraw)
+})
+onBeforeUnmount(() => {
+  root.value?.removeEventListener('scroll', onScroll)
+  document.removeEventListener('mousedown', onDocMouseDown)
+})
 </script>
 
 <template>
-  <section ref="root" class="doc" :class="[`mode-${mode}`, `notes-${notesLayout}`]" :style="{ fontSize: fontSize + 'px' }">
+  <section
+    ref="root"
+    class="doc"
+    :class="[`mode-${mode}`, `notes-${notesLayout}`]"
+    :style="{ fontSize: fontSize + 'px' }"
+    @mouseup="onSelect"
+    @keyup="onSelect"
+    @click="onDocClick"
+  >
     <div class="paper">
       <div v-if="globalNotes.length || orphanNotes.length" class="notes open global">
         <b>全篇提示</b>
@@ -156,7 +307,7 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
             @click="b.kind === 'changed' && toggleOld(b.id)"
           />
           <div class="ptools">
-            <button type="button" title="写批注" @click="startAnno(b.id)">✎</button>
+            <button type="button" title="给整段写批注(想批某一句就直接框选那句)" @click="startAnno(b)">✎</button>
             <button v-if="b.kind === 'changed'" type="button" title="看旧文" @click="toggleOld(b.id)">⇄</button>
           </div>
 
@@ -166,10 +317,12 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
           </div>
           <template v-else>
             <div class="new">
-              <template v-if="b.kind === 'changed' && b.charDiff && !heavy(b) && (mode === 'marks' || mode === 'changes' || mode === 'split')">
-                <p v-html="b.charDiff.newHtml" />
-              </template>
-              <div v-else v-html="html.get(b.id)" />
+              <p
+                v-if="b.kind === 'changed' && b.charDiff && !heavy(b) && (mode === 'marks' || mode === 'changes' || mode === 'split')"
+                class="body"
+                v-html="b.charDiff.newHtml"
+              />
+              <div v-else class="body" v-html="html.get(b.id)" />
               <button
                 v-if="b.heading && notesByBlock.has(b.id) && notesLayout !== 'rail'"
                 type="button"
@@ -199,14 +352,16 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
 
           <div v-if="annosByBlock.has(b.id)" class="annos">
             <div v-for="a in annosByBlock.get(b.id)" :key="a.id" class="anno-card">
-              <span class="who">{{ a.author }} · {{ fmtAt(a.at) }}</span>{{ a.text }}
+              <span class="who">{{ a.author }} · {{ fmtAt(a.at) }}</span>
+              <span v-if="a.quote && a.start !== undefined" class="on-quote">「{{ a.quote }}」</span>{{ a.text }}
               <button type="button" class="del" title="删除这条批注" @click="emit('delete-anno', a.id)">×</button>
             </div>
           </div>
-          <div v-if="composing === b.id" :id="`anno-editor-${b.id}`" class="anno-card editor">
-            <textarea v-model="draft" rows="3" placeholder="对这一段的意见:不对在哪 / 要外脑改什么 / 认可" @keydown.ctrl.enter.prevent="submitAnno(b)" />
+          <div v-if="composing?.blockId === b.id" :id="`anno-editor-${b.id}`" class="anno-card editor">
+            <div v-if="composing.start !== undefined" class="on-quote sel">批的是这句:「{{ composing.quote }}」</div>
+            <textarea v-model="draft" rows="3" placeholder="对这一段的意见:不对在哪 / 要外脑改什么 / 认可" @keydown.ctrl.enter.prevent="submitAnno()" />
             <div class="row">
-              <button type="button" class="btn btn-sm primary" @click="submitAnno(b)">保存批注</button>
+              <button type="button" class="btn btn-sm primary" @click="submitAnno()">保存批注</button>
               <button type="button" class="btn btn-sm quiet" @click="composing = null">取消</button>
               <span class="lite">存到看板本机账本并同步到对应任务卡;Ctrl+Enter 保存</span>
             </div>
@@ -215,14 +370,37 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
       </template>
       <div class="tail" />
     </div>
+
+    <!-- 框选工具条:钉在选区上方,按钮一律 mousedown.prevent,不然一按选区就没了 -->
+    <div
+      v-if="bar"
+      class="selbar"
+      :style="{ left: bar.x + 'px', top: bar.y + 'px' }"
+      @mousedown.prevent
+      @click.stop
+    >
+      <button v-if="!bar.markId" type="button" class="sb-anno" title="对选中的这句写批注" @click="barAnno">✎ 批注</button>
+      <span v-if="!bar.markId" class="sb-sep" />
+      <button
+        v-for="c in COLORS"
+        :key="c.id"
+        type="button"
+        class="sb-dot"
+        :class="[`hl-${c.id}`, { on: markColor === c.id }]"
+        :title="bar.markId ? '换成' + c.label : c.label + '色荧光笔'"
+        @click="barMark(c.id)"
+      />
+      <button v-if="barHasMark" type="button" class="sb-clear" title="取消这里的荧光笔" @click="barClear">✕ 取消高亮</button>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .doc { position: relative; overflow: auto; min-height: 0; scroll-behavior: smooth; line-height: 1.7; }
-.paper { max-width: 780px; margin: 0 auto; padding: var(--s5) var(--s6) 0; }
+/* 纸面比阅读宽度多留 40px:段落工具就摆在这条边距里,悬停区跟正文连成一片(见文件头 ①) */
+.paper { max-width: 820px; margin: 0 auto; padding: var(--s5) var(--s6) 0; }
 .tail { height: 40vh; }
-.blk { position: relative; padding-left: 14px; margin: 0 0 2px; }
+.blk { position: relative; padding-left: 14px; padding-right: 40px; margin: 0 0 2px; }
 .blk > .gut { position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 2px; background: transparent; }
 .blk.changed > .gut { background: var(--info); cursor: pointer; opacity: .8; }
 .blk.changed > .gut:hover { width: 5px; left: -1px; opacity: 1; }
@@ -234,9 +412,13 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
 .blk :deep(h1) { font-size: 1.45em; } .blk :deep(h2) { font-size: 1.25em; } .blk :deep(h3) { font-size: 1.05em; }
 .blk :deep(p), .blk :deep(li) { margin: 0 0 var(--s2); }
 .blk :deep(ul), .blk :deep(ol) { padding-left: 1.4em; }
-.blk :deep(table) { border-collapse: collapse; width: 100%; font-size: .9em; margin: var(--s2) 0; }
-.blk :deep(th), .blk :deep(td) { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; text-align: left; }
-.blk :deep(th) { background: var(--surface-2); }
+/* 表格:全局 th 是给看板数据表的列头用的(11px + 弱灰 + 等宽大写),套在报告正文上没法读,这里整个重设 */
+.blk :deep(table) { border-collapse: collapse; width: 100%; font-size: .95em; margin: var(--s2) 0; }
+.blk :deep(th), .blk :deep(td) { border: 1px solid var(--line); padding: 6px 10px; vertical-align: top; text-align: left; color: var(--text); }
+.blk :deep(th) { background: var(--surface-2); font-family: inherit; font-size: inherit; font-weight: 600; letter-spacing: normal; text-transform: none; }
+/* 提示块:docx 转出来的「退化表格」在渲染层被换成了这个(见 utils/reader/markdown.ts) */
+.blk :deep(.callout) { margin: var(--s2) 0; padding: var(--s2) var(--s3); border-left: 3px solid var(--line-strong); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--surface-2); color: var(--text); }
+.blk :deep(.callout p:last-child) { margin-bottom: 0; }
 .blk :deep(blockquote) { margin: 0 0 var(--s2); padding: var(--s1) var(--s3); border-left: 3px solid var(--line-strong); color: var(--text-2); background: var(--surface-2); border-radius: 0 var(--r-sm) var(--r-sm) 0; }
 .blk :deep(ins) { text-decoration: none; }
 .blk :deep(del) { color: var(--bad); }
@@ -260,16 +442,17 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
 .mode-changes .ctx { display: block; }
 /* 并排 */
 .mode-split .paper { max-width: none; padding-left: var(--s4); padding-right: var(--s4); }
-.mode-split .blk.changed { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); background: var(--info-bg); border-radius: var(--r-sm); padding: var(--s2) var(--s2) var(--s2) 14px; margin-bottom: var(--s3); }
+.mode-split .blk.changed { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); background: var(--info-bg); border-radius: var(--r-sm); padding: var(--s2) 40px var(--s2) 14px; margin-bottom: var(--s3); }
 .mode-split .blk.changed .old { display: block; margin: 0; order: -1; }
 .mode-split .blk.changed .new { order: 1; }
 .mode-split .blk.changed .notes, .mode-split .blk.changed .annos, .mode-split .blk.changed .editor { grid-column: 1 / 3; }
 .mode-split .blk :deep(ins) { background: color-mix(in srgb, var(--info) 22%, transparent); }
 .blk.heavy .old :deep(del) { text-decoration: none; color: inherit; }
-/* 段落工具 */
-.ptools { position: absolute; right: -36px; top: 2px; display: none; gap: 2px; }
-.blk:hover .ptools { display: flex; }
-.ptools button { width: 26px; height: 26px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text-2); cursor: pointer; font-size: 13px; }
+/* 段落工具:摆在段落自己的 padding-right 里。用 opacity 而不是 display,
+   悬停区不断档——原来悬在盒子外面,鼠标伸过去的路上按钮就没了(负责人 0905 实测) */
+.ptools { position: absolute; right: 6px; top: 2px; display: flex; gap: 2px; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.blk:hover .ptools, .blk:focus-within .ptools { opacity: 1; pointer-events: auto; }
+.ptools button { width: 26px; height: 26px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--text-2); cursor: pointer; font-size: 13px; }
 .ptools button:hover { background: var(--surface-3); color: var(--text); }
 .blk.has-anno { border-right: 2px solid var(--chart-4); }
 /* 边注 */
@@ -288,5 +471,24 @@ onBeforeUnmount(() => root.value?.removeEventListener('scroll', onScroll))
 .anno-card .del:hover { color: var(--bad); }
 .anno-card textarea { width: 100%; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; padding: var(--s2); resize: vertical; }
 .anno-card .row { display: flex; gap: var(--s2); align-items: center; margin-top: var(--s2); flex-wrap: wrap; }
+.on-quote { color: var(--text-2); }
+.on-quote.sel { display: block; margin-bottom: var(--s2); color: var(--text-3); font-size: var(--fs-xs); }
 .lite { color: var(--text-3); font-size: var(--fs-xs); }
+/* 荧光笔与批注锚(marks.ts 插进正文的 <mark>) */
+.blk :deep(mark.hl) { color: inherit; border-radius: 2px; padding: 0 1px; cursor: pointer; }
+.blk :deep(mark.hl-yellow) { background: var(--hl-yellow); }
+.blk :deep(mark.hl-green) { background: var(--hl-green); }
+.blk :deep(mark.hl-blue) { background: var(--hl-blue); }
+.blk :deep(mark.hl-pink) { background: var(--hl-pink); }
+.blk :deep(mark.anno-anchor) { background: transparent; color: inherit; border-bottom: 2px dotted var(--chart-4); }
+/* 框选工具条 */
+.selbar { position: fixed; z-index: 50; transform: translate(-50%, calc(-100% - 8px)); display: flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); box-shadow: 0 6px 20px rgba(0, 0, 0, .22); }
+.selbar button { border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+.selbar button:hover { background: var(--surface-3); }
+.sb-sep { width: 1px; height: 18px; background: var(--line); }
+.selbar button.sb-dot { width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1px solid var(--line-strong); }
+.selbar button.sb-dot.hl-yellow { background: var(--hl-yellow); } .selbar button.sb-dot.hl-green { background: var(--hl-green); }
+.selbar button.sb-dot.hl-blue { background: var(--hl-blue); } .selbar button.sb-dot.hl-pink { background: var(--hl-pink); }
+.selbar button.sb-dot.on { outline: 2px solid var(--text); outline-offset: 1px; }
+.sb-clear { color: var(--text-2); }
 </style>

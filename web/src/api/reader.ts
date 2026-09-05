@@ -54,8 +54,30 @@ export interface ReaderAnno {
   text: string
   author: string
   at: string
+  /** 框选批注:选区在本段纯文本里的起止偏移(整段批注没有这两个字段) */
+  start?: number
+  end?: number
 }
-export interface ReaderManifestPayload { ok: boolean; project: string; manifest: ReaderManifest; annoCounts: Record<string, number> }
+export type MarkColor = 'yellow' | 'green' | 'blue' | 'pink'
+export interface ReaderHighlight {
+  id: string
+  blockId: string
+  start: number
+  end: number
+  color: MarkColor
+  quote: string
+  anchor: string
+  at: string
+}
+export interface ReaderReview { state: '已审阅'; at: string; by: string }
+export interface ReaderManifestPayload {
+  ok: boolean
+  project: string
+  manifest: ReaderManifest
+  annoCounts: Record<string, number>
+  markCounts: Record<string, number>
+  reviews: Record<string, ReaderReview>
+}
 export interface ReaderReportPayload {
   ok: boolean
   project: string
@@ -65,6 +87,8 @@ export interface ReaderReportPayload {
   prevMd: string | null
   notes: ReaderNoteLayer[]
   annos: ReaderAnno[]
+  highlights: ReaderHighlight[]
+  review: ReaderReview | null
 }
 export interface ReaderAnnoPostResult { ok: boolean; anno: ReaderAnno; annos: ReaderAnno[]; mirror: boolean; mirrorError?: string; task?: string | null }
 export interface ReaderExportResult { ok: boolean; path: string; count: number }
@@ -80,7 +104,7 @@ export async function fetchReaderReport(project: string, key: string): Promise<R
 export async function postReaderAnno(
   project: string,
   key: string,
-  anno: { blockId: string; anchor: string; quote: string; text: string; author?: string },
+  anno: { blockId: string; anchor: string; quote: string; text: string; author?: string; start?: number; end?: number },
 ): Promise<ReaderAnnoPostResult> {
   return asJson<ReaderAnnoPostResult>(
     await fetch(`${API}/annos`, {
@@ -96,6 +120,37 @@ export async function deleteReaderAnno(project: string, key: string, id: string)
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key, op: 'delete', id }),
+    }),
+  )
+}
+export async function postReaderMark(
+  project: string,
+  key: string,
+  mark: { blockId: string; anchor: string; quote: string; start: number; end: number; color: MarkColor },
+): Promise<{ ok: boolean; mark: ReaderHighlight; highlights: ReaderHighlight[] }> {
+  return asJson(
+    await fetch(`${API}/marks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, key, op: 'add', mark }),
+    }),
+  )
+}
+export async function deleteReaderMark(project: string, key: string, id: string): Promise<{ ok: boolean; highlights: ReaderHighlight[] }> {
+  return asJson(
+    await fetch(`${API}/marks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, key, op: 'delete', id }),
+    }),
+  )
+}
+export async function postReaderReview(project: string, key: string, state: '已审阅' | '未审阅'): Promise<{ ok: boolean; review: ReaderReview | null }> {
+  return asJson(
+    await fetch(`${API}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, key, state }),
     }),
   )
 }

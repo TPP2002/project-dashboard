@@ -20,6 +20,9 @@
   --chart-area-neutral: #8e8e8920; --chart-area-warn: #9a6b1220; --chart-area-ok: #2c7a4529;
   --heat-1: #dcece1; --heat-2: #b5d8c0; --heat-3: #76af88; --heat-4: #2c7a45;
 
+  /* —— 荧光笔（审阅台标记；底色实色，正文字色不变，保证两套主题下都够对比度） —— */
+  --hl-yellow: #fbeaa0; --hl-green: #cfeccb; --hl-blue: #d3e3fa; --hl-pink: #f8d6e4;
+
   /* —— 尺度（深浅共用） —— */
   --r-sm: 4px; --r: 6px; --r-lg: 8px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
@@ -60,6 +63,7 @@
     --chart-5: #64bdb8; --chart-6: #e0879d; --chart-7: #9a9a9e; --chart-on-series: #0d0d0e;
     --chart-area-neutral: #6a6a6f26; --chart-area-warn: #d9a44126; --chart-area-ok: #6fbf8230;
     --heat-1: #193823; --heat-2: #245331; --heat-3: #3e7b50; --heat-4: #6fbf82;
+    --hl-yellow: #574a17; --hl-green: #204527; --hl-blue: #1d3a5e; --hl-pink: #4e2437;
   }
 }
 
@@ -77,6 +81,7 @@
   --chart-5: #64bdb8; --chart-6: #e0879d; --chart-7: #9a9a9e; --chart-on-series: #0d0d0e;
   --chart-area-neutral: #6a6a6f26; --chart-area-warn: #d9a44126; --chart-area-ok: #6fbf8230;
   --heat-1: #193823; --heat-2: #245331; --heat-3: #3e7b50; --heat-4: #6fbf82;
+  --hl-yellow: #574a17; --hl-green: #204527; --hl-blue: #1d3a5e; --hl-pink: #4e2437;
 }
 
 [data-spectrum="warm"] {

@@ -3,7 +3,8 @@
 // 三栏:报告架 | 正文(干净读法,改动只留边条) | 右栏(目录/提示/批注/拍板)。阅读偏好在「阅读设置」里,是个性化项。
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
-import { useReaderStore, type DiffMode, type NotesLayout } from '@/stores/reader'
+import { useReaderStore, FONT_MIN, FONT_MAX, type DiffMode, type NotesLayout } from '@/stores/reader'
+import type { MarkColor } from '@/api/reader'
 import ReportShelf from '@/components/reader/ReportShelf.vue'
 import ReportBody from '@/components/reader/ReportBody.vue'
 import ReaderRail from '@/components/reader/ReaderRail.vue'
@@ -31,6 +32,9 @@ const MODES: { id: DiffMode; label: string; hint: string }[] = [
   { id: 'marks', label: '标记改动', hint: '当前版上把改动处的新字浅底标出' },
   { id: 'changes', label: '只看改动', hint: '只列改过的段落,旧文直接摆在下面' },
   { id: 'split', label: '并排', hint: '改过的段落左旧右新并排,没改的段照常' },
+]
+const MARK_COLORS: { id: MarkColor; label: string }[] = [
+  { id: 'yellow', label: '黄' }, { id: 'green', label: '绿' }, { id: 'blue', label: '蓝' }, { id: 'pink', label: '粉' },
 ]
 const NOTE_LAYOUTS: { id: NotesLayout; label: string; hint: string }[] = [
   { id: 'fold', label: '折叠小标', hint: '标题旁一枚小标,点开才展' },
@@ -67,7 +71,7 @@ watch(project, boot)
 function select(key: string) { if (key !== reader.currentKey) reader.openReport(key) }
 function jump(id: string) { jumpTo.value = null; requestAnimationFrame(() => { jumpTo.value = id }) }
 
-async function addAnno(p: { blockId: string; anchor: string; quote: string; text: string }) {
+async function addAnno(p: { blockId: string; anchor: string; quote: string; text: string; start?: number; end?: number }) {
   try {
     const res = await reader.addAnno({ ...p, author: '负责人' })
     say(res.mirror ? `批注已存,并同步到看板卡 ${res.task}` : `批注已存;同步看板卡失败:${res.mirrorError || '未知'}`)
@@ -76,6 +80,19 @@ async function addAnno(p: { blockId: string; anchor: string; quote: string; text
 async function deleteAnno(id: string) {
   try { await reader.removeAnno(id); say('已删除') } catch (e) { say('删除失败:' + (e instanceof Error ? e.message : String(e))) }
 }
+async function addMark(p: { blockId: string; anchor: string; quote: string; start: number; end: number; color: MarkColor }) {
+  try { await reader.addMark(p) } catch (e) { say('标记失败:' + (e instanceof Error ? e.message : String(e))) }
+}
+async function deleteMark(id: string) {
+  try { await reader.removeMark(id) } catch (e) { say('取消标记失败:' + (e instanceof Error ? e.message : String(e))) }
+}
+async function toggleReviewed() {
+  try {
+    const res = await reader.setReviewed()
+    say(res.review ? '已标记「已审阅」,这份报告移到报告架下面那一组' : '已撤销「已审阅」,报告回到待审阅那一组')
+  } catch (e) { say('标记失败:' + (e instanceof Error ? e.message : String(e))) }
+}
+const bumpFont = (d: number) => reader.setPrefs({ fontSize: reader.prefs.fontSize + d })
 async function exportAnnos() {
   try { const r = await reader.exportAnnos(); say(`已导出 ${r.count} 条到仓库 ${r.path}(未 commit,回流对话随 PR 提交)`) }
   catch (e) { say('导出失败:' + (e instanceof Error ? e.message : String(e))) }
@@ -109,6 +126,14 @@ async function decide(p: { did: string; answer: string }) {
       </div>
       <span class="spacer" />
       <div class="head-actions">
+        <button
+          type="button"
+          class="btn btn-sm"
+          :class="{ reviewed: reader.currentReviewed }"
+          :disabled="!reader.payload"
+          :title="reader.currentReviewed ? '撤销后这份报告回到「待审阅」那一组' : '读完了就标一下,报告架里会挪到「已审阅」那一组'"
+          @click="toggleReviewed"
+        >{{ reader.currentReviewed ? '✓ 已审阅' : '标记已审阅' }}</button>
         <button type="button" class="btn btn-sm" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen">⚙︎ 阅读设置</button>
         <button type="button" class="btn btn-sm" :disabled="!reader.annos.length" title="把本报告的批注写成仓库 docs 下的 JSON(不 commit)" @click="exportAnnos">导出批注 {{ reader.annos.length || '' }}</button>
       </div>
@@ -134,10 +159,36 @@ async function decide(p: { did: string; answer: string }) {
           </div>
         </div>
         <div class="sg">
-          <div class="sl">正文字号</div>
-          <div class="seg">
-            <button v-for="f in [14, 15, 16, 18]" :key="f" type="button" :class="{ on: reader.prefs.fontSize === f }" @click="reader.setPrefs({ fontSize: f })">{{ f }}</button>
+          <div class="sl">正文字号 <span class="mono">{{ reader.prefs.fontSize }}px</span></div>
+          <div class="fsrow">
+            <button type="button" class="btn btn-sm" :disabled="reader.prefs.fontSize <= FONT_MIN" title="小一号" @click="bumpFont(-1)">A−</button>
+            <input
+              type="range"
+              :min="FONT_MIN"
+              :max="FONT_MAX"
+              step="1"
+              :value="reader.prefs.fontSize"
+              aria-label="正文字号"
+              @input="reader.setPrefs({ fontSize: Number(($event.target as HTMLInputElement).value) })"
+            >
+            <button type="button" class="btn btn-sm" :disabled="reader.prefs.fontSize >= FONT_MAX" title="大一号" @click="bumpFont(1)">A+</button>
           </div>
+          <div class="hint">{{ FONT_MIN }}~{{ FONT_MAX }}px 之间随便拖。</div>
+        </div>
+        <div class="sg">
+          <div class="sl">荧光笔颜色</div>
+          <div class="dots">
+            <button
+              v-for="c in MARK_COLORS"
+              :key="c.id"
+              type="button"
+              class="dot"
+              :class="[`hl-${c.id}`, { on: reader.prefs.markColor === c.id }]"
+              :title="c.label"
+              @click="reader.setPrefs({ markColor: c.id })"
+            />
+          </div>
+          <div class="hint">在正文里框选一段文字就会弹出工具条:写批注,或者直接涂色。</div>
         </div>
         <label class="sg row"><input type="checkbox" :checked="reader.prefs.showPendingIntake" @change="reader.setPrefs({ showPendingIntake: ($event.target as HTMLInputElement).checked })"> 报告架里显示「待接入」的报告</label>
         <div class="hint">这些都是你个人的阅读习惯,只存在这台电脑的浏览器里。</div>
@@ -149,9 +200,13 @@ async function decide(p: { did: string; answer: string }) {
     <ReportShelf
       :manifest="reader.manifest"
       :anno-counts="reader.annoCounts"
+      :mark-counts="reader.markCounts"
+      :reviews="reader.reviews"
       :current-key="reader.currentKey"
       :show-pending-intake="reader.prefs.showPendingIntake"
+      :show-reviewed="reader.prefs.showReviewed"
       @select="select"
+      @toggle-reviewed="reader.setPrefs({ showReviewed: !reader.prefs.showReviewed })"
     />
 
     <div v-if="reader.manifestError" class="center card">
@@ -166,15 +221,20 @@ async function decide(p: { did: string; answer: string }) {
       :blocks="reader.blocks"
       :note-layers="reader.visibleNoteLayers"
       :annos="reader.annos"
+      :highlights="reader.highlights"
       :mode="reader.prefs.mode"
       :notes-layout="reader.prefs.notesLayout"
       :font-size="reader.prefs.fontSize"
+      :mark-color="reader.prefs.markColor"
       :prev-label="reader.currentReport?.prevLabel"
       :scroll-to="jumpTo"
       @active-heading="activeHeading = $event"
       @progress="progress = $event"
       @add-anno="addAnno"
       @delete-anno="deleteAnno"
+      @add-mark="addMark"
+      @delete-mark="deleteMark"
+      @pick-color="reader.setPrefs({ markColor: $event })"
     />
     <div v-else class="center card"><p class="lite">从左边选一份报告开始读。</p></div>
 
@@ -215,6 +275,14 @@ async function decide(p: { did: string; answer: string }) {
 .seg button:last-child { border-right: 0; }
 .seg button.on { background: var(--text); color: var(--bg); }
 .hint { color: var(--text-3); font-size: var(--fs-xs); }
+.fsrow { display: flex; align-items: center; gap: var(--s2); }
+.fsrow input[type="range"] { flex: 1; accent-color: var(--text); }
+.dots { display: flex; gap: var(--s2); }
+.dot { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line-strong); cursor: pointer; }
+.dot.hl-yellow { background: var(--hl-yellow); } .dot.hl-green { background: var(--hl-green); }
+.dot.hl-blue { background: var(--hl-blue); } .dot.hl-pink { background: var(--hl-pink); }
+.dot.on { outline: 2px solid var(--text); outline-offset: 1px; }
+.btn.reviewed { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
 .progress { grid-column: 1 / 4; height: 3px; background: var(--surface-3); border-radius: 0; }
 .progress > i { display: block; height: 100%; background-image: var(--spectrum); background-size: 220% 100%; animation: slide 3.4s linear infinite; transition: width .14s ease; }
 .center { display: grid; place-items: center; align-content: start; padding: var(--s6); text-align: center; }
