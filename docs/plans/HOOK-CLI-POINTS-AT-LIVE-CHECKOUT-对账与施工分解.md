@@ -136,3 +136,19 @@
 ## 拍板记录
 
 - 2026-09-06 已登记待拍板 d1(走哪条治法)、d2(发布怎么触发)到看板,等负责人拍板。
+- 2026-09-06 负责人拍板:**d1 走①发布副本,顺带把②的"切分支提醒钩子"当保险装上(只提醒不拦);d2 走 A**。放行开工。
+- 施工方:本机没有 Codex CLI(`which codex` 找不到),派单器只存在于 stock-rogue 项目的 TS 脚本里,对本仓不可用 → §17.0 例外①,本对话自干。
+
+## 施工落地记录(阶段④)
+
+| 子任务 | 落地 | 验收 |
+|---|---|---|
+| T1 | `core/runtimeRoot.cjs`(hook 代码根裁判)+ `cli/release.cjs`(临时索引导出 + 目录换名 + RELEASE.json)+ `index.cjs` 注册 | `test/release.test.cjs` 8 条,含"来源切到功能分支 + 未提交改动,副本仍 = origin/master 且来源仓索引不动"的治本证据 |
+| T2 | `hooksInstall.cjs`:路径由 `resolveHookCliRoot` 裁决,写任何文件前先裁,裁不出就拒装;settings 幂等识别兼容旧路径条目(迁移不并存两套) | `test/hooksInstall.test.cjs` 新增 2 条;claimCheck / claimCheckRollout / gitE2e 三处测试改用 `DASHBOARD_HOOK_CLI_ROOT` |
+| T3 | `doctor`:本仓 hook 指着副本且副本落后 → 报;`precheck` 第①查加副本状态行 | `test/releaseWiring.test.cjs` 2 条 |
+| T4 | `hooks-trunk-guard`:主工位 post-checkout,切离主干只提醒不拦,worktree 内不提醒 | `test/hooksInstall.test.cjs` 1 条(真跑 git checkout / worktree 验 stderr 与退出码) |
+| T5 | 产品手册 §4.4 / CLI 表 / §8,AGENTS.md,README | grep `dashboard-release` |
+| T6 | `packaging/build-installer.cjs` 无需改:它整拷 `cli/` `core/`,装出来的目录没有 `.git` → hook 指向自身;`release` 在其中友好跳过(有测试) | `release.test.cjs`「代码根不是 git 检出 → 跳过」 |
+| T7 | 本机迁移,PR 合并后做(见收官记录) | — |
+
+已知留尾(另立卡):`installClaudeMd` 写进各项目 CLAUDE.md 的示例路径仍是 `~/.claude/dashboard/cli/index.cjs`(对话手动跑的命令),本卡刻意不改——改了会让 4 个项目仓的已提交 CLAUDE.md 出现 diff,撞并行会话;见卡 CLAUDE-MD-ANCHOR-CLI-PATH。

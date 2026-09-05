@@ -15,6 +15,8 @@
 - 看板 CLI：`node <看板CLI路径> <命令> --project <项目id>`
   - `<看板CLI路径>` 通常是看板安装目录下的 `cli/index.cjs`（如 `~/.claude/dashboard/cli/index.cjs`，
     或独立安装版的 `<安装目录>/cli/index.cjs`）。
+  - 各仓 git hook 里自动调的那份是**发布副本** `~/.claude/dashboard-release/cli/index.cjs`（由 `cli release` 从主干导出，
+    不随任何对话切分支而变）；看板本身的代码合进主干后要跑一次 `release` 才在 hook 里生效。
   - `<项目id>` 见看板注册表（`registry.json`），或问用户。
 - **绝不手动编辑 `board.json`**——一切写入只经 CLI（它保证加锁、校验、原子写、留痕）。
 

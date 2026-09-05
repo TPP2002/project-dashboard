@@ -135,6 +135,17 @@
   - **分发版**：启动器把 `DASHBOARD_HOME` 指向**安装目录**，从而脱离 `~/.claude`、在任意社区机器上可写、卸载即净。
 - **代码定位与 DASHBOARD_HOME 无关**：`core/cli/server/web` 之间的 `require` 一律走 `__dirname` 相对路径。`DASHBOARD_HOME` 只决定「数据往哪读/写」，不决定「代码在哪」。这是分发版能同时满足「代码在安装目录、数据也在安装目录、又不改任何 Claude Code 用户行为」的关键。
 - **board 本身**不在 `DASHBOARD_HOME`，而在**各项目主仓** `<mainRepo>/.dashboard/board.json`。因此卸载看板不会丢各项目的任务数据（只丢项目列表 registry 与 snapshots）。
+- **发布副本（各仓 hook 实际跑的那份代码）= `~/.claude/dashboard-release`**（环境变量 `DASHBOARD_RELEASE_HOME` 可改）。
+  *为什么*（HOOK-CLI-POINTS-AT-LIVE-CHECKOUT，2026-09-06 负责人拍板）：`~/.claude/dashboard` 是看板仓的**活的 git 工作检出**，
+  谁在那里切分支、谁改了没提交，全机器各仓的 `pre-commit` 闸门 / `post-commit` 同步就跟着变；合进 master 也不等于生效。
+  治法是把「人正在改的那份」和「全机器跑的那份」物理分开：
+  - `cli release`：`git fetch` 后从 **`origin/<主干>`** 经临时索引导出 `core/ cli/ server/ package.json` 到发布副本，
+    写 `RELEASE.json` 印章（来源 commit / 时间），目录级换名。**与主工位当前分支、未提交改动完全无关**；`--commit <sha>` 可钉某个提交（回滚）。
+  - `hooks-install` / `hooks-global` 焊进 hook 的路径按 `core/runtimeRoot.cjs` 裁决，铁律「**hook 永远不许指进 git 检出**」：
+    `DASHBOARD_HOOK_CLI_ROOT`（测试隔离）> 自身不是检出（分发版安装目录 / 发布副本自己）> 发布副本 > 拒装并指路 `release`。
+  - 触发方式（拍板 d2=A）：**收官序列**里合并入主干的那个对话跑一次 `cli release`；`doctor`（本仓 hook 指着副本且副本落后时）与
+    `precheck`（第①查）会报「发布副本落后 N 个提交」兜底。不装计划任务，让 master 合坏时留一道人工缓冲。
+  - `hooks-trunk-guard`：给看板主工位装 `post-checkout` 提醒——切离主干只在 stderr 吵一声、不拦；worktree 内不提醒。
 
 ### 4.5 server 端点一览
 | 方法 & 路径 | 作用 |
@@ -251,7 +262,9 @@
 | `snapshot [--out --stamp]` | 导出 board 快照（git 外备份）。 |
 | `inbox --project [--tid]` | 「读看板接单」入口：无 tid 列待落地任务，给 tid 打印完整任务书。 |
 | `enroll` / `onboard` | 一键接入全新项目 / 引导。 |
-| `hooks-install` | 装 git hook + Claude Code hook（见 §8）。 |
+| `hooks-install` | 装 git hook + Claude Code hook（见 §8）。焊的是**发布副本**的路径，不是检出（§4.4）。 |
+| `release` | 把 `origin/<主干>` 的运行期代码导出成发布副本 `~/.claude/dashboard-release`（`--commit <sha>` 钉提交、`--no-fetch` 离线）。合进主干后跑一次让新代码在各仓 hook 里生效。 |
+| `hooks-trunk-guard` | 给看板主工位装 `post-checkout` 提醒：切离主干只吵不拦（`--repo` / `--trunk` 可指定）。 |
 
 ---
 
@@ -308,6 +321,7 @@
 这一层是本产品**为 AI 驱动开发设计的差异化能力**，但对不使用 Claude Code 的用户完全可选、不影响核心看板。
 
 - **git hooks**（`hooks-install` 装到项目）：`post-commit` = 自动 `sync-from-git` + `render-index`；`post-merge` = `sync-from-git`；`pre-commit` = 未认领硬闸门。全部 `|| true` 兜底，绝不阻断正常 commit。
+  hook 里调的 CLI 是**发布副本**（`~/.claude/dashboard-release/cli/index.cjs`），不是看板仓的检出——看板代码改了要 `cli release` 一次才在 hook 里生效（§4.4）。
 - **Claude Code hooks**（装到 `~/.claude/settings.json` 或项目 `.claude/settings.json`）：`Stop` = 每次对话结束跑 `doctor` 对账；`PostToolUse/Bash` = 检测 `git commit` 后自动 sync；`PostToolUse/TodoWrite` = AI 更新待办清单时自动算完成比同步进度。
 - **skill 集成**：配套的 `project-build-workflow` skill 在认领协议、看板同步、拍板话术等章节调用 CLI，让 AI 对话「自动知道规矩」。
 - **派单**：网页把某任务的已拍板未落地决策打包成任务书，一句短指令派给新对话接手施工。
