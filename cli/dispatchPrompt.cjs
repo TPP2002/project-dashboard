@@ -60,6 +60,7 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions) {
   lines.push('1. 项目根 `CLAUDE.md`——本项目的看板同步纪律(pre-commit 硬闸门会拦你不 claim 就 commit)');
   lines.push('2. skill `project-build-workflow` §11.2 认领协议 + §11.9 看板同步 + §6.2 拍板话术');
   lines.push(`3. 本任务的设计文档(见 board.json 里 ${task.id}.docs 字段)`);
+  lines.push('4. 项目的 Codex 派单须知(本项目 `docs/开工须知-Codex派单.md` §0/§10/§11)——**写代码的活默认派 Codex**(0901 拍板/0905 重申),你只定契约、派单、验收、销卡;自干要对上例外表编号');
   lines.push('');
   lines.push('**落地流程(整个任务一次 claim,把上面所有决策一起做)**:');
   lines.push('');
@@ -69,7 +70,7 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions) {
   lines.push('# 认领本任务(整个任务只 claim 一次,不 claim git commit 会被 pre-commit 硬闸门拦)');
   lines.push(`${CLI} claim ${task.id} --project ${pid} --branch <你的分支名>`);
   lines.push('');
-  lines.push('# 按上面每条决策的答案落地实现...(施工)');
+  lines.push('# 按上面每条决策的答案落地实现...(阶段①②③自己做;阶段④写代码写成工单派 Codex → collect → land;自干要对上例外表编号)');
   lines.push('');
   lines.push('# 施工完成');
   lines.push(`${CLI} done ${task.id} --project ${pid} --pr <PR号> --commit <sha>`);
@@ -81,6 +82,7 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions) {
   lines.push('');
   lines.push('4. 达标自动 push + gh pr create + auto-merge to main(见 skill §11.7)');
   lines.push('5. 中途冒出新的待拍板点 → `cli pending --json` 登记(背景/利弊/推荐理由三件套,skill §6.2)');
+  lines.push('6. **施工方留痕**:回复第一句写「已 claim … · 施工方=Codex(工单 slug)/自干(例外编号)」;收官前 `cli note --task <卡> --text "施工方=…"`。等 Codex 期间写施工记录/备 PR 说明,别干等');
   lines.push('');
   lines.push('**⚠ 若本任务要求你新建任务(cli add)**:');
   lines.push('- 新任务的 **wave(波次)默认留 0、别传 --wave、更别继承本任务的 wave**——新任务从 0 起,');
