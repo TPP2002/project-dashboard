@@ -75,6 +75,13 @@ export interface SessionDetail extends SessionSummary {
   events: SessionEvent[]
 }
 
+// 分档口径与项目仓 stock-rogue 的 scripts/codex/codex-brief.cjs 的 quotaBand 一致
+// (负责人 2026-09-05 拍板：剩 ≤5% 停派 / ≤2% 提醒重置 / ≤1% Claude 接手)。
+export interface QuotaBand {
+  code: 'ok' | 'stop-dispatch' | 'remind-reset' | 'handover' | 'unknown'
+  label: string
+}
+
 export interface QuotaSnapshot {
   rate_limits: {
     primary?: { used_percent?: number; window_minutes?: number; resets_at?: number }
@@ -84,7 +91,7 @@ export interface QuotaSnapshot {
   } | null
   sampledAt: string | null
   usedPercent: number | null
-  band: 'green' | 'yellow' | 'red' | 'unknown'
+  band: QuotaBand
   resetsAtLocal: string | null
 }
 
@@ -95,7 +102,7 @@ export interface CodexReport {
   running: number
   tokensUsed: number
   quotaUsedPercent: number | null
-  quotaBand: 'green' | 'yellow' | 'red' | 'unknown'
+  quotaBand: QuotaBand
   lastActivityAt: string | null
   stalled: number
   rejectedJobs: Array<{ slug: string; title: string; reason: string }>
