@@ -37,7 +37,8 @@ function precheck(flags) {
   const pid = flags.project;
   if (!pid || pid === true) throw new Error('缺参数。用法: precheck --project <id> [--repo <worktree路径>] [--no-fetch]');
   const proj = resolveProject(pid, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
-  const repo = flags.repo ? path.resolve(String(flags.repo)) : proj.mainRepo;
+  // codeRepo 而非 mainRepo:三查查的是「代码的家」,板可能自成一家(见 resolveProject 头注)。
+  const repo = flags.repo ? path.resolve(String(flags.repo)) : proj.codeRepo;
   const L = [];
   L.push(`═══ 开工三查 · 项目 ${pid}(${proj.name || pid}) · 工位 ${repo} ═══`);
 
@@ -100,10 +101,10 @@ function precheck(flags) {
   // ── ③ 正本三读 ──
   L.push('', '【③ 正本必读(读了再动手,禁止凭记忆臆定)】');
   const musts = [
-    ['开工须知', path.join(proj.mainRepo, 'docs', '开工须知.md')],
-    ['口径速查表', path.join(proj.mainRepo, 'docs', '口径速查表.md')],
-    ['CLAUDE.md', path.join(proj.mainRepo, 'CLAUDE.md')],
-    ['AGENTS.md', path.join(proj.mainRepo, 'AGENTS.md')],
+    ['开工须知', path.join(proj.codeRepo, 'docs', '开工须知.md')],
+    ['口径速查表', path.join(proj.codeRepo, 'docs', '口径速查表.md')],
+    ['CLAUDE.md', path.join(proj.codeRepo, 'CLAUDE.md')],
+    ['AGENTS.md', path.join(proj.codeRepo, 'AGENTS.md')],
   ];
   for (const [name, p] of musts) {
     L.push(fs.existsSync(p) ? `  📖 ${name}:${p}` : `  —— ${name}:不存在(本项目没有则忽略)`);
@@ -113,7 +114,7 @@ function precheck(flags) {
   // ── ④ 施工方与 Codex 额度(0905 负责人定:写代码的活默认派 Codex,额度到线才例外)──
   // 简报脚本住在各项目仓库里(单一实现,SessionStart hook 也跑它),这里只转发它的输出,不另写一份读额度的逻辑。
   L.push('', '【④ 施工方】写代码的活默认派 Codex,本对话只定契约/派单/验收/销卡;自干要对上开工须知例外表编号,回复第一句写明「施工方=…」');
-  const brief = path.join(proj.mainRepo, 'scripts', 'codex', 'codex-brief.cjs');
+  const brief = path.join(proj.codeRepo, 'scripts', 'codex', 'codex-brief.cjs');
   if (fs.existsSync(brief)) {
     try {
       const out = execFileSync(process.execPath, [brief], { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();

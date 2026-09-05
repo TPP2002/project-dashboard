@@ -1,0 +1,54 @@
+name: CI
+
+# 合并闸(CI-BOOTSTRAP-CLOUD-RUNNER,2026-09-06)。
+#
+# 【为什么用 GitHub 云 runner,而不是借隔壁 stock-rogue 的自托管机器】
+#   · 借不成:那 5 个 runner 是**仓库级**注册在私有仓 TPP2002/stock-rogue 上的。
+#     GitHub 里只有组织级/企业级 runner 能跨仓共享,而 TPP2002 是个人账号,没有那一层。
+#     真要共用同一台机器,只能在机器上再挂一个 runner 进程注册到本仓——多一个要看护的常驻进程。
+#   · 不必借:本仓是**公开仓**,云 runner 免费,且**不吃私有仓那份额度**
+#     (2026-07-29 CI-BILLING-BLOCKED 烧穿的正是那份)。
+#   · 不该借:那条车道是已知瓶颈(单并发、PR 排队;0902 收官潮 5 小时 40 条 run、
+#     单 PR 墙钟 2.5 小时而 job 本体只有 11 分钟)。本仓 168 条测试本地 4.4 秒跑完,
+#     塞进去纯属跟游戏仓抢车道。
+#
+# 【为什么是 windows-latest】本工具只在 Windows 上跑(路径分隔符、junction 逃逸防线、
+#   .cmd 钩子安装都是 Windows 语义),测试里有一批断言就是冲着这些去的。
+#   在 Linux 上跑等于换了个环境验一个永远不会在那儿运行的程序。公开仓的 Windows runner 同样免费。
+#
+# 【为什么没有 npm install 这一步】本仓 CLI/server/core 全部零依赖(package.json 无
+#   dependencies/devDependencies),`npm test` 就是 `node --test`。web/ 那套 Vite 依赖
+#   与本闸无关,不在这里装。
+
+on:
+  pull_request:
+    # ready_for_review 必须显式列出:它不在默认 types 里(默认只有 opened/synchronize/reopened),
+    # 漏了它,draft 转正后不会有任何 run,收官要再推一次空提交才触发(隔壁仓踩过)。
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [master]
+
+# 同一分支连推时取消尚未跑完的旧 run:过时结论没人读,却占着车道。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 对齐本机口径(node v24.x);版本不一致时 node:test 的输出格式与断言行为都可能漂。
+          node-version: '24'
+
+      # 注:这里**不配** git 全局身份。四处建临时仓的测试助手(gitE2e / hooksInstall /
+      # opsScripts / codeRepoSplit)都各自 `git config` 了仓内身份,全局那份是多余的。
+      - name: node --test(全量)
+        run: npm test
