@@ -9,7 +9,8 @@
  */
 // hooksInstall 把 DASHBOARD_HOME 下的 CLI 路径焊进 hook。测试要验的是【本检出】的闸门,
 // 不是机器上已安装的那份,所以在 require 之前就把数据根指到本仓库(registry 仍逐个显式传)。
-process.env.DASHBOARD_HOME = require('node:path').resolve(__dirname, '..');
+// (HOOK-CLI-POINTS-AT-LIVE-CHECKOUT 后 hook 根不再从 DASHBOARD_HOME 推,测试隔离改用专用变量。)
+process.env.DASHBOARD_HOOK_CLI_ROOT = require('node:path').resolve(__dirname, '..');
 
 const test = require('node:test');
 const assert = require('node:assert');

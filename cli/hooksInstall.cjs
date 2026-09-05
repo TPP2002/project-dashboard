@@ -22,16 +22,33 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { resolveProject, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
+const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { atomicWriteFileSync, atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
+const { CODE_ROOT, isGitCheckout, resolveHookCliRoot } = require('../core/runtimeRoot.cjs');
+const { detectTrunk } = require('./release.cjs');
 
-// 全局 CLI 入口绝对路径 → 正斜杠（shell 里免被反斜杠转义 / MSYS 误翻译；原生 node 认正斜杠）。
-const CLI = path.join(DASHBOARD_HOME, 'cli', 'index.cjs').replace(/\\/g, '/');
-// settings.json 幂等识别用：凡 command 含此特征串的条目，就是"本工具此前装的"，重装时先剔后加。
-// 特征串 = 解析后的 CLI 绝对路径本身。**不能写死 'dashboard/cli/index.cjs'**——
-// DASHBOARD_HOME 可被独立分发版/测试指到任意目录名，那时特征串永远匹配不上，
-// 幂等失效、重装一次多一条 hook（同一族"把路径假设焊死"的病，HOOK-CLAIM-GATE-MULTI-PROJECT 顺带治）。
-const MARK = CLI;
+// hook 里焊的 CLI 入口绝对路径（正斜杠：shell 里免被反斜杠转义 / MSYS 误翻译；原生 node 认正斜杠）。
+// 【HOOK-CLI-POINTS-AT-LIVE-CHECKOUT】不再从 DASHBOARD_HOME 推——那是"数据根"，而且默认指着看板仓的
+// 【活的工作检出】，全机器闸门会跟着主工位的分支/未提交改动一起漂。改由 core/runtimeRoot 裁决：
+// 环境变量(测试隔离) > 自身非检出(安装版/发布副本) > 发布副本 > 拒装。装 hook 的那一刻才解析，
+// 所以同一进程里改环境变量也生效（测试要这么用）。
+let CLI = null;
+function ensureCli() {
+  CLI = resolveHookCliRoot().root.replace(/\\/g, '/') + '/cli/index.cjs';
+  return CLI;
+}
+/**
+ * settings.json 幂等识别：这条 command 是不是"本工具此前装的"。重装时先剔后加。
+ * 两种都算我方：① 含【本次要焊的 CLI 路径】；② 含任意路径的 `cli/index.cjs` 且带我方子命令
+ * （sync-from-git / sync-progress / doctor）——迁移场景（旧路径指主工位、新路径指发布副本）下，
+ * 只认新路径会把旧条目当成用户的留下来，从此两套并存、每次 commit 跑两遍。
+ * 仍**不写死 'dashboard/cli/index.cjs'**：分发版/测试的目录名任意（HOOK-CLAIM-GATE-MULTI-PROJECT 教训）。
+ */
+function looksLikeOurs(cmd) {
+  if (typeof cmd !== 'string') return false;
+  if (CLI && cmd.includes(CLI)) return true;
+  return /[\\/]cli[\\/]index\.cjs['"\]]/.test(cmd) && /(sync-from-git|sync-progress|doctor)/.test(cmd);
+}
 
 // git hook 锚：注释行（# 开头即 shell 注释），begin/end 夹一块可幂等替换的区间。
 const BEGIN = '#dashboard-hook:begin';
@@ -249,7 +266,7 @@ function installGlobalProgressHook() {
   settings.hooks = settings.hooks || {};
   const isMineProgress = (entry) => entry && Array.isArray(entry.hooks)
     && entry.hooks.some((h) => h && typeof h.command === 'string'
-      && h.command.includes(MARK) && h.command.includes('sync-progress'));
+      && looksLikeOurs(h.command) && h.command.includes('sync-progress'));
   const keepOthers = (arr) => (Array.isArray(arr) ? arr.filter((e) => !isMineProgress(e)) : []);
   settings.hooks.PostToolUse = keepOthers(settings.hooks.PostToolUse);
   settings.hooks.PostToolUse.push({
@@ -261,6 +278,7 @@ function installGlobalProgressHook() {
 }
 
 function hooksGlobal(_flags) {
+  ensureCli();
   const r = installGlobalProgressHook();
   return { ok: true, text:
     `✔ 全局自动进度钩子已装 → ${r.settingsPath}\n` +
@@ -284,9 +302,9 @@ function installCcSettings(mainRepo, id, registryFwd) {
   }
   settings.hooks = settings.hooks || {};
 
-  // 幂等 + 不动用户手写条目：只剔除"本工具此前装的"（其某个 command 含 CLI 路径特征），再插新块。
+  // 幂等 + 不动用户手写条目：只剔除"本工具此前装的"（looksLikeOurs：新路径或旧路径+我方子命令），再插新块。
   const isMine = (entry) => entry && Array.isArray(entry.hooks)
-    && entry.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes(MARK));
+    && entry.hooks.some((h) => h && looksLikeOurs(h.command));
   const keepOthers = (arr) => (Array.isArray(arr) ? arr.filter((e) => !isMine(e)) : []);
 
   settings.hooks.Stop = keepOthers(settings.hooks.Stop);
@@ -406,6 +424,8 @@ function hooksInstall(flags) {
   const proj = resolveProj(flags);
   // 项目 id 受控（registry key），仍做基本断言防 shell 注入。
   if (/["'`$\\\s]/.test(proj.id)) throw new Error(`项目 id「${proj.id}」含非法字符，无法安全嵌入 hook`);
+  // 先裁决 hook 该指哪份代码；裁不出来（本检出 + 无发布副本）就在写任何文件之前拒装。
+  ensureCli();
   // 仅测试隔离时把 registry 也焊进 hook（正斜杠绝对路径）；生产不传 → hook 用默认全局 registry。
   const registryFwd = flags.registry ? path.resolve(flags.registry).replace(/\\/g, '/') : null;
 
@@ -422,4 +442,54 @@ function hooksInstall(flags) {
   return { ok: true, text, gitHooks: git.written, hooksDir: git.hooksDir, settings: cc.settingsPath, claudeMd: cmd };
 }
 
-module.exports = { hooksInstall, hooksGlobal };
+// ───────── hooks-trunk-guard：看板主工位切离主干的提醒钩子（治法②那一小块保险，负责人 0906 拍板：只提醒不拦）─────────
+const GUARD_BEGIN = '#dashboard-trunk-guard:begin';
+const GUARD_END = '#dashboard-trunk-guard:end';
+const GUARD_RE = /#dashboard-trunk-guard:begin[\s\S]*?#dashboard-trunk-guard:end[^\n]*\n?/;
+
+/** 同 upsertHookContent，但锚换成 trunk-guard 的（两块可共存于同一个 hook 文件）。 */
+function upsertGuardContent(existing, block) {
+  if (!existing || existing.trim() === '') return '#!/bin/sh\n' + block;
+  if (GUARD_RE.test(existing)) return existing.replace(GUARD_RE, block);
+  const sep = existing.endsWith('\n') ? '' : '\n';
+  return existing + sep + '\n' + block;
+}
+
+/**
+ * hooks-trunk-guard：给看板仓（默认 = 当前运行代码所在的检出）装 post-checkout 提醒：
+ * 主工位切离主干时在 stderr 吵一声、退出码 0。worktree 里切分支不管（git-dir ≠ git-common-dir），
+ * 文件级 checkout（$3=0）不管。各仓闸门跑的是发布副本，主工位切分支已伤不到它们——这钩子只是提醒
+ * "别在主工位改代码"。用法：node cli/index.cjs hooks-trunk-guard [--repo <检出>] [--trunk <主干名>]
+ */
+function hooksTrunkGuard(flags = {}) {
+  const repo = flags.repo && flags.repo !== true ? path.resolve(String(flags.repo)) : CODE_ROOT;
+  if (!isGitCheckout(repo)) throw new Error(`${repo} 不是 git 检出，没有主工位可守`);
+  const trunk = flags.trunk && flags.trunk !== true ? String(flags.trunk) : detectTrunk(repo);
+  if (!trunk) throw new Error(`探测不到 ${repo} 的远程主干（origin/HEAD、origin/main、origin/master 都没有），用 --trunk 指定`);
+  if (/["'`$\\\s]/.test(trunk)) throw new Error(`主干名「${trunk}」含非法字符，无法安全嵌入 hook`);
+  // hooks 目录取 git-common-dir：主工位 .git 是目录；即便从 worktree 里跑，也装到共享的那份。
+  const { execFileSync } = require('node:child_process');
+  const common = execFileSync('git', ['-C', repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', windowsHide: true }).trim();
+  const hooksDir = path.join(common, 'hooks');
+  fs.mkdirSync(hooksDir, { recursive: true });
+  const block = [
+    `${GUARD_BEGIN} —— 主工位切离主干提醒（dashboard hooks-trunk-guard 维护，勿手改；删本块即卸载）`,
+    '# 只在「主工位 + 分支切换」时提醒（$3=1 是分支切换；worktree 里 git-dir ≠ git-common-dir 不管）。只提醒不拦。',
+    'if [ "$3" = "1" ]; then',
+    '  __GD=$(git rev-parse --git-dir 2>/dev/null); __CD=$(git rev-parse --git-common-dir 2>/dev/null)',
+    '  __BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)',
+    `  if [ "$__GD" = "$__CD" ] && [ -n "$__BR" ] && [ "$__BR" != ${q(trunk)} ]; then`,
+    `    echo "⚠ 主工位已切到 '$__BR'（主干是 ${trunk}）。主工位应停在主干，施工请去 worktree；各仓闸门跑的是发布副本，不受影响，但别在这里改代码。" >&2`,
+    '  fi',
+    'fi',
+    GUARD_END,
+    '',
+  ].join('\n');
+  const p = path.join(hooksDir, 'post-checkout');
+  const existing = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+  atomicWriteFileSync(p, upsertGuardContent(existing, block), { fsyncData: false });
+  try { fs.chmodSync(p, 0o755); } catch { /* Windows 无 x 位，无害 */ }
+  return { ok: true, hook: p, trunk, text: `✔ 主工位提醒钩子已装 → ${p}（主干 ${trunk}；切离主干只提醒不拦）` };
+}
+
+module.exports = { hooksInstall, hooksGlobal, hooksTrunkGuard };
