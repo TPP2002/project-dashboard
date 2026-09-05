@@ -117,6 +117,25 @@ function resolveProjectSafe(id) {
   catch (_) { return null; }
 }
 
+/**
+ * 派单开出来的新对话应该站在哪个文件夹里 =「代码的家」codeRepo。
+ *
+ * 治的病：原先三个派单入口各写一遍 `proj.mainRepo`，而 mainRepo 是「板的家」。
+ * 板可自成一家（cluster：板在 F:\cluster-ops，卡改的代码全在 F:\stock-rogue），
+ * 此时派出去的对话落在一个非 git 仓、没有 CLAUDE.md 的空壳目录里——协议锚、
+ * git 认领闸门、开工三查全部失效，对话等于站在空地上开工
+ * （SERVER-GIT-CWD-USES-MAINREPO，2026-09-06）。
+ *
+ * 回落规则（没写 codeRepo 就用 mainRepo）只认 resolveProject 那一处：三个 handler
+ * 各写一遍 `|| mainRepo`，正是拆 codeRepo 字段要消灭的漂移。
+ * @returns {string|null} 落脚目录；项目解析不出时返回 null（调用方须据此拒绝派单，
+ *   绝不能把 undefined 交给 spawn —— 那会静默落到 server 自己的 cwd 上）。
+ */
+function dispatchCwd(pid) {
+  const proj = resolveProjectSafe(pid);
+  return proj ? proj.codeRepo : null;
+}
+
 /** 读 board.json：ENOENT → null；解析失败 → 抛（调用方决定 404 还是 500） */
 function readBoardFile(boardPath) {
   let raw;
@@ -146,7 +165,11 @@ function deriveSummary(board) {
 
 /**
  * 尽力探测各项目的同步 git hook 是否已安装（health 的可选字段 hooksInstalled）。
- * 判据：主仓 .git/hooks/post-commit 存在且内容含 "dashboard" 标记。任何异常都当 false，绝不抛。
+ * 判据：**codeRepo（代码的家）** 的 .git/hooks/post-commit 存在且内容含 "dashboard" 标记。
+ * 认 codeRepo 不认 mainRepo：hook 挂在「提交发生的那个仓」上，板可自成一家
+ * （cluster：板在 F:\cluster-ops、代码在 F:\stock-rogue）；去板那边找必然扑空、
+ * 体检恒报「hook 未安装」（SERVER-GIT-CWD-USES-MAINREPO，与 cli/gitSync.cjs doctor 同口径）。
+ * 任何异常都当 false，绝不抛。
  */
 function hooksInstalledMap(projects) {
   const out = {};
@@ -155,7 +178,7 @@ function hooksInstalledMap(projects) {
     try {
       const proj = resolveProjectSafe(id);
       if (proj) {
-        const hook = path.join(proj.mainRepo, '.git', 'hooks', 'post-commit');
+        const hook = path.join(proj.codeRepo, '.git', 'hooks', 'post-commit');
         const txt = fs.readFileSync(hook, 'utf8');
         installed = /dashboard/i.test(txt);
       }
@@ -497,8 +520,9 @@ function handleDispatch(req, res) {
     // 生成启动指令(含"看板派单 header"让新对话认得出自己是被派来的)
     const prompt = buildDispatchPrompt(pid, proj, task, decision);
 
-    // 在 Windows 打开新 cmd 窗口跑 claude,cwd=项目主仓,让 CLAUDE.md 协议锚生效
-    const cwd = proj.mainRepo;
+    // 在 Windows 打开新 cmd 窗口跑 claude,cwd=项目【代码的家】,让 CLAUDE.md 协议锚生效
+    const cwd = dispatchCwd(pid);
+    if (!cwd) return sendJson(res, 500, { ok: false, error: `派单失败:算不出项目 ${pid} 的代码目录(registry 里 codeRepo/mainRepo 都读不出)` });
     const cmdArgs = ['/c', 'start', '"看板派单·' + tid + '·' + did + '"', 'cmd', '/k',
       'chcp 65001 >nul && claude ' + JSON.stringify(prompt)];
     let child;
@@ -555,7 +579,8 @@ function handleDispatchProject(req, res) {
     const preview = body.preview === true; // 前端可只要文本(不实际派单)
     if (preview) return sendJson(res, 200, { ok: true, prompt, count: items.length });
 
-    const cwd = proj.mainRepo;
+    const cwd = dispatchCwd(pid);
+    if (!cwd) return sendJson(res, 500, { ok: false, error: `派单失败:算不出项目 ${pid} 的代码目录(registry 里 codeRepo/mainRepo 都读不出)` });
     const cmdArgs = ['/c', 'start', '"看板整项目派单·' + pid + '·' + items.length + '条"', 'cmd', '/k',
       'chcp 65001 >nul && claude ' + JSON.stringify(prompt)];
     try {
@@ -610,7 +635,8 @@ function handleDispatchTask(req, res) {
 
     // 自动开终端:只传【短触发指令】(避开命令行长度/转义炸裂),funnel through cli inbox。
     // 注意:开的是"终端里的 Claude Code",不是桌面 App——前端会同时提供"复制接单指令"兜底。
-    const cwd = proj.mainRepo;
+    const cwd = dispatchCwd(pid);
+    if (!cwd) return sendJson(res, 500, { ok: false, error: `派单失败:算不出项目 ${pid} 的代码目录(registry 里 codeRepo/mainRepo 都读不出)` });
     const cmdArgs = ['/c', 'start', '看板派单-' + tid, 'cmd', '/k', 'claude', trigger];
     try {
       const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
@@ -630,7 +656,7 @@ function buildProjectDispatchPrompt(pid, proj, items) {
   const lines = [
     '# 【看板整项目派单】此对话由项目管理看板一键启动,负责落地本项目全部已拍板决策',
     '',
-    `你是被【项目管理看板】自动派来的对话——用户在看板上一键选择了"打包派单本项目全部已拍板未落地的 ${items.length} 条决策",本对话被启动、cwd 已进项目主仓、这条 prompt 就是完整任务书。你不需要问用户"要做什么"。`,
+    `你是被【项目管理看板】自动派来的对话——用户在看板上一键选择了"打包派单本项目全部已拍板未落地的 ${items.length} 条决策",本对话被启动、cwd 已进项目代码仓、这条 prompt 就是完整任务书。你不需要问用户"要做什么"。`,
     '',
     `**项目**:${proj.name || pid} (项目 id: \`${pid}\`,已接入看板)`,
     `**共 ${items.length} 条待落地决策**,按下方顺序执行:`,
@@ -956,4 +982,8 @@ function main() {
 // 局部请求出错不该拖垮整个本地服务（各请求/回调已各自兜底，这里是最后一道网）
 process.on('uncaughtException', (e) => { console.error('[uncaught]', e && (e.stack || e.message || e)); });
 
-main();
+// 直接 `node server/server.cjs` 才起服务;被 require 时只暴露纯函数供单测取用
+// (派单要 spawn 真实终端窗口跑 claude,单测碰不得,只能验落脚点怎么算出来的)。
+if (require.main === module) main();
+
+module.exports = { dispatchCwd };
