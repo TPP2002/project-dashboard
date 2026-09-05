@@ -17,6 +17,39 @@
       "name": "量化A股助手",
       "mainRepo": "F:\\lhjy",
       "board": "F:\\lhjy\\.dashboard\\board.json"
+    },
+    "mama": {
+      "name": "妈妈方法数字传承工程",
+      "mainRepo": "F:\\mama-method",
+      "board": "F:\\mama-method\\.dashboard\\board.json"
+    },
+    "rogue": {
+      "name": "股市肉鸽(独立游戏·Steam)",
+      "mainRepo": "F:\\stock-rogue",
+      "board": "F:\\stock-rogue\\.dashboard\\board.json",
+      "index": "F:\\stock-rogue\\.dashboard\\INDEX.md"
+    },
+    "baihui": {
+      "name": "百卉园艺花店小程序",
+      "mainRepo": "F:\\百卉园艺",
+      "board": "F:\\百卉园艺\\.dashboard\\board.json",
+      "index": "F:\\百卉园艺\\docs\\plans\\花店成品工程\\INDEX.md"
+    },
+    "jobsearch": {
+      "name": "自动化求职",
+      "mainRepo": "C:\\Users\\Administrator\\Documents\\自动化求职",
+      "board": "C:\\Users\\Administrator\\Documents\\自动化求职\\.dashboard\\board.json"
+    },
+    "cluster": {
+      "name": "副机集群(多机调度与共享盘)",
+      "mainRepo": "F:\\cluster-ops",
+      "codeRepo": "F:\\stock-rogue",
+      "board": "F:\\cluster-ops\\.dashboard\\board.json"
+    },
+    "dashboard": {
+      "name": "看板(多项目管理工具)",
+      "mainRepo": "C:\\Users\\Administrator\\.claude\\dashboard",
+      "board": "C:\\Users\\Administrator\\.claude\\dashboard\\.dashboard\\board.json"
     }
   }
 }
