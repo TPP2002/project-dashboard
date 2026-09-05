@@ -3,7 +3,16 @@
  * resolveProject.cjs —— 项目定位（治本 R4）
  *
  * CLI 一律用 --project <id> 显式定位，绝不靠 cwd 猜（worktree/junction 丛林里 cwd 反查会失灵）。
- * 读全局 registry.json，把 id 映射到 { mainRepo, board, lock, docsRoot }，路径全部 realpath 规范化。
+ * 读全局 registry.json，把 id 映射到 { mainRepo, codeRepo, board, lock, docsRoot }，路径全部 realpath 规范化。
+ *
+ * 【mainRepo 与 codeRepo 为什么要分家】(CLUSTER-BOARD-REPO-PATH-WRONG，2026-09-06)
+ * 原先 mainRepo 一个字段扛两个语义——「板放哪」和「代码在哪」。绝大多数项目两者同址，
+ * 直到出现「板自成一家、代码住在别人仓里」的项目：cluster 的板在 F:\cluster-ops，
+ * 而它 93 张卡改的全是 F:\stock-rogue\scripts\bot\* 的代码。此时那一个字段必然自相矛盾：
+ * 指板则一切 git 动作落在非仓目录上 fatal（precheck 第一查「新鲜度」直接半瘫、
+ * doctor 恒报「hook 未安装」），指代码则找不着板。
+ * 拆法：mainRepo 仍是「板的家」（board/lock 缺省都从它推），新增可选 codeRepo =「代码的家」，
+ * 凡是要跑 git / 找正本的消费方一律读 codeRepo；不写就回落 mainRepo，老项目零改动。
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -33,7 +42,7 @@ function readRegistry(registryPath = REGISTRY_PATH) {
  * 解析 projectId → 路径集合。
  * @param {string} projectId
  * @param {{registryPath?: string}} [opts]
- * @returns {{id:string,name:string,mainRepo:string,board:string,lock:string,docsRoot:string,indexPath:string|null}}
+ * @returns {{id:string,name:string,mainRepo:string,codeRepo:string,board:string,lock:string,docsRoot:string,indexPath:string|null}}
  */
 function resolveProject(projectId, opts = {}) {
   if (!projectId) throw new Error('必须指定 --project <id>（禁止按 cwd 猜项目）');
@@ -49,6 +58,8 @@ function resolveProject(projectId, opts = {}) {
     id: projectId,
     name: entry.name || projectId,
     mainRepo,
+    // codeRepo：跑 git / 找正本的消费方读这个（缺省 = mainRepo，见文件头注）。
+    codeRepo: entry.codeRepo ? normalizeReal(entry.codeRepo) : mainRepo,
     board,
     lock: board + '.lock',
     docsRoot: entry.docsRoot ? normalizeReal(entry.docsRoot) : mainRepo,

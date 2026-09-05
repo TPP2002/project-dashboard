@@ -184,9 +184,9 @@ onUnmounted(() => {
       <router-link
         to="/codex"
         class="quota-strip"
-        :title="quota?.sampledAt ? `上次 Codex 活动快照：${new Date(quota.sampledAt).toLocaleString()}` : '尚无 Codex 额度快照'"
+        :title="quota?.band?.label || (quota?.sampledAt ? `上次 Codex 活动快照：${new Date(quota.sampledAt).toLocaleString()}` : '尚无 Codex 额度快照')"
       >
-        <i class="quota-dot" :class="quota?.band || 'unknown'" />
+        <i class="quota-dot" :class="quota?.band?.code || 'unknown'" />
         <span>Codex 额度</span>
         <b>{{ quota?.usedPercent == null ? '未知' : quota.usedPercent + '%' }}</b>
       </router-link>
@@ -270,8 +270,8 @@ onUnmounted(() => {
 .quota-strip b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .settings-entry { width: 100%; cursor: pointer; }
 .quota-dot { width: var(--s2); height: var(--s2); flex: none; border-radius: var(--r-lg); background: var(--text-3); }
-.quota-dot.green { background: var(--ok); }
-.quota-dot.yellow { background: var(--warn); }
-.quota-dot.red { background: var(--bad); }
+.quota-dot.ok { background: var(--ok); }
+.quota-dot.stop-dispatch { background: var(--warn); }
+.quota-dot.remind-reset, .quota-dot.handover { background: var(--bad); }
 .foot { padding: 0 var(--s2); color: var(--text-3); font-size: var(--fs-xs); }
 </style>

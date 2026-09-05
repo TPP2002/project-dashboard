@@ -3,6 +3,10 @@
  * hooksInstall.test.cjs —— 装同步 hook（治本 R2）。
  * 覆盖：新装内容正确 / 幂等不重复 / 不覆盖用户已有内容 / 端到端(git commit→board 自动更新, doctor 不再报未装)。
  */
+// hooksInstall 把 DASHBOARD_HOME 下的 CLI 路径焊进 hook。端到端用例要验的是【本检出】的 hook,
+// 不是机器上已安装的那份(否则本地装的旧 CLI 会决定测试红绿)。registry 仍逐个显式传。
+process.env.DASHBOARD_HOME = require('node:path').resolve(__dirname, '..');
+
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -112,6 +116,20 @@ test('不覆盖用户已有内容：无锚 git hook 追加、settings 既有键�
   const st2 = readJson(t.settings);
   assert.equal(st2.hooks.Stop.length, 2);
   assert.equal(st2.hooks.Stop.filter((e) => /doctor/.test(e.hooks[0].command)).length, 1);
+  clean(t.dir);
+});
+
+test('pre-commit 闸门调 claim-check（扫全部项目），不再写死单项目 grep（HOOK-CLAIM-GATE-MULTI-PROJECT）', () => {
+  const t = setup();
+  hooksInstall({ ...t.P });
+  const pre = read(path.join(t.repo, '.git', 'hooks', 'pre-commit'));
+  assert.match(pre, /claim-check --branch "\$__BR"/, '判定走 CLI 的 claim-check');
+  assert.doesNotMatch(pre, /list --project/, '不许再按安装时那一个项目 id 查板');
+  assert.doesNotMatch(pre, /grep -E/, '不许再拿分支名 grep 整行文本');
+  assert.match(pre, /DASHBOARD_SKIP_CLAIM_CHECK/, '放行口必须保留');
+  assert.match(pre, /__RC=\$\?/, '按退出码分流,而不是一刀切');
+  assert.match(pre, /exit 1/, '判定为"没认领"时要真的拦下 commit');
+  assert.match(pre, /rc=2\/3|"\$__RC" = "2"/, 'CLI 里还没有 claim-check 的过渡期要放行,别堵死全机器');
   clean(t.dir);
 });
 

@@ -48,7 +48,8 @@ function scanCommits(repo, taskIds, opts = {}) {
 /** 从 git 派生并写回 board（只碰 git 派生字段）。 */
 function syncFromGit(flags) {
   const proj = resolveProj(flags);
-  const repo = proj.mainRepo;
+  // codeRepo 而非 mainRepo：卡的提交在「代码的家」里，板可能自成一家（见 resolveProject 头注）。
+  const repo = proj.codeRepo;
   const board0 = readBoardOrNull(proj.board);
   if (!board0) throw new Error('board.json 不存在，先 register/import');
   const taskIds = (board0.tasks || []).map((t) => t.id);
@@ -81,7 +82,8 @@ function backup(boardPath) {
 }
 function doctor(flags) {
   const proj = resolveProj(flags);
-  const repo = proj.mainRepo;
+  const repo = proj.codeRepo; // 同 syncFromGit：hook 与提交都在「代码的家」
+
   const board = readBoardOrNull(proj.board);
   if (!board) return { ok: false, text: '✖ board.json 不存在' };
   const issues = [];

@@ -189,11 +189,17 @@ test('getJobSessionSummary 按 threadId 只读一个会话文件，查不到时�
   assert.equal(getJobSessionSummary('not-found-id', { sessionsRoot: root }), null, '查不到匹配文件时返回 null');
 });
 
-test('额度色档边界为 59绿、60黄、85黄、86红', () => {
-  assert.equal(quotaBand(59), 'green');
-  assert.equal(quotaBand(60), 'yellow');
-  assert.equal(quotaBand(85), 'yellow');
-  assert.equal(quotaBand(86), 'red');
+test('额度分档边界为 94ok、95停派、98提醒重置、99接手，与 codex-brief.cjs 同口径', () => {
+  assert.equal(quotaBand(94).code, 'ok');
+  assert.equal(quotaBand(95).code, 'stop-dispatch');
+  assert.equal(quotaBand(97).code, 'stop-dispatch');
+  assert.equal(quotaBand(98).code, 'remind-reset');
+  assert.equal(quotaBand(99).code, 'handover');
+  assert.equal(quotaBand(100).code, 'handover');
+  assert.equal(quotaBand(NaN).code, 'unknown');
+  assert.match(quotaBand(99).label, /剩 ≤1%/);
+  assert.match(quotaBand(98).label, /剩 ≤2%/);
+  assert.match(quotaBand(95).label, /剩 ≤5%/);
 });
 
 test('工单与会话按 threadId 匹配，匹配不上返回 null', () => {

@@ -28,7 +28,10 @@ const { atomicWriteFileSync, atomicWriteJsonSync } = require('../core/atomicWrit
 // 全局 CLI 入口绝对路径 → 正斜杠（shell 里免被反斜杠转义 / MSYS 误翻译；原生 node 认正斜杠）。
 const CLI = path.join(DASHBOARD_HOME, 'cli', 'index.cjs').replace(/\\/g, '/');
 // settings.json 幂等识别用：凡 command 含此特征串的条目，就是"本工具此前装的"，重装时先剔后加。
-const MARK = 'dashboard/cli/index.cjs';
+// 特征串 = 解析后的 CLI 绝对路径本身。**不能写死 'dashboard/cli/index.cjs'**——
+// DASHBOARD_HOME 可被独立分发版/测试指到任意目录名，那时特征串永远匹配不上，
+// 幂等失效、重装一次多一条 hook（同一族"把路径假设焊死"的病，HOOK-CLAIM-GATE-MULTI-PROJECT 顺带治）。
+const MARK = CLI;
 
 // git hook 锚：注释行（# 开头即 shell 注释），begin/end 夹一块可幂等替换的区间。
 const BEGIN = '#dashboard-hook:begin';
@@ -106,23 +109,24 @@ function installGitHooks(mainRepo, id, registryFwd) {
   // pre-commit：看板"claim 硬闸门"——commit 前检查看板里有没有匹配当前分支的施工中任务，
   // 无 → 拦下 commit，报告"未 claim"并给补救命令。**这是唯一能强制对话遵守协议的手段**。
   // 用户手动 commit / 不想被拦：设 DASHBOARD_SKIP_CLAIM_CHECK=1 或删本块。
+  //
+  // 判定本身收进 CLI 的 claim-check（HOOK-CLAIM-GATE-MULTI-PROJECT）：0902 看板拆成
+  // rogue/cluster/dashboard 三项目后，一个仓库里可能干别的项目的卡，闸门必须扫【全部已注册项目】
+  // 的板——写死安装时那一个 id，会把已正经 claim 的跨项目施工一律拦死。hook 侧只留
+  // 「取分支名 + 调命令 + 转退出码」，判定不再拿 shell grep 拼（那样既没法演进，又会被 title 里
+  // 恰好含分支名的卡假放行）。stdout 丢弃保持 commit 干净，报错与警告走 stderr，仍然看得见。
   const preCommitCheck = [
     `# 看板 claim 硬闸门(优先级 > 启动指令)——未 claim 不许 commit`,
+    `# 按分支名扫【全部已注册项目】的板:一个仓库里可以干别的项目的卡(0902 拆板后)`,
     `if [ -z "\${DASHBOARD_SKIP_CLAIM_CHECK:-}" ]; then`,
     `  __BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")`,
-    `  __CLAIMED=$(node ${q(CLI)} list --project ${q(id)} --status 施工中${registryFwd ? ` --registry ${q(registryFwd)}` : ''} 2>/dev/null | grep -E "\\b$__BR\\b" || true)`,
-    `  if [ -z "$__CLAIMED" ] && [ "$__BR" != "main" ] && [ "$__BR" != "master" ]; then`,
-    `    echo ""`,
-    `    echo "✖ 看板 claim 硬闸门:分支 '$__BR' 上没有'施工中'任务"`,
-    `    echo ""`,
-    `    echo "  你在动代码之前应先跑:"`,
-    `    echo "    node ${CLI} claim <任务id> --project ${id} --branch $__BR"`,
-    `    echo "  任务不在看板 → 先 add 一条:"`,
-    `    echo "    node ${CLI} add <任务id> --project ${id} --title \\"<一句话标题>\\""`,
-    `    echo ""`,
-    `    echo "  这是 skill §11.9 硬约束(优先级 > 用户启动指令)——启动指令没写不是借口。"`,
-    `    echo "  紧急放行:DASHBOARD_SKIP_CLAIM_CHECK=1 git commit ..."`,
-    `    echo ""`,
+    `  node ${q(CLI)} claim-check --branch "$__BR"${registryFwd ? ` --registry ${q(registryFwd)}` : ''} >/dev/null`,
+    `  __RC=$?`,
+    `  # rc=2/3 = 这份看板 CLI 里还没有 claim-check(hook 已更新、看板本体没更新的过渡期):`,
+    `  # 放行并吵一声,不能因为闸门自己跑不起来就把整台机器的 commit 全堵死。其余非 0 一律真拦。`,
+    `  if [ "$__RC" = "2" ] || [ "$__RC" = "3" ]; then`,
+    `    echo "⚠ 看板 claim 闸门已跳过:当前看板 CLI 没有 claim-check 命令(rc=$__RC),请更新看板。" >&2`,
+    `  elif [ "$__RC" != "0" ]; then`,
     `    exit 1`,
     `  fi`,
     `fi`,
@@ -358,6 +362,9 @@ node ~/.claude/dashboard/cli/index.cjs add <任务id> --project ${projId} --titl
 # claim(必做)——本次施工的正式认领凭据
 node ~/.claude/dashboard/cli/index.cjs claim <任务id> --project ${projId} --branch <本次分支名>
 \`\`\`
+
+> **\`--project\` 填这张卡实际所属的项目,不一定是 \`${projId}\`。** 一个仓库里完全可能干别的项目的卡;
+> commit 闸门会扫全部已注册项目的板,所以别为了过闸门在本项目里造一张重复卡。
 
 **不 claim 就动代码 = 违反 skill §11.2/§11.9**,即便代码写对了,施工也不合规——因为看板上看不到你在干活,用户没法实时掌控。
 
