@@ -3,9 +3,10 @@
  * hooksInstall.test.cjs —— 装同步 hook（治本 R2）。
  * 覆盖：新装内容正确 / 幂等不重复 / 不覆盖用户已有内容 / 端到端(git commit→board 自动更新, doctor 不再报未装)。
  */
-// hooksInstall 把 DASHBOARD_HOME 下的 CLI 路径焊进 hook。端到端用例要验的是【本检出】的 hook,
-// 不是机器上已安装的那份(否则本地装的旧 CLI 会决定测试红绿)。registry 仍逐个显式传。
-process.env.DASHBOARD_HOME = require('node:path').resolve(__dirname, '..');
+// hook 根「永不指进 git 检出」(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT):生产装的是发布副本的路径。
+// 端到端用例要验的是【本检出】的 hook,不是机器上的发布副本(否则那份旧 CLI 会决定测试红绿),
+// 故用测试隔离专用变量显式指过来。registry 仍逐个显式传。
+process.env.DASHBOARD_HOOK_CLI_ROOT = require('node:path').resolve(__dirname, '..');
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -174,4 +175,96 @@ test('端到端：git commit 后 board 被 hook 自动更新、doctor 不再报�
   const rep = doctor({ ...t.P });
   assert.doesNotMatch(rep.text, /未安装|未装/, 'doctor 不再报 hook 未装');
   clean(t.dir);
+});
+
+// ───────── HOOK-CLI-POINTS-AT-LIVE-CHECKOUT:hook 永不指进 git 检出 ─────────
+const { hooksTrunkGuard } = require('../cli/hooksInstall.cjs');
+const gitOut = (repo, args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+
+test('settings.json 里旧路径(主工位)的我方条目在重装时被识别并替换,不累积成两套', () => {
+  const t = setup();
+  fs.mkdirSync(path.dirname(t.settings), { recursive: true });
+  const OLD = 'C:/Users/someone/.claude/dashboard/cli/index.cjs';
+  fs.writeFileSync(t.settings, JSON.stringify({
+    hooks: {
+      Stop: [{ hooks: [{ type: 'command', command: `node "${OLD}" doctor --project "t" --quiet || true` }] }],
+      PostToolUse: [
+        { matcher: 'Bash', hooks: [{ type: 'command', command: `node -e "require('child_process').execFileSync('node',['${OLD}','sync-from-git','--project','t'],{stdio:'ignore'});" || true` }] },
+        { matcher: 'TodoWrite', hooks: [{ type: 'command', command: `node -e "require('child_process').execFileSync('node',['${OLD}','sync-progress','--project','t','--percent','1'],{stdio:'ignore'});" || true` }] },
+        { matcher: 'Bash', hooks: [{ type: 'command', command: 'echo user-own-bash-hook' }] },
+      ],
+    },
+  }));
+  hooksInstall({ ...t.P });
+  const st = readJson(t.settings);
+  assert.equal(st.hooks.Stop.length, 1, '旧路径的 Stop 条目应被替换而不是并存');
+  assert.doesNotMatch(st.hooks.Stop[0].hooks[0].command, /someone/, '新条目不再含旧路径');
+  const mine = st.hooks.PostToolUse.filter((e) => /sync-from-git|sync-progress/.test(e.hooks[0].command));
+  assert.equal(mine.length, 2, '我方 PostToolUse 仍是两条(Bash + TodoWrite),旧路径的被换掉');
+  assert.ok(mine.every((e) => !/someone/.test(e.hooks[0].command)));
+  assert.ok(st.hooks.PostToolUse.some((e) => e.hooks[0].command === 'echo user-own-bash-hook'), '用户自己的 Bash 钩子原样保留');
+  clean(t.dir);
+});
+
+test('hook 根永不指进 git 检出:本检出 + 无发布副本 → 拒装并指路 release;有发布副本 → 焊发布副本路径', () => {
+  const t = setup();
+  const saved = process.env.DASHBOARD_HOOK_CLI_ROOT;
+  const rel = path.join(t.dir, 'fake-release');
+  delete process.env.DASHBOARD_HOOK_CLI_ROOT;
+  process.env.DASHBOARD_RELEASE_HOME = rel;
+  try {
+    assert.throws(() => hooksInstall({ ...t.P }), /release/, '本检出就是 git 检出,又没发布副本 → 必须拒装');
+    assert.ok(!fs.existsSync(t.pc), '拒装时一个 hook 都不该写');
+    fs.mkdirSync(path.join(rel, 'cli'), { recursive: true });
+    fs.writeFileSync(path.join(rel, 'cli', 'index.cjs'), 'process.exit(0);\n');
+    hooksInstall({ ...t.P });
+    const pc = read(t.pc);
+    const fwd = (p) => p.split(path.sep).join('/');
+    assert.ok(pc.includes(fwd(rel)), 'hook 焊的是发布副本路径');
+    assert.ok(!pc.includes(fwd(path.resolve(__dirname, '..'))), 'hook 不许含本检出路径');
+    const st = readJson(t.settings);
+    assert.ok(st.hooks.Stop[0].hooks[0].command.includes(fwd(rel)), 'settings 同样指发布副本');
+  } finally {
+    process.env.DASHBOARD_HOOK_CLI_ROOT = saved;
+    delete process.env.DASHBOARD_RELEASE_HOME;
+  }
+  clean(t.dir);
+});
+
+test('hooks-trunk-guard:主工位切离主干只提醒不拦;worktree 里切分支不提醒;幂等', () => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'guard-')));
+  const seed = path.join(dir, 'seed'); fs.mkdirSync(seed);
+  git(seed, ['init', '-q', '-b', 'master']);
+  git(seed, ['config', 'user.email', 't@t.t']); git(seed, ['config', 'user.name', 't']);
+  git(seed, ['commit', '-q', '--allow-empty', '-m', 'init']);
+  const origin = path.join(dir, 'origin.git');
+  git(dir, ['clone', '-q', '--bare', seed, origin]);
+  const work = path.join(dir, 'work');
+  git(dir, ['clone', '-q', origin, work]);
+
+  const r = hooksTrunkGuard({ repo: work });
+  assert.match(r.text, /master/);
+  const hook = read(path.join(work, '.git', 'hooks', 'post-checkout'));
+  assert.match(hook, /#dashboard-trunk-guard:begin/);
+  assert.match(hook, /"master"/, '主干名焊进 hook');
+  hooksTrunkGuard({ repo: work });
+  assert.equal((read(path.join(work, '.git', 'hooks', 'post-checkout')).match(/#dashboard-trunk-guard:begin/g) || []).length, 1, '幂等');
+
+  // 主工位切离主干 → stderr 有提醒,但命令成功(退出码 0);切回主干不吵。stderr 用 spawnSync 拿。
+  gitOut(work, ['branch', 'feat/off-trunk']);
+  const sp2 = require('node:child_process').spawnSync('git', ['-C', work, 'checkout', 'feat/off-trunk'], { encoding: 'utf8' });
+  assert.equal(sp2.status, 0, '只提醒不拦');
+  assert.match(sp2.stderr, /主工位已切到/, '切离主干要吵一声');
+  const sp = require('node:child_process').spawnSync('git', ['-C', work, 'checkout', 'master'], { encoding: 'utf8' });
+  assert.equal(sp.status, 0);
+  assert.doesNotMatch(sp.stderr, /主工位已切到/, '切回主干不吵');
+
+  // worktree 里切分支:不提醒(git-dir ≠ git-common-dir)
+  const wt = path.join(dir, 'wt');
+  const sp3 = require('node:child_process').spawnSync('git', ['-C', work, 'worktree', 'add', '-q', wt, '-b', 'feat/in-wt'], { encoding: 'utf8' });
+  assert.equal(sp3.status, 0);
+  const sp4 = require('node:child_process').spawnSync('git', ['-C', wt, 'checkout', '-b', 'feat/in-wt-2'], { encoding: 'utf8' });
+  assert.equal(sp4.status, 0);
+  assert.doesNotMatch(sp3.stderr + sp4.stderr, /主工位已切到/, 'worktree 里切分支不该提醒');
+  clean(dir);
 });

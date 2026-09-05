@@ -18,6 +18,8 @@ const { execFileSync } = require('node:child_process');
 const cmds = require('../cli/commands.cjs');
 const { readBoard } = require('../cli/store.cjs');
 const { syncFromGit, doctor } = require('../cli/gitSync.cjs');
+// hook 根「永不指进 git 检出」(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT);端到端要验的是本检出,显式指过去。
+process.env.DASHBOARD_HOOK_CLI_ROOT = path.resolve(__dirname, '..');
 const { hooksInstall } = require('../cli/hooksInstall.cjs');
 
 const git = (repo, args) => execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore', windowsHide: true });
