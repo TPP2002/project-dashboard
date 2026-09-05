@@ -14,12 +14,19 @@ function localDate(value) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+// 三条线口径与项目仓 stock-rogue 的 scripts/codex/codex-brief.cjs 的 quotaBand 保持一致
+// (负责人 2026-09-05 拍板：单位是「已用百分比」，不是剩余额度)。改其中一处务必同步改另一处。
+const STOP_DISPATCH_AT_USED = 95;
+const REMIND_RESET_AT_USED = 98;
+const HANDOVER_AT_USED = 99;
+
 function quotaBand(usedPercent) {
   const value = Number(usedPercent);
-  if (!Number.isFinite(value)) return 'unknown';
-  if (value < 60) return 'green';
-  if (value <= 85) return 'yellow';
-  return 'red';
+  if (!Number.isFinite(value)) return { code: 'unknown', label: '读不到额度,按正常派单处理' };
+  if (value >= HANDOVER_AT_USED) return { code: 'handover', label: '🛑 剩 ≤1%:Codex 停工,由 Claude 接手后续施工直到额度恢复' };
+  if (value >= REMIND_RESET_AT_USED) return { code: 'remind-reset', label: '🚨 剩 ≤2%:回复第一句先提醒负责人重置 Codex 额度,并往看板写一条项目级 note' };
+  if (value >= STOP_DISPATCH_AT_USED) return { code: 'stop-dispatch', label: '⛔ 剩 ≤5%:停止派新单(在跑的照常收)' };
+  return { code: 'ok', label: '✅ 正常派单,优先消耗 Codex' };
 }
 
 function matchSessionToJob(sessionId, jobs) {
@@ -150,4 +157,7 @@ function buildCodexReport({
   };
 }
 
-module.exports = { aggregateCodexUsage, buildCodexReport, localDate, matchSessionToJob, quotaBand };
+module.exports = {
+  aggregateCodexUsage, buildCodexReport, localDate, matchSessionToJob, quotaBand,
+  STOP_DISPATCH_AT_USED, REMIND_RESET_AT_USED, HANDOVER_AT_USED,
+};
