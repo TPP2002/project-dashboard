@@ -118,6 +118,59 @@ test('annos:add 落本机账本并镜像到卡 note;GET 回读;delete 移除;空
   clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
 });
 
+test('annos:框选批注带上选区偏移;非法区间当整段批注不落脏数据', async () => {
+  const ok = await api('POST', '/api/reader/annos', { project: 'trepo', key: 'R1', op: 'add', anno: { blockId: 'b3', text: '这句不对', start: 3, end: 9 } });
+  assert.equal(ok.json.anno.start, 3);
+  assert.equal(ok.json.anno.end, 9);
+  const bad = await api('POST', '/api/reader/annos', { project: 'trepo', key: 'R1', op: 'add', anno: { blockId: 'b3', text: '整段', start: 9, end: 9 } });
+  assert.equal(bad.status, 200);
+  assert.equal(bad.json.anno.start, undefined, '空区间不该写进账本');
+  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+});
+
+test('marks:荧光笔 add/delete;重叠的旧笔被顶掉;缺区间 400;不镜像看板卡', async () => {
+  const boardBefore = JSON.parse(fs.readFileSync(path.join(SRV.repo, '.dashboard', 'board.json'), 'utf8')).activity.length;
+  const a = await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'add', mark: { blockId: 'b3', anchor: '1.1 第一节', quote: '这段改过了', start: 0, end: 5, color: 'green' } });
+  assert.equal(a.status, 200, JSON.stringify(a.json));
+  assert.equal(a.json.highlights.length, 1);
+  assert.equal(a.json.mark.color, 'green');
+  // 与已有笔重叠 → 顶掉旧的,不叠色
+  const b = await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'add', mark: { blockId: 'b3', start: 3, end: 12, color: 'pink' } });
+  assert.equal(b.json.highlights.length, 1, '重叠的旧笔应被顶掉');
+  assert.equal(b.json.highlights[0].color, 'pink');
+  // 不重叠 → 并存
+  const c = await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'add', mark: { blockId: 'b3', start: 20, end: 24 } });
+  assert.equal(c.json.highlights.length, 2);
+  assert.equal(c.json.highlights[1].color, 'yellow', '没给颜色时默认黄');
+  assert.equal((await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'add', mark: { blockId: 'b3' } })).status, 400);
+  assert.equal((await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'add', mark: { start: 1, end: 2 } })).status, 400);
+  const boardAfter = JSON.parse(fs.readFileSync(path.join(SRV.repo, '.dashboard', 'board.json'), 'utf8')).activity.length;
+  assert.equal(boardAfter, boardBefore, '荧光笔是阅读痕迹,不该镜像成看板卡 note');
+  const del = await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'delete', id: c.json.mark.id });
+  assert.equal(del.json.highlights.length, 1);
+  assert.equal((await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'delete', id: 'nope' })).status, 404);
+  const rep = await api('GET', '/api/reader/report?project=trepo&key=R1');
+  assert.equal(rep.json.highlights.length, 1, '报告回包里应带上荧光笔');
+  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+});
+
+test('review:标记/撤销「已审阅」落本机账本并进清单回包;未知状态 400;不回写仓库 reader.json', async () => {
+  const manifestPath = path.join(SRV.repo, 'docs', 'design', '审计回流', 'reader.json');
+  const before = fs.readFileSync(manifestPath, 'utf8');
+  const on = await api('POST', '/api/reader/review', { project: 'trepo', key: 'R1', state: '已审阅' });
+  assert.equal(on.status, 200, JSON.stringify(on.json));
+  assert.equal(on.json.review.state, '已审阅');
+  assert.ok(on.json.review.at);
+  const m = await api('GET', '/api/reader/manifest?project=trepo');
+  assert.equal(m.json.reviews.R1.state, '已审阅', '清单回包应带上已审阅标记(报告架靠它分组)');
+  assert.equal(fs.readFileSync(manifestPath, 'utf8'), before, '仓库 reader.json 是回流对话的正本,看板不许改');
+  assert.equal((await api('POST', '/api/reader/review', { project: 'trepo', key: 'R1', state: '读完了' })).status, 400);
+  const off = await api('POST', '/api/reader/review', { project: 'trepo', key: 'R1', state: '未审阅' });
+  assert.equal(off.json.review, null);
+  assert.equal((await api('GET', '/api/reader/manifest?project=trepo')).json.reviews.R1, undefined);
+  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+});
+
 test('export:写到仓库 docs/design/审计回流/批注/<key>.json,不动 git', async () => {
   await api('POST', '/api/reader/annos', { project: 'trepo', key: 'R1', op: 'add', anno: { blockId: 'b3', text: '导出用' } });
   const r = await api('POST', '/api/reader/export', { project: 'trepo', key: 'R1' });
