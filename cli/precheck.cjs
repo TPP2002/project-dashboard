@@ -3,7 +3,9 @@
  * precheck.cjs —— 开工三查一键化(WORKFLOW-OPS-SCRIPTS,0901 负责人拍板)。
  *
  * 把 skill §11.2 认领协议的头两步 + 正本提醒固化成一条命令,治「每次开工现场拼命令」:
- *   ① git 新鲜度:fetch 后报本地 main 落后 origin/main 多少、worktree 占用清单;
+ *   ① git 新鲜度:fetch 后报本地分支落后远程主干多少、worktree 占用清单
+ *      (主干分支名不写死 main——探测 origin/HEAD,退化到 main/master 探测;PRECHECK-ASSUMES-ORIGIN-MAIN,
+ *       手法与 cleanup.cjs 的 detectTrunk 一致,教训:主干叫 master 的仓库曾因此算不出「落后多少」);
  *   ② 看板占用:施工中的卡(谁占着/分支/多久没动)+ 待拍板数 + 状态统计;
  *   ③ 正本三读:该项目必读文件的存在性与路径(开工须知/口径速查表/CLAUDE.md/AGENTS.md)。
  *
@@ -23,6 +25,20 @@ function git(repo, args, opts = {}) {
   } catch (e) {
     return { ok: false, out: ((e.stdout || '') + (e.stderr || '')).toString().trim() || e.message };
   }
+}
+
+/** 探测远程主干分支名——不写死 main:先信 origin/HEAD 的指向,读不到再退化探测 main/master 是否存在 */
+function detectTrunk(repo) {
+  const sym = git(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  if (sym.ok && sym.out) {
+    const b = sym.out.replace(/^origin\//, '');
+    if (b) return b;
+  }
+  for (const cand of ['main', 'master']) {
+    const v = git(repo, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${cand}`]);
+    if (v.ok) return cand;
+  }
+  return null;
 }
 
 function relAge(iso) {
@@ -55,14 +71,20 @@ function precheck(flags) {
   }
   const head = git(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
   L.push(`  当前分支:${head.ok ? head.out : '?'}`);
-  const behind = git(repo, ['rev-list', '--count', 'HEAD..origin/main']);
-  const ahead = git(repo, ['rev-list', '--count', 'origin/main..HEAD']);
-  if (behind.ok && ahead.ok) {
-    const b = parseInt(behind.out, 10), a = parseInt(ahead.out, 10);
-    if (b === 0) L.push('  ✔ 本工位不落后 origin/main');
-    else L.push(`  ⚠ 本工位落后 origin/main ${b} 个提交${a ? `(本地领先 ${a})` : ''} —— 落后的 worktree 会把已完工任务看成没做(§3.0-1),先同步`);
+  const trunk = detectTrunk(repo);
+  if (!trunk) {
+    L.push('  ⚠ 探测不到远程主干分支(origin/HEAD 未设置,origin/main 与 origin/master 均不存在)—— 算不出落后多少,先手动确认主干分支名');
   } else {
-    L.push(`  ⚠ 算不出与 origin/main 的差距:${(behind.ok ? ahead.out : behind.out).split('\n')[0]}`);
+    const trunkRef = `origin/${trunk}`;
+    const behind = git(repo, ['rev-list', '--count', `HEAD..${trunkRef}`]);
+    const ahead = git(repo, ['rev-list', '--count', `${trunkRef}..HEAD`]);
+    if (behind.ok && ahead.ok) {
+      const b = parseInt(behind.out, 10), a = parseInt(ahead.out, 10);
+      if (b === 0) L.push(`  ✔ 本工位不落后 ${trunkRef}`);
+      else L.push(`  ⚠ 本工位落后 ${trunkRef} ${b} 个提交${a ? `(本地领先 ${a})` : ''} —— 落后的 worktree 会把已完工任务看成没做(§3.0-1),先同步`);
+    } else {
+      L.push(`  ⚠ 算不出与 ${trunkRef} 的差距:${(behind.ok ? ahead.out : behind.out).split('\n')[0]}`);
+    }
   }
   const dirty = git(repo, ['status', '--porcelain']);
   if (dirty.ok) {

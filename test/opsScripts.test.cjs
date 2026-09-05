@@ -89,3 +89,29 @@ test('precheck:三段齐全,施工中占用与待拍板可见', () => {
   assert.match(r.text, /没有派单简报脚本/, '测试仓没有简报脚本时要明说,不能静默');
   clean(dir);
 });
+
+test('precheck:远程主干叫 master(非 main)时仍能算出落后多少(PRECHECK-ASSUMES-ORIGIN-MAIN)', () => {
+  const { dir, repo } = gitEnv();
+  const bare = path.join(dir, 'origin.git');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'master', bare], { encoding: 'utf8' });
+  G(repo, 'remote', 'add', 'origin', bare);
+  G(repo, 'push', '-q', 'origin', 'main:refs/heads/master');
+  G(repo, 'remote', 'set-head', 'origin', 'master');
+
+  // 从另一个 clone 往远端 master 再推一个提交,让 repo 相对 origin/master 落后 1 个
+  const clone = path.join(dir, 'clone');
+  execFileSync('git', ['clone', '-q', bare, clone], { encoding: 'utf8' });
+  G(clone, 'config', 'user.email', 't@t'); G(clone, 'config', 'user.name', 't');
+  fs.writeFileSync(path.join(clone, 'b.txt'), '2');
+  G(clone, 'add', '.'); G(clone, 'commit', '-q', '-m', 'extra on remote master');
+  G(clone, 'push', '-q', 'origin', 'master');
+  G(repo, 'fetch', '-q', 'origin');
+
+  const reg = path.join(dir, 'registry.json');
+  fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
+  const P = { project: 'p', registry: reg };
+  cmds.register({ id: 'p', name: '测试项目', root: repo, registry: reg });
+  const r = precheck({ ...P, 'no-fetch': true });
+  assert.match(r.text, /落后 origin\/master 1 个提交/, '主干叫 master 时也要能报出落后数,不能"算不出"');
+  clean(dir);
+});
