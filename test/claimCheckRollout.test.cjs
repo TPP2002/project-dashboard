@@ -7,7 +7,8 @@
  * 闸门自己跑不起来,不该等价于"你没认领"。本用例把 DASHBOARD_HOME 指向一个"旧版 CLI"
  * (只会退出码 2 的假 index.cjs),验证 commit 仍能过、并且吵出一条警告。
  */
-process.env.DASHBOARD_HOME = require('node:fs').realpathSync.native(
+// (HOOK-CLI-POINTS-AT-LIVE-CHECKOUT 后 hook 根不再从 DASHBOARD_HOME 推,测试隔离改用专用变量。)
+process.env.DASHBOARD_HOOK_CLI_ROOT = require('node:fs').realpathSync.native(
   require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'oldcli-')),
 );
 
@@ -20,7 +21,7 @@ const { execFileSync } = require('node:child_process');
 const { hooksInstall } = require('../cli/hooksInstall.cjs');
 const cmds = require('../cli/commands.cjs');
 
-const FAKE_HOME = process.env.DASHBOARD_HOME;
+const FAKE_HOME = process.env.DASHBOARD_HOOK_CLI_ROOT;
 
 test('看板 CLI 是旧版(没有 claim-check)时:commit 放行 + stderr 警告,不堵死仓库', () => {
   // 假的"旧版 CLI":任何子命令都按 index.cjs 对未知命令的约定退出码 2

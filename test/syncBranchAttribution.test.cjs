@@ -14,7 +14,8 @@
 const path = require('node:path');
 // 必须在 require 看板模块之前设：hooks 里嵌的 CLI 路径由 DASHBOARD_HOME 在模块加载时算死。
 // 不设的话钩子会指向【已安装的那份】(~/.claude/dashboard)，端到端测的就不是本工作区的代码。
-process.env.DASHBOARD_HOME = path.join(__dirname, '..');
+// (HOOK-CLI-POINTS-AT-LIVE-CHECKOUT 后 hook 根不再从 DASHBOARD_HOME 推,测试隔离改用专用变量指向本检出。)
+process.env.DASHBOARD_HOOK_CLI_ROOT = path.join(__dirname, '..');
 
 const { test } = require('node:test');
 const assert = require('node:assert');
