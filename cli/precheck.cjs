@@ -16,6 +16,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readBoardOrNull } = require('./store.cjs');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
+const { releaseStatus } = require('./release.cjs');
 
 function git(repo, args, opts = {}) {
   try {
@@ -74,6 +75,10 @@ function precheck(flags) {
     L.push('  worktree 占用(挑分支号避开这些,§11.3):');
     for (const line of wt.out.split('\n')) L.push(`    ${line}`);
   }
+  // 发布副本 = 全机器各仓 hook 实际跑的那份看板代码(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT)。
+  // 合进 master ≠ 生效:落后就提醒收官方跑 `cli release`(负责人 0906 拍板 d2=A,不装计划任务)。
+  try { L.push('  ' + releaseStatus().text); }
+  catch (e) { L.push(`  ⚠ 发布副本状态读不出:${String((e && e.message) || e).split('\n')[0]}`); }
 
   // ── ② 看板占用 ──
   L.push('', '【② 看板占用】');
