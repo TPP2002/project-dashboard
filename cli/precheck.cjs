@@ -109,7 +109,23 @@ function precheck(flags) {
     L.push(fs.existsSync(p) ? `  📖 ${name}:${p}` : `  —— ${name}:不存在(本项目没有则忽略)`);
   }
   L.push('  📖 任务正本:看板卡 description + 卡上挂的 docs(用 `show <卡id>` / `inbox --tid <卡id>` 拉)');
-  L.push('', '三查只是开工的前半截:认领还要「建分支+推远程」原子抢占 + `claim` 上看板(§11.2-3/4)。');
+
+  // ── ④ 施工方与 Codex 额度(0905 负责人定:写代码的活默认派 Codex,额度到线才例外)──
+  // 简报脚本住在各项目仓库里(单一实现,SessionStart hook 也跑它),这里只转发它的输出,不另写一份读额度的逻辑。
+  L.push('', '【④ 施工方】写代码的活默认派 Codex,本对话只定契约/派单/验收/销卡;自干要对上开工须知例外表编号,回复第一句写明「施工方=…」');
+  const brief = path.join(proj.mainRepo, 'scripts', 'codex', 'codex-brief.cjs');
+  if (fs.existsSync(brief)) {
+    try {
+      const out = execFileSync(process.execPath, [brief], { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+      for (const line of out.split('\n')) L.push(`  ${line}`);
+    } catch (e) {
+      L.push(`  ⚠ 派单简报跑不起来:${String((e && e.message) || e).split('\n')[0]}`);
+    }
+  } else {
+    L.push('  —— 本项目没有派单简报脚本(scripts/codex/codex-brief.cjs),额度与派单器状态自己查');
+  }
+
+  L.push('', '三查只是开工的前半截:认领还要「建分支+推远程」原子抢占 + `claim` 上看板(§11.2-3/4)+ 判施工方留痕(§17.0)。');
   return { ok: true, text: L.join('\n') };
 }
 

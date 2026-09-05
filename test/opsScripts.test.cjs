@@ -85,5 +85,7 @@ test('precheck:三段齐全,施工中占用与待拍板可见', () => {
   assert.match(r.text, /【③ 正本必读/);
   assert.match(r.text, /🔨 T1/, '施工中的卡要列出来');
   assert.match(r.text, /跳过 fetch/);
+  assert.match(r.text, /【④ 施工方】/, '第④查:施工方默认派 Codex 的提醒必须在');
+  assert.match(r.text, /没有派单简报脚本/, '测试仓没有简报脚本时要明说,不能静默');
   clean(dir);
 });
