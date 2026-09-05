@@ -156,6 +156,31 @@ test('GET /api/health → ok + 端口/pid/projects/hooksInstalled', async () => 
   assert.equal(typeof body.hooksInstalled, 'object', 'hooksInstalled 为对象');
 });
 
+test('GET /api/health → hook 探测认「代码的家」(SERVER-GIT-CWD-USES-MAINREPO)', async () => {
+  // cluster 形状:板在一个普通目录(非 git 仓),代码住在别处的真仓里,hook 自然装在后者。
+  // 去「板的家」找 .git/hooks 必然扑空 → 体检恒报「hook 未安装」,这条断言就是钉死这个。
+  const boardHome = path.join(SRV.dir, 'split-board-home');
+  const codeRepo = path.join(SRV.dir, 'split-code-repo');
+  fs.mkdirSync(boardHome, { recursive: true });
+  fs.mkdirSync(path.join(codeRepo, '.git', 'hooks'), { recursive: true });
+  fs.writeFileSync(
+    path.join(codeRepo, '.git', 'hooks', 'post-commit'),
+    ['#!/bin/sh',
+      'node "C:/Users/t/.claude/dashboard/cli/index.cjs" sync-from-git --project "split" || true',
+      ''].join('\n'),
+  );
+  const reg = JSON.parse(fs.readFileSync(SRV.reg, 'utf8'));
+  reg.projects.split = {
+    name: '板与代码分家', mainRepo: boardHome, codeRepo,
+    board: path.join(boardHome, '.dashboard', 'board.json'),
+  };
+  fs.writeFileSync(SRV.reg, JSON.stringify(reg));
+
+  const { body } = await getJson('/api/health');
+  assert.equal(body.hooksInstalled.split, true,
+    'hook 装在 codeRepo 上就该判已装;去 mainRepo 找 = 恒报未装');
+});
+
 test('GET /api/projects → 含读时派生 summary（total/byStatus）', async () => {
   const p = newProject('projlist');
   cmds.add({ _: ['P01'], title: 'a', ...p.P });

@@ -158,11 +158,17 @@ function installGitHooks(mainRepo, id, registryFwd) {
       '',
     ].join('\n'),
     // commit 后：先从 git 反推 board，再刷 INDEX 状态段。两行各自 || true，互不牵连。
+    // 分支与提交就地读、显式传：worktree 共享同一份 .git/hooks，钩子不报"是谁触发的"，
+    // sync 那头就无从分辨，只能拿个采样值广播给一窗口的历史卡（张冠李戴的来源）。
     'post-commit': buildBlock([
-      cliLine('sync-from-git', id, registryFwd),
+      '__BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")',
+      '__SHA=$(git rev-parse HEAD 2>/dev/null || echo "")',
+      cliLine('sync-from-git', id, registryFwd, '--branch "$__BR" --commit "$__SHA"'),
       cliLine('render-index', id, registryFwd),
     ]),
     // 分支并入后：反推 board（合并带来的 commit / status:merged 等）。
+    // 刻意不传 --branch：合并带进来的提交属于源分支，而这里只知道当前分支，
+    // 传了就等于把当前分支扣到一批别人的卡上；补 commit/PR 号不需要分支信息。
     'post-merge': buildBlock([
       cliLine('sync-from-git', id, registryFwd),
     ]),
