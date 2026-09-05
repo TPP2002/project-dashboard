@@ -72,13 +72,14 @@ watch(() => props.refreshKey, load)
       <div class="card metric-card"><strong>{{ report.running }}</strong><span>还在跑</span></div>
       <div class="card metric-card"><strong :class="{ 'quota-red': report.stalled > 0 }">{{ report.stalled }}</strong><span>失联</span></div>
       <div class="card metric-card"><strong>{{ fmt(report.tokensUsed) }}</strong><span>token</span></div>
-      <div class="card metric-card"><strong :class="`quota-${report.quotaBand}`">{{ report.quotaUsedPercent == null ? '—' : report.quotaUsedPercent + '%' }}</strong><span>额度已用</span></div>
+      <div class="card metric-card"><strong :class="`quota-${report.quotaBand.code}`">{{ report.quotaUsedPercent == null ? '—' : report.quotaUsedPercent + '%' }}</strong><span>额度已用</span></div>
     </div>
     <div v-if="report" class="quota-progress">
       <div class="quota-head"><span>Codex 额度快照</span><span class="mono">{{ report.quotaUsedPercent == null ? '数据不足' : report.quotaUsedPercent + '%' }}</span></div>
       <div class="glow-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="report.quotaUsedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
         <i :style="{ width: quotaPercent + '%' }" />
       </div>
+      <p class="quota-band-label" :class="`quota-${report.quotaBand.code}`">{{ report.quotaBand.label }}</p>
     </div>
     <div v-else-if="loading" class="report-loading" aria-label="正在整理昨夜战况">
       <div class="skel wide" /><div class="skel medium" /><div class="skel wide" />
@@ -122,11 +123,13 @@ watch(() => props.refreshKey, load)
 .metric-card strong, .metric-card span { display: block; }
 .metric-card strong { font-family: var(--mono); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
 .metric-card span { margin-top: var(--s1); color: var(--text-2); font-size: var(--fs-xs); }
-.quota-green { color: var(--ok); }
-.quota-yellow { color: var(--warn); }
-.quota-red { color: var(--bad); }
+.quota-ok { color: var(--ok); }
+.quota-stop-dispatch { color: var(--warn); }
+.quota-remind-reset, .quota-handover, .quota-red { color: var(--bad); }
+.quota-unknown { color: var(--text-3); }
 .quota-progress { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s3); }
 .quota-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); color: var(--text-2); font-size: var(--fs-sm); }
+.quota-band-label { margin: 0; font-size: var(--fs-sm); }
 .report-loading { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s4); }
 .skel.wide { width: 86%; }
 .skel.medium { width: 54%; }
