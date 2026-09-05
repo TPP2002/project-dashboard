@@ -56,4 +56,25 @@ function unionBy(arr, keyFn) {
   return out;
 }
 
-module.exports = { readBoard, readBoardOrNull, mutate, findTask, unionBy };
+/**
+ * commitShas 专用 union：前缀相同的长短哈希 = 同一个提交，只留信息更全的那份。
+ * 两个写入点存的长度本就不同（自动扫描存 12 位、done --commit 存用户手写的短写），
+ * 纯字符串去重会让同一个提交以两种格式并存。
+ */
+function unionShas(arr) {
+  const kept = [];
+  for (const raw of arr) {
+    const s = String(raw).trim();
+    if (!s) continue;
+    const low = s.toLowerCase();
+    const i = kept.findIndex((k) => {
+      const kl = k.toLowerCase();
+      return kl.startsWith(low) || low.startsWith(kl);
+    });
+    if (i === -1) kept.push(s);
+    else if (s.length > kept[i].length) kept[i] = s;
+  }
+  return kept;
+}
+
+module.exports = { readBoard, readBoardOrNull, mutate, findTask, unionBy, unionShas };
