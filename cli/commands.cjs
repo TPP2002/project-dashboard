@@ -5,7 +5,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { mutate, readBoard, findTask, unionBy } = require('./store.cjs');
+const { mutate, readBoard, findTask, unionBy, unionShas } = require('./store.cjs');
 const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { emptyBoard, STATUS, emojiFor } = require('../core/boardSchema.cjs');
@@ -352,7 +352,7 @@ function done(flags) {
     t.status = flags.collect ? '收官' : '已完工';
     t.dates = t.dates || {}; t.dates.done = today(); t.percent = 100;
     if (prs.length) t.prNumbers = unionBy([...(t.prNumbers || []), ...prs], String);
-    if (commits.length) t.commitShas = unionBy([...(t.commitShas || []), ...commits], String);
+    if (commits.length) t.commitShas = unionShas([...(t.commitShas || []), ...commits]);
   }, act('done', flags.author, `${flags.collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
   return okTask(board, id);
 }

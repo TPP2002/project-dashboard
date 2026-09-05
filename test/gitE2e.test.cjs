@@ -4,7 +4,7 @@
  * 绝不碰真实主仓 / registry。
  *
  * 覆盖：
- *   · sync-from-git：从 commit subject 派生 commitSha / PR#(#24) / 分支；无 id 提交不误派生。
+ *   · sync-from-git：从 commit subject 派生 commitSha / PR#(#24)；分支只认显式 --branch；无 id 提交不误派生。
  *   · doctor：hook 未装时报「未安装」；hooksInstall 后不再报。
  *   · doctor --fix：补齐 git 派生字段，同时【语义字段逐字节不变】（快照）——印证 README §同步保险：
  *     git 派生字段（commit/pr/branch）与语义字段（decisions/deps/wave/status/禁区）字段集不相交、各有唯一权威。
@@ -53,7 +53,7 @@ function semanticSnap(task) {
 }
 const findTask = (t, id) => readBoard(t.board).tasks.find((x) => x.id === id);
 
-test('sync-from-git：从 commit subject 派生 commitSha / PR#(#24) / 分支', () => {
+test('sync-from-git：从 commit subject 派生 commitSha / PR#(#24)；分支只认显式传入', () => {
   const t = setupRepo();
   try {
     cmds.add({ _: ['P01'], title: '派生', ...t.P });
@@ -61,11 +61,16 @@ test('sync-from-git：从 commit subject 派生 commitSha / PR#(#24) / 分支', 
     commit(t.repo, 'a.txt', 'feat(P01): 落地某功能 (#24)');
     const r = syncFromGit({ ...t.P });
     assert.ok(r.changed >= 1, 'sync 应报告有变更');
-    const task = findTask(t, 'P01');
+    let task = findTask(t, 'P01');
     assert.ok(task.commitShas.length >= 1, 'commitSha 已派生');
     assert.match(task.commitShas[0], /^[0-9a-f]{7,40}$/, 'commitSha 形如短 hash');
     assert.ok(task.prNumbers.includes(24), 'PR #24 已派生');
-    assert.ok(task.gitBranch.includes('feat-sync'), '分支 feat-sync 已派生');
+    // 分支不再由"主目录此刻签出的是哪个"倒推（SYNC-FROM-GIT-BRANCH-MISATTRIBUTION）：
+    // 多 worktree 共享一份 .git/hooks，那个值是竞态采样，还会被窗口扫描广播给一批老卡。
+    assert.deepEqual(task.gitBranch, [], '没给 --branch 就不该臆造分支');
+    syncFromGit({ ...t.P, branch: 'feat-sync' });
+    task = findTask(t, 'P01');
+    assert.ok(task.gitBranch.includes('feat-sync'), '显式给了 --branch 才派生分支');
   } finally { clean(t.dir); }
 });
 
