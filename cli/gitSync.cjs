@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
-const { readBoard, readBoardOrNull, mutate, unionBy } = require('./store.cjs');
+const { readBoard, readBoardOrNull, mutate, unionBy, unionShas } = require('./store.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 
 function resolveProj(flags) {
@@ -19,12 +19,17 @@ function git(repo, args) { return execFileSync('git', ['-C', repo, ...args], { e
 function safeGit(repo, args) { try { return git(repo, args); } catch { return ''; } }
 function safeRead(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } }
 
-/** 扫最近提交，对 subject 里匹配到的 task id 聚合 git 派生字段。 */
+/**
+ * 扫提交，对 subject 里匹配到的 task id 聚合 git 派生字段。
+ * opts.commit 给了就只认那一次提交（post-commit 钩子用）；不给才回退到扫最近 N 条（doctor 对账用）。
+ */
 function scanCommits(repo, taskIds, opts = {}) {
   const perTask = {}; // id → { commits:Set, prs:Set }
   if (!taskIds.length) return { perTask, scanned: 0 };
   const idRe = new RegExp('(?:^|[^A-Za-z0-9-])(' + taskIds.map(escapeRe).join('|') + ')(?![A-Za-z0-9-])');
-  const raw = safeGit(repo, ['log', '-n', String(opts.n || 300), '--pretty=format:%H%x1f%s']);
+  const raw = safeGit(repo, opts.commit
+    ? ['log', '-1', '--pretty=format:%H%x1f%s', opts.commit]
+    : ['log', '-n', String(opts.n || 300), '--pretty=format:%H%x1f%s']);
   if (!raw) return { perTask, scanned: 0 };
   const lines = raw.split('\n');
   for (const line of lines) {
@@ -47,15 +52,19 @@ function syncFromGit(flags) {
   const board0 = readBoardOrNull(proj.board);
   if (!board0) throw new Error('board.json 不存在，先 register/import');
   const taskIds = (board0.tasks || []).map((t) => t.id);
-  const branch = flags.branch || safeGit(repo, ['rev-parse', '--abbrev-ref', 'HEAD']);
-  const { perTask, scanned } = scanCommits(repo, taskIds, { n: flags.n ? parseInt(flags.n, 10) : 300 });
+  // gitBranch 只认显式传入（钩子按本工位 HEAD 传 / claim 由人传）。
+  // 曾经在这里回查主目录 HEAD 兜底：多 worktree 并行时主目录签的是哪个分支纯属巧合，
+  // 那个采样值又会被下面的窗口扫描广播给窗口内全部匹配到的卡，把老卡的分支台账越滚越脏。
+  const branch = typeof flags.branch === 'string' ? flags.branch.trim() : '';
+  const commit = typeof flags.commit === 'string' ? flags.commit.trim() : '';
+  const { perTask, scanned } = scanCommits(repo, taskIds, { n: flags.n ? parseInt(flags.n, 10) : 300, commit });
   let changed = 0;
   mutate(proj, (b) => {
     for (const t of b.tasks || []) {
       const info = perTask[t.id];
       if (!info) continue;
       const bC = (t.commitShas || []).length, bP = (t.prNumbers || []).length, bB = (t.gitBranch || []).length;
-      t.commitShas = unionBy([...(t.commitShas || []), ...info.commits], String);
+      t.commitShas = unionShas([...(t.commitShas || []), ...info.commits]);
       if (info.prs.size) t.prNumbers = unionBy([...(t.prNumbers || []), ...info.prs], String);
       if (branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
       if (t.commitShas.length !== bC || t.prNumbers.length !== bP || (t.gitBranch || []).length !== bB) changed++;
