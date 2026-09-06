@@ -1,8 +1,8 @@
 'use strict';
 /**
- * branchAudit.cjs —— 分支台账的只读体检（BOARD-GITFIELD-HISTORY-CLEANUP）。
+ * branchAudit.cjs —— 分支台账体检与误扣分支清理（BOARD-GITFIELD-HISTORY-AUTOCLEAN）。
  * 历史同步曾把工位分支误记到老卡；用引用与 merge 证据找回分支自有提交，
- * 报告可信、可疑或无法核实，供人工确认，绝不改写看板或 git。
+ * 体检只读，清理按提交反证、分支正主与依赖关系规划；落盘由调用方负责，不改 git。
  */
 const { execFileSync } = require('node:child_process');
 
@@ -186,4 +186,42 @@ function auditBoardBranches(board, repo) {
   return { ...classifyBranches(board.tasks || [], graph), trunk: graph.trunk && graph.trunk.name };
 }
 
-module.exports = { classifyBranches, loadGraph, auditBoardBranches, taskIdRegex, escapeRe };
+/**
+ * 纯函数：只规划有提交反证、全部正主都挂着分支且双向无依赖关系的条目。
+ * 保持 entries 与 otherIds 原顺序；关系优先计入跳过数，不改 tasks 或 entries。
+ */
+function planBranchCleanup(tasks, entries) {
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const removals = [], skipped = { related: 0, noOwner: 0 };
+  const related = (task, id) => ['dependsOn', 'blockedBy', 'relatedTasks']
+    .some((key) => (task?.deps?.[key] || []).includes(id));
+  for (const entry of entries) {
+    if (entry.verdict !== 'suspect' || entry.evidence !== 'commits') continue;
+    const { taskId, branch, otherIds } = entry;
+    if (otherIds.some((id) => related(byId.get(taskId), id) || related(byId.get(id), taskId))) {
+      skipped.related++;
+      continue;
+    }
+    if (!otherIds.length || !otherIds.every((id) => byId.get(id)?.gitBranch?.includes(branch))) {
+      skipped.noOwner++;
+      continue;
+    }
+    removals.push({ taskId, branch, otherIds });
+  }
+  return { removals, skipped };
+}
+
+/** 只改传入 board 的 gitBranch；用新数组摘除，返回实际条数，已不存在的条目重跑不计数。 */
+function applyBranchCleanup(board, removals) {
+  const byId = new Map((board.tasks || []).map((task) => [task.id, task]));
+  let removed = 0;
+  for (const { taskId, branch } of removals) {
+    const task = byId.get(taskId);
+    if (!task || !(task.gitBranch || []).includes(branch)) continue;
+    task.gitBranch = task.gitBranch.filter((name) => name !== branch);
+    removed++;
+  }
+  return removed;
+}
+
+module.exports = { classifyBranches, loadGraph, auditBoardBranches, planBranchCleanup, applyBranchCleanup, taskIdRegex, escapeRe };
