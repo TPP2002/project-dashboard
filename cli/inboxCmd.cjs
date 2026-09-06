@@ -11,6 +11,7 @@
 const { readBoard } = require('./store.cjs');
 const { resolveProject } = require('../core/resolveProject.cjs');
 const { buildTaskDispatchPrompt } = require('./dispatchPrompt.cjs');
+const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 function need(v, msg) { if (v === undefined || v === true || v === '') throw new Error(msg); return v; }
 
@@ -49,7 +50,7 @@ function inbox(flags) {
     });
     lines.push('');
     lines.push('挑一个接手,运行:');
-    lines.push(`  node ~/.claude/dashboard/cli/index.cjs inbox --project ${id} --tid <上面某任务id>`);
+    lines.push(`  ${displayCliCommand()} inbox --project ${id} --tid <上面某任务id>`);
     return { ok: true, text: lines.join('\n') };
   }
 
