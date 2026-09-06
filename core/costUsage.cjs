@@ -6,8 +6,8 @@
  * 其中每条 assistant 消息自带 message.usage(输入/输出/缓存 token)+ message.model + isSidechain
  * (true = 子 agent 的消息)。订阅用户看不到美元,但 token 流水是全的——这里聚合的就是它。
  *
- * 【项目目录映射】mainRepo 路径按「非字母数字一律变 '-'」编码成目录名(F:\code-repo → F--code-repo);
- * 该项目的 worktree 会话目录以同前缀开头(…--claude-worktrees-xxx),用前缀匹配一并算进项目。
+ * 【项目目录映射】costRoots 路径按「非字母数字一律变 '-'」编码成目录名(F:\code-repo → F--code-repo);
+ * 含 worktree 的目录按边界前缀匹配，归最长登记前缀；同址并列时显式标记共享。
  *
  * 【增量缓存】jsonl 只追加不改写,按 (size, mtimeMs) 判断文件是否变过:没变直接用上次的
  * 按天聚合结果,变了只重扫这一个文件。缓存落 data/costUsageCache.json(原子写)。
@@ -79,6 +79,30 @@ function estimateCodexSavings(codexTokens, claudeUsage) {
 /** mainRepo 绝对路径 → transcript 目录名前缀(与 Claude Code 的编码规则一致)。 */
 function mapRepoToPrefix(mainRepo) {
   return String(mainRepo || '').replace(/[^A-Za-z0-9]/g, '-');
+}
+
+/**
+ * 纯目录归属仲裁：仅匹配地址自身或其 '-' 后缀，最长登记前缀胜出。
+ * 同一最长前缀也属别的项目时仍计入并标 shared；输出按输入目录顺序去重，不做磁盘 IO。
+ * @param {string[]} dirNames
+ * @param {{prefixes:string[],otherPrefixes:string[]}} options
+ * @returns {{dirs:string[],shared:string[]}}
+ */
+function selectProjectDirs(dirNames, { prefixes, otherPrefixes }) {
+  const own = new Set(prefixes);
+  const others = new Set(otherPrefixes);
+  const all = new Set([...own, ...others]);
+  const dirs = [], shared = [];
+  for (const d of new Set(dirNames)) {
+    let longest = null;
+    for (const p of all) {
+      if ((d === p || d.startsWith(p + '-')) && (longest === null || p.length > longest.length)) longest = p;
+    }
+    if (longest === null || !own.has(longest)) continue;
+    dirs.push(d);
+    if (others.has(longest)) shared.push(d);
+  }
+  return { dirs, shared };
 }
 
 /** 本地时区 YYYY-MM-DD(与看板 CLI 的 today() 同口径,避免 UTC 把凌晨记成前一天)。 */
@@ -158,17 +182,18 @@ function mergeDays(total, days) {
 }
 
 /**
- * 聚合一个项目(按目录前缀)最近 days 天的 token 消耗。
- * @returns {Promise<{byDay:Array, totals:Object, models:Object, dirs:string[], scanned:number, cachedFiles:number}>}
+ * 聚合一个项目(按目录前缀清单)最近 days 天的 token 消耗。
+ * prefixes 未给时兼容旧 prefix；无有效本项目前缀仍抛错。sharedDirs 暴露最长前缀并列的目录。
+ * @returns {Promise<{byDay:Array, totals:Object, models:Object, dirs:string[], sharedDirs:string[], scanned:number, cachedFiles:number}>}
  */
-async function getUsage({ prefix, days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH }) {
-  if (!prefix) throw new Error('缺 prefix(由 mainRepo 映射)');
-  let dirNames = [];
+async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH }) {
+  prefixes = prefixes.filter(Boolean);
+  if (!prefixes.length) throw new Error('缺 prefix(由 mainRepo 映射)');
+  let allDirNames = [];
   try {
-    dirNames = fs.readdirSync(projectsRoot).filter(
-      (n) => n === prefix || n.startsWith(prefix + '-'),
-    );
+    allDirNames = fs.readdirSync(projectsRoot);
   } catch (_) { /* projects 根不存在 → 空结果 */ }
+  const { dirs: dirNames, shared: sharedDirs } = selectProjectDirs(allDirNames, { prefixes, otherPrefixes });
 
   const cache = readCache(cachePath);
   const totalDays = {};
@@ -241,13 +266,14 @@ async function getUsage({ prefix, days = 30, projectsRoot = PROJECTS_ROOT, cache
     d.usdActual = a;
   }
 
-  return { byDay, totals, models, usd, dirs: dirNames, scanned, cachedFiles, sessions };
+  return { byDay, totals, models, usd, dirs: dirNames, sharedDirs, scanned, cachedFiles, sessions };
 }
 
 module.exports = {
   estimateCodexSavings,
   getUsage,
   mapRepoToPrefix,
+  selectProjectDirs,
   priceFor,
   totalClaudeTokens,
   usdActualOf,

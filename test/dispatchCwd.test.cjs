@@ -57,3 +57,32 @@ test('派单落脚点:未注册项目返回 null(调用方据此拒绝派单,不
   writeRegistry({});
   assert.strictEqual(server.dispatchCwd('nobody'), null);
 });
+
+/**
+ * 以下三条治 SERVER-CODEX-COST-USES-MAINREPO 的前半截:Codex 面板取仓的那一处漏网。
+ * 它同时是派单器(codex-dispatch.ts)的 cwd 和 `.codex/jobs` 台账根——两者都在「代码的家」,
+ * 板的家里既没有要改的代码也没有 jobs 流水。rogue 今天两址同一,红不了;夹具用 cluster 形状造出分家。
+ */
+test('Codex 面板取仓:板与代码分家时,jobs 台账与派单器 cwd 都认「代码的家」', () => {
+  const boardHome = mkdir('codex-board-home');
+  const codeRepo = mkdir('codex-code-repo');
+  writeRegistry({
+    rogue: {
+      name: '示例项目·游戏', mainRepo: boardHome, codeRepo,
+      board: path.join(boardHome, '.dashboard', 'board.json'),
+    },
+  });
+  assert.strictEqual(server.codexRepo(), codeRepo,
+    'Codex 面板必须落在 codeRepo;落在 mainRepo 就是本卡要治的病');
+});
+
+test('Codex 面板取仓:没写 codeRepo 的老项目照旧用 mainRepo(零改动)', () => {
+  const repo = mkdir('codex-rogue-repo');
+  writeRegistry({ rogue: { name: '示例项目·游戏', mainRepo: repo } });
+  assert.strictEqual(server.codexRepo(), repo, 'codeRepo 缺省必须回落 mainRepo');
+});
+
+test('Codex 面板取仓:rogue 未注册时返回 null(调用方据此报 404,不能拿 undefined 拼 jobs 路径)', () => {
+  writeRegistry({});
+  assert.strictEqual(server.codexRepo(), null);
+});
