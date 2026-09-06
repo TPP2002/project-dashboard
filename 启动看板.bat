@@ -3,7 +3,20 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 title 项目管理看板
 
-rem 切到脚本所在目录（看板根目录）
+rem ============================================================
+rem  项目管理看板 · 一键启动
+rem
+rem  做三件事：①备好界面依赖 ②把主干最新代码 + 现场构建的界面【发布】出去 ③从发布副本起服务。
+rem
+rem  【为什么不直接从这个目录起服务】(SERVER-RUNS-ON-LIVE-CHECKOUT，负责人 0906 拍板)
+rem  这里是看板仓库的【活的工作检出】——随时有对话在切分支、留未提交改动。从这里起服务，
+rem  等于负责人天天看的看板跟着别人改到一半的代码漂；而且服务是常驻进程，合进主干也一直不生效。
+rem  所以：代码一律从只读的【发布副本】起（发布副本由 cli release 从 origin/主干 导出 + 现场构建界面）。
+rem
+rem  【落脚点纪律】本窗口的当前目录留在本检出，绝不 cd 进发布副本 ——
+rem  Windows 上目录只要是某个进程的当前目录就换不了名，下次 cli release 换名必然失败（实测 EBUSY）。
+rem ============================================================
+
 cd /d "%~dp0"
 
 echo.
@@ -22,7 +35,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem ---- 第一次使用：安装界面依赖（只装一次）----
+rem ---- 第一次使用：安装界面依赖（发布时要用它把界面构建出来，只装一次）----
 if not exist "web\node_modules" (
   echo [1/3] 第一次使用，正在安装界面依赖（只需一次，可能要一两分钟）...
   pushd web
@@ -41,39 +54,43 @@ if not exist "web\node_modules" (
   echo [1/3] 界面依赖已就绪。
 )
 
-rem ---- 生成最新界面（build 失败必须停下，不然拿旧 dist 凑合用，用户看不到最新改动）----
-echo [2/3] 正在生成最新界面（npm run build）...
-pushd web
-call npm run build
-set "BUILD_ERR=!errorlevel!"
-popd
+rem ---- 发布：把 origin/主干 的代码导出成发布副本，并用同一个提交现场构建界面 ----
+echo [2/3] 正在发布最新版本（导出主干代码 + 构建界面，可能要几十秒）...
+node cli\index.cjs release
+set "REL_ERR=!errorlevel!"
 
-if not "!BUILD_ERR!"=="0" (
+rem ---- 找到发布副本目录（服务从它起）----
+set "REL="
+for /f "usebackq delims=" %%i in (`node cli\index.cjs release --print-dest`) do set "REL=%%i"
+if not defined REL (
   echo.
-  echo [X] 界面构建失败（错误码 !BUILD_ERR!）。上面 npm 输出里有编译错误详情。
-  echo     常见原因：Vue/TS 编译错误，或某个视图文件语法错。
-  echo     修复后再双击本文件重试。
+  echo [X] 取不到发布副本目录，起不了服务。上面 node 的输出里有原因。
   echo.
   pause
   exit /b 1
 )
 
-rem ---- 构建后仍无界面产物 → 友好提示 ----
-if not exist "web\dist\index.html" (
-  echo.
-  echo [X] 还没有可用的界面（web\dist 不存在）。
-  echo     请先在 web 文件夹里运行： npm run build
-  echo     若提示缺少依赖，请先运行： npm install
-  echo.
-  pause
-  exit /b 1
+if not "!REL_ERR!"=="0" (
+  if exist "!REL!\server\server.cjs" (
+    echo.
+    echo [!] 这次发布没成功（上面有原因，多半是没联网，或者界面构建报错）。
+    echo     先用上一次发布好的那份启动 —— 它可能不是最新的。
+    echo.
+  ) else (
+    echo.
+    echo [X] 发布失败，而且这台机器上还没有可用的发布副本，起不了服务。
+    echo     联网后重试；只想先起后台不看界面，可手动运行： node cli\index.cjs release --skip-web
+    echo.
+    pause
+    exit /b 1
+  )
 )
 
-rem ---- 启动服务（server 会自动开浏览器 + 单实例复用）----
-echo [3/3] 正在启动看板服务，浏览器稍后自动打开...
+rem ---- 启动服务（代码来自发布副本；已在跑的若是旧版本，服务自己会换新）----
+echo [3/3] 正在启动看板服务（代码来自：!REL!），浏览器稍后自动打开...
 echo     关闭看板：在本窗口按 Ctrl+C，或直接关掉窗口。
 echo.
-node server\server.cjs
+node "!REL!\server\server.cjs"
 
 echo.
 echo 看板服务已停止。可关闭本窗口。

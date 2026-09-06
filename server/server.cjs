@@ -16,10 +16,17 @@
  *   - 写 board 唯一通道 = CLI：server 只经 execFile + 数组传参调 cli decide（防注入），绝不自写 board（R6）。
  *   - 路径安全：/api/doc 按用户输入拼路径一律走 core/safePath.resolveInsideRoot（realpath + path.relative，非 startsWith）（R4）。
  *   - 实时：mtime 轮询（1–2s）驱动 SSE，禁 fs.watch；SSE 断开必清 subscriber + 15s 心跳保活（R7）。
- *   - 单实例：启动先探 /api/health，已在跑则复用 + 开浏览器；端口 6060 起自增；绑 127.0.0.1（R9d）。
+ *   - 单实例：启动先探 /api/health；在跑的和这份是同一份代码则复用 + 开浏览器，
+ *     不是同一份则关掉旧的接管同一端口（SERVER-RUNS-ON-LIVE-CHECKOUT d2=A）；绑 127.0.0.1（R9d）。
+ *
+ * 【这份代码从哪来】(SERVER-RUNS-ON-LIVE-CHECKOUT，负责人 0906 拍板)
+ *   负责人日常用的服务由 启动看板.bat / dashboard.sh 从【发布副本】起（mode=release，端口 6060 段）；
+ *   从 git 检出直接起的是开发实例（mode=dev，端口 6070 段，health 里明写），两者互不干扰。
+ *   服务是常驻进程：合进主干 + `cli release` 之后，得等下次启动才换新——所以启动时要比对版本、该换就换。
  *
  * 用法：node server/server.cjs
- *   环境变量：DASHBOARD_PORT=6060 起始端口 | DASHBOARD_NO_OPEN=1 不开浏览器 |
+ *   环境变量：DASHBOARD_PORT=<起始端口>（默认 release 6060 / dev 6070）| DASHBOARD_NO_OPEN=1 不开浏览器 |
+ *             DASHBOARD_NO_RESTART=1 版本不对也不换新（复用旧实例并提醒）|
  *             DASHBOARD_POLL_MS=1500 轮询间隔 | DASHBOARD_REGISTRY=<path> 覆盖 registry（测试隔离用）
  */
 
@@ -30,6 +37,7 @@ const url = require('url');
 const { execFile } = require('child_process');
 
 const { resolveProject, readRegistry, REGISTRY_PATH } = require('../core/resolveProject.cjs');
+const { readStamp, runtimeMode } = require('../core/runtimeRoot.cjs');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const cpuBudget = require('../core/cpuBudget.cjs');
@@ -44,14 +52,25 @@ const { hookInstalledFor } = require('../core/hookProbe.cjs');
 const SERVICE = 'claude-dashboard';           // 单实例探测的服务签名
 const VERSION = '1.0';
 
-const DASH_ROOT = path.resolve(__dirname, '..');            // ~/.claude/dashboard
+const DASH_ROOT = path.resolve(__dirname, '..');            // 这份代码的家（发布副本 / 主工位检出 / 安装目录）
 const DIST_DIR = path.join(DASH_ROOT, 'web', 'dist');        // 前端生产产物（批次7产出，未必已存在）
 const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯一写者）
 // registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / A 股主仓）
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
 
-const PORT_BASE = parseInt(process.env.DASHBOARD_PORT || '6060', 10);
-const PORT_RANGE = 20;                          // 6060 ~ 6079 依次尝试
+// —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——
+// 负责人日常用的服务必须从【发布副本】起（mode=release）；从 git 检出起的一律算开发实例（mode=dev），
+// 换个端口段、health 里明写，绝不和负责人在用的那份抢同一个位置。
+const MODE = runtimeMode(DASH_ROOT);
+const STAMP = readStamp(DASH_ROOT);
+const RELEASE_COMMIT = (STAMP && STAMP.commit) || null;
+const RELEASED_AT = (STAMP && STAMP.releasedAt) || null;
+
+// 端口段按身份分开且【不重叠】：release 6060~6068、dev 6070~6078。
+// 重叠会出事——起 release 时扫到 6070 上的开发实例，会把人家当"版本不对的旧实例"杀掉。
+const DEFAULT_PORT_BASE = MODE === 'dev' ? 6070 : 6060;
+const PORT_BASE = parseInt(process.env.DASHBOARD_PORT || String(DEFAULT_PORT_BASE), 10);
+const PORT_RANGE = 8;
 const POLL_MS = Math.max(500, parseInt(process.env.DASHBOARD_POLL_MS || '1500', 10)); // mtime 轮询间隔
 const HEARTBEAT_MS = 15000;                     // SSE 心跳
 const BODY_MAX = 256 * 1024;                    // POST 体上限，防滥用
@@ -275,6 +294,12 @@ function handleHealth(req, res) {
     hooksInstalled: hooksInstalledMap(projects),
     sseSubscribers: state.subscribers.size,
     distBuilt: fs.existsSync(path.join(DIST_DIR, 'index.html')),
+    // 报家门（SERVER-RUNS-ON-LIVE-CHECKOUT）：谁都能一眼看出"在跑的是哪份代码、哪个提交"，
+    // 启动器据此判断要不要换新，体检据此提醒"合了主干还没生效"。
+    mode: MODE,
+    codeRoot: DASH_ROOT,
+    releaseCommit: RELEASE_COMMIT,
+    releasedAt: RELEASED_AT,
   });
 }
 
@@ -941,13 +966,51 @@ function probeHealth(port) {
   });
 }
 
-/** 在端口区间里找已在跑的"我们的"实例，返回其端口；没有则 null */
+/** 在端口区间里找已在跑的"我们的"实例，返回 {port, health}；没有则 null */
 async function findExistingInstance() {
   for (let p = PORT_BASE; p <= PORT_BASE + PORT_RANGE; p++) {
     const h = await probeHealth(p);
-    if (h && h.service === SERVICE) return p;
+    if (h && h.service === SERVICE) return { port: p, health: h };
   }
   return null;
+}
+
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 在跑的那个实例，和我这份代码是不是同一份（SERVER-RUNS-ON-LIVE-CHECKOUT，负责人 0906 拍板 d2=A）。
+ * 老版本的 server 不报 codeRoot/releaseCommit → 一律判"不是同一份"，好让它被换掉：
+ * 迁移当天在跑的恰恰就是那种老实例。
+ * @param {object} h 对方 /api/health
+ */
+function isSameRuntime(h) {
+  if (!h || h.codeRoot === undefined) return false;
+  return path.resolve(h.codeRoot) === path.resolve(DASH_ROOT) && (h.releaseCommit || null) === RELEASE_COMMIT;
+}
+
+/**
+ * 关掉旧实例并等它松开端口。关不掉返回 false（调用方降级成"复用旧的 + 大声提醒"，绝不硬抢）。
+ * @param {{port:number, health:object}} inst
+ */
+async function stopInstance(inst) {
+  try { process.kill(inst.health.pid); }
+  catch (e) {
+    if (e && e.code === 'ESRCH') return true; // 已经没了
+    console.error(`  关不掉旧服务（pid ${inst.health.pid}）：${e && e.message}`);
+    return false;
+  }
+  for (let i = 0; i < 40; i++) {              // 最多等 10 秒
+    if (!(await probeHealth(inst.port))) return true;
+    await delay(250);
+  }
+  return false;
+}
+
+/** 一句话说清"在跑的那份是什么版本"，给控制台用。 */
+function describeRuntime(h) {
+  if (!h || h.codeRoot === undefined) return '老版本（不报自己是哪份代码）';
+  const who = h.releaseCommit ? `发布副本 @ ${String(h.releaseCommit).slice(0, 12)}` : `${h.mode || '?'} @ ${h.codeRoot}`;
+  return who;
 }
 
 function openBrowser(targetUrl) {
@@ -980,7 +1043,9 @@ function tryListen(port, attemptsLeft) {
     console.log('项目管理看板 · 已启动');
     console.log(`  本地地址：${localUrl}`);
     console.log(`  PID：${process.pid}`);
-    console.log(`  看板根目录：${DASH_ROOT}`);
+    console.log(`  代码来自：${DASH_ROOT}`);
+    console.log(`  身份：${MODE}${RELEASE_COMMIT ? `（发布副本 @ ${RELEASE_COMMIT.slice(0, 12)}，发布于 ${RELEASED_AT}）` : ''}`);
+    if (MODE === 'dev') console.log('  ⚠ 这是开发实例（代码根是 git 检出）——负责人日常用的那份应该从发布副本起（启动看板.bat）');
     console.log(`  registry：${REGISTRY}`);
     console.log('================================================');
     console.log('浏览器应已自动打开；未打开请手动访问上面地址。按 Ctrl+C 关闭。\n');
@@ -1000,16 +1065,33 @@ function tryListen(port, attemptsLeft) {
   });
 }
 
-function main() {
-  findExistingInstance().then((existingPort) => {
-    if (existingPort !== null) {
-      const localUrl = `http://127.0.0.1:${existingPort}/`;
-      console.log(`检测到看板已在运行（端口 ${existingPort}），复用该实例并打开浏览器。`);
-      openBrowser(localUrl);
-      process.exit(0);
-    }
-    tryListen(PORT_BASE, PORT_RANGE);
-  });
+async function main() {
+  const inst = await findExistingInstance();
+  if (!inst) return tryListen(PORT_BASE, PORT_RANGE);
+
+  const localUrl = `http://127.0.0.1:${inst.port}/`;
+  if (isSameRuntime(inst.health)) {
+    console.log(`检测到看板已在运行（端口 ${inst.port}，就是这份代码），复用该实例并打开浏览器。`);
+    openBrowser(localUrl);
+    process.exit(0);
+  }
+
+  // 版本不对 —— 这就是"合了主干却一直不生效"的现场（SERVER-RUNS-ON-LIVE-CHECKOUT）。
+  console.log('\n检测到在跑的看板服务和这次要起的不是同一份代码：');
+  console.log(`  在跑的：${describeRuntime(inst.health)}（pid ${inst.health.pid}，端口 ${inst.port}）`);
+  console.log(`  这一份：${describeRuntime({ codeRoot: DASH_ROOT, releaseCommit: RELEASE_COMMIT, mode: MODE })}`);
+  if (process.env.DASHBOARD_NO_RESTART === '1') {
+    console.log('  DASHBOARD_NO_RESTART=1 → 不动它，复用旧实例。注意：你看到的仍是旧版本。\n');
+    openBrowser(localUrl);
+    process.exit(0);
+  }
+  console.log('  → 关掉旧的，用新的接管同一个端口（不想换新就设 DASHBOARD_NO_RESTART=1）');
+  if (await stopInstance(inst)) return tryListen(inst.port, PORT_RANGE);
+
+  console.log('  ✖ 旧服务关不掉（可能没权限或卡死了），只好复用它——你看到的仍是旧版本。');
+  console.log(`     手动收拾：结束进程 ${inst.health.pid} 后重新启动。\n`);
+  openBrowser(localUrl);
+  process.exit(0);
 }
 
 // 局部请求出错不该拖垮整个本地服务（各请求/回调已各自兜底，这里是最后一道网）
@@ -1019,4 +1101,9 @@ process.on('uncaughtException', (e) => { console.error('[uncaught]', e && (e.sta
 // (派单要 spawn 真实终端窗口跑 claude,单测碰不得,只能验落脚点怎么算出来的)。
 if (require.main === module) main();
 
-module.exports = { dispatchCwd, codexRepo, costPrefixes };
+/** 这份代码的身份与端口段（给测试与排错用；不起服务也能问出来）。 */
+function runtimeInfo() {
+  return { mode: MODE, codeRoot: DASH_ROOT, releaseCommit: RELEASE_COMMIT, portBase: PORT_BASE, portRange: PORT_RANGE };
+}
+
+module.exports = { dispatchCwd, codexRepo, costPrefixes, isSameRuntime, runtimeInfo };
