@@ -129,6 +129,8 @@ node server/server.cjs                                    # 起服务（自动�
 | `decide <id> --did --answer` | 拍板 |
 | `done <id> [--pr --commit]` | 完工 |
 | `list` / `show <id>｜--pending` | 查询 / 待拍板中心 |
+| `hooks-install --project <id>` | 给项目装 git hook（自动同步 + 未认领拦提交）；hook 指向**发布副本**，不指向看板检出 |
+| `release` | 把主干最新代码导出成发布副本 `~/.claude/dashboard-release`（看板代码合进主干后跑一次即生效） |
 
 ---
 
