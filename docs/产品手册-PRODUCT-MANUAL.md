@@ -452,7 +452,7 @@ node packaging/build-installer.cjs [--version 1.0.0] [--skip-selfcheck]
 - 技术：Node 零依赖后端（core/cli/server）+ Vue3/Vite 前端；数据 = registry.json + 各项目 board.json。
 - 写入：CLI 是唯一写者；**写入由 AI/模型经 CLI 完成、人不手动改状态**（核心哲学，见 §7.0，刻意不做网页改状态以区别于传统看板）；网页给人的写操作只有「拍板」；board 不进 git。
 - 实时：mtime 轮询 → SSE 广播。
-- 安全：绑 127.0.0.1；无鉴权；读文档有 realpath 越界防御；命令注入用数组传参防御。
+- 安全：绑 127.0.0.1；无鉴权；读文档有 realpath 越界防御；命令注入用数组传参防御；所有非 GET/HEAD 请求校验 Host/Origin 同源，防任意网页伪造简单 POST 悄悄打写接口（本地 CSRF）。
 - 分发：Windows NSIS 安装器 ~22MB，内嵌 Node，per-user 安装，离线可用，未签名。
 - 最大边界：依赖模型/CLI 驱动（人不手动改状态，是设计不是缺陷）；不接 AI/CLI 的纯手工场景不适用；单机无协作。
 - 差异化：拍板闭环（问题→答案→落地）+ Claude Code 深度集成（hook/派单/pre-commit 闸门）。
