@@ -76,7 +76,7 @@ watch(() => props.refreshKey, load)
     </div>
     <div v-if="report" class="quota-progress">
       <div class="quota-head"><span>Codex 额度快照</span><span class="mono">{{ report.quotaUsedPercent == null ? '数据不足' : report.quotaUsedPercent + '%' }}</span></div>
-      <div class="glow-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="report.quotaUsedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
+      <div class="glow-rail quota-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="report.quotaUsedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
         <i :style="{ width: quotaPercent + '%' }" />
       </div>
       <p class="quota-band-label" :class="`quota-${report.quotaBand.code}`">{{ report.quotaBand.label }}</p>

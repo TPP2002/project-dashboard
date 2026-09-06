@@ -284,7 +284,7 @@ async function decide(p: { did: string; answer: string }) {
 .dot.on { outline: 2px solid var(--text); outline-offset: 1px; }
 .btn.reviewed { background: var(--ok-bg); color: var(--ok); border-color: var(--ok); }
 .progress { grid-column: 1 / 4; height: 3px; background: var(--surface-3); border-radius: 0; }
-.progress > i { display: block; height: 100%; background-image: var(--spectrum); background-size: 220% 100%; animation: slide 3.4s linear infinite; transition: width .14s ease; }
+/* 阅读进度条只改高度与圆角，流光本体（配色 + 无缝位移）沿用 base.css 的 .progress > i。 */
 .center { display: grid; place-items: center; align-content: start; padding: var(--s6); text-align: center; }
 .center.card { margin: var(--s5); }
 .lite { color: var(--text-3); font-size: var(--fs-sm); }
