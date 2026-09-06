@@ -42,7 +42,7 @@
 | 术语 | 含义 |
 |---|---|
 | **项目（project）** | 一个被看板管理的代码仓 / 工作目录。每个项目有一个 `id`、`name`、`mainRepo`（主仓路径）。 |
-| **registry（注册表）** | `registry.json`，记录「有哪些项目、各自的路径」。是项目列表的唯一来源。 |
+| **registry（注册表）** | `registry.json`，记录「有哪些项目、各自的路径」。是项目列表的唯一来源；配置可照抄 [registry.example.json](../registry.example.json)（见 §5.6）。 |
 | **board（board.json）** | 单个项目的**全部任务数据**。每个项目一份，落在该项目主仓的 `<mainRepo>/.dashboard/board.json`。**不进 git**。 |
 | **任务（task）** | 项目里的一件事（一个功能、一个 bug、一个决策批次）。有 id、标题、状态、进度、分支、决策、依赖、文档等字段。 |
 | **状态（status）** | 任务所处阶段，10 种枚举（见 §5.2）。 |
@@ -133,11 +133,13 @@
 - `DASHBOARD_HOME` = 数据根，决定 `registry.json` 与 `snapshots/` 落哪。
   - **默认**（环境变量未设）：`~/.claude/dashboard`（Claude Code 集成布局）。
   - **分发版**：启动器把 `DASHBOARD_HOME` 指向**安装目录**，从而脱离 `~/.claude`、在任意社区机器上可写、卸载即净。
+  - 新配置可将 [registry.example.json](../registry.example.json) 复制成 `registry.json` 放到 `DASHBOARD_HOME` 下，填写本机项目路径；活数据不进版本库。
 - **代码定位与 DASHBOARD_HOME 无关**：`core/cli/server/web` 之间的 `require` 一律走 `__dirname` 相对路径。`DASHBOARD_HOME` 只决定「数据往哪读/写」，不决定「代码在哪」。这是分发版能同时满足「代码在安装目录、数据也在安装目录、又不改任何 Claude Code 用户行为」的关键。
 - **board 本身**不在 `DASHBOARD_HOME`，而在**各项目主仓** `<mainRepo>/.dashboard/board.json`。因此卸载看板不会丢各项目的任务数据（只丢项目列表 registry 与 snapshots）。
 - **发布副本（各仓 hook 实际跑的那份代码）= `~/.claude/dashboard-release`**（环境变量 `DASHBOARD_RELEASE_HOME` 可改）。
-  *为什么*（HOOK-CLI-POINTS-AT-LIVE-CHECKOUT，2026-09-06 负责人拍板）：`~/.claude/dashboard` 是看板仓的**活的 git 工作检出**，
-  谁在那里切分支、谁改了没提交，全机器各仓的 `pre-commit` 闸门 / `post-commit` 同步就跟着变；合进 master 也不等于生效。
+  **代码检出位置由使用者自定**（本工具不假设它在哪）；`~/.claude/dashboard` 只是 `DASHBOARD_HOME` 的默认值＝数据根。
+  *为什么要用副本*（HOOK-CLI-POINTS-AT-LIVE-CHECKOUT，2026-09-06 负责人拍板）：若 hook 指向活的 git 工作检出，
+  谁在检出里切分支、谁改了没提交，全机器各仓的 `pre-commit` 闸门 / `post-commit` 同步就跟着变；合进 master 也不等于生效。
   治法是把「人正在改的那份」和「全机器跑的那份」物理分开：
   - `cli release`：`git fetch` 后从 **`origin/<主干>`** 经临时索引导出 `core/ cli/ server/ package.json` 到发布副本，
     写 `RELEASE.json` 印章（来源 commit / 时间），目录级换名。**与主工位当前分支、未提交改动完全无关**；`--commit <sha>` 可钉某个提交（回滚）。
@@ -152,6 +154,7 @@
     端口段按身份分开且不重叠：release `6060~6068`、dev（代码根是 git 检出）`6070~6078`，免得起 release 时误杀开发实例。
   - `hooks-install` / `hooks-global` 焊进 hook 的路径按 `core/runtimeRoot.cjs` 裁决，铁律「**hook 永远不许指进 git 检出**」：
     `DASHBOARD_HOOK_CLI_ROOT`（测试隔离）> 自身不是检出（分发版安装目录 / 发布副本自己）> 发布副本 > 拒装并指路 `release`。
+  - 派单 / inbox 显示的 CLI 命令走同文件的 `displayCliCommand()`，每次生成文案时解析，优先级与 hook 相同；仅显示用路径在副本缺失时回落当前代码根（`why='fallback'`），避免提示文案抛异常。路径统一正斜杠，含空格时加双引号。
   - 触发方式（拍板 d2=A）：**收官序列**里合并入主干的那个对话跑一次 `cli release`；`doctor`（本仓 hook 指着副本且副本落后时）与
     `precheck`（第①查）会报「发布副本落后 N 个提交」兜底。不装计划任务，让 master 合坏时留一道人工缓冲。
   - `hooks-trunk-guard`：给看板主工位装 `post-checkout` 提醒——切离主干只在 stderr 吵一声、不拦；worktree 内不提醒。
@@ -233,6 +236,8 @@
 零依赖手写校验器，一次收集全部错误、带 JSON 路径。覆盖：必填/枚举/类型/日期正则/percent 范围/answer∈options/commit sha 格式/**引用完整性**（deps 与 activity.taskId 指向存在的 task、id 唯一）。**写前 `assertValid`，坏数据直接拒绝落盘。**
 
 ### 5.6 registry.json
+可照抄仓库根的 [registry.example.json](../registry.example.json)，复制成 `registry.json` 放到 `DASHBOARD_HOME` 下，再把占位符替换为自己的路径。示例包含最简项目、`mainRepo` / `codeRepo` 分家，以及 `costRoots` / `index` / `docsRoot` 用法；本机注册表不进 git。
+
 ```jsonc
 {
   "schemaVersion": "1.0",
@@ -398,7 +403,7 @@ node packaging/build-installer.cjs [--version 1.0.0] [--skip-selfcheck]
 
 8. **依赖新鲜度部分靠约定**。git 派生字段全自动可靠；但 decisions/wave/禁区等语义字段仍需施工方主动登记（有 hook 缓解，非 100% 自动）。
 
-9. **Claude Code 集成的路径假设**。派单短触发命令里的 CLI 路径按 `~/.claude/dashboard` 布局生成；分发版装到别处时，若同时用 Claude Code 派单，该路径与实际安装位置不一致（核心看板不受影响）。属集成层边角，列入打磨。
+9. **派单 CLI 路径已统一解析**。短触发指令、inbox 与服务端派单文案均按环境变量 / 自身非检出 / 发布副本解析 CLI，不再按固定代码目录拼接；副本缺失时，显示用命令回落当前代码根，hook 仍拒装（见 §4.4）。
 
 10. **无自动更新**。升级需重新下载安装器覆盖安装。
 
