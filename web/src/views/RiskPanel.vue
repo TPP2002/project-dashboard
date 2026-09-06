@@ -79,7 +79,9 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
 .rtop { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .rtop .tid { color: var(--text-2); font-weight: 600; font-size: var(--fs-sm); }
 .rtitle { font-size: var(--fs-base); }
-.reason { color: var(--text-2); font-size: var(--fs-sm); }
+.reason { display: flex; align-items: flex-start; gap: var(--s1); color: var(--text-2); font-size: var(--fs-sm); }
+/* 图标是行首标记，文字换行时不该跟着缩，所以钉在第一行的行高上。 */
+.reason > .icon { margin-top: 2px; }
 .reason.warn { color: var(--warn); }
 .reason.note { color: var(--text-3); }
 .small { font-size: var(--fs-sm); }

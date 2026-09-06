@@ -16,8 +16,11 @@ const props = withDefaults(defineProps<{
 
 const meta = computed(() => statusMeta(props.status))
 
-/** 这枚瓦片在「活泼」档下到底有没有东西会动——已作废既无灯条也无记号动效，不占同屏额度。 */
-const animatable = computed(() => meta.value.spec || meta.value.mark.includes('class="a-'))
+/** 这枚瓦片在「活泼」档下到底有没有东西会动。
+ *  两种情况不动，也就不该占「同屏几个在动」的额度：
+ *  ① 退化成色点的 14px（压根没画瓦片）；② 已作废（既无灯条也无记号动效）。
+ *  算错这个的后果很实在：一屏色点会把真正在动的瓦片误降到「微」。 */
+const animatable = computed(() => props.size !== 14 && (meta.value.spec || meta.value.mark.includes('class="a-')))
 
 const root = ref<HTMLElement | null>(null)
 const inView = ref(false)

@@ -289,6 +289,19 @@ tbody tr:hover { background: var(--surface-2); }
 .appearance-group + .appearance-group { margin-top: var(--s4); }
 .appearance-label { margin-bottom: var(--s2); color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .12em; text-transform: uppercase; }
 .spectrum-options { display: flex; align-items: center; gap: var(--s2); }
+/* 面板里的小选择按钮（主题三选一、图标动效三档）：多个组件共用，所以也放全局层。 */
+.appearance-choice {
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.appearance-choice:hover,
+.appearance-choice[aria-pressed="true"] { background: var(--surface-3); border-color: var(--line-strong); color: var(--text); }
 
 /* 旧页面仍在引用的基础工具类。 */
 .pill { display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.25; white-space: nowrap; }

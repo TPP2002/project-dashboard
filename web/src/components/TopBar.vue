@@ -180,18 +180,6 @@ export default defineComponent({
   box-shadow: var(--shadow);
 }
 .theme-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s1); }
-.appearance-choice {
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--surface-2);
-  color: var(--text-2);
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  transition: background .14s ease, border-color .14s ease, color .14s ease;
-}
-.appearance-choice:hover,
-.appearance-choice[aria-pressed="true"] { background: var(--surface-3); border-color: var(--line-strong); color: var(--text); }
 .bell {
   position: relative;
   display: inline-flex;
