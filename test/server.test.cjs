@@ -105,7 +105,7 @@ function openSse() {
           const ev = parseSse(block);
           client.events.push(ev);
           client.waiters = client.waiters.filter((w) => {
-            if (w.name === ev.event) { clearTimeout(w.timer); w.resolve(ev); return false; }
+            if (w.name === ev.event && w.match(ev)) { clearTimeout(w.timer); w.resolve(ev); return false; }
             return true;
           });
         }
@@ -115,12 +115,14 @@ function openSse() {
     req.on('error', reject);
   });
 }
-function waitEvent(client, name, timeoutMs) {
-  const hit = client.events.find((e) => e.event === name);
+// match:除了事件名,还能挑「哪一条」。同一个 server 进程跑着全部用例,别的用例改自己的板
+// 也会广播 board:changed;不挑就会拿到上一个用例的那一条(0906 CI 上真红过两次,actual='decidebad')。
+function waitEvent(client, name, timeoutMs, match = () => true) {
+  const hit = client.events.find((e) => e.event === name && match(e));
   if (hit) return Promise.resolve(hit);
   return new Promise((resolve, reject) => {
     const w = {
-      name, resolve,
+      name, match, resolve,
       timer: setTimeout(() => { client.waiters = client.waiters.filter((x) => x !== w); reject(new Error(`等 SSE 事件「${name}」超时`)); }, timeoutMs),
     };
     client.waiters.push(w);
@@ -286,7 +288,8 @@ test('GET /api/stream → 收到 board:changed 广播（mtime 轮询 R7）', asy
   const sse = await openSse();
   try {
     await waitEvent(sse, 'hello', 5000); // 首个 hello（带项目列表）
-    const changed = waitEvent(sse, 'board:changed', 8000);
+    // 只认本项目那一条:不挑的话,前一个用例(decidebad)的广播会先到、把断言顶掉。
+    const changed = waitEvent(sse, 'board:changed', 8000, (e) => e.data && e.data.projectId === 'sseproj');
     // 周期性戳 board 改 mtime：server 首次见到项目只记基线不广播，二次改动必广播 → 对时序 race 鲁棒。
     let n = 0;
     const poke = setInterval(() => { try { cmds.note({ ...p.P, text: 'poke-' + (++n) }); } catch { /* 忽略偶发锁竞争 */ } }, 600);
