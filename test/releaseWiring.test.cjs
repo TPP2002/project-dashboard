@@ -6,6 +6,9 @@
  *   · doctor:本仓 hook 确实指着发布副本、且副本落后 origin/主干 → 报「发布副本落后」;
  *            hook 不指发布副本(测试隔离 / 未迁移)→ 不报(别拿机器上碰巧存在的副本决定别的测试红绿);
  *   · precheck:副本不存在 → 报「未发布」;落后 → 报「落后」;齐 → ✔。
+ *
+ * 【0906 口径变更】release 默认会现场构建前端(SERVER-RUNS-ON-LIVE-CHECKOUT d1=A)。本文件的临时仓没有前端源码,
+ * 关心的也不是界面,所以调用一律显式加 `skip-web`——不是绕过闸门,是这些用例本来就只验后台那半边。
  */
 process.env.DASHBOARD_HOOK_CLI_ROOT = require('node:path').resolve(__dirname, '..');
 
@@ -61,7 +64,7 @@ function withEnv(patch, fn) {
 
 test('doctor:hook 指着发布副本且副本落后 → 报「发布副本落后」;hook 不指发布副本 → 不报', () => {
   const t = setup();
-  release({ source: t.work, dest: t.dest });
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
   pushFromElsewhere(t); git(t.work, ['fetch', '-q', 'origin']);
 
   // hook 指本检出(测试隔离默认)→ 哪怕副本落后也不报,别连坐别的测试
@@ -77,7 +80,7 @@ test('doctor:hook 指着发布副本且副本落后 → 报「发布副本落后
   assert.match(rep.text, /cli release/, '要指路怎么修');
 
   // 重新发布后不再报
-  release({ source: t.work, dest: t.dest });
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
   const rep2 = withEnv({ DASHBOARD_RELEASE_HOME: t.dest }, () => doctor({ ...t.P }));
   assert.doesNotMatch(rep2.text, /落后/);
   clean(t.dir);
@@ -88,7 +91,7 @@ test('precheck:副本不存在 → 「未发布」;落后 → 「落后」;齐 �
   // 来源检出不用另指:未发布时文案与来源无关;发布后印章里记着来源(t.work)。
   const run = () => withEnv({ DASHBOARD_RELEASE_HOME: t.dest }, () => precheck({ ...t.P, 'no-fetch': true }).text);
   assert.match(run(), /发布副本未发布/);
-  release({ source: t.work, dest: t.dest });
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.match(run(), /✔ 发布副本 = origin\/master/);
   pushFromElsewhere(t); git(t.work, ['fetch', '-q', 'origin']);
   assert.match(run(), /发布副本落后 origin\/master 1 个提交/);

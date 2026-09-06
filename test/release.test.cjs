@@ -9,6 +9,9 @@
  *   · 目录级换名,连发两次不留 .new/.old 残渣,印章 RELEASE.json 记来源 commit;
  *   · 安装版/发布副本(代码根没有 .git)跑 release 友好跳过;
  *   · hook 的 CLI 根取值规则「永不指进 git 检出」:环境变量 > 自身非检出 > 发布副本 > 拒装。
+ *
+ * 【0906 口径变更】release 默认会现场构建前端(SERVER-RUNS-ON-LIVE-CHECKOUT d1=A)。本文件的临时仓没有前端源码,
+ * 关心的也不是界面,所以调用一律显式加 `skip-web`——不是绕过闸门,是这些用例本来就只验后台那半边。
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -66,7 +69,7 @@ test('detectTrunk:按 origin/HEAD 认主干,不写死 main', () => {
 
 test('release:只导出运行期文件 + RELEASE.json 记 origin/master 的 commit', () => {
   const t = setup();
-  const r = release({ source: t.work, dest: t.dest });
+  const r = release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.equal(r.ok, true);
   for (const f of ['core/x.cjs', 'cli/index.cjs', 'server/server.cjs', 'package.json', 'RELEASE.json']) {
     assert.ok(fs.existsSync(path.join(t.dest, f)), `发布副本应含 ${f}`);
@@ -91,7 +94,7 @@ test('治本证据:来源检出切到功能分支 + 留未提交改动,发布副
   const statusBefore = git(t.work, ['status', '--porcelain']);
   assert.match(statusBefore, /core\/x\.cjs/, '前置:工作区确实脏');
 
-  const r = release({ source: t.work, dest: t.dest });
+  const r = release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.equal(r.ok, true);
   assert.equal(read(path.join(t.dest, 'cli', 'index.cjs')), "console.log('cli v1');\n", '发布副本必须是 origin/master 的版本,不是分支上改坏的');
   assert.equal(read(path.join(t.dest, 'core', 'x.cjs')), "module.exports = 'v1';\n", '未提交改动不得漏进发布副本');
@@ -105,13 +108,13 @@ test('治本证据:来源检出切到功能分支 + 留未提交改动,发布副
 
 test('release:连发两次不留 .new/.old 残渣;推了新 master 后再发布,副本跟上;releaseStatus 能算落后', () => {
   const t = setup();
-  release({ source: t.work, dest: t.dest });
-  release({ source: t.work, dest: t.dest });
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.ok(!fs.existsSync(t.dest + '.new'), '无 .new 残渣');
   assert.ok(!fs.existsSync(t.dest + '.old'), '无 .old 残渣');
 
   const sha2 = pushFromElsewhere(t, 'cli/index.cjs', "console.log('cli v2');\n", 'v2');
-  const r2 = release({ source: t.work, dest: t.dest });
+  const r2 = release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.equal(r2.stamp.commit, sha2, 'release 自带 fetch,发布的是远程最新主干');
   assert.equal(read(path.join(t.dest, 'cli', 'index.cjs')), "console.log('cli v2');\n");
   const s0 = releaseStatus({ source: t.work, dest: t.dest });
@@ -130,7 +133,7 @@ test('release --commit <sha>:钉死某个提交(回滚用)', () => {
   const sha1 = git(t.work, ['rev-parse', 'origin/master']);
   pushFromElsewhere(t, 'cli/index.cjs', "console.log('cli v2');\n", 'v2');
   git(t.work, ['fetch', '-q', 'origin']);
-  const r = release({ source: t.work, dest: t.dest, commit: sha1 });
+  const r = release({ source: t.work, dest: t.dest, commit: sha1, 'skip-web': true });
   assert.equal(r.stamp.commit, sha1);
   assert.equal(read(path.join(t.dest, 'cli', 'index.cjs')), "console.log('cli v1');\n");
   clean(t.dir);
@@ -138,7 +141,7 @@ test('release --commit <sha>:钉死某个提交(回滚用)', () => {
 
 test('release:代码根不是 git 检出(安装版/发布副本自身)→ 友好跳过,不报错', () => {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rel-nogit-')));
-  const r = release({ source: dir, dest: path.join(dir, 'out') });
+  const r = release({ source: dir, dest: path.join(dir, 'out'), 'skip-web': true });
   assert.equal(r.ok, true); assert.equal(r.skipped, true);
   assert.match(r.text, /无需发布/);
   assert.ok(!fs.existsSync(path.join(dir, 'out')));
