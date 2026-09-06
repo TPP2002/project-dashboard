@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 图标体系 v3 定稿(状态 D 灯条语言 + 功能 B 双色)</title>
+<style>
+/* ===== 看板设计系统令牌(照抄 web/src/styles/base.css)+ 本稿新增:按语义色分谱的灯条 ===== */
+:root, .light{--bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;--line:#e4e4e2;--line-strong:#d2d2cf;--text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;--ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;--bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;--n:#8e8e89;--n-bg:#eeeeed;
+ --r-sm:4px;--r:6px;--r-lg:8px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+ --fs-xs:11px;--fs-sm:12.5px;--fs-base:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;--fs-2xl:28px;
+ --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+ /* 全站流光(现有):进度条、心跳、卡片顶边继续用它 */
+ --spec-active:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4;
+ /* 新增:五档语义色各自的灯条谱(首尾同色闭环)。状态瓦片的边框用它,不再共用全站那一条 */
+ --spec-info:#4a9eff,#4ad9c4,#6d8cff,#4a9eff;
+ --spec-warn:#f0b429,#f5825b,#f6d365,#f0b429;
+ --spec-ok:#6fbf82,#2c7a45,#a8e6b9,#6fbf82;
+ --spec-bad:#e0736a,#8a2f27,#f2a59d,#e0736a;
+ --spec-n:#c9c9c6,#8e8e89,#e4e4e2,#c9c9c6}
+.dark{--bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;--line:#242426;--line-strong:#343437;--text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;--ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;--bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;--n:#8e8e8e;--n-bg:#232326;
+ --spec-ok:#6fbf82,#3f9a5c,#a8e6b9,#6fbf82;--spec-bad:#e0736a,#a63d33,#f2a59d,#e0736a;--spec-n:#4a4a4e,#6a6a6f,#343437,#4a4a4e}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:var(--fs-md);line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600;color:var(--text)}
+.mono{font-family:var(--mono)}.small{font-size:var(--fs-sm)}
+.doc{max-width:1560px;margin:0 auto;padding:var(--s6) var(--s5) 80px}
+.doc-head{display:flex;justify-content:space-between;gap:var(--s4);align-items:flex-start;flex-wrap:wrap}
+.doc-head h1{font-size:var(--fs-2xl);letter-spacing:-.02em;color:#1a1a19}
+.doc-head p{margin:var(--s2) 0 0;color:#5c5c58;max-width:980px}
+.tag{display:inline-block;padding:2px var(--s2);border-radius:var(--r-sm);background:#e8f4ec;color:#2c7a45;font-family:var(--mono);font-size:var(--fs-xs);margin-left:var(--s2);vertical-align:middle}
+.modes{display:inline-flex;border:1px solid #d2d2cf;border-radius:var(--r);overflow:hidden;background:#fff;position:sticky;top:12px;z-index:5}
+.modes button{border:0;border-right:1px solid #e4e4e2;background:#fff;color:#5c5c58;padding:6px 14px;font:inherit;font-size:var(--fs-sm);cursor:pointer}
+.modes button:last-child{border-right:0}.modes button.on{background:#1a1a19;color:#fff}
+.sec{margin-top:var(--s6)}
+.sec>h2{font-size:var(--fs-xl);color:#1a1a19;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:var(--mono);font-size:var(--fs-md);margin-right:var(--s2)}
+.sec>p{margin:var(--s2) 0 var(--s4);color:#5c5c58;max-width:1000px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+.pane{background:var(--bg);color:var(--text);border:1px solid var(--line-strong);border-radius:var(--r-lg);padding:var(--s4);position:relative}
+.pane::before{content:attr(data-label);position:absolute;top:8px;right:12px;color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--s3)}
+.cards>div{background:#fff;border:1px solid #e4e4e2;border-radius:var(--r);padding:var(--s3) var(--s4)}
+.cards b{display:block;color:#1a1a19;margin-bottom:var(--s1)}.cards span{color:#5c5c58;font-size:var(--fs-sm);line-height:1.6}
+/* ---- 图标基类(B 双色) ---- */
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;overflow:visible}
+.ic.s14{width:14px;height:14px}.ic.s16{width:16px;height:16px}.ic.s20{width:20px;height:20px}.ic.s24{width:24px;height:24px}.ic.s36{width:36px;height:36px;stroke-width:1.5}
+.ic .tint{fill:currentColor;stroke:none;opacity:.18}
+/* ---- 状态瓦片(D 灯条语言) ---- */
+.tile{display:inline-grid;place-items:center;width:20px;height:20px;padding:1.5px;border-radius:6px;background:var(--line);vertical-align:-.25em;flex:none;position:relative}
+.tile>i{display:grid;place-items:center;width:100%;height:100%;border-radius:4.5px;background:var(--tone-bg,var(--surface))}
+.tile svg{width:14px;height:14px;fill:none;stroke:var(--tone,var(--text-2));stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.tile.fill>i{background:var(--tone)}.tile.fill svg{stroke:var(--bg)}
+.tile.dim{opacity:.5}
+.tile.lg{width:26px;height:26px;border-radius:7px;padding:1.75px}.tile.lg>i{border-radius:5.5px}.tile.lg svg{width:18px;height:18px}
+.tile.xl{width:44px;height:44px;border-radius:11px;padding:2.5px}.tile.xl>i{border-radius:9px}.tile.xl svg{width:30px;height:30px;stroke-width:2}
+.tile.sm{width:16px;height:16px;border-radius:5px;padding:1px}.tile.sm>i{border-radius:4px}.tile.sm svg{width:11px;height:11px;stroke-width:2.4}
+/* 灯条:按语义色分谱。速度分四档:急(2.4s)、常(3.4s)、慢(5s)、余烬(6.4s);可复工反向流 */
+.tile.spec{background-image:linear-gradient(90deg,var(--tone-spec,var(--spec-active)));background-size:200% 100%;animation:slide 3.4s linear infinite}
+.tile.spec.sp-fast{animation-duration:2.4s}.tile.spec.sp-slow{animation-duration:5s}.tile.spec.sp-ember{animation-duration:6.4s}.tile.spec.sp-rev{animation-direction:reverse}
+.tone-n{--tone:var(--n);--tone-bg:var(--n-bg);--tone-spec:var(--spec-n)}.tone-info{--tone:var(--info);--tone-bg:var(--info-bg);--tone-spec:var(--spec-info)}.tone-warn{--tone:var(--warn);--tone-bg:var(--warn-bg);--tone-spec:var(--spec-warn)}.tone-ok{--tone:var(--ok);--tone-bg:var(--ok-bg);--tone-spec:var(--spec-ok)}.tone-bad{--tone:var(--bad);--tone-bg:var(--bad-bg);--tone-spec:var(--spec-bad)}
+@keyframes slide{to{background-position:-200% 0}}
+/* 记号动效(全部循环;三档由 body.m-* 控制) */
+.a-pulse{animation:pulse 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.9)}}
+.a-b1{animation:build 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:bottom center}
+.a-b2{animation:build 2.4s ease-in-out .25s infinite;transform-box:fill-box;transform-origin:bottom center}
+.a-b3{animation:build 2.4s ease-in-out .5s infinite;transform-box:fill-box;transform-origin:bottom center}
+@keyframes build{0%,15%{transform:scaleY(.25)}55%,75%{transform:scaleY(1)}100%{transform:scaleY(.25)}}
+.a-draw{stroke-dasharray:26;animation:draw 3s ease-out infinite}
+@keyframes draw{0%{stroke-dashoffset:26}40%,100%{stroke-dashoffset:0}}
+.a-pop{animation:pop 3s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pop{0%{transform:scale(.6);opacity:0}25%{transform:scale(1.08);opacity:1}35%,100%{transform:scale(1)}}
+.a-spin{animation:spin1 3.2s cubic-bezier(.45,0,.2,1) infinite;transform-box:fill-box;transform-origin:center}
+@keyframes spin1{0%,15%{transform:rotate(0)}60%,100%{transform:rotate(-360deg)}}
+.a-twinkle{animation:twinkle 2.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes twinkle{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.7}}
+.a-wave{animation:wave 2.6s ease-in-out infinite;transform-box:fill-box;transform-origin:left center}
+@keyframes wave{0%,100%{transform:skewY(0)}50%{transform:skewY(-7deg)}}
+.a-breathe{animation:breathe 4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.4}}
+.a-ring{animation:ring 12s linear infinite;transform-box:fill-box;transform-origin:center}
+@keyframes ring{to{transform:rotate(360deg)}}
+.a-dot1{animation:dots 1.6s ease-in-out infinite}.a-dot2{animation:dots 1.6s ease-in-out .2s infinite}.a-dot3{animation:dots 1.6s ease-in-out .4s infinite}
+@keyframes dots{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-1.6px)}}
+.a-lid{animation:lid 3s ease-in-out infinite;transform-box:fill-box;transform-origin:left bottom}
+@keyframes lid{0%,60%,100%{transform:rotate(0)}75%,85%{transform:rotate(-14deg)}}
+/* 三档:关 / 微(只有 待拍板·施工中·暂缓 动) / 活泼(全部循环,默认) */
+body.m-off .tile,body.m-off .tile *,body.m-off .ic *{animation:none!important}
+body.m-calm .tile:not(.st-ask):not(.st-building):not(.st-parked),body.m-calm .tile:not(.st-ask):not(.st-building):not(.st-parked) *{animation:none!important}
+/* ---- 看板组件复刻 ---- */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:var(--s1) var(--s2);border:1px solid transparent;border-radius:var(--r-sm);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.6;white-space:nowrap}
+.badge.n{background:var(--surface-3);color:var(--text-2)}.badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.bad{background:var(--bad-bg);color:var(--bad)}.badge.info{background:var(--info-bg);color:var(--info)}
+.badge.tiled{padding-left:3px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:var(--s1) var(--s2);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-3);color:var(--text-2);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.25;white-space:nowrap}
+.column{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s2);display:flex;flex-direction:column;gap:var(--s2);width:250px;flex:none}
+.column-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);padding:var(--s1)}
+.tcard{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:var(--s2);padding:var(--s3) var(--s4);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r)}
+.tcard-head{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-sm)}
+.tid{color:var(--text-2);font-weight:600;font-family:var(--mono)}.spacer{flex:1}
+.ttitle{font-size:var(--fs-base);line-height:1.4}
+.tdesc{color:var(--text-3);font-size:var(--fs-sm);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prog{display:flex;align-items:center;gap:var(--s2)}.glow-rail{height:6px;overflow:hidden;border-radius:3px;background:var(--surface-3);flex:1}
+.glow-rail>i{display:block;height:100%;border-radius:3px;background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide 3.4s linear infinite}
+.pct{min-width:32px;color:var(--text-2);font-size:var(--fs-xs);text-align:right;font-family:var(--mono)}.prog-time{color:var(--text-3);font-size:var(--fs-xs);white-space:nowrap}
+.meta{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+.glow-edge{position:absolute;inset:0 auto 0 0;width:2px;background-image:linear-gradient(180deg,var(--spec-info));background-size:100% 200%;animation:slideY 3.4s linear infinite}
+@keyframes slideY{to{background-position:0 -200%}}
+.rowline{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) 0;border-bottom:1px dashed var(--line)}
+.rowline:last-child{border-bottom:0}.rowline .lab{width:72px;color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);flex:none}
+.strip{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}
+.nav{display:grid;gap:var(--s1);width:200px;padding:var(--s2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.nav .g{color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase;padding:var(--s2) var(--s2) var(--s1)}
+.nav .item{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);border:1px solid transparent;border-radius:var(--r);color:var(--text-2);font-size:var(--fs-base)}
+.nav .item.on{background:var(--surface-3);border-color:var(--line);color:var(--text);font-weight:600}
+.nav .ic{color:var(--text-3)}.nav .item.on .ic{color:var(--text)}.nav .cnt{margin-left:auto;min-width:16px;padding-inline:var(--s1);text-align:center}
+.ph{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-xl);font-weight:600;letter-spacing:-.01em}.ph .ic{color:var(--text-2)}
+.sec-t{color:var(--text-3);font-size:var(--fs-xs);font-weight:600;letter-spacing:.1em;text-transform:uppercase;margin-bottom:var(--s2)}
+.note{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);border-radius:var(--r);background:var(--warn-bg);color:var(--warn);font-size:var(--fs-base)}
+.note.ok{background:var(--ok-bg);color:var(--ok)}
+.inline-list{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+.empty{padding:var(--s4);color:var(--text-3);font-size:var(--fs-sm);text-align:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);display:grid;place-items:center;gap:var(--s2);min-height:110px}
+/* 状态大网格 */
+.stgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:var(--s2)}
+.stcell{display:grid;grid-template-columns:auto 1fr;gap:var(--s3);align-items:center;padding:var(--s3);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.stcell .nm{font-size:var(--fs-base);font-weight:600;color:var(--text)}
+.stcell .mo{font-size:var(--fs-xs);color:var(--text-3);line-height:1.4}
+.stcell .sizes{display:flex;gap:6px;align-items:center;margin-top:4px}
+/* 图标全集 */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:var(--s2)}
+.cell{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s3);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.cell .ic{color:var(--text)}.cell .nm{font-family:var(--mono);font-size:var(--fs-xs);color:var(--text-2);line-height:1.3}.cell .use{font-size:var(--fs-xs);color:var(--text-3);line-height:1.3}
+/* 暂缓专场 */
+.parkstage{display:grid;grid-template-columns:auto 1fr;gap:var(--s5);align-items:center;padding:var(--s4);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.flow{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.flow .arr{color:var(--text-3);font-family:var(--mono)}
+.flow .step{display:grid;place-items:center;gap:6px;padding:var(--s2) var(--s3);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);min-width:110px}
+.flow .step small{color:var(--text-3);font-size:var(--fs-xs);text-align:center;line-height:1.35}
+/* 规范表 */
+table.map{width:100%;border-collapse:collapse;font-size:var(--fs-sm);background:#fff;border:1px solid #e4e4e2}
+table.map th,table.map td{padding:7px var(--s3);border-bottom:1px solid #e4e4e2;text-align:left;vertical-align:middle}
+table.map th{color:#8e8e89;font-family:var(--mono);font-size:var(--fs-xs);font-weight:500;letter-spacing:.1em;text-transform:uppercase;background:#f6f6f5}
+table.map td.c{font-family:var(--mono);font-size:var(--fs-xs);color:#5c5c58}
+pre{margin:0;padding:var(--s3) var(--s4);background:#1a1a19;color:#e7e7e8;border-radius:var(--r);font-family:var(--mono);font-size:var(--fs-sm);line-height:1.6;overflow:auto}
+.swatch{display:inline-block;width:64px;height:10px;border-radius:5px;vertical-align:middle;margin-right:6px;background-size:200% 100%;animation:slide 3.4s linear infinite}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--s3)}
+.setcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s3) var(--s4)}
+.setcard .lab2{color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.12em;text-transform:uppercase;margin-bottom:var(--s2)}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r);overflow:hidden}
+.seg span{padding:var(--s1) var(--s3);background:var(--surface-2);color:var(--text-2);font-size:var(--fs-sm);border-right:1px solid var(--line)}
+.seg span:last-child{border-right:0}.seg span.on{background:var(--text);color:var(--bg)}
+.setrow{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);padding:6px 0;border-bottom:1px dashed var(--line);font-size:var(--fs-sm);color:var(--text-2)}
+.setrow:last-child{border-bottom:0}
+.setrow select{font:inherit;font-size:var(--fs-xs);padding:2px var(--s1);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);color:var(--text)}
+@media (max-width:1100px){.pair{grid-template-columns:1fr}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+</head>
+<body class="m-lively">
+<div class="doc">
+  <div class="doc-head">
+    <div>
+      <h1>图标体系 v3 定稿 <span class="tag">状态 D · 功能 B · 负责人 0907 拍板</span></h1>
+      <p>按你的三条要求改:<b>① 动效全部循环播放</b>(右上角三档可切:关 / 微 / 活泼,默认活泼);<b>② 暂缓有自己的"余烬"灯条与动效</b>(第 03 节专场);<b>③ 灯条按状态语义色分谱</b>,不再全站共用一条——全站那条流光继续留给进度条、心跳和卡片顶边,状态瓦片的边框各走各的颜色(第 01 节)。</p>
+    </div>
+    <div class="modes" id="modes"><button data-m="m-off">动效 关</button><button data-m="m-calm">微</button><button data-m="m-lively" class="on">活泼(默认)</button></div>
+  </div>
+
+  <!-- 01 灯条分谱 -->
+  <div class="sec">
+    <h2><span class="no">01</span>灯条怎么"针对性适配":一色一谱,五档语义色各有一条</h2>
+    <p>原则:<b>颜色说语义,流速说紧急,方向说趋势</b>。一档语义色配一条谱(首尾同色闭环、无缝),谱里只做同色系的明暗与邻色摆动,不串色;流速四档:急 2.4s(等你出手)、常 3.4s(正在发生)、慢 5s(收尾)、余烬 6.4s(搁着);可复工的谱反向流,表示"往回接"。全站那条彩虹谱不动,仍然是进度条、心跳、卡片顶边的颜色。</p>
+    <div class="pair" id="specPair"></div>
+  </div>
+
+  <!-- 02 十一个状态 -->
+  <div class="sec">
+    <h2><span class="no">02</span>十一个状态瓦片:各自的谱、各自的动作,全部循环</h2>
+    <p>每格:26px 大瓦片(看动效)+ 20 / 16 两档实际尺寸 + 一句"它在说什么"。切右上角三档看差别:"微"只保留 待拍板·施工中·暂缓 三个真正需要被看见的动作。</p>
+    <div class="pair" id="statusPair"></div>
+  </div>
+
+  <!-- 03 暂缓专场 -->
+  <div class="sec">
+    <h2><span class="no">03</span>暂缓专场:压着的火,不是灭了的火</h2>
+    <p>暂缓的卡最容易被忘。它的谱是暗红"余烬"(红 → 深砖红 → 浅珊瑚),走得最慢(6.4s),两根暂停条 4s 一次慢呼吸——安静但一直在提醒"这里还搁着一件事"。复工那一刻:余烬谱切成蓝谱并<b>反向</b>流动、回旋箭头转一圈,再接回施工中的三根柱。下面把这段迁移摆出来。</p>
+    <div class="pair" id="parkPair"></div>
+  </div>
+
+  <!-- 04 功能图标 B -->
+  <div class="sec">
+    <h2><span class="no">04</span>功能图标(B 双色)全集:46 个</h2>
+    <p>线条 + 一层 18% 同色浅填,颜色继承所在文字色;放在页头是次级灰、放在徽章里是徽章色。不动、不抢戏。</p>
+    <div class="pair" id="iconPair"></div>
+  </div>
+
+  <!-- 05 组合示例 -->
+  <div class="sec">
+    <h2><span class="no">05</span>放回真实界面:泳道头、任务卡、抽屉、侧栏、页头、空态</h2>
+    <p>状态瓦片只出现在"状态"位置(泳道头、卡片抬头、风险/搜索/历史等列表行的状态列);功能图标出现在其它一切位置。两套语言不混用。</p>
+    <div class="pair" id="composePair"></div>
+  </div>
+
+  <!-- 06 设置 -->
+  <div class="sec">
+    <h2><span class="no">06</span>外观面板新增两组设置</h2>
+    <p>放进现有"外观"面板(主题 / 灯条配色 那一栏下面),沿用现有的"全站一套 + 分部位覆盖"机制,把五档状态谱当作五个新的"部位"。</p>
+    <div class="pair" id="settingsPair"></div>
+  </div>
+
+  <!-- 07 实施规范 -->
+  <div class="sec">
+    <h2><span class="no">07</span>实施规范(给施工方)</h2>
+    <table class="map">
+      <thead><tr><th>状态</th><th>瓦片底 / 记号色</th><th>灯条谱</th><th>流速 · 方向</th><th>记号动效(循环)</th><th>微档</th></tr></thead>
+      <tbody id="specTable"></tbody>
+    </table>
+    <div style="height:12px"></div>
+<pre>// 令牌(base.css 新增,浅深各一套)
+--spec-info / --spec-warn / --spec-ok / --spec-bad / --spec-n   // 五档语义谱,首尾同色闭环
+--spec-active 不变                                                // 进度条 / 心跳 / 卡片顶边继续用全站谱
+
+// 组件
+&lt;StatusTile :status="task.status" :size="16|20|26" /&gt;          // D:瓦片 = 底色 + 记号 + 边框(静 / 谱)
+&lt;Icon name="branch" :size="14|16|20|36" duotone /&gt;              // B:线条 + 18% 浅填,继承 currentColor
+statusMeta(status) → { tone, spec:boolean, speed:'fast|normal|slow|ember', reverse, glyphAnim }
+
+// 动效三档(外观面板 → 图标动效;localStorage;尊重 prefers-reduced-motion)
+off    → 全部静止
+calm   → 只有 待拍板 / 施工中 / 暂缓 三种循环,其余静止
+lively → 全部循环(默认)
+
+// 性能护栏
+只动 transform / opacity / background-position;transform-box: fill-box
+瓦片进入视口才播(IntersectionObserver),离开即暂停;同屏动效瓦片超过 40 个自动降到 calm
+14px 及以下不画瓦片,退化为 色点 + 文字(徽章内)
+
+// 不动的
+CLI 终端输出与 core/boardSchema 的 STATUS_EMOJI 保留;前端不再 import emojiFor</pre>
+  </div>
+</div>
+
+<script>
+// ---------- 数据 ----------
+const S = (inner, cls = 'ic s16', extra = '') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true" ${extra}>${inner}</svg>`;
+// 状态:key, 名, tone, 谱?, 速度, 反向?, 记号(含动效 class), 说明, 微档
+const ST = [
+  ['none','未开工','n',false,'','', '<circle class="a-ring" cx="12" cy="12" r="4.6" stroke-dasharray="2.3 2.3"/>','虚线环极慢转(12s):闲置,没人碰','静'],
+  ['queued','待开工','info',false,'','', '<circle class="a-dot1" cx="6.5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle class="a-dot2" cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle class="a-dot3" cx="17.5" cy="12" r="1.7" fill="currentColor" stroke="none"/>','三点起伏:排着队','静'],
+  ['ask','待拍板','warn',true,'sp-fast','', '<g class="a-pulse"><path d="M9.4 9.3a2.7 2.7 0 1 1 3.9 2.3c-1 .5-1.3 1.1-1.3 2.1"/><path d="M12 17.4h.01" stroke-width="2.8"/></g>','琥珀谱急流 2.4s + 问号呼吸:等你出手','循环'],
+  ['decided','已拍板','ok',true,'sp-slow','', '<path class="a-draw" d="m7 12.6 3.2 3.2 6.8-7.4"/><path d="M7 18.5h10" style="opacity:.45"/>','绿谱慢流 5s + 勾反复画一笔:定了,等人接','静'],
+  ['building','施工中','info',true,'','', '<path d="M5.5 19h13" style="opacity:.45"/><path class="a-b1" d="M7.5 16.5v-3.5"/><path class="a-b2" d="M12 16.5v-7"/><path class="a-b3" d="M16.5 16.5v-10.5"/>','蓝谱常流 3.4s + 三根柱子在长:正在发生','循环'],
+  ['resume','可复工','info',true,'','sp-rev', '<g class="a-spin"><path d="M7 12.6a5 5 0 1 0 1.6-3.7"/><path d="M6.4 6.2v3.4h3.4"/></g>','蓝谱反向流 + 回旋箭头转一圈:可以接着做了','静'],
+  ['wrap','收官','ok',true,'sp-slow','', '<path d="M8 19V5.5"/><g class="a-wave"><path d="M8 6h8.6l-1.7 3 1.7 3H8"/></g>','绿谱慢流 + 旗子轻摆:收尾中','静'],
+  ['done','已完工','ok',false,'','', '<path class="a-draw" d="m7 12.4 3.3 3.3 6.7-7.4"/>','整块填满、无边框流光 + 勾反复画:成了(结论不需要流动)','静'],
+  ['parked','暂缓','bad',true,'sp-ember','', '<g class="a-breathe"><path d="M9.4 8.3v7.4M14.6 8.3v7.4"/></g>','余烬谱 6.4s + 暂停条慢呼吸:压着的火','循环'],
+  ['finale','压轴','warn',false,'','', '<g class="a-twinkle"><path d="m12 5.8 1.9 3.9 4.3.6-3.1 3 .7 4.3L12 15.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></g>','无边框流光 + 星闪:留到最后,先别急','静'],
+  ['void','已作废','n',false,'','', '<path d="m8.5 8.5 7 7M15.5 8.5l-7 7"/>','半透明、全静:不再算数','静'],
+];
+const tile = (st, size = '', opt = {}) => {
+  const [k, n, tone, spec, speed, rev, mark] = st;
+  const cls = ['tile', 'st-' + k, 'tone-' + tone, spec && !opt.still ? 'spec' : '', speed, rev, k === 'done' ? 'fill' : '', k === 'void' ? 'dim' : '', size].join(' ');
+  return `<span class="${cls}" title="${n}"><i><svg viewBox="0 0 24 24" aria-hidden="true">${mark}</svg></i></span>`;
+};
+const byKey = Object.fromEntries(ST.map(s => [s[0], s]));
+const badgeD = (k) => { const s = byKey[k]; return `<span class="badge tiled ${s[2]}">${tile(s, 'sm')} ${s[1]}</span>`; };
+const headD = (k) => { const s = byKey[k]; return `<span class="badge tiled ${s[2]}" style="padding-left:4px">${tile(s)} ${s[1]}</span>`; };
+
+// B 双色功能图标:[key, 线条, 浅填, 用途]
+const IC = {
+  home:['<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>','<path class="tint" d="M4 10.5 12 4l8 6.5V20H4z"/>','总览'],
+  kanban:['<rect x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="9.25" y="4" width="5.5" height="11" rx="1.2"/><rect x="15.5" y="4" width="5.5" height="7" rx="1.2"/>','<rect class="tint" x="3" y="4" width="5.5" height="16" rx="1.2"/>','看板'],
+  bell:['<path d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9"/><path d="M10.3 20.5a1.9 1.9 0 0 0 3.4 0"/>','<path class="tint" d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9z"/>','顶栏铃铛 / 待拍板页头'],
+  toland:['<path d="M7 17 17 7"/><path d="M8 7h9v9"/>','<path class="tint" d="M8 7h9v9z"/>','待落地'],
+  history:['<path d="M3 12a9 9 0 1 0 3.1-6.8"/><path d="M3 3v6h6"/><path d="M12 7v5l3.5 2"/>','<circle class="tint" cx="12" cy="12" r="9" style="opacity:.12"/>','拍板历史'],
+  calendar:['<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>','<rect class="tint" x="3" y="10" width="18" height="11" rx="1.5"/>','每日成果'],
+  chart:['<path d="M5 20v-7M11 20V5M17 20v-10"/><path d="M3 20h18"/>','<path class="tint" d="M3.8 13h2.4v7H3.8zM9.8 5h2.4v15H9.8zM15.8 10h2.4v10h-2.4z"/>','洞察'],
+  activity:['<path d="M3 12h4l3-8 4 16 3-8h4"/>','','活动流'],
+  alert:['<circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16.5h.01"/>','<circle class="tint" cx="12" cy="12" r="9"/>','风险'],
+  layers:['<path d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m3 12.4 9 4.8 9-4.8"/><path d="m3 17 9 4.8 9-4.8"/>','<path class="tint" d="m12 3 9 4.8-9 4.8-9-4.8z"/>','波次 / W 标签'],
+  checks:['<path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/>','<rect class="tint" x="12" y="4" width="10" height="16" rx="1.5" style="opacity:.12"/>','验收 / 并行清单'],
+  merge:['<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>','<circle class="tint" cx="18" cy="18" r="3"/><circle class="tint" cx="6" cy="6" r="3"/>','占用防撞'],
+  gantt:['<path d="M4 6h8M8 12h9M12 18h8"/>','<path class="tint" d="M4 4.5h8a1.5 1.5 0 0 1 0 3H4zM8 10.5h9a1.5 1.5 0 0 1 0 3H8zM12 16.5h8a1.5 1.5 0 0 1 0 3h-8z"/>','甘特'],
+  network:['<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.4 13.3 7.2 4.2M15.6 6.5 8.4 10.7"/>','<circle class="tint" cx="18" cy="5" r="2.6"/><circle class="tint" cx="6" cy="12" r="2.6"/><circle class="tint" cx="18" cy="19" r="2.6"/>','依赖'],
+  search:['<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/>','<circle class="tint" cx="11" cy="11" r="6.5"/>','搜索'],
+  cpu:['<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>','<rect class="tint" x="6" y="6" width="12" height="12" rx="2"/>','算力'],
+  coins:['<circle cx="8.5" cy="8.5" r="5.5"/><path d="M17.9 10.6a5.5 5.5 0 1 1-7.3 7.3"/><path d="M7.5 6.5h1.2v4"/><path d="m16.3 14 .7.7-2.6 2.6"/>','<circle class="tint" cx="8.5" cy="8.5" r="5.5"/>','成本'],
+  bot:['<path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>','<rect class="tint" x="4" y="8" width="16" height="12" rx="2"/>','Codex / 建议档位'],
+  book:['<path d="M2.5 4.5H9a2 2 0 0 1 2 2v13.5a2 2 0 0 0-2-2H2.5z"/><path d="M21.5 4.5H15a2 2 0 0 0-2 2v13.5a2 2 0 0 1 2-2h6.5z"/>','<path class="tint" d="M2.5 4.5H9a2 2 0 0 1 2 2v13.5a2 2 0 0 0-2-2H2.5z"/>','审阅台'],
+  branch:['<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>','<circle class="tint" cx="18" cy="6" r="3"/><circle class="tint" cx="6" cy="18" r="3"/>','分支'],
+  pr:['<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>','<circle class="tint" cx="18" cy="18" r="3"/><circle class="tint" cx="6" cy="6" r="3"/>','PR'],
+  commit:['<circle cx="12" cy="12" r="3.5"/><path d="M3 12h5.5M15.5 12H21"/>','<circle class="tint" cx="12" cy="12" r="3.5"/>','提交'],
+  tree:['<path d="M12 22v-4"/><path d="m7 18 5-7 5 7z"/><path d="m8.5 12.5 3.5-5 3.5 5"/><path d="m10 8 2-3.5 2 3.5"/>','<path class="tint" d="m7 18 5-7 5 7z"/>','worktree'],
+  folder:['<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.3l2 2h8.7A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>','<path class="tint" d="M3 9.5h18v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>','文件域'],
+  ban:['<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>','<circle class="tint" cx="12" cy="12" r="9"/>','禁区'],
+  alertTri:['<path d="M12 3.5 2.9 19a1.2 1.2 0 0 0 1 1.8h16.2a1.2 1.2 0 0 0 1-1.8z"/><path d="M12 9.5v4.5M12 17.5h.01"/>','<path class="tint" d="M12 3.5 2.9 19a1.2 1.2 0 0 0 1 1.8h16.2a1.2 1.2 0 0 0 1-1.8z"/>','阻塞理由'],
+  parkingNote:['<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.5 17V7h3.8a3 3 0 0 1 0 6H9.5"/>','<rect class="tint" x="3.5" y="3.5" width="17" height="17" rx="2"/>','暂缓遗留'],
+  rotateCcw:['<path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 3v6h6"/>','<circle class="tint" cx="12" cy="12" r="9" style="opacity:.1"/>','复工依据'],
+  file:['<path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5"/><path d="M8.5 13h7M8.5 17h5"/>','<path class="tint" d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/>','文档'],
+  message:['<path d="M20.5 14.5a2 2 0 0 1-2 2H8l-4.5 4V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>','<path class="tint" d="M20.5 14.5a2 2 0 0 1-2 2H8l-4.5 4V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>','留言(新)'],
+  copy:['<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>','<rect class="tint" x="9" y="9" width="11" height="11" rx="2"/>','复制卡号'],
+  archive:['<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V8"/><path d="M10 12.5h4"/>','<rect class="tint" x="3" y="4" width="18" height="4" rx="1"/>','折叠已完工'],
+  sparkles:['<path d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="M4.5 3.5v3M3 5h3M19.5 16.5v3M18 18h3"/>','<path class="tint" d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/>','空态·全清'],
+  inbox:['<g class="lid"><path d="M5.6 5.2 2 12h20l-3.6-6.8A2 2 0 0 0 16.6 4H7.4a2 2 0 0 0-1.8 1.2z"/></g><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6"/>','<path class="tint" d="M2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6h-6l-2 3h-4l-2-3z"/>','空态·暂无'],
+  target:['<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>','<circle class="tint" cx="12" cy="12" r="5"/>','空态·拍板历史'],
+  flame:['<path d="M12 21.5c4 0 6.5-2.6 6.5-6.3 0-2.7-1.6-4.9-3.1-6.3-.4 1.7-1.3 2.7-2.5 3.2.1-2.9-1.4-5.7-4.2-7.6.5 2.7-.8 4.6-2.2 6.4C5.4 12.4 5.5 14 5.5 15.2c0 3.7 2.5 6.3 6.5 6.3z"/>','<path class="tint" d="M12 21.5c4 0 6.5-2.6 6.5-6.3 0-2.7-1.6-4.9-3.1-6.3-.4 1.7-1.3 2.7-2.5 3.2.1-2.9-1.4-5.7-4.2-7.6.5 2.7-.8 4.6-2.2 6.4C5.4 12.4 5.5 14 5.5 15.2c0 3.7 2.5 6.3 6.5 6.3z"/>','连击'],
+  hand:['<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3 16.5a2 2 0 0 1 3-2.6L8 16"/>','<path class="tint" d="M6 14V6a2 2 0 0 1 4 0v4a2 2 0 0 1 4 0V6a2 2 0 0 1 4 0v2a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3 16.5a2 2 0 0 1 3-2.6z"/>','认领'],
+  pencil:['<path d="M17 3.5 20.5 7 8 19.5H4.5V16z"/><path d="m14.5 6 3.5 3.5"/>','<path class="tint" d="M17 3.5 20.5 7 8 19.5H4.5V16z"/>','备注'],
+  trending:['<path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/>','<path class="tint" d="M3 17l6-6 4 4 8-8v10H3z" style="opacity:.1"/>','进度更新'],
+  zap:['<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>','<path class="tint" d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/>','运行中 / 心跳'],
+  download:['<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>','','导出'],
+  box:['<path d="m12 2.5 8.5 4.5v10L12 21.5 3.5 17V7z"/><path d="m3.5 7 8.5 4.5L20.5 7"/><path d="M12 11.5v10"/>','<path class="tint" d="m12 2.5 8.5 4.5-8.5 4.5L3.5 7z"/>','整项目派单'],
+  check:['<path d="m5 12.5 4.5 4.5L19 7"/>','','已显示全部 / 拍板动作'],
+  x:['<path d="m6 6 12 12M18 6 6 18"/>','','关闭 / 作废动作'],
+  settings:['<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>','<circle class="tint" cx="12" cy="12" r="6"/>','设置 / 外观'],
+  refresh:['<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/>','<circle class="tint" cx="12" cy="12" r="9" style="opacity:.1"/>','刷新'],
+  plug:['<path d="M12 22v-5"/><path d="M9 8V2M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/>','<path class="tint" d="M18 8v5a6 6 0 0 1-12 0V8z"/>','连接状态'],
+  sun:['<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>','<circle class="tint" cx="12" cy="12" r="4"/>','浅色主题'],
+  moon:['<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>','<path class="tint" d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>','深色主题'],
+};
+const iconB = (k, cls = 'ic s16') => S((IC[k][1] || '') + IC[k][0], cls);
+
+// ---------- 01 谱 ----------
+const SPECS = [['info','蓝谱 · 施工中 / 待开工 / 可复工','常 3.4s(可复工反向)'],['warn','琥珀谱 · 待拍板 / 压轴','急 2.4s'],['ok','绿谱 · 已拍板 / 收官 / 已完工','慢 5s(已完工不流)'],['bad','余烬谱 · 暂缓','余烬 6.4s'],['n','灰谱 · 未开工 / 已作废','不流,只在悬停时走一圈'],['active','全站谱(现有)· 进度条 / 心跳 / 卡片顶边','常 3.4s,不变']];
+const specRows = () => SPECS.map(([t, n, sp]) => `<div class="rowline"><span class="lab">${t}</span><span class="swatch" style="background-image:linear-gradient(90deg,var(--spec-${t}))${t==='bad'?';animation-duration:6.4s':t==='warn'?';animation-duration:2.4s':t==='ok'?';animation-duration:5s':''}"></span><span style="flex:1;font-size:var(--fs-sm)">${n}</span><span class="small" style="color:var(--text-3)">${sp}</span></div>`).join('');
+document.getElementById('specPair').innerHTML = `<div class="pane light" data-label="浅色">${specRows()}</div><div class="pane dark" data-label="深色">${specRows()}</div>`;
+
+// ---------- 02 状态 ----------
+const statusGrid = () => `<div class="stgrid">${ST.map(s => `<div class="stcell">${tile(s, 'lg')}<div><div class="nm">${s[1]}</div><div class="mo">${s[7]}</div><div class="sizes">${tile(s)}${tile(s, 'sm')}<span class="badge ${s[2]} tiled" style="margin-left:4px">${tile(s, 'sm')} ${s[1]}</span></div></div></div>`).join('')}</div>`;
+document.getElementById('statusPair').innerHTML = `<div class="pane light" data-label="浅色">${statusGrid()}</div><div class="pane dark" data-label="深色">${statusGrid()}</div>`;
+
+// ---------- 03 暂缓专场 ----------
+const parkStage = () => `<div class="parkstage">${tile(byKey.parked, 'xl')}<div>
+    <div class="sec-t">暂缓 · 余烬谱 6.4s · 暂停条 4s 慢呼吸</div>
+    <div class="flow">
+      <div class="step">${tile(byKey.building, 'lg')}<small>施工中<br>蓝谱常流</small></div><span class="arr">→ park</span>
+      <div class="step">${tile(byKey.parked, 'lg')}<small>暂缓<br>余烬慢流</small></div><span class="arr">→ unpark</span>
+      <div class="step">${tile(byKey.resume, 'lg')}<small>可复工<br>蓝谱反向 + 转一圈</small></div><span class="arr">→ claim</span>
+      <div class="step">${tile(byKey.building, 'lg')}<small>施工中<br>接回三根柱</small></div>
+    </div>
+    <div style="margin-top:var(--s3);display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center">
+      <span class="badge bad tiled" style="padding-left:4px">${tile(byKey.parked)} 暂缓</span>
+      <span class="badge bad tiled">${tile(byKey.parked, 'sm')} 暂缓</span>
+      <span class="small" style="color:var(--text-3)">14px 徽章里保留余烬谱,只是更细;风险页"暂缓"列每张卡的状态位都用它</span>
+    </div></div></div>`;
+document.getElementById('parkPair').innerHTML = `<div class="pane light" data-label="浅色">${parkStage()}</div><div class="pane dark" data-label="深色">${parkStage()}</div>`;
+
+// ---------- 04 功能图标 ----------
+const iconGrid = () => `<div class="grid">${Object.entries(IC).map(([k, v]) => `<div class="cell">${iconB(k, 'ic s20')}<div><div class="nm">${k}</div><div class="use">${v[2]}</div></div></div>`).join('')}</div>`;
+document.getElementById('iconPair').innerHTML = `<div class="pane light" data-label="浅色">${iconGrid()}</div><div class="pane dark" data-label="深色">${iconGrid()}</div>`;
+
+// ---------- 05 组合 ----------
+const compose = () => `
+  <div class="rowline"><span class="lab">泳道头</span><div class="strip">${['ask','building','parked','done'].map((k, i) => `<div class="column-head" style="min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)">${headD(k)}<span class="badge n">${[3,9,7,220][i]}</span></div>`).join('')}</div></div>
+  <div class="rowline"><span class="lab">任务卡</span>
+    <div class="column"><div class="column-head">${headD('building')}<span class="badge n">9</span></div>
+      <div class="tcard"><span class="glow-edge"></span>
+        <div class="tcard-head">${tile(byKey.building, 'sm')}<span class="tid">AUD-UI-OVERVIEW-SIGNAL</span><span class="spacer"></span><span class="badge warn">${iconB('bell','ic s14')}2</span></div>
+        <div class="ttitle">总览说有 307 件事要我处理,其实绝大多数不用管</div>
+        <div class="tdesc">基线(mama 项目,1920 宽实测):总览 KPI"需要你处理"=307(待拍板 47 + 卡住 258 + 驳回 2)。① Overview.vue blockedItems 改为尊重 store.centerScopeAll…</div>
+        <div class="prog"><div class="glow-rail"><i style="width:45%"></i></div><span class="pct">45%</span><span class="prog-time" style="color:var(--warn)">${iconB('history','ic s14')} 42 分钟前</span></div>
+        <div class="meta"><span class="pill">${iconB('branch','ic s14')} fix/overview-signal</span><span class="pill">${iconB('pr','ic s14')} #33</span><span class="pill">${iconB('layers','ic s14')} W1</span><span class="badge info">${iconB('bot','ic s14')} opus·中</span></div>
+      </div>
+      <div class="tcard">
+        <div class="tcard-head">${tile(byKey.parked, 'sm')}<span class="tid">INTEL-TESTBED-CONTENTION</span><span class="spacer"></span></div>
+        <div class="ttitle">全量跑分时共用测试库互相拖慢,先搁一搁</div>
+        <div class="meta"><span class="pill">${iconB('branch','ic s14')} feat/testbed-lock</span><span class="badge bad">${iconB('alertTri','ic s14')} 等 INTEL-106 拆库</span></div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:260px;align-self:flex-start">
+      <div class="sec-t">抽屉 · 标签与依赖段</div>
+      <div class="inline-list" style="margin-bottom:var(--s2)"><span class="pill">${iconB('branch','ic s14')} fix/unpark-reason</span><span class="pill">${iconB('tree','ic s14')} wt-3</span><span class="pill">${iconB('pr','ic s14')} #30</span><span class="pill">${iconB('commit','ic s14')} 2fab091f</span></div>
+      <div class="inline-list" style="margin-bottom:var(--s2)"><span class="badge info">${iconB('folder','ic s14')} web/src/types.ts</span><span class="badge bad">${iconB('ban','ic s14')} core/**</span></div>
+      <div class="note" style="margin-bottom:var(--s2)">${iconB('alertTri','ic s16')} 等 PR #29 合并后才能验</div>
+      <div class="note" style="margin-bottom:var(--s2)">${iconB('parkingNote','ic s16')} 遗留:测试还没补</div>
+      <div class="note ok" style="margin-bottom:var(--s2)">${iconB('rotateCcw','ic s16')} 复工依据:上游已合入 <span class="mono small">2026-09-07</span></div>
+      <div class="inline-list"><span class="pill">${iconB('file','ic s14')} 对账与施工分解.md</span><span class="pill">${iconB('toland','ic s14')} 打开</span><span class="pill">${iconB('copy','ic s14')} 复制卡号</span></div>
+    </div>
+  </div>
+  <div class="rowline"><span class="lab">侧栏 · 页头</span>
+    <div class="nav"><div class="g">每天要看</div>
+      <div class="item">${iconB('home')}<span>总览</span></div><div class="item">${iconB('bell')}<span>待拍板</span><span class="badge warn cnt">47</span></div><div class="item">${iconB('book')}<span>审阅台</span></div><div class="item">${iconB('bot')}<span>Codex</span></div><div class="item">${iconB('checks')}<span>能同时派几张</span></div><div class="item">${iconB('calendar')}<span>每日成果</span><span class="badge ok cnt">6</span></div>
+      <div class="g">项目管理</div><div class="item on">${iconB('kanban')}<span>看板</span></div><div class="item">${iconB('toland')}<span>待落地</span><span class="badge info cnt">471</span></div><div class="item">${iconB('history')}<span>拍板历史</span></div>
+    </div>
+    <div style="display:grid;gap:var(--s3);align-self:flex-start;margin-left:var(--s3)">
+      <div class="ph">${iconB('toland','ic s20')}待落地</div><div class="ph">${iconB('bell','ic s20')}待拍板</div><div class="ph">${iconB('checks','ic s20')}现在能同时派几张</div><div class="ph">${iconB('coins','ic s20')}成本监管</div>
+      <div class="empty" style="min-width:240px">${S((IC.inbox[1]||'') + IC.inbox[0].replace('class="lid"','class="lid a-lid"'),'ic s36')}<span>暂无活动,任务有新进展后会显示在这里。</span></div>
+    </div>
+  </div>`;
+document.getElementById('composePair').innerHTML = `<div class="pane light" data-label="浅色">${compose()}</div><div class="pane dark" data-label="深色">${compose()}</div>`;
+
+// ---------- 06 设置 ----------
+const settings = () => `<div class="settings">
+  <div class="setcard"><div class="lab2">图标动效</div><div class="seg"><span>关</span><span>微</span><span class="on">活泼</span></div>
+    <div style="margin-top:var(--s2);color:var(--text-3);font-size:var(--fs-xs);line-height:1.5">关:全部静止 · 微:只有 待拍板 / 施工中 / 暂缓 循环 · 活泼:全部循环(默认)。系统开了"减少动效"时强制为"关"。</div></div>
+  <div class="setcard"><div class="lab2">状态灯条配色</div>
+    <div class="setrow"><span>蓝谱(施工中 / 待开工 / 可复工)</span><select><option>按语义色(默认)</option><option>跟随全站流光</option><option>自定义…</option></select></div>
+    <div class="setrow"><span>琥珀谱(待拍板 / 压轴)</span><select><option>按语义色(默认)</option><option>跟随全站流光</option><option>自定义…</option></select></div>
+    <div class="setrow"><span>绿谱(已拍板 / 收官)</span><select><option>按语义色(默认)</option><option>跟随全站流光</option><option>自定义…</option></select></div>
+    <div class="setrow"><span>余烬谱(暂缓)</span><select><option>按语义色(默认)</option><option>跟随全站流光</option><option>自定义…</option></select></div>
+    <div style="margin-top:var(--s2);color:var(--text-3);font-size:var(--fs-xs);line-height:1.5">沿用现有"分部位单独配色"的机制,每一档都能选预设、跟随全站或用取色器自定义(2~6 色,自动闭环)。</div></div>
+</div>`;
+document.getElementById('settingsPair').innerHTML = `<div class="pane light" data-label="浅色">${settings()}</div><div class="pane dark" data-label="深色">${settings()}</div>`;
+
+// ---------- 07 规范表 ----------
+document.getElementById('specTable').innerHTML = ST.map(s => {
+  const [k, n, tone, spec, speed, rev, , mo, calm] = s;
+  const speedTxt = !spec ? '—' : speed === 'sp-fast' ? '急 2.4s' : speed === 'sp-slow' ? '慢 5s' : speed === 'sp-ember' ? '余烬 6.4s' : '常 3.4s';
+  return `<tr><td style="white-space:nowrap">${tile(s, 'sm')} ${n}</td><td class="c">${tone}${k==='done'?'(实心)':''}${k==='void'?'(50% 透明)':''}</td><td class="c">${spec ? '--spec-' + tone : '无(细线)'}</td><td class="c">${speedTxt}${rev ? ' · 反向' : ''}</td><td class="c">${mo.split(':')[0]}</td><td class="c">${calm}</td></tr>`;
+}).join('');
+
+// ---------- 三档切换 ----------
+document.querySelectorAll('#modes button').forEach(b => b.addEventListener('click', () => {
+  document.body.className = b.dataset.m; document.querySelectorAll('#modes button').forEach(x => x.classList.toggle('on', x === b));
+}));
+</script>
+</body>
+</html>
