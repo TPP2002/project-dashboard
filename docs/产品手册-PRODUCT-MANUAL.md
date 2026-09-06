@@ -73,7 +73,7 @@
 | ⚠️ **风险 RiskPanel** | 集中显示暂缓/阻塞/搁置的任务。 |
 | 🌊 **波次 Waves** | 按 wave 分组，看施工批次。 |
 | 🚦 **验收矩阵 AcceptanceMatrix** | 红黄绿灯表格：每任务的测试通过数、类型检查等质量信号。 |
-| 💥 **占用冲突 Collision** | 检测多个任务是否「抢同一分支/文件」，防并行施工打架。 |
+| 💥 **占用冲突 Collision** | 检测多个任务是否「抢同一分支/文件」，防并行施工打架。自动生成物（见 §5.3 `fileScope`）标「共用生成物·不算冲突」，不计入冲突数。 |
 | 📅 **甘特 Gantt** | 时间条形图（echarts 懒加载）。 |
 | 🕸️ **依赖图 DependencyGraph** | 任务依赖/阻塞关系连线图。 |
 | 🔍 **搜索筛选 SearchFilter** | 按名/号/状态筛选，导出快照。 |
@@ -202,7 +202,7 @@
 | `description` | string | | 一句话说明。 |
 | `dates` | object | | `{design, start, done}`，各为 `YYYY-MM-DD` 或 null。 |
 | `gitBranch` / `worktree` / `prNumbers` / `commitShas` | array | | git 派生字段（累加合并）。`commitShas` 元素须匹配 `^[0-9a-f]{7,40}$`。 |
-| `fileScope` / `forbiddenZones` | array | | 涉及文件 / 禁区。 |
+| `fileScope` / `forbiddenZones` | array | | 涉及文件 / 禁区。**`fileScope` 只填这张卡真正要动的手写文件**——它同时被「哪些卡能同时派」（并行清单）和占用防撞页当判据吃掉，填进自动生成物（`docs/INDEX-自动生成.md` 这类生成目录、`package-lock.json`/`yarn.lock`/`pnpm-lock.yaml`、`node_modules/`、`dist/`、`coverage/`、看板自己的 `.dashboard/board.json`）会让互不相干的卡被判成同区、只能串行派。判据在 `core/generatedArtifacts.cjs`（CLI/服务端/前端同一份）：这类条目会**照原样保留在卡里**（对人有信息量），但判撞车时一律忽略；`add`/`claim` 填了会当场警告。 |
 | `docs` | array | | 相关文档路径。 |
 | `deps` | object | | `{dependsOn[], blockedBy[], relatedTasks[]}`，引用必须指向存在的 task id（校验强制）。 |
 | `decisions` | array | | 见 §5.4。 |
