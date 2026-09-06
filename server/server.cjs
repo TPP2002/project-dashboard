@@ -36,7 +36,7 @@ const path = require('path');
 const url = require('url');
 const { execFile } = require('child_process');
 
-const { resolveProject, readRegistry, REGISTRY_PATH } = require('../core/resolveProject.cjs');
+const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const { readStamp, runtimeMode, displayCliCommand } = require('../core/runtimeRoot.cjs');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
@@ -401,13 +401,14 @@ const codexApi = createCodexApi({
   bodyMax: BODY_MAX,
 });
 
-// 审阅台(READER-INTO-BOARD):报告清单/正文/边注只读仓库文件,批注写看板 data/reader 账本并镜像到卡 note。
+// 审阅台(READER-INTO-BOARD):报告清单/正文/边注只读仓库文件,批注写数据根下的 data/reader 账本并镜像到卡 note。
 const readerApi = createReaderApi({
   resolveProjectSafe,
   sendJson,
   readBody,
   bodyMax: BODY_MAX,
   dashRoot: DASH_ROOT,
+  dataRoot: DASHBOARD_HOME,
   cliIndex: CLI_INDEX,
   registry: REGISTRY,
   registryPath: REGISTRY_PATH,

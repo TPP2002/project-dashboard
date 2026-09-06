@@ -1,6 +1,6 @@
 'use strict';
 /**
- * readerApi.test.cjs —— 审阅台后端(READER-INTO-BOARD)端到端:spawn 真实 server + 临时 registry + 临时仓库。
+ * readerApi.test.cjs —— 审阅台后端(READER-INTO-BOARD)端到端:spawn 真实 server + 临时 registry + 临时仓库与数据根。
  *
  * 覆盖:
  *   · GET  /api/reader/manifest   读仓库清单;没清单的项目 → 404 带 manifestPath 提示
@@ -22,7 +22,7 @@ const SERVER = path.join(DASH_ROOT, 'server', 'server.cjs');
 const realTmp = (prefix) => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
 
-let SRV = null; // { child, base, dir, reg, repo, dataDir }
+let SRV = null; // { child, base, dir, reg, repo, dataRoot }
 
 function startServer(env) {
   return new Promise((resolve, reject) => {
@@ -48,6 +48,7 @@ async function api(method, p, body) {
 
 before(async () => {
   const dir = realTmp('dash-reader-');
+  const dataRoot = realTmp('dash-reader-data-');
   const repo = path.join(dir, 'repo'); fs.mkdirSync(repo, { recursive: true });
   const batchDir = path.join(repo, 'docs', 'design', '审计回流', '外脑回运-测试'); fs.mkdirSync(batchDir, { recursive: true });
   fs.writeFileSync(path.join(batchDir, 'R1-v2.md'), '<!-- 来源注记 -->\n\n状态:评估件 · 事实基线 main@abc\n\n# 报告一\n\n## 1.1 第一节\n\n这段改过了,新写法。\n\n## 1.2 第二节\n\n没动的段。\n', 'utf8');
@@ -71,10 +72,10 @@ before(async () => {
   fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: { trepo: { name: '测试仓', mainRepo: repo, board: boardPath } } }), 'utf8');
   cmds.register({ id: 'trepo', name: '测试仓', root: repo, registry: reg });
   cmds.add({ _: ['T-1'], project: 'trepo', title: '测试卡', model: 'sonnet·低', registry: reg });
-  const srv = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_PORT: String(20000 + Math.floor(Math.random() * 40000)) });
-  SRV = { ...srv, dir, reg, repo };
+  const srv = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_HOME: dataRoot, DASHBOARD_PORT: String(20000 + Math.floor(Math.random() * 40000)) });
+  SRV = { ...srv, dir, reg, repo, dataRoot };
 });
-after(async () => { if (SRV) { await stopServer(SRV.child); clean(SRV.dir); } });
+after(async () => { if (SRV) { await stopServer(SRV.child); clean(SRV.dir); clean(SRV.dataRoot); } });
 
 test('manifest:读清单 + 批注计数;无清单项目 404', async () => {
   const r = await api('GET', '/api/reader/manifest?project=trepo');
@@ -99,13 +100,18 @@ test('report:正文/上一版/两层边注按 key 取出;非法 key 400;未知 k
   assert.equal((await api('GET', '/api/reader/report?project=trepo&key=ESC')).status, 403);
 });
 
-test('annos:add 落本机账本并镜像到卡 note;GET 回读;delete 移除;空文本 400', async () => {
+test('annos:add 落本机账本并镜像到卡 note;GET 回读;delete 移除;空文本 400', async (t) => {
   const add = await api('POST', '/api/reader/annos', { project: 'trepo', key: 'R1', op: 'add', anno: { blockId: 'b3', anchor: '1.1 第一节', quote: '这段改过了', text: '这段前提变了,请重写' } });
   assert.equal(add.status, 200, JSON.stringify(add.json));
   assert.equal(add.json.annos.length, 1);
   assert.equal(add.json.mirror, true, '批注应镜像成看板卡 note:' + add.json.mirrorError);
-  const file = path.join(DASH_ROOT, 'data', 'reader', 'trepo', 'R1.json');
-  assert.ok(fs.existsSync(file), '账本文件应落在 data/reader/<project>/<key>.json');
+  const file = path.join(SRV.dataRoot, 'data', 'reader', 'trepo', 'R1.json');
+  await t.test('账本文件落在临时数据根', () => {
+    assert.ok(fs.existsSync(file), '账本文件应落在 <数据根>/data/reader/trepo/R1.json');
+  });
+  await t.test('代码根不生成批注目录', () => {
+    assert.equal(fs.existsSync(path.join(DASH_ROOT, 'data', 'reader', 'trepo')), false, '批注不能写入 <代码根>/data/reader/trepo/');
+  });
   const board = JSON.parse(fs.readFileSync(path.join(SRV.repo, '.dashboard', 'board.json'), 'utf8'));
   assert.ok(board.activity.some((a) => String(a.message || a.text || JSON.stringify(a)).includes('审阅台批注')), '卡 activity 里应有镜像 note');
   const get = await api('GET', '/api/reader/annos?project=trepo&key=R1');
@@ -115,7 +121,7 @@ test('annos:add 落本机账本并镜像到卡 note;GET 回读;delete 移除;空
   const del = await api('POST', '/api/reader/annos', { project: 'trepo', key: 'R1', op: 'delete', id: add.json.anno.id });
   assert.equal(del.status, 200);
   assert.equal(del.json.annos.length, 0);
-  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+  clean(path.join(SRV.dataRoot, 'data', 'reader', 'trepo'));
 });
 
 test('annos:框选批注带上选区偏移;非法区间当整段批注不落脏数据', async () => {
@@ -125,7 +131,7 @@ test('annos:框选批注带上选区偏移;非法区间当整段批注不落脏�
   const bad = await api('POST', '/api/reader/annos', { project: 'trepo', key: 'R1', op: 'add', anno: { blockId: 'b3', text: '整段', start: 9, end: 9 } });
   assert.equal(bad.status, 200);
   assert.equal(bad.json.anno.start, undefined, '空区间不该写进账本');
-  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+  clean(path.join(SRV.dataRoot, 'data', 'reader', 'trepo'));
 });
 
 test('marks:荧光笔 add/delete;重叠的旧笔被顶掉;缺区间 400;不镜像看板卡', async () => {
@@ -151,7 +157,7 @@ test('marks:荧光笔 add/delete;重叠的旧笔被顶掉;缺区间 400;不镜�
   assert.equal((await api('POST', '/api/reader/marks', { project: 'trepo', key: 'R1', op: 'delete', id: 'nope' })).status, 404);
   const rep = await api('GET', '/api/reader/report?project=trepo&key=R1');
   assert.equal(rep.json.highlights.length, 1, '报告回包里应带上荧光笔');
-  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+  clean(path.join(SRV.dataRoot, 'data', 'reader', 'trepo'));
 });
 
 test('review:标记/撤销「已审阅」落本机账本并进清单回包;未知状态 400;不回写仓库 reader.json', async () => {
@@ -168,7 +174,7 @@ test('review:标记/撤销「已审阅」落本机账本并进清单回包;未�
   const off = await api('POST', '/api/reader/review', { project: 'trepo', key: 'R1', state: '未审阅' });
   assert.equal(off.json.review, null);
   assert.equal((await api('GET', '/api/reader/manifest?project=trepo')).json.reviews.R1, undefined);
-  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+  clean(path.join(SRV.dataRoot, 'data', 'reader', 'trepo'));
 });
 
 test('export:写到仓库 docs/design/审计回流/批注/<key>.json,不动 git', async () => {
@@ -181,5 +187,5 @@ test('export:写到仓库 docs/design/审计回流/批注/<key>.json,不动 git'
   const doc = JSON.parse(fs.readFileSync(dest, 'utf8'));
   assert.equal(doc.annos[0].text, '导出用');
   assert.ok(doc.exportedAt);
-  clean(path.join(DASH_ROOT, 'data', 'reader', 'trepo'));
+  clean(path.join(SRV.dataRoot, 'data', 'reader', 'trepo'));
 });

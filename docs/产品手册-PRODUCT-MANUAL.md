@@ -48,7 +48,7 @@
 | **状态（status）** | 任务所处阶段，10 种枚举（见 §5.2）。 |
 | **决策 / 拍板（decision）** | 挂在某任务上的「需要人拿主意」的问题。有问题、选项、推荐项、答案。**拍板**＝填上答案。 |
 | **活动流（activity）** | 每次写操作追加一条流水（谁、何时、做了什么）。 |
-| **DASHBOARD_HOME** | 「数据根」目录：`registry.json` 与 `snapshots/` 落此处。默认 `~/.claude/dashboard`；分发版指向安装目录（见 §4.4）。 |
+| **DASHBOARD_HOME** | 「数据根」目录：`registry.json`、`snapshots/` 与审阅台账本 `data/reader/` 落此处。默认 `~/.claude/dashboard`；分发版指向安装目录（见 §4.4）。 |
 | **波次（wave）** | 任务所属的「第几批做」的计划批次编号（整数，默认 0）。 |
 | **落地（landed）** | 一条决策被拍板后，是否已经有人真正把它实现到代码里。 |
 
@@ -130,12 +130,13 @@
 - **统计读时派生**：进度%、状态计数、验收矩阵等一律读时算，不存进 board（避免与真值漂移）。
 
 ### 4.4 数据落点与 DASHBOARD_HOME（重定位机制）
-- `DASHBOARD_HOME` = 数据根，决定 `registry.json` 与 `snapshots/` 落哪。
+- `DASHBOARD_HOME` = 数据根，决定 `registry.json`、`snapshots/` 与审阅台账本 `data/reader/` 落哪。
   - **默认**（环境变量未设）：`~/.claude/dashboard`（Claude Code 集成布局）。
   - **分发版**：启动器把 `DASHBOARD_HOME` 指向**安装目录**，从而脱离 `~/.claude`、在任意社区机器上可写、卸载即净。
   - 新配置可将 [registry.example.json](../registry.example.json) 复制成 `registry.json` 放到 `DASHBOARD_HOME` 下，填写本机项目路径；活数据不进版本库。
 - **代码定位与 DASHBOARD_HOME 无关**：`core/cli/server/web` 之间的 `require` 一律走 `__dirname` 相对路径。`DASHBOARD_HOME` 只决定「数据往哪读/写」，不决定「代码在哪」。这是分发版能同时满足「代码在安装目录、数据也在安装目录、又不改任何 Claude Code 用户行为」的关键。
-- **board 本身**不在 `DASHBOARD_HOME`，而在**各项目主仓** `<mainRepo>/.dashboard/board.json`。因此卸载看板不会丢各项目的任务数据（只丢项目列表 registry 与 snapshots）。
+- **审阅台批注、荧光笔与「已审阅」标记**存放在 `<DASHBOARD_HOME>/data/reader/<project>/<key>.json`，不随发布副本的目录替换而删除。
+- **board 本身**不在 `DASHBOARD_HOME`，而在**各项目主仓** `<mainRepo>/.dashboard/board.json`。因此卸载看板不会丢各项目的任务数据（只丢数据根中的项目列表 registry、snapshots 与审阅台账本）。
 - **发布副本（各仓 hook 实际跑的那份代码）= `~/.claude/dashboard-release`**（环境变量 `DASHBOARD_RELEASE_HOME` 可改）。
   **代码检出位置由使用者自定**（本工具不假设它在哪）；`~/.claude/dashboard` 只是 `DASHBOARD_HOME` 的默认值＝数据根。
   *为什么要用副本*（HOOK-CLI-POINTS-AT-LIVE-CHECKOUT，2026-09-06 负责人拍板）：若 hook 指向活的 git 工作检出，
