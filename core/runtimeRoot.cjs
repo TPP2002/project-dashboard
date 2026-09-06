@@ -21,8 +21,19 @@ const os = require('node:os');
 /** 当前正在运行的这份看板代码的根目录(core/ 的上一级)。与 DASHBOARD_HOME 无关。 */
 const CODE_ROOT = path.resolve(__dirname, '..');
 const STAMP_NAME = 'RELEASE.json';
-/** 进发布副本的路径白名单(相对仓库根;目录整拷)。web/dist 被 .gitignore,归 SERVER-RUNS-ON-LIVE-CHECKOUT 卡另议。 */
+/** 进发布副本的路径白名单(相对仓库根;目录整拷)。 */
 const RUNTIME_PATHS = ['core', 'cli', 'server', 'package.json'];
+
+/**
+ * 前端产物进发布副本的口径(SERVER-RUNS-ON-LIVE-CHECKOUT,负责人 0906 拍板 d1=A「发布时现场构建」)。
+ * web/dist 是构建产物、被 .gitignore 挡着,导不出来;所以 release 把【该 commit 的前端源码】导到临时目录
+ * 现场构建一次,产物落进副本的 web/dist —— 界面与后台严格同源于一个 commit,与主工位工作区无关。
+ * 构建树里必须同时有 core/:web/vite.config.ts 会 require('../core/boardSchema.cjs')(状态枚举单一真相源)。
+ */
+const WEB_SOURCE_PATHS = ['web'];
+const WEB_BUILD_DEPS_PATHS = ['core'];
+/** 副本里前端产物的落点(相对副本根)。 */
+const WEB_DIST_REL = 'web/dist';
 
 /** 目录是不是 git 检出:主仓 .git 是目录、worktree 的 .git 是指针文件,两种都算。 */
 function isGitCheckout(dir) {
@@ -60,4 +71,19 @@ function resolveHookCliRoot(opts = {}) {
   );
 }
 
-module.exports = { CODE_ROOT, STAMP_NAME, RUNTIME_PATHS, isGitCheckout, releaseHome, readStamp, resolveHookCliRoot };
+/**
+ * 这份代码是"哪种身份"在跑(SERVER-RUNS-ON-LIVE-CHECKOUT):
+ *   · dev      —— 代码根是 git 检出 = 人正在改的那份(开发实例,不该给负责人用);
+ *   · release  —— 代码根不是检出、但有 RELEASE.json 印章 = 发布副本(负责人日常用的就是它);
+ *   · installed—— 既不是检出也没印章 = 分发安装版 / 手工拷贝。
+ * @param {string} [codeRoot]
+ */
+function runtimeMode(codeRoot = CODE_ROOT) {
+  if (isGitCheckout(codeRoot)) return 'dev';
+  return readStamp(codeRoot) ? 'release' : 'installed';
+}
+
+module.exports = {
+  CODE_ROOT, STAMP_NAME, RUNTIME_PATHS, WEB_SOURCE_PATHS, WEB_BUILD_DEPS_PATHS, WEB_DIST_REL,
+  isGitCheckout, releaseHome, readStamp, resolveHookCliRoot, runtimeMode,
+};
