@@ -12,6 +12,8 @@
  *   · GET  /api/board/:id                  board 全量；未注册 → 404
  *   · GET  /api/doc                        合法读 200；../ 与 junction 逃逸 → 403（R4）
  *   · POST /api/decide                     落库 + 参数按字面 argv 传递（防注入 R6）；非法答案 400
+ *   · 同源校验                              非 GET/HEAD 伪造 Origin → 403 且不落库/不触达派单逻辑；
+ *                                           同源 Origin / 无 Origin 直连均正常放行（AUD-SEC-ORIGIN-CHECK）
  *   · GET  /api/stream                     SSE 收 board:changed（mtime 轮询驱动 R7）
  */
 const { test, before, after } = require('node:test');
@@ -261,6 +263,68 @@ test('POST /api/decide → 落库 + 参数按字面 argv 传递（防注入 R6�
   // 无副作用：注入串未被 shell 执行（server cwd 与项目目录都不该冒出 pwned.txt）
   assert.equal(fs.existsSync(path.join(DASH_ROOT, 'pwned.txt')), false, 'DASH_ROOT 无副作用文件');
   assert.equal(fs.existsSync(path.join(p.root, 'pwned.txt')), false, '项目目录无副作用文件');
+});
+
+test('POST /api/decide → 伪造 Origin（跨站）403 且不落库（AUD-SEC-ORIGIN-CHECK）', async () => {
+  const p = newProject('decideforged');
+  cmds.add({ _: ['P01'], title: '拍板·伪造源', ...p.P });
+  cmds.pending({ _: ['P01'], q: '选哪个', opt: ['甲', '乙'], rec: '甲',
+    background: '【场景】这是伪造 Origin 跨站请求测试用的背景描述文字需要够长才能通过校验器所以我多写一些占位。【问题】占位以通过 skill 六点二的字数最小值。【要做的事】占位。【为什么重要】占位。',
+    'pros-甲': '【好处】甲的好处。【代价】甲的代价描述。',
+    'pros-乙': '【好处】乙的好处。【代价】乙的代价描述。',
+    reason: '推荐甲的理由描述需要写得足够长才能通过校验器所以在这里多写一些内容用来占位。',
+    ...p.P });
+
+  const res = await fetch(SRV.base + '/api/decide/decideforged/P01', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example.com' },
+    body: JSON.stringify({ did: 'd1', answer: '甲' }),
+  });
+  assert.equal(res.status, 403, '伪造 Origin 的跨站 POST 必须 403');
+  const body = await res.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.error, '跨站请求被拒');
+  const d = readBoard(p.board).tasks.find((t) => t.id === 'P01').decisions.find((x) => x.id === 'd1');
+  assert.equal(d.answer, null, '伪造 Origin 的请求不得落库');
+});
+
+test('POST /api/decide → Origin 与 Host 同源（前端真实场景）正常放行', async () => {
+  const p = newProject('decidesameorigin');
+  cmds.add({ _: ['P01'], title: '拍板·同源', ...p.P });
+  cmds.pending({ _: ['P01'], q: '选哪个', opt: ['甲', '乙'], rec: '甲',
+    background: '【场景】这是同源 Origin 请求测试用的背景描述文字需要够长才能通过校验器所以我多写一些占位。【问题】占位以通过 skill 六点二的字数最小值。【要做的事】占位。【为什么重要】占位。',
+    'pros-甲': '【好处】甲的好处。【代价】甲的代价描述。',
+    'pros-乙': '【好处】乙的好处。【代价】乙的代价描述。',
+    reason: '推荐甲的理由描述需要写得足够长才能通过校验器所以在这里多写一些内容用来占位。',
+    ...p.P });
+
+  const res = await fetch(SRV.base + '/api/decide/decidesameorigin/P01', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: SRV.base },
+    body: JSON.stringify({ did: 'd1', answer: '甲' }),
+  });
+  assert.equal(res.status, 200, '同源 Origin 不该被拦');
+  const d = readBoard(p.board).tasks.find((t) => t.id === 'P01').decisions.find((x) => x.id === 'd1');
+  assert.equal(d.answer, '甲', '同源请求应正常落库');
+});
+
+test('POST /api/dispatch-task → 伪造 Origin 403，拦在闸口不触达派单逻辑（不 spawn）', async () => {
+  const res = await fetch(SRV.base + '/api/dispatch-task', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example.com' },
+    body: JSON.stringify({ pid: 'no-such-project-for-origin-test', tid: 'NOPE' }),
+  });
+  assert.equal(res.status, 403, '伪造 Origin 必须在闸口被拦，不许穿透到派单逻辑');
+  const body = await res.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.error, '跨站请求被拒');
+});
+
+test('POST /api/dispatch-task → 无 Origin（本机直连）穿透闸口到业务逻辑（未注册项目→404，证明未被闸口拦下）', async () => {
+  // 用未注册的 pid：闸口放行后应在 handleDispatchTask 内部因项目未注册报 404；
+  // 若闸口误拦，会看到 403 而非 404——用状态码区分「被闸口挡」与「正常穿透后另有他因」。
+  const res = await fetch(SRV.base + '/api/dispatch-task', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pid: 'no-such-project-for-origin-test', tid: 'NOPE' }),
+  });
+  assert.equal(res.status, 404, '正常同源请求应穿透同源闸，走到业务逻辑');
 });
 
 test('POST /api/decide → 非法答案（不在 options）400 且不落库', async () => {

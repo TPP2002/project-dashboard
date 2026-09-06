@@ -18,6 +18,8 @@
  *   - 实时：mtime 轮询（1–2s）驱动 SSE，禁 fs.watch；SSE 断开必清 subscriber + 15s 心跳保活（R7）。
  *   - 单实例：启动先探 /api/health；在跑的和这份是同一份代码则复用 + 开浏览器，
  *     不是同一份则关掉旧的接管同一端口（SERVER-RUNS-ON-LIVE-CHECKOUT d2=A）；绑 127.0.0.1（R9d）。
+ *   - 同源校验：非 GET/HEAD 一律先查 Host∈{127.0.0.1,localhost}:实际端口 且 Origin 为空或同源，
+ *     否则 403，防任意网页拿简单 POST 悄悄打写接口（AUD-SEC-ORIGIN-CHECK）。
  *
  * 【这份代码从哪来】(SERVER-RUNS-ON-LIVE-CHECKOUT，负责人 0906 拍板)
  *   负责人日常用的服务由 启动看板.bat / dashboard.sh 从【发布副本】起（mode=release，端口 6060 段）；
@@ -118,6 +120,26 @@ function sendJson(res, status, obj) {
 function sendText(res, status, text, contentType) {
   res.writeHead(status, { 'content-type': contentType || 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
   res.end(text);
+}
+
+/**
+ * 同源校验（AUD-SEC-ORIGIN-CHECK）：GET/HEAD 之外一律先过这道闸。
+ * 治的病：各写接口 handler 原先直接 `JSON.parse(raw)`，不看 Origin/Host——任意网页用
+ * text/plain 简单 POST（不触发预检）就能悄悄打 /api/decide（替用户拍板）、
+ * /api/dispatch-task（本机弹终端跑 claude）、/api/cpu，本机等价于被跨站 CSRF。
+ * Host 头必须命中本进程实际监听的 127.0.0.1:<port> 或 localhost:<port>；
+ * Origin 头缺失（非浏览器直连，如本机脚本/curl/CLI 自身）视为同源放行，
+ * 一旦存在就必须与 Host 完全同源，否则一律拒绝——不对任何一侧法外开恩。
+ */
+function isSameOriginRequest(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return true;
+  const port = state.actualPort;
+  const host = String(req.headers.host || '').toLowerCase();
+  const validHosts = port ? [`127.0.0.1:${port}`, `localhost:${port}`] : [];
+  if (!validHosts.includes(host)) return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  return String(origin).toLowerCase() === `http://${host}`;
 }
 
 /** decodeURIComponent 遇畸形 % 序列会抛，包一层返回 null */
@@ -914,6 +936,7 @@ function serveStatic(req, res, pathname) {
 // ============ 主入口：路由 ============
 
 const server = http.createServer((req, res) => {
+  if (!isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
   let parsed;
   try { parsed = url.parse(req.url, true); }
   catch (_) { return sendJson(res, 400, { ok: false, error: '非法 URL' }); }
