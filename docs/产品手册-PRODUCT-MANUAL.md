@@ -353,9 +353,11 @@
 ### 9.3 打包流水线（如何再生产一个安装器）
 在装有 Node 的开发机上：
 ```
-node packaging/build-installer.cjs [--version 1.0.0]
+node packaging/build-installer.cjs [--version 1.0.0] [--skip-selfcheck]
 ```
-脚本做 5 件事：①搭建 staging（拷 core/cli/server + web/dist + package.json + 手册，剔除 test/node_modules）②生成启动器/助手/说明 + 干净空 registry ③拷入 `process.execPath` 当运行时 ④生成 `installer.nsi` ⑤调 `makensis` 编译。产物落 `packaging/dist/`。
+脚本做 6 件事：①搭建 staging（运行期代码按 `core/runtimeRoot.cjs` 的 `RUNTIME_PATHS` **整目录拷**——与 `cli release` 导发布副本同一份白名单；再加 web/dist + 手册，剔除 test/node_modules）②生成启动器/助手/说明 + 干净空 registry ③拷入 `process.execPath` 当运行时 ④**启动自检**：用内嵌 node 起一次 staging 里的服务、探 `/api/health` 通了才算数 ⑤生成 `installer.nsi` ⑥调 `makensis` 编译。产物落 `packaging/dist/`。
+- **为什么有自检**（BUILD-INSTALLER-MISSES-SERVER-MODULES）：早先 staging 只点名拷了 `server/server.cjs` 一个文件，漏掉同目录 12 个被 require 的模块，打出来的安装版启动即 MODULE_NOT_FOUND，而打包脚本一路绿灯。整目录拷治的是这一次的漏，自检治的是"以后再漏"——自检不通过直接退出，不产出坏包。`--skip-selfcheck` 仅供调试。
+- **自检的坑**：服务有单实例复用逻辑（探到同签名实例就复用并退出），故自检用随机高位端口 + `DASHBOARD_NO_OPEN=1`，并校验 `/api/health` 回的 `pid` 就是自检起的那个子进程，否则会被本机已在跑的看板骗出假绿。
 - **makensis 来源**：优先用 electron-builder 缓存里的 NSIS 3；没有则提示到 nsis.sourceforge.io 装（脚本不联网下载）。
 - **铁律**：脚本只读源码、只写 `packaging/` 下的 staging/dist，绝不改被打包的源文件；shipped registry 永远为空（不带打包机的私人项目路径）。
 
