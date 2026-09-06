@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { IconName } from '@/icons/paths'
+import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import type { JobDetail, JobSummary } from '@/types/codex'
 import { acceptanceLabel, jobGroupKey, selfReportStatusLabel } from './jobPresentation.js'
@@ -35,13 +37,14 @@ const attentionGroups = computed(() => [
 const completedJobs = computed(() => jobs.value.filter((job) => jobGroupKey(job) === 'completed'))
 const attentionCount = computed(() => attentionGroups.value.reduce((total, group) => total + group.items.length, 0))
 
-function statusOf(job: JobSummary) {
+// icon 填的是功能图标名（icons/paths.ts 里的键），交给 <Icon> 画。
+function statusOf(job: JobSummary): { icon: IconName; label: string; cls: string } {
   const group = jobGroupKey(job)
-  if (group === 'stalled') return { icon: '🚨', label: '失联了', cls: 'bad' }
-  if (group === 'running') return { icon: '🔄', label: '还在干', cls: 'info' }
-  if (group === 'waiting') return { icon: '⏳', label: '等你收', cls: 'warn' }
-  if (group === 'completed') return { icon: '✅', label: '已完成', cls: 'ok' }
-  return { icon: '❌', label: '没通过', cls: 'bad' }
+  if (group === 'stalled') return { icon: 'alert', label: '失联了', cls: 'bad' }
+  if (group === 'running') return { icon: 'zap', label: '还在干', cls: 'info' }
+  if (group === 'waiting') return { icon: 'inbox', label: '等你收', cls: 'warn' }
+  if (group === 'completed') return { icon: 'check', label: '已完成', cls: 'ok' }
+  return { icon: 'x', label: '没通过', cls: 'bad' }
 }
 
 function resetLog() {
@@ -265,18 +268,18 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
             <button v-for="job in group.items" :key="job.slug" class="job row" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
               <span v-if="jobGroupKey(job) === 'running'" class="glow-edge" />
               <span class="job-title">{{ job.title }}</span>
-              <span class="job-meta"><code>{{ job.slug }}</code><span class="badge" :class="statusOf(job).cls">{{ statusOf(job).icon }} {{ statusOf(job).label }}</span></span>
+              <span class="job-meta"><code>{{ job.slug }}</code><span class="badge icon-badge" :class="statusOf(job).cls"><Icon :name="statusOf(job).icon" :size="14" />{{ statusOf(job).label }}</span></span>
               <span v-if="job.liveness === 'stalled' && job.stalledReason" class="job-stalled">{{ job.stalledReason }}</span>
             </button>
           </section>
           <section v-if="completedJobs.length" class="job-group completed-group">
             <button class="completed-toggle" :aria-expanded="completedExpanded" @click="completedExpanded = !completedExpanded">
-              ✅ 已完成 {{ completedJobs.length }} 单{{ completedExpanded ? '(点一下收起)' : '(点开看)' }}
+              <Icon name="check" :size="14" />已完成 {{ completedJobs.length }} 单{{ completedExpanded ? '(点一下收起)' : '(点开看)' }}
             </button>
             <div v-if="completedExpanded">
               <button v-for="job in completedJobs" :key="job.slug" class="job row" :class="{ on: selectedSlug === job.slug }" @click="selectJob(job.slug)">
                 <span class="job-title">{{ job.title }}</span>
-                <span class="job-meta"><code>{{ job.slug }}</code><span class="badge ok">✅ 已完成</span></span>
+                <span class="job-meta"><code>{{ job.slug }}</code><span class="badge ok icon-badge"><Icon name="check" :size="14" />已完成</span></span>
               </button>
             </div>
           </section>
@@ -284,16 +287,16 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
         <div v-if="!jobs.length && refreshing" class="jobs-loading" aria-label="正在加载 Codex 工单">
           <div class="skel wide" /><div class="skel job-skel" /><div class="skel job-skel" />
         </div>
-        <div v-else-if="!jobs.length" class="empty"><span class="big">📭</span><span>还没有 Codex 工单</span><small>派出一张工单后，会按状态收纳在这里。</small></div>
+        <div v-else-if="!jobs.length" class="empty"><span class="big"><Icon name="inbox" :size="36" animated /></span><span>还没有 Codex 工单</span><small>派出一张工单后，会按状态收纳在这里。</small></div>
       </aside>
 
       <main class="detail card">
         <div v-if="detailLoading && !detail" class="detail-loading" aria-label="正在读取工单详情"><div class="skel medium" /><div class="skel wide" /><div class="skel detail-skel" /></div>
-        <div v-else-if="!detail" class="empty"><span class="big">🤖</span><span>从左边选择一张工单</span><small>选中后会显示大白话结果、检查项和续聊入口。</small></div>
+        <div v-else-if="!detail" class="empty"><span class="big"><Icon name="bot" :size="36" /></span><span>从左边选择一张工单</span><small>选中后会显示大白话结果、检查项和续聊入口。</small></div>
         <template v-else>
           <header class="detail-head">
             <div><h2>{{ detail.title }}</h2><p><code>{{ detail.slug }}</code><span v-if="detail.taskId"> · {{ detail.taskId }}</span> · {{ formatAt(detail.dispatchedAt) }}</p></div>
-            <span class="badge" :class="statusOf(detail).cls">{{ statusOf(detail).icon }} {{ statusOf(detail).label }}</span>
+            <span class="badge icon-badge" :class="statusOf(detail).cls"><Icon :name="statusOf(detail).icon" :size="14" />{{ statusOf(detail).label }}</span>
           </header>
           <div class="actions">
             <button v-if="detail.threadId" class="btn btn-sm" @click="emit('openSession', detail.threadId)">对应会话</button>
@@ -316,7 +319,7 @@ watch(() => [props.requestedSlug, props.jumpNonce], () => {
             <h3>这单检查了什么</h3>
             <div v-if="detail.acceptance.length" class="acceptance">
               <p v-for="item in detail.acceptance" :key="item.id" class="check-result">
-                <span aria-hidden="true">{{ item.passed ? '✅' : '❌' }}</span>
+                <Icon :name="item.passed ? 'check' : 'x'" :size="16" :class="item.passed ? 'pass' : 'fail'" />
                 <span>{{ acceptanceLabel(item) }}</span>
               </p>
             </div>
@@ -416,6 +419,10 @@ code { font-family: var(--mono); color: var(--text-2); overflow-wrap: anywhere; 
 .plain-summary h3 { color: var(--text); }
 .plain-summary p { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .acceptance { display: flex; flex-direction: column; gap: var(--s2); }
+.check-result .pass { color: var(--ok); }
+.check-result .fail { color: var(--bad); }
+.icon-badge { display: inline-flex; align-items: center; gap: var(--s1); }
+.completed-toggle { display: flex; align-items: center; gap: var(--s1); }
 .check-result { display: flex; align-items: flex-start; gap: var(--s2); margin: 0; font-size: var(--fs-base); line-height: 1.5; }
 .self-status { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
 .technical-details { margin-top: var(--s2); color: var(--text-2); font-size: var(--fs-sm); }

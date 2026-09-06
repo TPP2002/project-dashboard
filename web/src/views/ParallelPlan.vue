@@ -6,6 +6,7 @@
  * 重新梳理一遍(他原话:「这一轮派发结束后,又得新开对话,重新梳理」)。
  * 这一页把那件事变成纯规则计算:零额度、卡片一变就重算。
  */
+import Icon from '@/components/Icon.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 
@@ -114,7 +115,7 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
   <div class="page">
     <header class="page-head">
       <div>
-        <h1>🚦 现在能同时派几张</h1>
+        <h1><Icon name="checks" class="head-ic" :size="20" />现在能同时派几张</h1>
         <p class="page-subtitle">
           直接复制卡号发给新对话就能开工。这一页是算出来的,不花额度,卡片状态一变就重算。
         </p>
@@ -155,7 +156,7 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
         </header>
 
         <div v-if="!plan.ready.length" class="empty">
-          <span class="ic">🈳</span>
+          <span class="ic"><Icon name="inbox" :size="36" animated /></span>
           现在没有可以直接派的卡<br>
           <span class="empty-help">要么都有人在做,要么都在等上游——看下面两栏。</span>
         </div>
@@ -166,7 +167,7 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
               <p class="row-title">{{ shownTitle(card) }}</p>
               <div class="row-meta">
                 <code class="id">{{ card.id }}</code>
-                <span v-if="card.modelHint" class="badge n">🤖 {{ card.modelHint }}</span>
+                <span v-if="card.modelHint" class="badge n icon-badge"><Icon name="bot" :size="14" />{{ card.modelHint }}</span>
                 <span v-if="card.groupSize > 1" class="badge warn">同区还有 {{ card.groupSize - 1 }} 张在等</span>
               </div>
             </div>

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // 单项目 Kanban：按 STATUS 泳道（只显示非空泳道），宽内容只在泳道容器内横向滚动。
+import StatusTile from '@/components/StatusTile.vue'
+import Icon from '@/components/Icon.vue'
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { emojiFor, DONE_STATUSES } from '@/api/schema'
+import { DONE_STATUSES } from '@/api/schema'
 import TaskCard from '@/components/TaskCard.vue'
 import DoneToggle from '@/components/DoneToggle.vue'
 
@@ -56,12 +58,12 @@ function statusTone(status: string) {
     </div>
 
     <div v-else-if="!board" class="empty card">
-      <span class="ic">📋</span>
+      <span class="ic"><Icon name="kanban" :size="36" /></span>
       还没有可展示的项目<br>
       <span class="empty-help">在顶栏选择一个已注册项目后，这里会按状态生成泳道。</span>
     </div>
     <div v-else-if="!columns.length" class="empty card">
-      <span class="ic">🗂️</span>
+      <span class="ic"><Icon name="archive" :size="36" /></span>
       该项目当前没有可见任务<br>
       <span class="empty-help">新增任务，或打开“显示已完工”后，对应状态泳道会出现在这里。</span>
     </div>
@@ -69,7 +71,9 @@ function statusTone(status: string) {
     <div v-else class="board-scroll" aria-label="任务状态泳道">
       <section v-for="column in columns" :key="column.status" class="column card">
         <header class="column-head">
-          <span class="badge" :class="statusTone(column.status)">{{ emojiFor(column.status) }} {{ column.status }}</span>
+          <span class="badge tiled" :class="statusTone(column.status)">
+            <StatusTile :status="column.status" :size="20" decorative />{{ column.status }}
+          </span>
           <span class="badge n count-badge">{{ column.tasks.length }}</span>
         </header>
         <div class="column-body stagger-list">
@@ -95,6 +99,8 @@ function statusTone(status: string) {
 .empty-help { font-size: var(--fs-sm); }
 .board-scroll { min-width: 0; display: flex; align-items: flex-start; flex: 1; gap: var(--s3); overflow-x: auto; overflow-y: hidden; padding-bottom: var(--s2); }
 .column { flex: 0 0 260px; max-height: 100%; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--surface); }
+/* 徽章基类是 inline-block，装了瓦片就得换 flex；左边留窄一点，瓦片自带一圈边框。 */
+.tiled { display: inline-flex; align-items: center; gap: 5px; padding-left: var(--s1); }
 .column-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s1); }
 .count-badge { font-variant-numeric: tabular-nums; }
 .column-body { min-height: 0; display: flex; flex-direction: column; gap: var(--s2); overflow-y: auto; padding: 0 var(--s1) var(--s1); }

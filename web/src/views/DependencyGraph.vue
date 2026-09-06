@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 依赖关系图（echarts force graph）。依赖=实线箭头，阻塞=红色虚线。echarts 按需 import()。
+import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { statusTone, DONE_STATUSES } from '@/api/schema'
@@ -95,7 +96,7 @@ watch(showDone, update)
 <template>
   <div class="dependency-page">
     <div class="head">
-      <h2>🕸️ 依赖关系图</h2>
+      <h2><Icon name="network" class="head-ic" :size="20" />依赖关系图</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
       <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
       <span class="muted small">蓝实线=依赖 · 红虚线=阻塞 · 灰点线=关联；点节点开任务，可拖拽/缩放</span>

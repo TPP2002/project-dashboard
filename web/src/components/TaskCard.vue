@@ -2,6 +2,8 @@
 import type { Task } from '@/types'
 import { useBoardStore } from '@/stores/board'
 import { relTime } from '@/utils/format'
+import Icon from './Icon.vue'
+import StatusTile from './StatusTile.vue'
 
 const props = defineProps<{ task: Task; projectId: string }>()
 const store = useBoardStore()
@@ -28,9 +30,12 @@ const stale = () => {
   >
     <span v-if="building()" class="glow-edge" />
     <div class="tcard-head">
+      <StatusTile :status="task.status" :size="16" />
       <span class="tid mono">{{ task.id }}</span>
       <span class="spacer" />
-      <span v-if="pending()" class="badge warn" :title="pending() + ' 条待拍板'">❓{{ pending() }}</span>
+      <span v-if="pending()" class="badge warn icon-badge" :title="pending() + ' 条待拍板'">
+        <Icon name="bell" :size="14" />{{ pending() }}
+      </span>
     </div>
     <!-- 三层结构:编号在上、人话标题居主位、技术说明退到小字(没写人话标题的老卡直接显示技术说明) -->
     <div class="ttitle">{{ task.plainTitle || task.title }}</div>
@@ -39,14 +44,16 @@ const stale = () => {
       <div class="glow-rail"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
       <span class="pct mono">{{ task.percent || 0 }}%</span>
       <span v-if="building() && lastProgressAt()" class="prog-time" :class="{ stale: stale() }">
-        {{ stale() ? '⚠ ' : '' }}{{ relTime(lastProgressAt()) }}
+        <Icon v-if="stale()" name="alertTri" :size="14" />{{ relTime(lastProgressAt()) }}
       </span>
     </div>
     <div class="tcard-meta" v-if="(task.gitBranch?.length || task.prNumbers?.length || task.wave || task.modelHint)">
-      <span v-for="b in task.gitBranch || []" :key="b" class="pill">🌿 {{ b }}</span>
-      <span v-for="p in task.prNumbers || []" :key="p" class="pill">PR #{{ p }}</span>
-      <span v-if="task.wave" class="pill">W{{ task.wave }}</span>
-      <span v-if="task.modelHint" class="badge info" :title="'建议施工档位:' + task.modelHint">🤖 {{ task.modelHint }}</span>
+      <span v-for="b in task.gitBranch || []" :key="b" class="pill"><Icon name="branch" :size="14" />{{ b }}</span>
+      <span v-for="p in task.prNumbers || []" :key="p" class="pill"><Icon name="pr" :size="14" />#{{ p }}</span>
+      <span v-if="task.wave" class="pill"><Icon name="layers" :size="14" />W{{ task.wave }}</span>
+      <span v-if="task.modelHint" class="badge info icon-badge" :title="'建议施工档位:' + task.modelHint">
+        <Icon name="bot" :size="14" />{{ task.modelHint }}
+      </span>
     </div>
   </article>
 </template>
@@ -72,6 +79,8 @@ const stale = () => {
 }
 .prog-wrap .glow-rail { flex: 1; }
 .pct { min-width: var(--s6); color: var(--text-2); font-size: var(--fs-xs); text-align: right; }
-.prog-time { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
+/* 徽章基类是 inline-block，塞进图标后要改成 flex 才对得齐基线。 */
+.icon-badge { display: inline-flex; align-items: center; gap: var(--s1); }
+.prog-time { display: inline-flex; align-items: center; gap: var(--s1); color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
 .prog-time.stale { color: var(--warn); }
 </style>

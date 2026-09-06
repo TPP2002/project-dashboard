@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/Icon.vue'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import type { JobSummary } from '@/types/codex'
@@ -73,10 +74,10 @@ onBeforeUnmount(() => {
     <main class="area-main">
       <div v-if="store.loading" class="loading-line" />
       <div v-if="store.error" class="errbar">
-        <span>⚠︎ {{ store.error }}</span>
+        <span class="errline"><Icon name="alertTri" :size="16" />{{ store.error }}</span>
         <button class="btn btn-sm" type="button" @click="store.refresh()">重试</button>
         <span class="spacer" />
-        <button class="btn btn-sm quiet" type="button" aria-label="关闭错误提示" @click="store.error = null">×</button>
+        <button class="btn btn-sm quiet" type="button" aria-label="关闭错误提示" @click="store.error = null"><Icon name="x" :size="14" /></button>
       </div>
       <!-- 裸 router-view：视图切换即时可靠，不依赖 transitionend（out-in 在异步组件/受限动画环境会卡住）。 -->
       <router-view />
@@ -110,6 +111,7 @@ onBeforeUnmount(() => {
   color: var(--bad);
   font-size: var(--fs-base);
 }
+.errline { display: inline-flex; align-items: center; gap: var(--s2); }
 .loading-line { position: absolute; top: 0; right: 0; left: 0; }
 
 @media (max-width: 700px) {

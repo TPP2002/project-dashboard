@@ -3,6 +3,7 @@
 // 治的病:决策从属于任务——P10 的 d1/d2/d3 是同一任务的三个问题,
 // 不该一个决策一个对话(会开三个对话各自 claim 同一 P10 打架)。
 // 正确粒度:一个任务 = 一份启动指令,含该任务所有已拍板决策,一个对话接手。
+import Icon from '@/components/Icon.vue'
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
@@ -154,7 +155,7 @@ async function markTaskLanded(task: UnlandedTask) {
   <div class="page">
     <header class="page-head">
       <div>
-        <h1>🚀 待落地</h1>
+        <h1><Icon name="toland" class="head-ic" :size="20" />待落地</h1>
         <p>已拍板但还没落地——按任务派单，一个任务交给一个新对话。</p>
       </div>
       <div class="head-actions">
@@ -171,13 +172,13 @@ async function markTaskLanded(task: UnlandedTask) {
     <template v-else>
       <div v-if="tasks.length" class="howto card">
         <span class="glow glow-top howto-glow" />
-        <b>怎么派单(可靠做法):</b> 点任务卡上的 <span class="kbd">📋 复制接单指令</span> → 在 Claude Code
+        <b>怎么派单(可靠做法):</b> 点任务卡上的 <span class="kbd"><Icon name="copy" :size="14" />复制接单指令</span> → 在 Claude Code
         <b>新开一个对话</b> → 粘贴(Ctrl+V)发送。那对话会自己 <code>读看板</code> 拿到完整任务书、认领、开工。
         <span class="muted">("自动开终端"是实验功能,开的是终端里的 Claude Code、不是你常用的桌面 App,可能因环境打不开——打不开就用复制。)</span>
       </div>
 
       <div v-if="!tasks.length" class="empty card">
-        <span class="ic">✨</span>
+        <span class="ic"><Icon name="sparkles" :size="36" /></span>
         所有拍板都已落地——干净<br>
         <span class="empty-help">有决策拍板后尚未标记落地时，对应任务会自动出现在这里。</span>
       </div>
@@ -185,10 +186,10 @@ async function markTaskLanded(task: UnlandedTask) {
       <section v-for="(group, pid) in grouped" :key="pid" class="project-group">
         <header class="project-head card">
           <div class="project-info">
-            <div><h2>📦 {{ group.name }}</h2><p>{{ group.tasks.length }} 个任务 · {{ decCountOf(group.tasks) }} 条决策</p></div>
+            <div><h2><Icon name="box" class="head-ic" :size="20" />{{ group.name }}</h2><p>{{ group.tasks.length }} 个任务 · {{ decCountOf(group.tasks) }} 条决策</p></div>
             <button class="btn" :disabled="projDispatching[pid]"
               @click="dispatchProject(pid, group.name, group.tasks.length, decCountOf(group.tasks))">
-              {{ projDispatching[pid] ? '开对话中…' : `📦 整项目打包给一个对话（${group.tasks.length} 任务）` }}
+              <Icon v-if="!projDispatching[pid]" name="box" :size="14" />{{ projDispatching[pid] ? '开对话中…' : `整项目打包给一个对话（${group.tasks.length} 任务）` }}
             </button>
           </div>
           <div v-if="projDispatched[pid]" class="project-note"><span class="badge info">已派单</span> 已整项目打包派单于 {{ projDispatched[pid] }}</div>
@@ -206,7 +207,7 @@ async function markTaskLanded(task: UnlandedTask) {
             <ul class="decision-list">
               <li v-for="decision in task.decisions" :key="decision.id" class="decision-item">
                 <div class="decision-question"><span class="decision-id mono">#{{ decision.id }}</span> {{ decision.question }}</div>
-                <div class="decision-answer"><span aria-hidden="true">└→</span> {{ decision.answer }}</div>
+                <div class="decision-answer"><Icon name="chevron" :size="14" :rotate="270" /> {{ decision.answer }}</div>
               </li>
             </ul>
 
@@ -221,15 +222,15 @@ async function markTaskLanded(task: UnlandedTask) {
 
             <div class="actions">
               <button class="btn primary main-action" @click="copyTrigger(task)">
-                {{ copiedTrigger[taskKey(task)] ? '✓ 已复制,去新对话粘贴' : '📋 复制接单指令(新对话粘贴)' }}
+                <Icon :name="copiedTrigger[taskKey(task)] ? 'check' : 'copy'" :size="14" />{{ copiedTrigger[taskKey(task)] ? '已复制,去新对话粘贴' : '复制接单指令(新对话粘贴)' }}
               </button>
               <button class="btn" :disabled="marking[taskKey(task)]" @click="markTaskLanded(task)">
-                {{ marking[taskKey(task)] ? '标记中…' : '✓ 本任务已落地' }}
+                <Icon v-if="!marking[taskKey(task)]" name="check" :size="14" />{{ marking[taskKey(task)] ? '标记中…' : '本任务已落地' }}
               </button>
             </div>
             <div class="alternate-action">
               <button class="btn quiet btn-sm" :disabled="dispatching[taskKey(task)]" @click="dispatchTask(task)">
-                {{ dispatching[taskKey(task)] ? '开终端中…' : '⚙ 或:试试自动开终端(实验,开的是终端非桌面App)' }}
+                <Icon v-if="!dispatching[taskKey(task)]" name="settings" :size="14" />{{ dispatching[taskKey(task)] ? '开终端中…' : '或:试试自动开终端(实验,开的是终端非桌面App)' }}
               </button>
             </div>
           </article>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 待拍板中心：列所有 answer===null 的 decision（跨项目）；界面点选 → POST /api/decide。
+import Icon from '@/components/Icon.vue'
 import { ref, reactive, computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
@@ -74,7 +75,7 @@ async function submit(item: PendingItem) {
   <div class="page">
     <header class="page-head">
       <div>
-        <h1>❓ 待拍板</h1>
+        <h1><Icon name="bell" class="head-ic" :size="20" />待拍板</h1>
         <p>每张卡把问题、全部选项、利弊和推荐理由一次摊开；选中后直接确认。</p>
       </div>
       <div class="head-actions">
@@ -102,7 +103,7 @@ async function submit(item: PendingItem) {
     </div>
 
     <div v-else-if="!items.length" class="empty card">
-      <span class="ic">🎉</span>
+      <span class="ic"><Icon name="sparkles" :size="36" /></span>
       {{ store.centerScopeAll ? '所有项目都没有待拍板事项。' : '当前项目没有待拍板事项。' }}<br>
       <span class="empty-help">任务登记新的未答决策后，会带着选项和推荐自动出现在这里。</span>
     </div>
@@ -144,7 +145,7 @@ async function submit(item: PendingItem) {
               @click="pick(item, option)"
             >
               <span class="option-head">
-                <span class="pick-mark" aria-hidden="true">{{ chosen(item) === option ? '●' : '○' }}</span>
+                <span class="pick-mark" :class="{ on: chosen(item) === option }" aria-hidden="true" />
                 <span class="option-name">{{ option }}</span>
                 <span v-if="item.decision.recommended === option" class="badge ok">推荐</span>
               </span>
@@ -160,8 +161,8 @@ async function submit(item: PendingItem) {
               @click="pick(item, CUSTOM)"
             >
               <span class="option-head">
-                <span class="pick-mark" aria-hidden="true">{{ isCustom(item) ? '●' : '○' }}</span>
-                <span class="option-name">✍️ 其他（自己写答案）</span>
+                <span class="pick-mark" :class="{ on: isCustom(item) }" aria-hidden="true" />
+                <span class="option-name with-icon"><Icon name="pencil" :size="14" />其他（自己写答案）</span>
               </span>
               <span v-if="isCustom(item)" class="custom-wrap" @click.stop>
                 <textarea
@@ -224,7 +225,9 @@ async function submit(item: PendingItem) {
 .option-card.selected { border-color: var(--info); background: var(--info-bg); }
 .custom-option { border-style: dashed; }
 .option-head { display: flex; align-items: center; gap: var(--s2); }
-.pick-mark { flex: none; color: var(--info); }
+/* 单选点自己画：选中实心、未选空心。它讲的是「选没选中」，不是一枚可点的图标。 */
+.pick-mark { width: 11px; height: 11px; flex: none; border: 1.7px solid var(--text-3); border-radius: 50%; }
+.pick-mark.on { border-color: var(--info); background: var(--info); box-shadow: inset 0 0 0 2.6px var(--surface); }
 .option-name { flex: 1; min-width: 0; font-size: var(--fs-base); font-weight: 600; overflow-wrap: anywhere; }
 .option-pros { padding-left: var(--s5); color: var(--text-2); font-size: var(--fs-base); line-height: 1.6; white-space: pre-line; }
 .custom-wrap { display: block; padding-left: var(--s5); }

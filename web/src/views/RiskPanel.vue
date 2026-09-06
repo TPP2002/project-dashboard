@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 风险面板：跨项目的 暂缓 / 阻塞 / 待拍板 任务，三分组。点卡开抽屉。
+import Icon from '@/components/Icon.vue'
 import { computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -30,33 +31,33 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
 
 <template>
   <div>
-    <div class="head"><h2>⚠️ 风险面板</h2><span class="spacer" /><ScopeToggle /></div>
+    <div class="head"><h2><Icon name="alertTri" class="head-ic" :size="20" />风险面板</h2><span class="spacer" /><ScopeToggle /></div>
 
     <div class="cols">
       <section class="col">
-        <div class="col-t">🚫 暂缓 <span class="badge n">{{ groups.parked.length }}</span></div>
+        <div class="col-t"><Icon name="parkingNote" :size="16" />暂缓 <span class="badge n">{{ groups.parked.length }}</span></div>
         <div v-if="!groups.parked.length" class="muted small">无</div>
         <div v-for="r in groups.parked" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span></div>
           <div class="rtitle">{{ r.task.title }}</div>
-          <div v-if="r.task.blockReason" class="reason">🚧 {{ r.task.blockReason }}</div>
-          <div v-if="r.task.parkedNote" class="reason note">🅿️ {{ r.task.parkedNote }}</div>
+          <div v-if="r.task.blockReason" class="reason"><Icon name="alertTri" :size="14" />{{ r.task.blockReason }}</div>
+          <div v-if="r.task.parkedNote" class="reason note"><Icon name="parkingNote" :size="14" />{{ r.task.parkedNote }}</div>
         </div>
       </section>
 
       <section class="col">
-        <div class="col-t">⛔ 阻塞 <span class="badge n">{{ groups.blocked.length }}</span></div>
+        <div class="col-t"><Icon name="ban" :size="16" />阻塞 <span class="badge n">{{ groups.blocked.length }}</span></div>
         <div v-if="!groups.blocked.length" class="muted small">无</div>
         <div v-for="r in groups.blocked" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span><StatusBadge :status="r.task.status" small /></div>
           <div class="rtitle">{{ r.task.title }}</div>
           <div v-if="r.task.deps?.blockedBy?.length" class="reason">被 {{ r.task.deps.blockedBy.join(', ') }} 阻塞</div>
-          <div v-if="r.task.blockReason" class="reason">🚧 {{ r.task.blockReason }}</div>
+          <div v-if="r.task.blockReason" class="reason"><Icon name="alertTri" :size="14" />{{ r.task.blockReason }}</div>
         </div>
       </section>
 
       <section class="col">
-        <div class="col-t">❓ 待拍板 <span class="badge n">{{ groups.pending.length }}</span></div>
+        <div class="col-t"><Icon name="bell" :size="16" />待拍板 <span class="badge n">{{ groups.pending.length }}</span></div>
         <div v-if="!groups.pending.length" class="muted small">无</div>
         <div v-for="r in groups.pending" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span></div>

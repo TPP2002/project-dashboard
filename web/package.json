@@ -9,7 +9,9 @@
     "dev:mock": "vite --mode mock",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "icons": "node scripts/sync-icons.cjs",
+    "check:no-emoji": "node scripts/check-no-emoji.cjs"
   },
   "dependencies": {
     "echarts": "^5.5.1",

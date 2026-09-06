@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 验收矩阵：当前项目 task × 维度（状态/测试/类型检查/待拍板）红黄绿灯。点行开抽屉。
 // 已完工默认折叠（体检 U1）：132 张完工卡淹没活跃任务，与看板/波次/甘特统一用 DoneToggle。
+import Icon from '@/components/Icon.vue'
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { DONE_STATUSES } from '@/api/schema'
@@ -44,14 +45,14 @@ function pendLight(t: Task): [Light, string] {
 <template>
   <div>
     <div class="head">
-      <h2>🚦 验收矩阵</h2>
+      <h2><Icon name="checks" class="head-ic" :size="20" />验收矩阵</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
       <span class="pill">{{ tasks.length }} 行</span>
       <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
     </div>
 
     <div v-if="!tasks.length" class="empty card">
-      <div class="big">🚦</div>
+      <div class="big"><Icon name="checks" :size="36" /></div>
       <div>{{ allTasks.length ? '活跃任务全部清零——已完工的已折叠，点上方开关查看' : '暂无任务。' }}</div>
     </div>
 

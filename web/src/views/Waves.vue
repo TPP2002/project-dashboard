@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // 波次视图：当前项目按 wave 分组，每波进度 + 任务列表。点任务开抽屉。
+import StatusTile from '@/components/StatusTile.vue'
+import Icon from '@/components/Icon.vue'
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { emojiFor, DONE_STATUSES } from '@/api/schema'
+import { DONE_STATUSES } from '@/api/schema'
 import DoneToggle from '@/components/DoneToggle.vue'
 import type { Task } from '@/types'
 
@@ -25,12 +27,12 @@ function prog(tasks: Task[]) {
 <template>
   <div>
     <div class="head">
-      <h2>🌊 波次视图</h2>
+      <h2><Icon name="layers" class="head-ic" :size="20" />波次视图</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
       <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
     </div>
 
-    <div v-if="!waves.length" class="empty card"><div class="big">🌊</div><div>暂无任务。</div></div>
+    <div v-if="!waves.length" class="empty card"><div class="big"><Icon name="layers" :size="36" /></div><div>暂无任务。</div></div>
 
     <div class="waves">
       <section v-for="w in waves" :key="w.wave" class="wave card">
@@ -47,7 +49,7 @@ function prog(tasks: Task[]) {
             @click="store.openTask(t.id, pid)"
           >
             <span v-if="t.status === '施工中'" class="glow-edge" />
-            <span class="e">{{ emojiFor(t.status) }}</span>
+            <StatusTile class="e" :status="t.status" :size="16" />
             <span class="tid mono">{{ t.id }}</span>
             <span class="tt">{{ t.title }}</span>
             <span class="pc mono">{{ t.percent || 0 }}%</span>

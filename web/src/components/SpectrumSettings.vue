@@ -1,90 +1,86 @@
 <script setup lang="ts">
-// 灯条配色设置：外观面板里的「全站一套 + 分部位覆盖」两段式选色。
+// 灯条配色设置：外观面板里的「全站一套 + 分部位覆盖 + 状态灯条五档谱」三段式选色。
 // 颜色本身不在这里写死——预设走 base.css 的色站变量，自定义色由取色器产生并交给 utils/spectrum 落地。
+// 每一行的下拉 / 预览 / 取色器都由 SpectrumChoiceRow 画，这里只负责「有哪几行、选项是什么、改完存哪」。
 import { computed, ref } from 'vue'
 import {
-  MAX_COLORS, MIN_COLORS, PARTS, PRESETS,
-  editableColors, setGlobal, setPart, spectrum, spectrumRevision,
-  type PartId, type PresetId, type SpectrumChoice,
+  MAX_COLORS, MIN_COLORS, PARTS, PRESETS, TILE_SPECS,
+  cssVarOf, editableColors, setGlobal, setPart, setTileSpec, spectrum, spectrumRevision,
+  type PartId, type PresetId, type SpectrumChoice, type TileSpecId,
 } from '@/utils/spectrum'
-
-type Target = 'global' | PartId
+import Icon from './Icon.vue'
+import SpectrumChoiceRow from './SpectrumChoiceRow.vue'
 
 const partsOpen = ref(false)
+const tilesOpen = ref(false)
 
-/** 分部位那几行的下拉：跟随全站 / 四套预设 / 自定义。全站那一行没有「跟随」。 */
-const partOptions = computed(() => [
-  { value: '', label: '跟随全站' },
-  ...PRESETS.map(preset => ({ value: preset.id as string, label: preset.label })),
-  { value: 'custom', label: '自定义…' },
-])
+const presetOptions = PRESETS.map(preset => ({ value: preset.id as string, label: preset.label }))
+const customOption = { value: 'custom', label: '自定义…' }
+const followOption = { value: 'active', label: '跟随全站流光' }
 
-function choiceOf(target: Target): SpectrumChoice | null {
-  return target === 'global' ? spectrum.global : spectrum.parts[target] ?? null
+/** 部位那几行：默认项的文案随部位而定，默认已经是「跟随全站」的就不再重复给这一项。 */
+function partOptions(part: (typeof PARTS)[number]) {
+  return [
+    { value: '', label: part.defaultLabel },
+    ...(part.defaultIsGlobal ? [] : [followOption]),
+    ...presetOptions,
+    customOption,
+  ]
 }
 
-function selectValue(target: Target): string {
-  const choice = choiceOf(target)
-  if (!choice) return ''
-  return choice.kind === 'preset' ? choice.preset : 'custom'
+/** 状态谱那几行：只给三种选择，别让状态语言被四套装饰预设冲淡。 */
+const tileOptions = [
+  { value: '', label: '按语义色（默认）' },
+  followOption,
+  customOption,
+]
+
+const globalSelected = computed(() => spectrum.global.kind === 'preset' ? spectrum.global.preset : 'custom')
+
+/** 全站预览条：和分部位那几行一样读最终生效的色站变量。 */
+const globalPreview = computed(() => {
+  void spectrumRevision.value
+  return { backgroundImage: `linear-gradient(90deg, var(${cssVarOf('global')}))` }
+})
+
+const globalColors = computed(() => spectrum.global.kind === 'custom' ? spectrum.global.colors : [])
+
+function chooseGlobalPreset(preset: PresetId) {
+  setGlobal({ kind: 'preset', preset })
 }
 
-function customColors(target: Target): string[] {
-  const choice = choiceOf(target)
-  return choice?.kind === 'custom' ? choice.colors : []
+function chooseGlobalCustom() {
+  const seeded = editableColors('global')
+  if (seeded.length >= MIN_COLORS) setGlobal({ kind: 'custom', colors: seeded.slice(0, MAX_COLORS) })
 }
 
-function commit(target: Target, choice: SpectrumChoice | null) {
-  if (target === 'global') { if (choice) setGlobal(choice) }
-  else setPart(target, choice)
-}
-
-/** 切到「自定义」时，用该部位此刻的实际颜色打底，用户在看得见的基础上改。 */
-function seedColors(target: Target): string[] | null {
-  const seeded = editableColors(target === 'global' ? null : target)
-  return seeded.length >= MIN_COLORS ? seeded.slice(0, MAX_COLORS) : null
-}
-
-function chooseValue(target: Target, value: string) {
-  if (!value) return commit(target, null)
-  if (value === 'custom') {
-    const seeded = seedColors(target)
-    if (seeded) commit(target, { kind: 'custom', colors: seeded })
-    return
-  }
-  commit(target, { kind: 'preset', preset: value as PresetId })
-}
-
-function onSelect(target: Target, event: Event) {
-  chooseValue(target, (event.target as HTMLSelectElement).value)
-}
-
-function setColor(target: Target, index: number, event: Event) {
-  const colors = customColors(target).slice()
+function setGlobalColor(index: number, event: Event) {
+  const colors = globalColors.value.slice()
   if (!colors.length) return
   colors[index] = (event.target as HTMLInputElement).value
-  commit(target, { kind: 'custom', colors })
+  setGlobal({ kind: 'custom', colors })
 }
 
-function addColor(target: Target) {
-  const colors = customColors(target).slice()
+function addGlobalColor() {
+  const colors = globalColors.value.slice()
   if (colors.length >= MAX_COLORS) return
   colors.push(colors[colors.length - 1] ?? colors[0])
-  commit(target, { kind: 'custom', colors })
+  setGlobal({ kind: 'custom', colors })
 }
 
-function removeColor(target: Target, index: number) {
-  const colors = customColors(target).slice()
+function removeGlobalColor(index: number) {
+  const colors = globalColors.value.slice()
   if (colors.length <= MIN_COLORS) return
   colors.splice(index, 1)
-  commit(target, { kind: 'custom', colors })
+  setGlobal({ kind: 'custom', colors })
 }
 
-/** 预览条读的是该部位最终生效的色站变量，跟真灯条同一个数据源、同一套动画。 */
-function previewStyle(target: Target) {
-  void spectrumRevision.value // 配色一改就重算，别让预览停在旧色上
-  const cssVar = target === 'global' ? '--spec-active' : `--spec-${target}`
-  return { backgroundImage: `linear-gradient(90deg, var(${cssVar}))` }
+function onPartChange(part: PartId, choice: SpectrumChoice | null) {
+  setPart(part, choice)
+}
+
+function onTileChange(spec: TileSpecId, choice: SpectrumChoice | null) {
+  setTileSpec(spec, choice)
 }
 </script>
 
@@ -100,110 +96,99 @@ function previewStyle(target: Target) {
         :data-spectrum-choice="preset.id"
         :aria-label="preset.label"
         :title="preset.label"
-        :aria-pressed="selectValue('global') === preset.id"
-        @click="chooseValue('global', preset.id)"
+        :aria-pressed="globalSelected === preset.id"
+        @click="chooseGlobalPreset(preset.id)"
       />
       <button
-        class="spectrum-swatch"
+        class="spectrum-swatch pencil"
         type="button"
-        :style="previewStyle('global')"
+        :style="globalPreview"
         aria-label="自定义配色"
         title="自定义：以当前配色为起点自己挑颜色"
-        :aria-pressed="selectValue('global') === 'custom'"
-        @click="chooseValue('global', 'custom')"
-      >✎</button>
+        :aria-pressed="globalSelected === 'custom'"
+        @click="chooseGlobalCustom()"
+      >
+        <Icon name="pencil" :size="14" />
+      </button>
     </div>
 
-    <div v-if="selectValue('global') === 'custom'" class="color-row">
-      <span v-for="(color, index) in customColors('global')" :key="index" class="color-cell">
+    <div v-if="globalSelected === 'custom'" class="color-row">
+      <span v-for="(color, index) in globalColors" :key="index" class="color-cell">
         <input
           class="color-input"
           type="color"
           :value="color"
           :aria-label="`第 ${index + 1} 个颜色`"
-          @input="setColor('global', index, $event)"
+          @input="setGlobalColor(index, $event)"
         >
         <button
-          v-if="customColors('global').length > MIN_COLORS"
+          v-if="globalColors.length > MIN_COLORS"
           class="color-drop"
           type="button"
           aria-label="删掉这个颜色"
           title="删掉这个颜色"
-          @click="removeColor('global', index)"
-        >×</button>
+          @click="removeGlobalColor(index)"
+        >
+          <Icon name="x" :size="14" />
+        </button>
       </span>
       <button
-        v-if="customColors('global').length < MAX_COLORS"
+        v-if="globalColors.length < MAX_COLORS"
         class="color-add"
         type="button"
         title="再加一个颜色"
         aria-label="再加一个颜色"
-        @click="addColor('global')"
-      >＋</button>
+        @click="addGlobalColor()"
+      ><Icon name="plus" :size="14" /></button>
     </div>
   </div>
 
   <div class="appearance-group">
-    <button
-      class="parts-toggle"
-      type="button"
-      :aria-expanded="partsOpen"
-      @click="partsOpen = !partsOpen"
-    >
+    <button class="parts-toggle" type="button" :aria-expanded="partsOpen" @click="partsOpen = !partsOpen">
       <span>分部位单独配色</span>
-      <span aria-hidden="true">{{ partsOpen ? '▴' : '▾' }}</span>
+      <Icon name="chevron" :size="14" :rotate="partsOpen ? 180 : 0" class="toggle-mark" />
     </button>
-
     <div v-if="partsOpen" class="parts">
-      <div v-for="part in PARTS" :key="part.id" class="part">
-        <div class="part-head">
-          <span class="part-name" :title="part.hint">{{ part.label }}</span>
-          <select
-            class="part-select"
-            :value="selectValue(part.id)"
-            :aria-label="`${part.label}的配色`"
-            @change="onSelect(part.id, $event)"
-          >
-            <option v-for="option in partOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
-        </div>
-        <div class="strip-preview" :style="previewStyle(part.id)" :title="part.hint" />
+      <SpectrumChoiceRow
+        v-for="part in PARTS"
+        :key="part.id"
+        :target="part.id"
+        :label="part.label"
+        :hint="part.hint"
+        :css-var="cssVarOf(part.id)"
+        :options="partOptions(part)"
+        :choice="spectrum.parts[part.id] ?? null"
+        @change="onPartChange(part.id, $event)"
+      />
+    </div>
+  </div>
 
-        <div v-if="selectValue(part.id) === 'custom'" class="color-row">
-          <span v-for="(color, index) in customColors(part.id)" :key="index" class="color-cell">
-            <input
-              class="color-input"
-              type="color"
-              :value="color"
-              :aria-label="`${part.label}的第 ${index + 1} 个颜色`"
-              @input="setColor(part.id, index, $event)"
-            >
-            <button
-              v-if="customColors(part.id).length > MIN_COLORS"
-              class="color-drop"
-              type="button"
-              aria-label="删掉这个颜色"
-              title="删掉这个颜色"
-              @click="removeColor(part.id, index)"
-            >×</button>
-          </span>
-          <button
-            v-if="customColors(part.id).length < MAX_COLORS"
-            class="color-add"
-            type="button"
-            title="再加一个颜色"
-            aria-label="再加一个颜色"
-            @click="addColor(part.id)"
-          >＋</button>
-        </div>
-      </div>
+  <div class="appearance-group">
+    <button class="parts-toggle" type="button" :aria-expanded="tilesOpen" @click="tilesOpen = !tilesOpen">
+      <span>状态灯条配色</span>
+      <Icon name="chevron" :size="14" :rotate="tilesOpen ? 180 : 0" class="toggle-mark" />
+    </button>
+    <div v-if="tilesOpen" class="parts">
+      <p class="tiles-hint">状态瓦片边框那圈流光，按「这事处在什么状态」分五档各走一条，默认就是语义色。</p>
+      <SpectrumChoiceRow
+        v-for="spec in TILE_SPECS"
+        :key="spec.id"
+        :target="spec.id"
+        :label="spec.label"
+        :hint="spec.hint"
+        :css-var="cssVarOf(spec.id)"
+        :options="tileOptions"
+        :choice="spectrum.tiles[spec.id] ?? null"
+        @change="onTileChange(spec.id, $event)"
+      />
     </div>
   </div>
 </template>
 
 <style scoped>
 .spectrum-options { flex-wrap: wrap; }
-.spectrum-swatch { color: var(--text); font-size: var(--fs-xs); line-height: 1; }
+.spectrum-swatch { color: var(--text); line-height: 1; }
+.spectrum-swatch.pencil { display: grid; place-items: center; }
 
 .color-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s2); }
 .color-cell { position: relative; display: inline-flex; }
@@ -220,6 +205,8 @@ function previewStyle(target: Target) {
   position: absolute;
   top: calc(-1 * var(--s1));
   right: calc(-1 * var(--s1));
+  display: grid;
+  place-items: center;
   width: 14px;
   height: 14px;
   padding: 0;
@@ -228,7 +215,6 @@ function previewStyle(target: Target) {
   background: var(--surface);
   color: var(--text-3);
   cursor: pointer;
-  font-size: 10px;
   line-height: 1;
 }
 .color-drop:hover { color: var(--bad); border-color: var(--bad); }
@@ -261,26 +247,7 @@ function previewStyle(target: Target) {
   text-transform: uppercase;
 }
 .parts-toggle:hover { color: var(--text-2); }
-
+.toggle-mark { opacity: .7; }
 .parts { display: grid; gap: var(--s3); margin-top: var(--s2); }
-.part-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
-.part-name { color: var(--text-2); font-size: var(--fs-sm); }
-.part-select {
-  max-width: 118px;
-  padding: 2px var(--s1);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  color: var(--text);
-  cursor: pointer;
-  font-size: var(--fs-xs);
-}
-/* 预览条与真灯条同款：同一套 slide 动画、同样的 200% 铺法，所见即所得。 */
-.strip-preview {
-  height: 8px;
-  margin-top: var(--s1);
-  border-radius: 4px;
-  background-size: 200% 100%;
-  animation: slide 3.4s linear infinite;
-}
+.tiles-hint { margin: 0; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.5; }
 </style>

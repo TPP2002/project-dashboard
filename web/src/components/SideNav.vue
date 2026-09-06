@@ -2,6 +2,8 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import type { QuotaSnapshot } from '@/types/codex'
+import Icon from './Icon.vue'
+import type { IconName } from '@/icons/paths'
 import NavSettingsPanel, {
   cloneNavGroups,
   loadNavGroups,
@@ -11,28 +13,29 @@ import NavSettingsPanel, {
 } from './NavSettingsPanel.vue'
 
 type BadgeKind = 'pending' | 'unlanded' | 'today'
-interface NavItemDefinition { to: string; icon: string; title: string; badge?: BadgeKind }
+// icon 填的是功能图标名（icons/paths.ts 里的键），与路由表 meta.icon 同一套词汇。
+interface NavItemDefinition { to: string; icon: IconName; title: string; badge?: BadgeKind }
 
 const NAV_ITEMS = {
-  overview: { to: '/overview', icon: '⌂', title: '总览' },
-  approvals: { to: '/approvals', icon: '?', title: '待拍板', badge: 'pending' },
-  reader: { to: '/reader', icon: '▥', title: '审阅台' },
-  codex: { to: '/codex', icon: '◎', title: 'Codex' },
-  parallel: { to: '/parallel', icon: '⇉', title: '能同时派几张' },
-  daily: { to: '/daily', icon: '☷︎', title: '每日成果', badge: 'today' },
-  kanban: { to: '/kanban', icon: '▦', title: '看板' },
-  toland: { to: '/toland', icon: '↗', title: '待落地', badge: 'unlanded' },
-  history: { to: '/history', icon: '↺', title: '拍板历史' },
-  cost: { to: '/cost', icon: '¤', title: '成本' },
-  cpu: { to: '/cpu', icon: '⌁', title: '算力' },
-  insights: { to: '/insights', icon: '◫', title: '洞察' },
-  risk: { to: '/risk', icon: '!', title: '风险' },
-  waves: { to: '/waves', icon: '≋', title: '波次' },
-  acceptance: { to: '/acceptance', icon: '✓', title: '验收' },
-  collision: { to: '/collision', icon: '×', title: '占用' },
-  gantt: { to: '/gantt', icon: '▤', title: '甘特' },
-  deps: { to: '/deps', icon: '◇', title: '依赖' },
-  search: { to: '/search', icon: '⌕', title: '搜索' },
+  overview: { to: '/overview', icon: 'home', title: '总览' },
+  approvals: { to: '/approvals', icon: 'bell', title: '待拍板', badge: 'pending' },
+  reader: { to: '/reader', icon: 'book', title: '审阅台' },
+  codex: { to: '/codex', icon: 'bot', title: 'Codex' },
+  parallel: { to: '/parallel', icon: 'checks', title: '能同时派几张' },
+  daily: { to: '/daily', icon: 'calendar', title: '每日成果', badge: 'today' },
+  kanban: { to: '/kanban', icon: 'kanban', title: '看板' },
+  toland: { to: '/toland', icon: 'toland', title: '待落地', badge: 'unlanded' },
+  history: { to: '/history', icon: 'history', title: '拍板历史' },
+  cost: { to: '/cost', icon: 'coins', title: '成本' },
+  cpu: { to: '/cpu', icon: 'cpu', title: '算力' },
+  insights: { to: '/insights', icon: 'chart', title: '洞察' },
+  risk: { to: '/risk', icon: 'alertTri', title: '风险' },
+  waves: { to: '/waves', icon: 'layers', title: '波次' },
+  acceptance: { to: '/acceptance', icon: 'checks', title: '验收' },
+  collision: { to: '/collision', icon: 'merge', title: '占用' },
+  gantt: { to: '/gantt', icon: 'gantt', title: '甘特' },
+  deps: { to: '/deps', icon: 'network', title: '依赖' },
+  search: { to: '/search', icon: 'search', title: '搜索' },
 } as const satisfies Record<string, NavItemDefinition>
 
 type NavItemId = keyof typeof NAV_ITEMS
@@ -160,7 +163,8 @@ onUnmounted(() => {
           :aria-expanded="!group.collapsed"
           @click="toggleGroup(group.id)"
         >
-          <span>{{ group.name }}</span><span aria-hidden="true">{{ group.collapsed ? '›' : '⌄' }}</span>
+          <span>{{ group.name }}</span>
+          <Icon name="chevron" :size="14" :rotate="group.collapsed ? 270 : 0" />
         </button>
         <div v-show="!group.collapsed" class="group-items">
           <router-link
@@ -170,7 +174,7 @@ onUnmounted(() => {
             class="item"
             active-class="on"
           >
-            <span class="ic" aria-hidden="true">{{ navItem(item.id).icon }}</span>
+            <Icon class="ic" :name="navItem(item.id).icon" :size="16" />
             <span class="tt">{{ navItem(item.id).title }}</span>
             <span v-if="navItem(item.id).badge === 'pending' && store.pendingCount" class="badge warn cnt">{{ store.pendingCount }}</span>
             <span v-if="navItem(item.id).badge === 'unlanded' && store.unlandedCount" class="badge info cnt">{{ store.unlandedCount }}</span>
@@ -191,7 +195,7 @@ onUnmounted(() => {
         <b>{{ quota?.usedPercent == null ? '未知' : quota.usedPercent + '%' }}</b>
       </router-link>
       <button class="settings-entry" type="button" @click="settingsOpen = true">
-        <span aria-hidden="true">⚙︎</span><span>菜单设置</span>
+        <Icon name="settings" :size="14" /><span>菜单设置</span>
       </button>
       <div class="foot mono">v1.0 · 全局看板</div>
     </div>
@@ -246,7 +250,8 @@ onUnmounted(() => {
 }
 .item:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 .item.on { background: var(--surface-3); border-color: var(--line); color: var(--text); font-weight: 600; }
-.ic { width: var(--s5); color: var(--text-3); font-family: var(--mono); text-align: center; }
+.ic { color: var(--text-3); }
+.item.on .ic { color: var(--text); }
 .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cnt { min-width: var(--s4); padding-inline: var(--s1); text-align: center; }
 .nav-bottom { display: grid; gap: var(--s2); padding-top: var(--s2); border-top: 1px solid var(--line); }

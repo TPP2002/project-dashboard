@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/Icon.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import type { CodexReport, QuotaSnapshot } from '@/types/codex'
 
@@ -64,7 +65,7 @@ watch(() => props.refreshKey, load)
         <button class="btn quiet btn-sm" :class="{ on: days === 7 }" @click="selectDays(7)">7 天</button>
       </div>
     </header>
-    <p v-if="error" class="err">⚠️ {{ error }}</p>
+    <p v-if="error" class="err"><Icon name="alertTri" :size="16" />{{ error }}</p>
     <div v-if="report" class="numbers">
       <div class="card metric-card"><strong>{{ report.dispatched }}</strong><span>派出</span></div>
       <div class="card metric-card"><strong>{{ report.passed }}</strong><span>通过</span></div>
@@ -85,16 +86,16 @@ watch(() => props.refreshKey, load)
       <div class="skel wide" /><div class="skel medium" /><div class="skel wide" />
     </div>
     <div v-else-if="!error" class="empty">
-      <span class="ic">📭</span>还没有可汇总的 Codex 活动<br>
+      <span class="ic"><Icon name="inbox" :size="36" animated /></span>还没有可汇总的 Codex 活动<br>
       <span class="empty-help">派出工单或产生会话后，战报和额度快照会出现在这里。</span>
     </div>
 
     <div class="rejected">
       <h3>需要处理</h3>
-      <p v-if="report && !report.rejectedJobs.length && !report.stalledJobs.length" class="ok">✅ 没有需要处理的</p>
+      <p v-if="report && !report.rejectedJobs.length && !report.stalledJobs.length" class="ok"><Icon name="check" :size="16" />没有需要处理的</p>
       <!-- 失联的排在驳回前面:驳回至少是有结论的，失联是「以为还有人在干、其实早没了」，更耽误事。 -->
       <button v-for="job in report?.stalledJobs || []" :key="'stalled-' + job.slug" class="row attention-row stalled" @click="emit('openJob', job.slug)">
-        <strong>🚨 {{ job.title }}</strong>
+        <strong><Icon name="alert" :size="16" />{{ job.title }}</strong>
         <span>{{ job.reason }}<template v-if="job.lastActivityAt">（最后一次动静：{{ formatAt(job.lastActivityAt) }}）</template></span>
       </button>
       <button v-for="job in report?.rejectedJobs || []" :key="job.slug" class="row attention-row" @click="emit('openJob', job.slug)">

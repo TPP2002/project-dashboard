@@ -5,6 +5,7 @@ import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { fetchDoc, docUrl } from '@/api/client'
 import { fmtDateTime, relTime } from '@/utils/format'
+import Icon from './Icon.vue'
 import StatusBadge from './StatusBadge.vue'
 import type { DocRef } from '@/types'
 
@@ -89,7 +90,7 @@ onUnmounted(() => {
             <span class="d-id mono">{{ task.id }}</span>
             <StatusBadge :status="task.status" />
             <span class="spacer" />
-            <button class="btn btn-sm btn-ghost close" type="button" aria-label="关闭任务详情" @click="store.closeTask()">✕</button>
+            <button class="btn btn-sm btn-ghost close" type="button" aria-label="关闭任务详情" @click="store.closeTask()"><Icon name="x" :size="16" label="关闭" /></button>
           </header>
 
           <div class="d-body">
@@ -99,7 +100,7 @@ onUnmounted(() => {
               <div class="glow-rail"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
               <span class="pct mono">{{ task.percent || 0 }}%</span>
               <span v-if="task.status === '施工中' && (task as any).lastProgressAt" class="prog-time" :class="{ stale: progStale }">
-                {{ progStale ? '⚠ 进度' : '进度更新于' }} {{ relTime((task as any).lastProgressAt) }}
+                <Icon v-if="progStale" name="alertTri" :size="14" />{{ progStale ? '进度' : '进度更新于' }} {{ relTime((task as any).lastProgressAt) }}
               </span>
             </div>
 
@@ -108,11 +109,11 @@ onUnmounted(() => {
             <!-- 元信息 -->
             <section class="sec">
               <div class="kv" v-if="task.wave"><span>波次</span><b>W{{ task.wave }}</b></div>
-              <div class="kv" v-if="task.modelHint"><span>建议档位</span><b>🤖 {{ task.modelHint }}</b></div>
+              <div class="kv" v-if="task.modelHint"><span>建议档位</span><b class="with-icon"><Icon name="bot" :size="14" />{{ task.modelHint }}</b></div>
               <div class="kv" v-if="task.dates?.design"><span>设计</span><b>{{ task.dates.design }}</b></div>
               <div class="kv" v-if="task.dates?.start"><span>开工</span><b>{{ task.dates.start }}</b></div>
               <div class="kv" v-if="task.dates?.done"><span>完工</span><b>{{ task.dates.done }}</b></div>
-              <div class="kv" v-if="task.typecheck !== undefined"><span>类型检查</span><b>{{ task.typecheck ? '✅' : '—' }}</b></div>
+              <div class="kv" v-if="task.typecheck !== undefined"><span>类型检查</span><b class="with-icon"><Icon v-if="task.typecheck" name="check" :size="14" /><template v-else>—</template></b></div>
               <div class="kv" v-if="task.nextMilestone"><span>下一里程碑</span><b>{{ task.nextMilestone }}</b></div>
             </section>
 
@@ -130,14 +131,14 @@ onUnmounted(() => {
             <section v-if="hasArr(task.gitBranch) || hasArr(task.worktree) || hasArr(task.prNumbers) || hasArr(task.commitShas) || hasArr(task.fileScope) || hasArr(task.forbiddenZones)" class="sec block">
               <div class="sec-t">分支 / 占用</div>
               <div class="inline-list">
-                <span v-for="b in task.gitBranch || []" :key="b" class="pill">🌿 {{ b }}</span>
-                <span v-for="w in task.worktree || []" :key="w" class="pill">🌲 {{ w }}</span>
-                <span v-for="p in task.prNumbers || []" :key="p" class="pill">PR #{{ p }}</span>
-                <span v-for="c in task.commitShas || []" :key="c" class="pill">⚙ {{ String(c).slice(0, 8) }}</span>
+                <span v-for="b in task.gitBranch || []" :key="b" class="pill"><Icon name="branch" :size="14" />{{ b }}</span>
+                <span v-for="w in task.worktree || []" :key="w" class="pill"><Icon name="tree" :size="14" />{{ w }}</span>
+                <span v-for="p in task.prNumbers || []" :key="p" class="pill"><Icon name="pr" :size="14" />#{{ p }}</span>
+                <span v-for="c in task.commitShas || []" :key="c" class="pill"><Icon name="commit" :size="14" />{{ String(c).slice(0, 8) }}</span>
               </div>
               <div class="inline-list secondary-list" v-if="hasArr(task.fileScope) || hasArr(task.forbiddenZones)">
-                <span v-for="f in task.fileScope || []" :key="f" class="badge info">📁 {{ f }}</span>
-                <span v-for="f in task.forbiddenZones || []" :key="f" class="badge bad">⛔ {{ f }}</span>
+                <span v-for="f in task.fileScope || []" :key="f" class="badge info icon-badge"><Icon name="folder" :size="14" />{{ f }}</span>
+                <span v-for="f in task.forbiddenZones || []" :key="f" class="badge bad icon-badge"><Icon name="ban" :size="14" />{{ f }}</span>
               </div>
             </section>
 
@@ -158,9 +159,9 @@ onUnmounted(() => {
               <div class="kv" v-if="hasArr(task.deps?.dependsOn)"><span>依赖</span><b>{{ task.deps!.dependsOn!.join(', ') }}</b></div>
               <div class="kv" v-if="hasArr(task.deps?.blockedBy)"><span>被阻塞</span><b class="warn">{{ task.deps!.blockedBy!.join(', ') }}</b></div>
               <div class="kv" v-if="hasArr(task.deps?.relatedTasks)"><span>关联</span><b>{{ task.deps!.relatedTasks!.join(', ') }}</b></div>
-              <div class="note" v-if="task.blockReason">🚧 {{ task.blockReason }}</div>
-              <div class="note" v-if="task.parkedNote">🅿️ {{ task.parkedNote }}</div>
-              <div class="note ok" v-if="task.unparkReason">🔄 {{ task.unparkReason }}<span v-if="task.unparkedAt" class="note-when mono">{{ task.unparkedAt }}</span></div>
+              <div class="note" v-if="task.blockReason"><Icon name="alertTri" :size="16" />{{ task.blockReason }}</div>
+              <div class="note" v-if="task.parkedNote"><Icon name="parkingNote" :size="16" />{{ task.parkedNote }}</div>
+              <div class="note ok" v-if="task.unparkReason"><Icon name="rotateCcw" :size="16" />{{ task.unparkReason }}<span v-if="task.unparkedAt" class="note-when mono">{{ task.unparkedAt }}</span></div>
             </section>
 
             <!-- 决策（含内联拍板） -->
@@ -174,19 +175,19 @@ onUnmounted(() => {
                       v-for="o in d.options" :key="o" class="opt btn"
                       :class="{ on: (picked[d.id] ?? d.recommended) === o, rec: d.recommended === o }"
                       @click="picked[d.id] = o"
-                    >{{ (picked[d.id] ?? d.recommended) === o ? '●' : '○' }} {{ o }}
+                    ><i class="pick" :class="{ on: (picked[d.id] ?? d.recommended) === o }" aria-hidden="true" />{{ o }}
                       <span v-if="d.recommended === o" class="badge ok compact">推荐</span>
                     </button>
                   </div>
                   <div class="decision-actions">
-                    <span v-if="derr[d.id]" class="err">⚠️ {{ derr[d.id] }}</span>
+                    <span v-if="derr[d.id]" class="err with-icon"><Icon name="alertTri" :size="14" />{{ derr[d.id] }}</span>
                     <span class="spacer" />
                     <button class="btn btn-primary btn-sm" :disabled="submitting[d.id]" @click="decide(d.id, d.options, d.recommended)">
                       {{ submitting[d.id] ? '提交中…' : '拍板：' + (picked[d.id] ?? d.recommended) }}
                     </button>
                   </div>
                 </template>
-                <div v-else class="dec-done">✅ 已拍板：<b>{{ d.answer }}</b><span v-if="d.decidedAt" class="mono"> · {{ d.decidedAt }}</span></div>
+                <div v-else class="dec-done"><Icon name="check" :size="14" />已拍板：<b>{{ d.answer }}</b><span v-if="d.decidedAt" class="mono"> · {{ d.decidedAt }}</span></div>
               </div>
             </section>
 
@@ -195,8 +196,8 @@ onUnmounted(() => {
               <div class="sec-t">文档</div>
               <div v-for="(d, i) in task.docs" :key="i" class="doc card">
                 <div class="doc-row">
-                  <button class="doc-name" @click="preview(d)">📄 {{ docName(d) }}</button>
-                  <a class="pill" :href="docUrl(pid, docPath(d))" target="_blank" rel="noopener">打开 ↗</a>
+                  <button class="doc-name" @click="preview(d)"><Icon name="file" :size="14" />{{ docName(d) }}</button>
+                  <a class="pill" :href="docUrl(pid, docPath(d))" target="_blank" rel="noopener">打开<Icon name="toland" :size="14" /></a>
                 </div>
                 <div v-if="activeDoc === docPath(d)" class="doc-view">
                   <div v-if="docLoading" class="muted small">加载中…</div>
@@ -236,7 +237,7 @@ onUnmounted(() => {
 .d-prog { display: flex; align-items: center; gap: var(--s3); }
 .d-prog .glow-rail { flex: 1; }
 .d-prog .pct { color: var(--text-2); font-size: var(--fs-sm); }
-.d-prog .prog-time { margin-left: var(--s1); color: var(--text-3); font-size: var(--fs-xs); }
+.d-prog .prog-time { display: inline-flex; align-items: center; gap: var(--s1); margin-left: var(--s1); color: var(--text-3); font-size: var(--fs-xs); }
 .d-prog .prog-time.stale { color: var(--warn); }
 .d-desc { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.6; white-space: pre-wrap; }
 .sec { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
@@ -245,8 +246,10 @@ onUnmounted(() => {
 .kv { display: flex; align-items: baseline; gap: var(--s2); font-size: var(--fs-base); }
 .kv span { min-width: calc(var(--s7) + var(--s3)); color: var(--text-2); }
 .kv b { font-weight: 600; }
+/* 键值行里塞了图标就得换 flex，不然图标压不到基线上。 */
+.kv b.with-icon { display: inline-flex; align-items: center; gap: var(--s1); }
 .kv b.warn, .warn { color: var(--warn); }
-.note { padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--warn-bg); color: var(--warn); font-size: var(--fs-base); }
+.note { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--warn-bg); color: var(--warn); font-size: var(--fs-base); }
 /* 解除暂缓是好消息,别跟阻塞/暂缓一样刷成警告色 */
 .note.ok { background: var(--ok-bg); color: var(--ok); }
 .note-when { margin-left: var(--s2); color: var(--text-3); font-size: var(--fs-sm); }
@@ -259,12 +262,18 @@ onUnmounted(() => {
 .opt { width: 100%; justify-content: flex-start; padding: var(--s2) var(--s3); background: var(--surface); text-align: left; }
 .opt.on { border-color: var(--info); background: var(--info-bg); }
 .opt .badge { margin-left: auto; }
-.dec-done { color: var(--ok); font-size: var(--fs-base); }
+/* 选项前的圆点自己画：选中实心、未选空心，比塞一枚图标更贴合单选的语感。 */
+.pick { width: 10px; height: 10px; flex: none; margin-right: var(--s2); border: 1.6px solid var(--text-3); border-radius: 50%; }
+.opt.on .pick { border-color: var(--info); box-shadow: inset 0 0 0 2.4px var(--info-bg); background: var(--info); }
+.dec-done { display: flex; align-items: center; gap: var(--s1); color: var(--ok); font-size: var(--fs-base); }
 .err { color: var(--bad); font-size: var(--fs-sm); }
+.err.with-icon { display: inline-flex; align-items: center; gap: var(--s1); }
+/* 徽章基类是 inline-block，塞进图标后要改成 flex 才对得齐。 */
+.icon-badge { display: inline-flex; align-items: center; gap: var(--s1); }
 .small { font-size: var(--fs-sm); }
 .doc { padding: 0; background: var(--surface-2); }
 .doc-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); }
-.doc-name { flex: 1; border: 0; background: none; color: var(--info); cursor: pointer; font-size: var(--fs-base); text-align: left; }
+.doc-name { display: flex; align-items: center; gap: var(--s1); flex: 1; border: 0; background: none; color: var(--info); cursor: pointer; font-size: var(--fs-base); text-align: left; }
 .doc-view { max-height: 260px; padding: var(--s3); overflow: auto; border-top: 1px solid var(--line); background: var(--bg); }
 .doc-view pre { margin: 0; color: var(--text); font-family: var(--mono); font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-word; }
 .tl { display: flex; flex-direction: column; gap: var(--s2); }
