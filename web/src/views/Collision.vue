@@ -2,13 +2,17 @@
 // 占用防撞：当前项目内，同一 分支 / worktree / 文件域 被多个任务占用即冲突高亮。
 import { computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import { isGeneratedArtifact } from 'virtual:generated-artifacts'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
 const tasks = computed<Task[]>(() => store.currentBoard?.tasks ?? [])
 
-interface Occ { v: string; ts: { id: string; title: string }[]; conflict: boolean }
+interface Occ { v: string; ts: { id: string; title: string }[]; conflict: boolean; generated: boolean }
+// 自动生成物（docs/INDEX-自动生成.md、lock 文件、dist/ 等）谁干活都会碰：多张卡同时挂着它是常态，
+// 不是抢同一个文件，标红只会把真冲突淹掉（卡 BOARD-FILESCOPE-INDEX-POLLUTION）。判据与
+// CLI / 并行清单同源（core/generatedArtifacts.cjs）。
 function occ(field: 'gitBranch' | 'worktree' | 'fileScope'): Occ[] {
   const m = new Map<string, { id: string; title: string }[]>()
   for (const t of tasks.value) {
@@ -19,7 +23,10 @@ function occ(field: 'gitBranch' | 'worktree' | 'fileScope'): Occ[] {
     }
   }
   return [...m.entries()]
-    .map(([v, ts]) => ({ v, ts, conflict: ts.length > 1 }))
+    .map(([v, ts]) => {
+      const generated = field === 'fileScope' && isGeneratedArtifact(v)
+      return { v, ts, conflict: ts.length > 1 && !generated, generated }
+    })
     .sort((a, b) => Number(b.conflict) - Number(a.conflict) || a.v.localeCompare(b.v))
 }
 const branches = computed(() => occ('gitBranch'))
@@ -49,7 +56,10 @@ function open(id: string) { store.openTask(id, pid.value) }
         <div class="sec-t">{{ s.title }}</div>
         <div v-if="!s.rows.length" class="muted small">无占用记录</div>
         <div v-for="r in s.rows" :key="r.v" class="orow row" :class="{ conflict: r.conflict }">
-          <div class="ov mono">{{ r.v }}</div>
+          <div class="ov mono">
+            {{ r.v }}
+            <span v-if="r.generated" class="badge n" title="自动生成物：谁干活都会碰，不算抢占；并行判断也会忽略它">共用生成物·不算冲突</span>
+          </div>
           <div class="ots">
             <button v-for="t in r.ts" :key="t.id" class="otag badge n" type="button" @click="open(t.id)" :title="t.title">{{ t.id }}</button>
           </div>
