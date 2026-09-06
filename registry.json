@@ -44,6 +44,7 @@
       "name": "副机集群(多机调度与共享盘)",
       "mainRepo": "F:\\cluster-ops",
       "codeRepo": "F:\\stock-rogue",
+      "costRoots": ["F:\\cluster-ops", "F:\\calib-share", "F:\\stock-rogue-cluster-agent"],
       "board": "F:\\cluster-ops\\.dashboard\\board.json"
     },
     "dashboard": {
