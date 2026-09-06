@@ -4,6 +4,7 @@ import Icon from '@/components/Icon.vue'
 import { ref, reactive, computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { PendingItem } from '@/utils/derive'
 
 const store = useBoardStore()
@@ -113,7 +114,7 @@ async function submit(item: PendingItem) {
         <header class="decision-meta">
           <span class="badge n">{{ item.projectName }}</span>
           <span class="task-id mono">{{ item.task.id }}</span>
-          <span class="task-title">{{ item.task.title }}</span>
+          <span class="task-title">{{ humanTitle(item.task) }}</span>
           <span v-if="incomplete(item)" class="badge warn" :title="incompleteReason(item)">信息不完整</span>
           <span class="decision-id mono">#{{ item.decision.id }}</span>
         </header>

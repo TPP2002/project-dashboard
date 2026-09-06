@@ -5,6 +5,7 @@ import { ref, computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { STATUS } from '@/api/schema'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
@@ -22,7 +23,7 @@ const results = computed<Hit[]>(() => {
       if (fStatus.value && t.status !== fStatus.value) continue
       if (kw) {
         const hay = [
-          t.id, t.title, t.description || '',
+          t.id, t.title, t.plainTitle || '', t.description || '',
           (t.gitBranch || []).join(' '), (t.fileScope || []).join(' '), (t.worktree || []).join(' '),
         ].join(' ').toLowerCase()
         if (!hay.includes(kw)) continue
@@ -72,7 +73,7 @@ function exportSnapshot() {
       <div v-for="h in results" :key="h.pid + h.task.id" class="hit row" @click="store.openTask(h.task.id, h.pid)">
         <StatusBadge :status="h.task.status" small />
         <span class="tid mono">{{ h.task.id }}</span>
-        <span class="tt g">{{ h.task.title }}</span>
+        <span class="tt g">{{ humanTitle(h.task) }}</span>
         <span class="spacer" />
         <span class="proj pill">{{ h.pname }}</span>
       </div>

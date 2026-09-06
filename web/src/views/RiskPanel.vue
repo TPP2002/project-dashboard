@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ScopeToggle from '@/components/ScopeToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Board, Task } from '@/types'
 
 const store = useBoardStore()
@@ -39,7 +40,7 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
         <div v-if="!groups.parked.length" class="muted small">无</div>
         <div v-for="r in groups.parked" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span></div>
-          <div class="rtitle">{{ r.task.title }}</div>
+          <div class="rtitle">{{ humanTitle(r.task) }}</div>
           <div v-if="r.task.blockReason" class="reason"><Icon name="alertTri" :size="14" />{{ r.task.blockReason }}</div>
           <div v-if="r.task.parkedNote" class="reason note"><Icon name="parkingNote" :size="14" />{{ r.task.parkedNote }}</div>
         </div>
@@ -50,7 +51,7 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
         <div v-if="!groups.blocked.length" class="muted small">无</div>
         <div v-for="r in groups.blocked" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span><StatusBadge :status="r.task.status" small /></div>
-          <div class="rtitle">{{ r.task.title }}</div>
+          <div class="rtitle">{{ humanTitle(r.task) }}</div>
           <div v-if="r.task.deps?.blockedBy?.length" class="reason">被 {{ r.task.deps.blockedBy.join(', ') }} 阻塞</div>
           <div v-if="r.task.blockReason" class="reason"><Icon name="alertTri" :size="14" />{{ r.task.blockReason }}</div>
         </div>
@@ -61,7 +62,7 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
         <div v-if="!groups.pending.length" class="muted small">无</div>
         <div v-for="r in groups.pending" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span></div>
-          <div class="rtitle">{{ r.task.title }}</div>
+          <div class="rtitle">{{ humanTitle(r.task) }}</div>
           <div class="reason warn">{{ (r.task.decisions || []).filter((d) => d.answer == null).length }} 条决策待拍板</div>
         </div>
       </section>

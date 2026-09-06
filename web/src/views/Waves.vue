@@ -7,6 +7,7 @@ import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { DONE_STATUSES } from '@/api/schema'
 import DoneToggle from '@/components/DoneToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
@@ -51,7 +52,7 @@ function prog(tasks: Task[]) {
             <span v-if="t.status === '施工中'" class="glow-edge" />
             <StatusTile class="e" :status="t.status" :size="16" />
             <span class="tid mono">{{ t.id }}</span>
-            <span class="tt">{{ t.title }}</span>
+            <span class="tt">{{ humanTitle(t) }}</span>
             <span class="pc mono">{{ t.percent || 0 }}%</span>
           </div>
         </div>

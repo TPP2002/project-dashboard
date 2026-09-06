@@ -7,6 +7,7 @@ import { useBoardStore } from '@/stores/board'
 import { statusTone, DONE_STATUSES } from '@/api/schema'
 import { cssVar, useEchart } from '@/charts/useEcharts'
 import DoneToggle from '@/components/DoneToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
@@ -65,7 +66,7 @@ function buildOption() {
 
   // 每条=进度块：横向长度=percent(0..100)，颜色=状态
   const barData = ordered.map((t, index) => ({
-    value: [t.wave ?? 0, index, t.percent ?? 0, t.id, t.title, t.status],
+    value: [t.wave ?? 0, index, t.percent ?? 0, t.id, humanTitle(t), t.status],
     itemStyle: { color: toneColor(t.status), opacity: t.percent === 0 ? 0.35 : 1 },
   }))
 

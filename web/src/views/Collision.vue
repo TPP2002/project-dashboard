@@ -5,23 +5,24 @@ import type { IconName } from '@/icons/paths'
 import { computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { isGeneratedArtifact } from 'virtual:generated-artifacts'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
 const tasks = computed<Task[]>(() => store.currentBoard?.tasks ?? [])
 
-interface Occ { v: string; ts: { id: string; title: string }[]; conflict: boolean; generated: boolean }
+interface Occ { v: string; ts: { id: string; title: string; plainTitle?: string }[]; conflict: boolean; generated: boolean }
 // 自动生成物（docs/INDEX-自动生成.md、lock 文件、dist/ 等）谁干活都会碰：多张卡同时挂着它是常态，
 // 不是抢同一个文件，标红只会把真冲突淹掉（卡 BOARD-FILESCOPE-INDEX-POLLUTION）。判据与
 // CLI / 并行清单同源（core/generatedArtifacts.cjs）。
 function occ(field: 'gitBranch' | 'worktree' | 'fileScope'): Occ[] {
-  const m = new Map<string, { id: string; title: string }[]>()
+  const m = new Map<string, { id: string; title: string; plainTitle?: string }[]>()
   for (const t of tasks.value) {
     const arr = (t[field] as string[] | undefined) || []
     for (const v of arr) {
       if (!m.has(v)) m.set(v, [])
-      m.get(v)!.push({ id: t.id, title: t.title })
+      m.get(v)!.push({ id: t.id, title: t.title, plainTitle: t.plainTitle })
     }
   }
   return [...m.entries()]
@@ -64,7 +65,7 @@ function open(id: string) { store.openTask(id, pid.value) }
             <span v-if="r.generated" class="badge n" title="自动生成物：谁干活都会碰，不算抢占；并行判断也会忽略它">共用生成物·不算冲突</span>
           </div>
           <div class="ots">
-            <button v-for="t in r.ts" :key="t.id" class="otag badge n" type="button" @click="open(t.id)" :title="t.title">{{ t.id }}</button>
+            <button v-for="t in r.ts" :key="t.id" class="otag badge n" type="button" @click="open(t.id)" :title="humanTitle(t)">{{ t.id }}</button>
           </div>
         </div>
       </section>
