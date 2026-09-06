@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 图标体系 mockup v2(四个方向对比 + 动效)</title>
+<style>
+/* ===== 看板设计系统令牌(照抄 web/src/styles/base.css) ===== */
+:root, .light{--bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;--line:#e4e4e2;--line-strong:#d2d2cf;--text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;--ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;--bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;--n:#8e8e89;--n-bg:#eeeeed;
+ --r-sm:4px;--r:6px;--r-lg:8px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+ --fs-xs:11px;--fs-sm:12.5px;--fs-base:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;--fs-2xl:28px;
+ --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+ --spec-active:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4}
+.dark{--bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;--line:#242426;--line-strong:#343437;--text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;--ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;--bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;--n:#8e8e8e;--n-bg:#232326}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:var(--fs-md);line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600;color:var(--text)}
+.mono{font-family:var(--mono)}.small{font-size:var(--fs-sm)}
+.doc{max-width:1560px;margin:0 auto;padding:var(--s6) var(--s5) 80px}
+.doc-head h1{font-size:var(--fs-2xl);letter-spacing:-.02em;color:#1a1a19}
+.doc-head p{margin:var(--s2) 0 0;color:#5c5c58;max-width:980px}
+.tag{display:inline-block;padding:2px var(--s2);border-radius:var(--r-sm);background:#fdf3e0;color:#9a6b12;font-family:var(--mono);font-size:var(--fs-xs);margin-left:var(--s2);vertical-align:middle}
+.answer{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--s3);margin-top:var(--s4)}
+.answer>div{background:#fff;border:1px solid #e4e4e2;border-radius:var(--r);padding:var(--s3) var(--s4)}
+.answer b{display:block;color:#1a1a19;margin-bottom:var(--s1)}.answer span{color:#5c5c58;font-size:var(--fs-sm);line-height:1.6}
+.sec{margin-top:var(--s6)}
+.sec>h2{font-size:var(--fs-xl);color:#1a1a19;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:var(--mono);font-size:var(--fs-md);margin-right:var(--s2)}
+.sec>p{margin:var(--s2) 0 var(--s4);color:#5c5c58;max-width:1000px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+.pane{background:var(--bg);color:var(--text);border:1px solid var(--line-strong);border-radius:var(--r-lg);padding:var(--s4);position:relative}
+.pane::before{content:attr(data-label);position:absolute;top:8px;right:12px;color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase}
+/* 方向卡 */
+.dir{background:#fff;border:1px solid #e4e4e2;border-radius:var(--r-lg);padding:var(--s4);margin-top:var(--s4)}
+.dir-head{display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap;margin-bottom:var(--s3)}
+.dir-head h3{font-size:var(--fs-lg);color:#1a1a19}
+.dir-head .k{font-family:var(--mono);font-size:var(--fs-xs);color:#8e8e89;letter-spacing:.1em}
+.dir-head p{margin:0;color:#5c5c58;font-size:var(--fs-sm);flex-basis:100%}
+/* 图标基类 */
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;overflow:visible}
+.ic.s14{width:14px;height:14px}.ic.s16{width:16px;height:16px}.ic.s20{width:20px;height:20px}.ic.s28{width:28px;height:28px}.ic.s36{width:36px;height:36px}
+.ic.bold{stroke-width:2.4}
+.ic .tint{fill:currentColor;stroke:none;opacity:.18}
+.ic .solid{fill:currentColor;stroke:none}
+.ic .cut{stroke:var(--bg);fill:none}
+/* D 方向:灯条语言的"瓦片" */
+.tile{display:inline-grid;place-items:center;width:20px;height:20px;padding:1.5px;border-radius:6px;background:var(--line);vertical-align:-.25em;flex:none}
+.tile.spec{background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide 3.4s linear infinite}
+.tile>i{display:grid;place-items:center;width:100%;height:100%;border-radius:4.5px;background:var(--tone-bg,var(--surface))}
+.tile svg{width:14px;height:14px;fill:none;stroke:var(--tone,var(--text-2));stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.tile.fill>i{background:var(--tone)}.tile.fill svg{stroke:var(--bg)}
+.tile.dim{opacity:.55}
+.tile.lg{width:26px;height:26px;border-radius:7px}.tile.lg svg{width:18px;height:18px}
+.tile.sm{width:16px;height:16px;border-radius:5px;padding:1px}.tile.sm svg{width:11px;height:11px;stroke-width:2.4}
+.tone-n{--tone:var(--n);--tone-bg:var(--n-bg)}.tone-info{--tone:var(--info);--tone-bg:var(--info-bg)}.tone-warn{--tone:var(--warn);--tone-bg:var(--warn-bg)}.tone-ok{--tone:var(--ok);--tone-bg:var(--ok-bg)}.tone-bad{--tone:var(--bad);--tone-bg:var(--bad-bg)}
+@keyframes slide{to{background-position:-200% 0}}
+/* 看板组件复刻 */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:var(--s1) var(--s2);border:1px solid transparent;border-radius:var(--r-sm);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.6;white-space:nowrap}
+.badge.n{background:var(--surface-3);color:var(--text-2)}.badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.bad{background:var(--bad-bg);color:var(--bad)}.badge.info{background:var(--info-bg);color:var(--info)}
+.column-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);padding:var(--s2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:150px}
+.strip{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center}
+.strip .lab{width:64px;color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);flex:none}
+.row{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) 0;border-bottom:1px dashed var(--line)}
+.row:last-child{border-bottom:0}
+.row .lab{width:64px;color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);flex:none}
+table.cmp{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+table.cmp th,table.cmp td{padding:6px var(--s2);border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+table.cmp th{color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);font-weight:500;letter-spacing:.1em;text-transform:uppercase}
+.ph{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-xl);font-weight:600;letter-spacing:-.01em}
+.ph .ic,.ph .tile{color:var(--text-2)}
+.emoji{font-size:16px;line-height:1}
+.was{opacity:.6}
+.empty{padding:var(--s4);color:var(--text-3);font-size:var(--fs-sm);text-align:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);display:grid;place-items:center;gap:var(--s2);min-height:110px}
+/* 动效 */
+.demo{display:flex;gap:var(--s4);flex-wrap:wrap;align-items:flex-end}
+.demo>div{display:grid;place-items:center;gap:6px;min-width:96px;padding:var(--s2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.demo .cap{color:var(--text-3);font-size:var(--fs-xs);text-align:center;line-height:1.35}
+.demo .big{font-size:28px;display:grid;place-items:center;height:36px}
+.a-pulse{animation:pulse 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.9)}}
+.a-glow{animation:glow 2.4s ease-in-out infinite}
+@keyframes glow{0%,100%{filter:drop-shadow(0 0 0 transparent)}50%{filter:drop-shadow(0 0 4px currentColor)}}
+.a-tap{animation:tap 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:15% 95%}
+@keyframes tap{0%,55%,100%{transform:rotate(0)}68%{transform:rotate(-18deg)}78%{transform:rotate(5deg)}}
+.a-b1{animation:build 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:bottom center}
+.a-b2{animation:build 2.4s ease-in-out .25s infinite;transform-box:fill-box;transform-origin:bottom center}
+.a-b3{animation:build 2.4s ease-in-out .5s infinite;transform-box:fill-box;transform-origin:bottom center}
+@keyframes build{0%,15%{transform:scaleY(.25)}55%,75%{transform:scaleY(1)}100%{transform:scaleY(.25)}}
+.a-draw{stroke-dasharray:26;animation:draw 3s ease-out infinite}
+@keyframes draw{0%{stroke-dashoffset:26}40%,100%{stroke-dashoffset:0}}
+.a-pop{animation:pop 3s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pop{0%{transform:scale(.6);opacity:0}25%{transform:scale(1.08);opacity:1}35%,100%{transform:scale(1)}}
+.a-spin{animation:spin1 3.2s cubic-bezier(.45,0,.2,1) infinite;transform-box:fill-box;transform-origin:center}
+@keyframes spin1{0%,15%{transform:rotate(0)}60%,100%{transform:rotate(360deg)}}
+.a-twinkle{animation:twinkle 2.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes twinkle{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:.7}}
+.a-wave{animation:wave 2.6s ease-in-out infinite;transform-box:fill-box;transform-origin:left center}
+@keyframes wave{0%,100%{transform:skewY(0)}50%{transform:skewY(-7deg)}}
+.a-lid{animation:lid 3s ease-in-out infinite;transform-box:fill-box;transform-origin:left bottom}
+@keyframes lid{0%,60%,100%{transform:rotate(0)}75%,85%{transform:rotate(-14deg)}}
+.a-dots span{display:inline-block;width:5px;height:5px;border-radius:50%;background:currentColor;margin:0 1.5px;animation:dots 1.6s ease-in-out infinite}
+.a-dots span:nth-child(2){animation-delay:.2s}.a-dots span:nth-child(3){animation-delay:.4s}
+@keyframes dots{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--s3)}
+.rules>div{background:#fff;border:1px solid #e4e4e2;border-radius:var(--r);padding:var(--s3) var(--s4)}
+.rules b{display:block;color:#1a1a19;margin-bottom:var(--s1)}.rules span{color:#5c5c58;font-size:var(--fs-sm);line-height:1.6}
+table.map{width:100%;border-collapse:collapse;font-size:var(--fs-sm);background:#fff;border:1px solid #e4e4e2}
+table.map th,table.map td{padding:8px var(--s3);border-bottom:1px solid #e4e4e2;text-align:left;vertical-align:top}
+table.map th{color:#8e8e89;font-family:var(--mono);font-size:var(--fs-xs);font-weight:500;letter-spacing:.1em;text-transform:uppercase;background:#f6f6f5}
+.stars{color:#9a6b12;letter-spacing:1px}
+.q{background:#fff;border:1px solid #e4e4e2;border-left:3px solid #2b5fa8;border-radius:var(--r);padding:var(--s3) var(--s4);margin-top:var(--s3)}
+.q b{color:#1a1a19}.q span{color:#5c5c58;font-size:var(--fs-sm)}
+@media (max-width:1100px){.pair{grid-template-columns:1fr}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div class="doc">
+  <div class="doc-head">
+    <h1>图标体系 mockup v2 · 四个方向对比 <span class="tag">AUD-UI-ICONSET-NO-EMOJI · 待选方向</span></h1>
+    <p>回应你的三个问题:① v1 那套是我照业界通用"24 网格单线"画法手写的,形状与 Lucide / Feather 同一路,不是抄的包,但<b>不独特、在一排徽章里不够显眼</b>——你的直觉是对的;② 显眼和生动可以通过"色块 / 双色 / 光"来补,不必回到 emoji;③ 完全可以自研一套,并且给它动效。下面四个方向用<b>同一组状态、同一组页头</b>并排,每个方向都带动效演示;最后一节是"眼球测试"。</p>
+  </div>
+  <div class="answer">
+    <div><b>emoji 好看在哪、坏在哪</b><span>好在有色、有体积、一眼可辨;坏在每个系统长得不一样(Windows / Mac / 手机三套脸)、粗细体积不统一、不能跟主题色走、放在深色里常常发脏。方向 B / C / D 都保留"有色有体积",只是把"脸"统一成我们自己的。</span></div>
+    <div><b>自研意味着什么</b><span>不是画 45 个孤立的小图,而是先定一套"语法"(网格、圆角、笔画、色彩规则、什么时候动),再按语法生成每个图。方向 D 的语法直接来自这个产品已有的身份元素:那条流光灯条。</span></div>
+    <div><b>动效的边界</b><span>只有"要你出手"的状态常亮呼吸(待拍板);"正在发生"的状态低频动(施工中);其余只在<i>状态变化那一刻</i>动一次,然后静止。全部尊重系统"减少动效",外观面板里可关。</span></div>
+  </div>
+
+  <!-- ===================== 01 四个方向 ===================== -->
+  <div class="sec">
+    <h2><span class="no">01</span>四个方向,同一组状态与页头</h2>
+    <p>每个方向一块,左浅右深。第一行是十一个状态在徽章里的样子(14px);第二行是泳道头(16px);第三行是页头(20px);第四行是空态(36px)。</p>
+    <div id="dirs"></div>
+  </div>
+
+  <!-- ===================== 02 动效 ===================== -->
+  <div class="sec">
+    <h2><span class="no">02</span>动效演示(循环播放;真实界面里多数只在变化那一刻动一次)</h2>
+    <p>五个"值得动"的时刻:等你拍板(呼吸)、正在施工(低频动)、刚完工(画一笔 + 弹一下)、复工(转一圈)、压轴(闪一下);外加空态的小动作。每个方向的表现方式不同,D 方向还多一层:活跃状态的瓦片边框走流光。</p>
+    <div class="pair" id="motionPair"></div>
+  </div>
+
+  <!-- ===================== 03 眼球测试 ===================== -->
+  <div class="sec">
+    <h2><span class="no">03</span>眼球测试:同一条泳道头,五种画法</h2>
+    <p>把看板页最常看的那一排(待拍板 3 · 施工中 9 · 暂缓 7 · 已完工 220)用现状 emoji 和四个方向各画一遍。眯起眼看哪一排最先看清"哪列要我出手"。</p>
+    <div class="pair" id="eyePair"></div>
+  </div>
+
+  <!-- ===================== 04 对比与建议 ===================== -->
+  <div class="sec">
+    <h2><span class="no">04</span>对比与我的建议</h2>
+    <table class="map">
+      <thead><tr><th style="width:120px">方向</th><th>显眼度</th><th>与现有界面融合</th><th>独特性(自研程度)</th><th>动效表现力</th><th>施工量</th><th>风险</th></tr></thead>
+      <tbody>
+        <tr><td><b>A 单线</b></td><td class="stars">★★☆☆☆</td><td class="stars">★★★★★</td><td class="stars">★☆☆☆☆</td><td class="stars">★★☆☆☆</td><td>最小(1 个组件 + 映射表)</td><td>徽章里"沉下去",和别的产品长一样</td></tr>
+        <tr><td><b>B 双色</b></td><td class="stars">★★★☆☆</td><td class="stars">★★★★☆</td><td class="stars">★★☆☆☆</td><td class="stars">★★★☆☆</td><td>小(A 的基础上每个图加一层浅填)</td><td>浅填在深色主题下要单独校对比度</td></tr>
+        <tr><td><b>C 实心</b></td><td class="stars">★★★★☆</td><td class="stars">★★★☆☆</td><td class="stars">★★☆☆☆</td><td class="stars">★★★☆☆</td><td>中(状态图另画实心版)</td><td>整页都是色块时会"重",需要克制用在状态上</td></tr>
+        <tr><td><b>D 灯条语言</b></td><td class="stars">★★★★★</td><td class="stars">★★★★★</td><td class="stars">★★★★★</td><td class="stars">★★★★★</td><td>中(瓦片组件 + 11 个自创状态记号 + 页头复用线条)</td><td>瓦片比裸图标占位略大(20px 对 16px);极小处(14px)退回色点</td></tr>
+      </tbody>
+    </table>
+    <div class="q"><b>我的建议:状态用 D,功能图标用 B,混搭。</b><br>
+      <span>状态是这个产品的"脸",值得一套只属于它的记号——D 把你已经满意的流光灯条变成了图标的身份元素:等你出手的卡,瓦片边框在呼吸;正在施工的卡,三根柱子在长;完工的卡,瓦片整块填满。页头、分支、文件域这类"功能图标"不需要抢戏,用 B 的双色线条就够,既有色有体积、又不与状态瓦片争夺注意力。全站只有两种画法,规则清楚。</span>
+    </div>
+    <div class="q"><b>请你拍:选一个方向(回复字母即可;想混搭就写"状态 X + 功能 Y")</b><br>
+      <span>A 单线　B 双色　C 实心　D 灯条语言　·　之前 v1 的四个小口味题里,①(实心/空心勾)②(锤子/进度弧)只对 A/B 有意义;③(侧栏统一)④(页头留不留图标)对所有方向都适用。选定方向后我出 v3 定稿(全部 45 个图 + 动效规范),再进施工。</span>
+    </div>
+  </div>
+
+  <!-- ===================== 05 规则 ===================== -->
+  <div class="sec">
+    <h2><span class="no">05</span>不管选哪个方向都遵守的规则</h2>
+    <div class="rules">
+      <div><b>动的只有三类</b><span>常亮呼吸:待拍板(要你出手)。低频动:施工中(正在发生,2.4s 一轮,有 40% 时间静止)。一次性:完工 / 复工 / 拍板落定,在状态变化那一刻动 1 秒然后静止。其它一律不动。</span></div>
+      <div><b>可关、可调</b><span>外观面板加"图标动效:关 / 微 / 活泼"三档;系统开了"减少动效"就全关。列表里同时可见的动效元素不超过 3 个(多了按优先级只保留待拍板)。</span></div>
+      <div><b>只用 transform / opacity</b><span>不动 layout、不动颜色以外的属性;SVG 内元素设 transform-box:fill-box。60fps 稳,几百张卡也不卡。</span></div>
+      <div><b>尺寸四档不变</b><span>14 徽章内 · 16 行内 · 20 页头 · 36 空态;D 的瓦片在 14 处退化为色点 + 文字。</span></div>
+      <div><b>颜色只来自令牌</b><span>状态色永远是现有五档语义色,流光永远是 --spec-active;换主题、换灯条配色,图标自动跟着变。</span></div>
+      <div><b>终端不动</b><span>CLI 输出与 INDEX 渲染里的 emoji 保留。</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- 通用几何 ----------
+const S = (inner, cls = 'ic s16', extra = '') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true" ${extra}>${inner}</svg>`;
+
+// 状态:[key, 名称, tone, emoji]
+const ST = [
+  ['none','未开工','n','⬜'],['queued','待开工','info','📋'],['ask','待拍板','warn','❓'],['decided','已拍板','ok','✅'],
+  ['building','施工中','info','🔨'],['resume','可复工','info','🔄'],['wrap','收官','ok','🏁'],['done','已完工','ok','✅'],
+  ['parked','暂缓','bad','🚫'],['finale','压轴','warn','🎬'],['void','已作废','n','—'],
+];
+// A:单线(v1)
+const OUT = {
+  none:'<circle cx="12" cy="12" r="9" stroke-dasharray="3.4 3.4"/>',
+  queued:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 1.9"/>',
+  ask:'<circle cx="12" cy="12" r="9"/><path d="M9.6 9.6a2.6 2.6 0 0 1 4.9 1.1c0 1.8-2.5 2-2.5 3.6"/><path d="M12 17.2h.01"/>',
+  decided:'<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.8-5.2"/>',
+  building:'<g class="hm"><path d="m15 12-8.4 8.4a1.6 1.6 0 0 1-2.3-2.3L12.7 9.7"/><path d="m18 15 3.5-3.5"/><path d="m21.5 11.5-1.9-1.9a2 2 0 0 1-.6-1.4V7l-2.3-2.3a6 6 0 0 0-4.2-1.7L9 3l.9.8A6.2 6.2 0 0 1 12 8.4V10l2 2h1.2a2 2 0 0 1 1.4.6l1.9 1.9"/></g>',
+  resume:'<g class="rs"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></g>',
+  wrap:'<path d="M5 21V4"/><g class="fl"><path d="M5 4h11.5l-2.2 4 2.2 4H5"/></g>',
+  done:'<circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path class="ck" d="m8.5 12.2 2.4 2.4 4.8-5.2" stroke="var(--bg)" stroke-width="2.2"/>',
+  parked:'<circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/>',
+  finale:'<g class="st"><path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.9l-5.3 2.8 1.1-5.9-4.3-4.1 5.9-.8z"/></g>',
+  void:'<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>',
+  // 页头
+  toland:'<path d="M7 17 17 7"/><path d="M8 7h9v9"/>', history:'<path d="M3 12a9 9 0 1 0 3.1-6.8"/><path d="M3 3v6h6"/><path d="M12 7v5l3.5 2"/>',
+  daily:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>', parallel:'<path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/>',
+  collision:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>', deps:'<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.4 13.3 7.2 4.2M15.6 6.5 8.4 10.7"/>',
+  cost:'<circle cx="8.5" cy="8.5" r="5.5"/><path d="M17.9 10.6a5.5 5.5 0 1 1-7.3 7.3"/><path d="M7.5 6.5h1.2v4"/><path d="m16.3 14 .7.7-2.6 2.6"/>',
+  inbox:'<g class="lid"><path d="M5.6 5.2 2 12h20l-3.6-6.8A2 2 0 0 0 16.6 4H7.4a2 2 0 0 0-1.8 1.2z"/></g><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6"/>',
+};
+// B:双色 = 单线 + 浅填层
+const TINT = {
+  none:'<circle class="tint" cx="12" cy="12" r="9" style="opacity:.08"/>', queued:'<circle class="tint" cx="12" cy="12" r="9"/>', ask:'<circle class="tint" cx="12" cy="12" r="9"/>',
+  decided:'<circle class="tint" cx="12" cy="12" r="9"/>', building:'<path class="tint" d="m21.5 11.5-1.9-1.9a2 2 0 0 1-.6-1.4V7l-2.3-2.3a6 6 0 0 0-4.2-1.7L9 3l.9.8A6.2 6.2 0 0 1 12 8.4V10l2 2h1.2a2 2 0 0 1 1.4.6l1.9 1.9z" style="opacity:.28"/>',
+  resume:'<circle class="tint" cx="12" cy="12" r="9" style="opacity:.12"/>', wrap:'<path class="tint" d="M5 4h11.5l-2.2 4 2.2 4H5z" style="opacity:.3"/>', done:'',
+  parked:'<circle class="tint" cx="12" cy="12" r="9"/>', finale:'<path class="tint" d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.9l-5.3 2.8 1.1-5.9-4.3-4.1 5.9-.8z" style="opacity:.3"/>', void:'<circle class="tint" cx="12" cy="12" r="9" style="opacity:.1"/>',
+  toland:'<path class="tint" d="M8 7h9v9z" style="opacity:.22"/>', history:'<circle class="tint" cx="12" cy="12" r="9" style="opacity:.12"/>', daily:'<rect class="tint" x="3" y="10" width="18" height="11" rx="1.5" style="opacity:.16"/>',
+  parallel:'<rect class="tint" x="13" y="4" width="8" height="16" rx="1.5" style="opacity:.14"/>', collision:'<circle class="tint" cx="18" cy="18" r="3"/><circle class="tint" cx="6" cy="6" r="3"/>', deps:'<circle class="tint" cx="18" cy="5" r="2.6"/><circle class="tint" cx="6" cy="12" r="2.6"/><circle class="tint" cx="18" cy="19" r="2.6"/>',
+  cost:'<circle class="tint" cx="8.5" cy="8.5" r="5.5"/>', inbox:'<path class="tint" d="M2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6h-6l-2 3h-4l-2-3z" style="opacity:.16"/>',
+};
+// C:实心
+const SOLID = {
+  none:'<circle cx="12" cy="12" r="9" stroke-dasharray="3.4 3.4" stroke-width="2.2"/>',
+  queued:'<circle class="solid" cx="12" cy="12" r="9.5"/><path class="cut" d="M12 7.2v5.2l3.2 1.9" stroke-width="2"/>',
+  ask:'<circle class="solid" cx="12" cy="12" r="9.5"/><path class="cut" d="M9.7 9.7a2.5 2.5 0 0 1 4.7 1.1c0 1.7-2.4 1.9-2.4 3.4" stroke-width="2"/><path class="cut" d="M12 17.1h.01" stroke-width="2.4"/>',
+  decided:'<circle cx="12" cy="12" r="9" stroke-width="2.6"/><path d="m8.3 12.3 2.5 2.5 5-5.4" stroke-width="2.6"/>',
+  building:'<g class="hm"><path class="solid" d="m15.2 11.8-8.6 8.6a1.6 1.6 0 0 1-2.3-2.3l8.6-8.6z"/><path class="solid" d="m21.5 11.5-1.9-1.9a2 2 0 0 1-.6-1.4V7l-2.3-2.3a6 6 0 0 0-4.2-1.7L9 3l.9.8A6.2 6.2 0 0 1 12 8.4V10l2 2h1.2a2 2 0 0 1 1.4.6l1.9 1.9z"/><path d="m18 15 3.5-3.5" stroke-width="2.4"/></g>',
+  resume:'<g class="rs"><path d="M21 12a9 9 0 1 1-2.6-6.4" stroke-width="2.8"/><path class="solid" d="M21 2.5v7.5h-7.5z"/></g>',
+  wrap:'<path d="M5 21V4" stroke-width="2.4"/><g class="fl"><path class="solid" d="M5 3.5h12l-2.4 4.5 2.4 4.5H5z"/></g>',
+  done:'<circle class="solid" cx="12" cy="12" r="9.5"/><path class="cut ck" d="m8.3 12.2 2.6 2.6 5-5.4" stroke-width="2.4"/>',
+  parked:'<circle class="solid" cx="12" cy="12" r="9.5"/><path class="cut" d="M10 8.8v6.4M14 8.8v6.4" stroke-width="2.2"/>',
+  finale:'<g class="st"><path class="solid" d="m12 2.8 2.9 5.9 6.5.9-4.7 4.5 1.2 6.4L12 17.5l-5.9 3 1.2-6.4-4.7-4.5 6.5-.9z"/></g>',
+  void:'<circle class="solid" cx="12" cy="12" r="9.5" style="opacity:.55"/><path class="cut" d="m8.8 8.8 6.4 6.4M15.2 8.8l-6.4 6.4" stroke-width="2.2"/>',
+};
+// D:灯条语言的瓦片记号(14px 画布里的 2.2 描边)
+const MARK = {
+  none:'<circle cx="12" cy="12" r="4.6" stroke-dasharray="2.3 2.3"/>',
+  queued:'<circle cx="6.5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="17.5" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
+  ask:'<g class="qm"><path d="M9.4 9.3a2.7 2.7 0 1 1 3.9 2.3c-1 .5-1.3 1.1-1.3 2.1"/><path d="M12 17.4h.01" stroke-width="2.8"/></g>',
+  decided:'<path d="m7 12.6 3.2 3.2 6.8-7.4"/><path d="M7 18.5h10" style="opacity:.45"/>',
+  building:'<path d="M5.5 19h13" style="opacity:.45"/><path class="bar a-b1x" d="M7.5 16.5v-3.5"/><path class="bar a-b2x" d="M12 16.5v-7"/><path class="bar a-b3x" d="M16.5 16.5v-10.5"/>',
+  resume:'<g class="rs"><path d="M7 12.6a5 5 0 1 0 1.6-3.7"/><path d="M6.4 6.2v3.4h3.4"/></g>',
+  wrap:'<path d="M8 19V5.5"/><g class="fl"><path d="M8 6h8.6l-1.7 3 1.7 3H8"/></g>',
+  done:'<path class="ck" d="m7 12.4 3.3 3.3 6.7-7.4"/>',
+  parked:'<path d="M9.4 8.3v7.4M14.6 8.3v7.4"/>',
+  finale:'<g class="st"><path d="m12 5.8 1.9 3.9 4.3.6-3.1 3 .7 4.3L12 15.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></g>',
+  void:'<path d="m8.5 8.5 7 7M15.5 8.5l-7 7"/>',
+};
+const iconA = (k, cls) => S(OUT[k], cls);
+const iconB = (k, cls) => S((TINT[k] || '') + (k === 'done' ? OUT.done : OUT[k]), cls);
+const iconC = (k, cls) => S(SOLID[k] || OUT[k], (cls || 'ic s16') + (SOLID[k] ? '' : ' bold'));
+const tileD = (k, tone, opt = {}) => {
+  const active = k === 'ask' || k === 'building';
+  const cls = ['tile', 'tone-' + tone, active && !opt.still ? 'spec' : '', k === 'done' ? 'fill' : '', k === 'void' ? 'dim' : '', opt.size || ''].join(' ');
+  const mark = MARK[k] || OUT[k];
+  return `<span class="${cls}"><i><svg viewBox="0 0 24 24" aria-hidden="true">${mark}</svg></i></span>`;
+};
+const HEADERS = [['toland','待落地','🚀'],['ask','待拍板','❓'],['history','拍板历史','📜'],['daily','每日成果','📆'],['parallel','现在能同时派几张','🚦'],['collision','占用防撞','💥'],['deps','依赖关系图','🕸️'],['cost','成本监管','💰']];
+
+const DIRS = [
+  { key:'A', name:'单线(v1)', desc:'24 网格、1.75 描边、继承文字色。最克制、最省事,但一排徽章里存在感最弱;形状与市面主流线性图标同源。',
+    badge:(k,t)=>`<span class="badge ${t}">${iconA(k,'ic s14')} NAME</span>`, head:(k,t)=>`<span class="badge ${t}">${iconA(k,'ic s16')} NAME</span>`,
+    ph:(k)=>iconA(k,'ic s20'), empty:()=>iconA('inbox','ic s36') },
+  { key:'B', name:'双色', desc:'单线 + 一层 18% 的同色浅填。有了"体积"和"色",在浅深两主题里都比单线醒目,又不像实心那样沉重;功能图标(页头/标签)最适合这一档。',
+    badge:(k,t)=>`<span class="badge ${t}">${iconB(k,'ic s14')} NAME</span>`, head:(k,t)=>`<span class="badge ${t}">${iconB(k,'ic s16')} NAME</span>`,
+    ph:(k)=>iconB(k,'ic s20'), empty:()=>iconB('inbox','ic s36') },
+  { key:'C', name:'实心', desc:'状态图是实心色块、细节用底色掏空;功能图标用 2.4 的粗线。最接近 emoji 的"一块颜色"式醒目,代价是整页色块多了会重。',
+    badge:(k,t)=>`<span class="badge ${t}">${iconC(k,'ic s14')} NAME</span>`, head:(k,t)=>`<span class="badge ${t}">${iconC(k,'ic s16')} NAME</span>`,
+    ph:(k)=>iconC(k,'ic s20'), empty:()=>iconC('inbox','ic s36') },
+  { key:'D', name:'灯条语言(自创)', desc:'每个状态是一枚 20px 圆角瓦片:底色=语义浅色、记号=语义色、边框=细线;"要你出手"与"正在施工"两种活跃状态的边框走流光——把你已经在用的灯条变成图标的身份。记号全部自创,不是通用图标:待开工是"排队的三点",施工中是"在长的三根柱",已完工是整块填满。',
+    badge:(k,t)=>`<span class="badge ${t}" style="padding-left:3px">${tileD(k,t,{size:'sm'})} NAME</span>`, head:(k,t)=>`<span class="badge ${t}" style="padding-left:4px">${tileD(k,t)} NAME</span>`,
+    ph:(k)=>`<span class="tile lg tone-n"><i><svg viewBox="0 0 24 24" aria-hidden="true" style="stroke-width:1.9">${OUT[k]}</svg></i></span>`, empty:()=>`<span class="tile lg tone-n" style="width:40px;height:40px;border-radius:10px"><i><svg viewBox="0 0 24 24" aria-hidden="true" style="width:28px;height:28px;stroke-width:1.6">${OUT.inbox}</svg></i></span>` },
+];
+
+function dirBlock(d) {
+  const inner = (dark) => `
+    <div class="row"><span class="lab">徽章 14</span><div class="strip">${ST.map(([k,n,t])=>d.badge(k,t).replace('NAME',n)).join('')}</div></div>
+    <div class="row"><span class="lab">泳道头 16</span><div class="strip">${ST.filter((_,i)=>[2,4,8,7].includes(i)).map(([k,n,t])=>`<div class="column-head">${d.head(k,t).replace('NAME',n)}<span class="badge n">${[3,9,7,220][[2,4,8,7].indexOf(ST.findIndex(s=>s[0]===k))]}</span></div>`).join('')}</div></div>
+    <div class="row"><span class="lab">页头 20</span><div class="strip" style="gap:var(--s4)">${HEADERS.slice(0,5).map(([k,n])=>`<div class="ph">${d.ph(k)}${n}</div>`).join('')}</div></div>
+    <div class="row"><span class="lab">空态 36</span><div class="empty" style="min-width:260px">${d.empty()}<span>暂无活动,任务有新进展后会显示在这里。</span></div>
+      <div class="strip" style="margin-left:var(--s4)">${HEADERS.slice(5).map(([k,n])=>`<div class="ph" style="font-size:var(--fs-lg)">${d.ph(k)}${n}</div>`).join('')}</div></div>`;
+  return `<div class="dir"><div class="dir-head"><span class="k">方向 ${d.key}</span><h3>${d.name}</h3><p>${d.desc}</p></div>
+    <div class="pair"><div class="pane light" data-label="浅色">${inner(false)}</div><div class="pane dark" data-label="深色">${inner(true)}</div></div></div>`;
+}
+document.getElementById('dirs').innerHTML = DIRS.map(dirBlock).join('');
+
+// 02 动效
+function motionRow(dark) {
+  const cell = (big, cap) => `<div><div class="big">${big}</div><div class="cap">${cap}</div></div>`;
+  const rows = [];
+  // A/B/C 共用一套动法(以 B 为例展示,A/C 同理)
+  rows.push(`<div class="row"><span class="lab">A / B / C</span><div class="demo">
+    ${cell(`<span style="color:var(--warn)" class="a-pulse">${iconB('ask','ic s28')}</span>`,'待拍板<br>呼吸(常亮)')}
+    ${cell(`<span style="color:var(--info)">${S(TINT.building + OUT.building.replace('class="hm"','class="hm a-tap"'),'ic s28')}</span>`,'施工中<br>锤子轻敲(低频)')}
+    ${cell(`<span style="color:var(--ok)">${S('<circle class="a-pop" cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path class="a-draw" d="m8.5 12.2 2.4 2.4 4.8-5.2" stroke="var(--bg)" stroke-width="2.2"/>','ic s28')}</span>`,'刚完工<br>弹出 + 画一笔(一次)')}
+    ${cell(`<span style="color:var(--info)">${S(TINT.resume + OUT.resume.replace('class="rs"','class="rs a-spin"'),'ic s28')}</span>`,'复工<br>转一圈(一次)')}
+    ${cell(`<span style="color:var(--warn)">${S(TINT.finale + OUT.finale.replace('class="st"','class="st a-twinkle"'),'ic s28')}</span>`,'压轴<br>闪一下(偶发)')}
+    ${cell(`<span style="color:var(--ok)">${S('<path d="M5 21V4"/>' + '<g class="fl a-wave"><path d="M5 4h11.5l-2.2 4 2.2 4H5"/></g>','ic s28')}</span>`,'收官<br>旗子轻摆(悬停)')}
+    ${cell(`<span style="color:var(--text-3)">${S(OUT.inbox.replace('class="lid"','class="lid a-lid"'),'ic s36')}</span>`,'空态<br>盒盖开合(闲置)')}
+  </div></div>`);
+  // D
+  const tileAnim = (k, tone, markOverride, extra='') => `<span class="tile lg tone-${tone} ${extra}"><i><svg viewBox="0 0 24 24" aria-hidden="true">${markOverride}</svg></i></span>`;
+  rows.push(`<div class="row"><span class="lab">D 灯条</span><div class="demo">
+    ${cell(tileAnim('ask','warn',MARK.ask.replace('class="qm"','class="qm a-pulse"'),'spec'),'待拍板<br>边框流光 + 问号呼吸')}
+    ${cell(tileAnim('building','info',MARK.building.replace('a-b1x','a-b1').replace('a-b2x','a-b2').replace('a-b3x','a-b3'),'spec'),'施工中<br>三根柱子在长')}
+    ${cell(`<span class="tile lg tone-ok fill a-pop"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path class="a-draw" d="m7 12.4 3.3 3.3 6.7-7.4"/></svg></i></span>`,'刚完工<br>整块填满 + 画一笔(一次)')}
+    ${cell(tileAnim('resume','info',MARK.resume.replace('class="rs"','class="rs a-spin"')),'复工<br>转一圈(一次)')}
+    ${cell(tileAnim('finale','warn',MARK.finale.replace('class="st"','class="st a-twinkle"')),'压轴<br>星闪(偶发)')}
+    ${cell(`<span class="tile lg tone-n a-dots" style="width:40px;height:26px;border-radius:7px"><i><span></span><span></span><span></span></i></span>`,'排队中<br>三点起伏(悬停)')}
+    ${cell(`<span class="tile lg tone-n" style="width:40px;height:40px;border-radius:10px"><i><svg viewBox="0 0 24 24" aria-hidden="true" style="width:28px;height:28px;stroke-width:1.6">${OUT.inbox.replace('class="lid"','class="lid a-lid"')}</svg></i></span>`,'空态<br>盒盖开合(闲置)')}
+  </div></div>`);
+  return rows.join('');
+}
+document.getElementById('motionPair').innerHTML = `<div class="pane light" data-label="浅色">${motionRow(false)}</div><div class="pane dark" data-label="深色">${motionRow(true)}</div>`;
+
+// 03 眼球测试
+function eyeRows() {
+  const four = [['ask','待拍板','warn',3],['building','施工中','info',9],['parked','暂缓','bad',7],['done','已完工','ok',220]];
+  const line = (lab, render) => `<div class="row"><span class="lab">${lab}</span><div class="strip">${four.map(([k,n,t,c])=>`<div class="column-head">${render(k,n,t)}<span class="badge n">${c}</span></div>`).join('')}</div></div>`;
+  const emoji = {ask:'❓',building:'🔨',parked:'🚫',done:'✅'};
+  return line('现状', (k,n,t)=>`<span class="badge ${t}"><span class="emoji">${emoji[k]}</span> ${n}</span>`)
+    + DIRS.map(d=>line('方向 '+d.key, (k,n,t)=>d.head(k,t).replace('NAME',n))).join('');
+}
+document.getElementById('eyePair').innerHTML = `<div class="pane light" data-label="浅色">${eyeRows()}</div><div class="pane dark" data-label="深色">${eyeRows()}</div>`;
+</script>
+</body>
+</html>
