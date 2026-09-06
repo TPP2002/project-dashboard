@@ -167,7 +167,7 @@ function openTask(item: { projectId: string; task: { id: string } }) {
         <button class="card kpi-button" type="button" @click="router.push('/approvals')">
           <span class="v">{{ actionTotal }}</span><span class="l">需要你处理 →</span>
         </button>
-        <!-- 「最久没动」问的是"哪摊活卡住了没人管"：只看施工中的卡，取进度戳/活动流/开工日里最新的那个再比谁最旧。 -->
+        <!-- 「最久没动」问的是"哪摊活卡住了没人管"：只看施工中的卡，各自取进度戳与活动流里更新的那个（都没有才退回开工日），再比谁最旧。 -->
         <button
           v-if="stalest"
           class="card kpi-button kpi-wide"
