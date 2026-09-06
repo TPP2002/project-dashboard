@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/Icon.vue'
 import { computed } from 'vue'
 import type { CodexUsage, CombinedUsage, QuotaSnapshot } from '@/types/codex'
 
@@ -123,7 +124,7 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
         <span class="badge n">{{ codex.byProject.length }} 个项目</span>
       </div>
       <div v-if="!projectRows.length" class="empty card">
-        <span class="ic">📊</span>
+        <span class="ic"><Icon name="chart" :size="36" /></span>
         期间没有可归属的 Codex 会话<br>
         <span class="empty-help">会话带有可识别的工作目录后，就能在这里比较各项目消耗。</span>
       </div>

@@ -2,6 +2,8 @@
 // 全局活动流：跨项目 activity 合并倒序 + 项目/类型筛选 + 分页加载。点条目开对应任务抽屉。
 // 修复（体检 B1/B2）：旧版先截断 60 条再筛选，筛"done"看不到历史记录、类型下拉也不全；
 // 现在筛选作用于全量（数千条纯内存过滤毫秒级），显示端分页防 DOM 过大。
+import { activityKind } from '@/utils/activityKind'
+import Icon from '@/components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { fmtDateTime, relTime } from '@/utils/format'
@@ -13,10 +15,6 @@ const fProj = ref('')
 const PAGE = 100
 const shown = ref(PAGE)
 
-const TYPE_EMOJI: Record<string, string> = {
-  claim: '🙋', progress: '📈', pending: '❓', decide: '✅',
-  done: '🏁', park: '🚫', block: '⛔', note: '📝',
-}
 const types = computed(() => [...new Set(store.globalActivity.map((a) => a.type).filter(Boolean))] as string[])
 const filtered = computed(() =>
   store.globalActivity.filter(
@@ -36,7 +34,7 @@ function open(a: ActivityWithProject) {
 <template>
   <div>
     <div class="head">
-      <h2>📜 活动流</h2>
+      <h2><Icon name="activity" class="head-ic" :size="20" />活动流</h2>
       <span class="pill">{{ filtered.length }} 条{{ hasMore ? ` · 已显示 ${list.length}` : '' }}</span>
       <span class="spacer" />
       <select v-model="fProj" class="field sel">
@@ -45,15 +43,16 @@ function open(a: ActivityWithProject) {
       </select>
       <select v-model="fType" class="field sel">
         <option value="">全部类型</option>
-        <option v-for="t in types" :key="t" :value="t">{{ TYPE_EMOJI[t] || '·' }} {{ t }}</option>
+        <!-- option 里塞不了 SVG，改成直接显示人话名字（比原来的英文 type 还好认）。 -->
+        <option v-for="t in types" :key="t" :value="t">{{ activityKind(t).label }}</option>
       </select>
     </div>
 
-    <div v-if="!list.length" class="empty card"><div class="big">📭</div><div>暂无活动，任务有新进展后会显示在这里。</div></div>
+    <div v-if="!list.length" class="empty card"><div class="big"><Icon name="inbox" :size="36" animated /></div><div>暂无活动，任务有新进展后会显示在这里。</div></div>
 
     <div class="tl" v-else>
       <div v-for="(a, i) in list" :key="keyOf(a, i)" class="item row" :class="{ clickable: a.taskId }" @click="open(a)">
-        <span class="ic">{{ TYPE_EMOJI[a.type || ''] || '·' }}</span>
+        <Icon class="ic" :name="activityKind(a.type).icon" :size="16" :label="activityKind(a.type).label" />
         <div class="main">
           <div class="text">{{ a.text }}</div>
           <div class="meta mono">
@@ -66,7 +65,7 @@ function open(a: ActivityWithProject) {
         </div>
       </div>
       <button v-if="hasMore" class="btn more" @click="shown += PAGE">
-        ↓ 加载更早的 {{ Math.min(PAGE, filtered.length - shown) }} 条（还剩 {{ filtered.length - shown }} 条）
+        <Icon name="chevron" :size="14" /> 加载更早的 {{ Math.min(PAGE, filtered.length - shown) }} 条（还剩 {{ filtered.length - shown }} 条）
       </button>
     </div>
   </div>
@@ -78,7 +77,7 @@ function open(a: ActivityWithProject) {
 .tl { display: flex; flex-direction: column; gap: var(--s2); }
 .item { align-items: flex-start; }
 .item.clickable { cursor: pointer; }
-.ic { width: 20px; font-size: var(--fs-md); text-align: center; }
+.ic { flex: none; color: var(--text-3); }
 .main { flex: 1; min-width: 0; }
 .text { font-size: var(--fs-base); }
 .meta { display: flex; gap: var(--s3); flex-wrap: wrap; margin-top: var(--s1); color: var(--text-3); font-size: var(--fs-xs); }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import type { SessionDetail, SessionSummary } from '@/types/codex'
 
@@ -123,23 +124,23 @@ watch(() => [props.requestedSessionId, props.jumpNonce], () => {
       <aside class="sessions card">
         <button v-for="session in sessions" :key="session.sessionId" class="session row" :class="{ on: selectedId === session.sessionId }" @click="selectSession(session.sessionId)">
           <span v-if="session.active" class="glow-edge" />
-          <span class="session-top"><b>{{ session.project }}</b><i v-if="session.active" class="badge ok" title="最后一条事件在 120 秒内">● 最近还在动</i></span>
+          <span class="session-top"><b>{{ session.project }}</b><i v-if="session.active" class="badge ok list-live" title="最后一条事件在 120 秒内"><i class="live-dot" aria-hidden="true" />最近还在动</i></span>
           <span class="cwd" :title="session.cwd">{{ cwdTail(session.cwd) }}</span>
           <span class="session-meta"><span>{{ formatAt(session.startedAt) }}</span><span>{{ fmt(session.tokensUsed) }} token</span></span>
           <span class="badge info model">{{ session.model }} · {{ session.reasoningEffort }}</span>
         </button>
         <div v-if="!sessions.length && loading" class="sessions-loading" aria-label="正在加载 Codex 会话"><div class="skel wide" /><div class="skel session-skel" /><div class="skel session-skel" /></div>
-        <div v-else-if="!sessions.length" class="empty"><span class="big">📭</span><span>最近没有 Codex 会话</span><small>本机产生 Codex 活动后，会按时间列在这里。</small></div>
+        <div v-else-if="!sessions.length" class="empty"><span class="big"><Icon name="inbox" :size="36" animated /></span><span>最近没有 Codex 会话</span><small>本机产生 Codex 活动后，会按时间列在这里。</small></div>
       </aside>
 
       <main class="detail card">
         <div v-if="detailLoading && !detail" class="detail-loading" aria-label="正在读取会话详情"><div class="skel medium" /><div class="skel wide" /><div class="skel detail-skel" /></div>
-        <div v-else-if="!detail" class="empty"><span class="big">🤖</span><span>从左边选择一个会话</span><small>选中后会显示最近事件、原始信息和续聊入口。</small></div>
+        <div v-else-if="!detail" class="empty"><span class="big"><Icon name="bot" :size="36" /></span><span>从左边选择一个会话</span><small>选中后会显示最近事件、原始信息和续聊入口。</small></div>
         <template v-else>
           <header class="detail-head">
             <div><h2>{{ detail.project }}</h2><p><code>{{ detail.sessionId }}</code></p></div>
             <span class="badge info model big-model">{{ detail.model }} · {{ detail.reasoningEffort }}</span>
-            <span v-if="detail.active" class="badge ok active">● 最近还在动</span>
+            <span v-if="detail.active" class="badge ok active"><i class="live-dot" aria-hidden="true" />最近还在动</span>
           </header>
           <dl class="facts">
             <div><dt>开始</dt><dd>{{ formatAt(detail.startedAt) }}</dd></div>
@@ -158,7 +159,7 @@ watch(() => [props.requestedSessionId, props.jumpNonce], () => {
                   <span>{{ speaker(event.role) }} · {{ formatAt(event.timestamp) }}</span><p>{{ event.text || '（空消息）' }}</p>
                 </div>
                 <div v-else-if="event.type === 'custom_tool_call'" class="tool-event">
-                  <span>🔧 {{ event.toolName }} · #{{ event.ordinal }}</span>
+                  <span><Icon name="settings" :size="14" />{{ event.toolName }} · #{{ event.ordinal }}</span>
                   <div class="event-scroll"><pre>{{ event.command }}</pre></div>
                 </div>
                 <div v-else class="folded"><code>#{{ event.ordinal ?? '—' }}</code> {{ event.summary || event.type }} · {{ formatAt(event.timestamp) }}</div>
@@ -224,6 +225,10 @@ code { font-family: var(--mono); color: var(--text-2); overflow-wrap: anywhere; 
 .bubble.user { align-self: flex-end; background: var(--info-bg); }
 .bubble > span, .tool-event > span { color: var(--text-3); font-size: var(--fs-xs); }
 .bubble p { margin: var(--s1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 「还在动」那颗点自己画：它讲的是心跳，不是一个可点的图标。 */
+.list-live { display: inline-flex; align-items: center; gap: var(--s1); font-style: normal; }
+.active { display: inline-flex; align-items: center; gap: var(--s1); }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .tool-event { min-width: 0; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); }
 .event-scroll { max-width: 100%; overflow-x: auto; }
 .event-scroll pre { width: max-content; min-width: 100%; max-height: 260px; margin: var(--s1) 0 0; padding: var(--s2); background: var(--surface-2); color: var(--text-2); font: var(--fs-xs)/1.5 var(--mono); white-space: pre; }

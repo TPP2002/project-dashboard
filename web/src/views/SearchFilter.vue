@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 全局搜索筛选 + 导出快照：跨项目搜 id/title/描述/分支/文件域；导出当前项目 board JSON（git 外快照）。
+import Icon from '@/components/Icon.vue'
 import { ref, computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { STATUS } from '@/api/schema'
@@ -47,9 +48,9 @@ function exportSnapshot() {
 <template>
   <div>
     <div class="head">
-      <h2>🔍 搜索 / 筛选</h2>
+      <h2><Icon name="search" class="head-ic" :size="20" />搜索 / 筛选</h2>
       <span class="spacer" />
-      <button class="btn btn-sm" :disabled="!store.currentBoard" @click="exportSnapshot" title="导出当前项目 board 快照 JSON">⬇ 导出快照</button>
+      <button class="btn btn-sm" :disabled="!store.currentBoard" @click="exportSnapshot" title="导出当前项目 board 快照 JSON"><Icon name="download" :size="14" /> 导出快照</button>
     </div>
 
     <div class="filters card">
@@ -65,7 +66,7 @@ function exportSnapshot() {
       <span class="cnt pill">{{ results.length }} 条</span>
     </div>
 
-    <div v-if="!results.length" class="empty card"><div class="big">🔍</div><div>无匹配结果，清空关键词或筛选条件后可查看全部任务。</div></div>
+    <div v-if="!results.length" class="empty card"><div class="big"><Icon name="search" :size="36" /></div><div>无匹配结果，清空关键词或筛选条件后可查看全部任务。</div></div>
 
     <div v-else class="list">
       <div v-for="h in results" :key="h.pid + h.task.id" class="hit row" @click="store.openTask(h.task.id, h.pid)">

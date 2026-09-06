@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // AI 开发用「施工波次甘特」：横轴=波次(0/1/2/3)，纵轴=任务，进度块=percent 长度+状态色，箭头=依赖。
 // 传统按日甘特对 AI 开发无用（一个任务可能几小时就完工），这里改用「进度感」而不是「时间感」。
+import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { statusTone, DONE_STATUSES } from '@/api/schema'
@@ -179,14 +180,14 @@ watch(showDone, update)
 <template>
   <div class="gantt-page">
     <div class="head">
-      <h2>📅 施工波次甘特</h2>
+      <h2><Icon name="gantt" class="head-ic" :size="20" />施工波次甘特</h2>
       <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
       <DoneToggle v-model="showDone" :count="doneCount" />
       <span class="muted small">横轴=施工波次 · 进度块长度=完成度 · 颜色=状态 · 点条打开任务</span>
     </div>
     <div class="chart card" ref="el" />
     <div class="legend">
-      <span class="tip">💡 <b>为什么不按日期？</b> AI 开发一个任务可能几小时就完工，按日甘特意义不大。这里换成"波次+进度"，一眼看到"第几波在做、每个做到哪了、下一步该做谁"。<br/><b>已完工默认折叠</b>——只看进行中/刚开工,清爽;想回顾历史完工点上方"显示已完工"即可（不会丢，随时能调出来）。</span>
+      <span class="tip"><Icon name="zap" :size="14" /> <b>为什么不按日期？</b> AI 开发一个任务可能几小时就完工，按日甘特意义不大。这里换成"波次+进度"，一眼看到"第几波在做、每个做到哪了、下一步该做谁"。<br/><b>已完工默认折叠</b>——只看进行中/刚开工,清爽;想回顾历史完工点上方"显示已完工"即可（不会丢，随时能调出来）。</span>
     </div>
   </div>
 </template>

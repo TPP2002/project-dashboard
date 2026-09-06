@@ -11,6 +11,9 @@
   --warn: #9a6b12; --warn-bg: #fdf3e0;
   --bad: #b3382f; --bad-bg: #fdecea;
   --info: #2b5fa8; --info-bg: #e8f0fb;
+  /* 中性档：状态瓦片的「未开工 / 已作废」用它。与 --text-3 / --surface-3 同值，
+     但语义不同（那两个讲的是文字层级），单列一份免得以后调排版顺手把状态色也改了。 */
+  --n: #8e8e89; --n-bg: #eeeeed;
   --shadow: 0 1px 2px rgba(0, 0, 0, .05), 0 1px 3px rgba(0, 0, 0, .04);
   --overlay: #00000080; --drawer-shadow: #00000040;
 
@@ -39,6 +42,15 @@
   --spec-full: #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8, #ff5f6d;
   --spec-duo: #4ad9c4, #6d8cff, #4ad9c4;
 
+  /* —— 语义色站：状态瓦片的灯条按「五档语义色」各走一条，不与全站流光共用一套 ——
+     全站流光讲的是「系统在动」，语义谱讲的是「这件事处在什么状态」，两件事必须能分头调。
+     每条同样以首色收尾闭合色环（理由见上）。 */
+  --spec-info: #4a9eff, #4ad9c4, #6d8cff, #4a9eff;
+  --spec-warn: #f0b429, #f5825b, #f6d365, #f0b429;
+  --spec-ok: #6fbf82, #2c7a45, #a8e6b9, #6fbf82;
+  --spec-bad: #e0736a, #8a2f27, #f2a59d, #e0736a;
+  --spec-n: #c9c9c6, #8e8e89, #e4e4e2, #c9c9c6;
+
   /* 全站生效色站（默认冷谱）：预设走下面的 [data-spectrum] 规则，自定义配色由前端写内联变量覆盖。 */
   --spec-active: var(--spec-cool);
 
@@ -46,8 +58,18 @@
   --spec-bar: var(--spec-active);    /* 任务进度条（任务卡 / 抽屉 / 看板顶部 / CPU 预算） */
   --spec-ring: var(--spec-active);   /* 项目进度环（总览页圆环） */
   --spec-top: var(--spec-active);    /* 卡片顶边流光 */
-  --spec-edge: var(--spec-active);   /* 施工中 / 运行中的左侧竖条 */
+  /* 竖条讲的是「这张卡正在施工」，属于状态语言而非全站装饰，所以默认跟状态瓦片的蓝谱走同一条；
+     用户在外观面板「分部位单独配色」里仍可把它改成跟随全站或任意配色。 */
+  --spec-edge: var(--spec-tile-info); /* 施工中 / 运行中的左侧竖条 */
   --spec-quota: var(--spec-active);  /* Codex 额度条 */
+
+  /* 状态瓦片灯条的分档色站：默认各走自己的语义谱，外观面板可整档改成「跟随全站」或自定义。
+     和上面五个部位同一套机制——前端只写内联变量覆盖，删掉内联变量就回落到这里的默认。 */
+  --spec-tile-info: var(--spec-info);
+  --spec-tile-warn: var(--spec-warn);
+  --spec-tile-ok: var(--spec-ok);
+  --spec-tile-bad: var(--spec-bad);
+  --spec-tile-n: var(--spec-n);
 
   /* 旧别名：审阅台等页面仍直接引用整条渐变。 */
   --spectrum: linear-gradient(90deg, var(--spec-active));
@@ -71,6 +93,7 @@
     --warn: #d9a441; --warn-bg: #241d10;
     --bad: #e0736a; --bad-bg: #2a1715;
     --info: #6d9eea; --info-bg: #141d2b;
+    --n: #8e8e8e; --n-bg: #232326;
     --shadow: none;
     --overlay: #00000099; --drawer-shadow: #00000066;
     --chart-1: #6d9eea; --chart-2: #6fbf82; --chart-3: #d9a441; --chart-4: #a991e8;
@@ -78,6 +101,10 @@
     --chart-area-neutral: #6a6a6f26; --chart-area-warn: #d9a44126; --chart-area-ok: #6fbf8230;
     --heat-1: #193823; --heat-2: #245331; --heat-3: #3e7b50; --heat-4: #6fbf82;
     --hl-yellow: #574a17; --hl-green: #204527; --hl-blue: #1d3a5e; --hl-pink: #4e2437;
+    /* 深色下只有绿/红/灰三条要压暗，蓝与琥珀在深底上本来就够亮，保持不变。 */
+    --spec-ok: #6fbf82, #3f9a5c, #a8e6b9, #6fbf82;
+    --spec-bad: #e0736a, #a63d33, #f2a59d, #e0736a;
+    --spec-n: #4a4a4e, #6a6a6f, #343437, #4a4a4e;
   }
 }
 
@@ -89,6 +116,7 @@
   --warn: #d9a441; --warn-bg: #241d10;
   --bad: #e0736a; --bad-bg: #2a1715;
   --info: #6d9eea; --info-bg: #141d2b;
+  --n: #8e8e8e; --n-bg: #232326;
   --shadow: none;
   --overlay: #00000099; --drawer-shadow: #00000066;
   --chart-1: #6d9eea; --chart-2: #6fbf82; --chart-3: #d9a441; --chart-4: #a991e8;
@@ -96,6 +124,10 @@
   --chart-area-neutral: #6a6a6f26; --chart-area-warn: #d9a44126; --chart-area-ok: #6fbf8230;
   --heat-1: #193823; --heat-2: #245331; --heat-3: #3e7b50; --heat-4: #6fbf82;
   --hl-yellow: #574a17; --hl-green: #204527; --hl-blue: #1d3a5e; --hl-pink: #4e2437;
+  /* 深色下只有绿/红/灰三条要压暗，蓝与琥珀在深底上本来就够亮，保持不变。 */
+  --spec-ok: #6fbf82, #3f9a5c, #a8e6b9, #6fbf82;
+  --spec-bad: #e0736a, #a63d33, #f2a59d, #e0736a;
+  --spec-n: #4a4a4e, #6a6a6f, #343437, #4a4a4e;
 }
 
 /* 预设光谱切换：只换「全站生效色站」，所有灯条与进度环跟着走。 */
@@ -222,7 +254,11 @@ tbody tr:hover { background: var(--surface-2); }
 .field:focus { border-color: transparent; outline: 2px solid var(--info); outline-offset: -1px; }
 
 .empty { padding: var(--s6) var(--s4); color: var(--text-3); font-size: var(--fs-base); text-align: center; }
-.empty .ic, .empty .big { display: block; margin-bottom: var(--s2); font-size: var(--fs-2xl); opacity: .5; }
+/* 空态大图的外框：里面装一枚 36px 的线性图标（<Icon :size="36" />），压淡一点别抢正文。 */
+.empty .ic, .empty .big { display: block; margin-bottom: var(--s2); line-height: 1; opacity: .5; }
+
+/* 页头 / 小标题里的图标：20px 淡灰，跟标题文字并排走一行。 */
+.head-ic { margin-right: var(--s2); color: var(--text-2); }
 .skel { height: var(--s3); border-radius: var(--r-sm); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
@@ -253,6 +289,19 @@ tbody tr:hover { background: var(--surface-2); }
 .appearance-group + .appearance-group { margin-top: var(--s4); }
 .appearance-label { margin-bottom: var(--s2); color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .12em; text-transform: uppercase; }
 .spectrum-options { display: flex; align-items: center; gap: var(--s2); }
+/* 面板里的小选择按钮（主题三选一、图标动效三档）：多个组件共用，所以也放全局层。 */
+.appearance-choice {
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.appearance-choice:hover,
+.appearance-choice[aria-pressed="true"] { background: var(--surface-3); border-color: var(--line-strong); color: var(--text); }
 
 /* 旧页面仍在引用的基础工具类。 */
 .pill { display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.25; white-space: nowrap; }

@@ -3,6 +3,8 @@
 // 组成：统计卡（今/周/月/连击/日均）+ 产出热力日历（纯CSS，近17周）+ 近30天柱状图（echarts懒加载）
 //      + 选中日的成果清单（完工卡 + 当日动作统计）。
 // 范围默认【全部项目】——"我今天总共干了多少"是工作总量视角；可切单项目。
+import { activityKind } from '@/utils/activityKind'
+import Icon from '@/components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
@@ -109,15 +111,10 @@ const monthLabels = computed(() => {
 const selectedDay = ref(derive.todayLocal())
 const selectedRecords = computed(() => byDay.value.get(selectedDay.value) ?? [])
 const selectedActs = computed(() => derive.activityCountsOfDay(boards.value, selectedDay.value))
-const ACT_LABEL: Record<string, [string, string]> = {
-  done: ['🏁', '完工'], claim: ['🙋', '认领'], progress: ['📈', '进度更新'],
-  decide: ['✅', '拍板'], pending: ['❓', '登记待拍板'], note: ['📝', '备注'],
-  park: ['🚫', '暂缓'], block: ['⛔', '阻塞'],
-}
 const actList = computed(() =>
   Object.entries(selectedActs.value)
     .sort((a, z) => z[1] - a[1])
-    .map(([ty, n]) => ({ ty, n, icon: ACT_LABEL[ty]?.[0] ?? '·', label: ACT_LABEL[ty]?.[1] ?? ty })),
+    .map(([ty, n]) => ({ ty, n, ...activityKind(ty) })),
 )
 function fmtDayCN(day: string): string {
   const d = new Date(day)
@@ -231,7 +228,7 @@ watch([byDay, rangeDays], update)
 <template>
   <div>
     <div class="head">
-      <h2>📆 每日成果</h2>
+      <h2><Icon name="calendar" class="head-ic" :size="20" />每日成果</h2>
       <span class="pill">累计 {{ doneData.records.length }} 卡完工</span>
       <span
         v-if="doneData.undated"
@@ -258,7 +255,7 @@ watch([byDay, rangeDays], update)
       <div class="stat card"><b class="v">{{ stats.week }}</b><span class="l">本周</span></div>
       <div class="stat card"><b class="v">{{ stats.month }}</b><span class="l">本月</span></div>
       <div class="stat card" :class="{ fire: stats.streak >= 3 }">
-        <b class="v">{{ stats.streak }}<i v-if="stats.streak >= 3" class="fi">🔥</i></b><span class="l">连续产出（天）</span>
+        <b class="v">{{ stats.streak }}<Icon v-if="stats.streak >= 3" name="flame" :size="16" class="fi" /></b><span class="l">连续产出（天）</span>
       </div>
       <div class="stat card"><b class="v">{{ stats.avg30 }}</b><span class="l">日均（近30天）</span></div>
     </div>
@@ -323,7 +320,7 @@ watch([byDay, rangeDays], update)
       </div>
 
       <div v-if="actList.length" class="acts">
-        <span v-for="a in actList" :key="a.ty" class="pill act">{{ a.icon }} {{ a.label }} {{ a.n }}</span>
+        <span v-for="a in actList" :key="a.ty" class="pill act"><Icon :name="a.icon" :size="14" />{{ a.label }} {{ a.n }}</span>
       </div>
 
       <div v-if="!selectedRecords.length" class="empty-day muted">
@@ -369,7 +366,7 @@ watch([byDay, rangeDays], update)
 .stat .v.ok { color: var(--ok); }
 .stat-edge { position: absolute; inset: 0 0 auto; width: 100%; }
 .stat.fire .v { color: var(--warn); }
-.fi { font-size: var(--fs-base); font-style: normal; }
+.fi { margin-left: var(--s1); color: var(--warn); vertical-align: -.1em; }
 
 .block { display: flex; flex-direction: column; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s3) var(--s4); }
 .block-t { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; font-size: var(--fs-base); font-weight: 600; }

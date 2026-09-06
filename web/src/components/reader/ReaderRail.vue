@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 右栏:目录 / 提示(分层边注) / 批注 / 拍板(同一张看板卡的 decisions,文档内已填的可一键认账)。
+import Icon from '@/components/Icon.vue'
 import { computed, ref } from 'vue'
 import type { DocBlock } from '@/utils/reader/diff'
 import type { ReaderNoteLayer, ReaderAnno, ReaderReportMeta } from '@/api/reader'
@@ -118,7 +119,7 @@ const short = (s: string, n = 42) => (s.length > n ? s.slice(0, n) + '…' : s)
     </div>
 
     <div v-show="tab === 'annos'" class="pane">
-      <div class="lite" style="margin: 0 0 var(--s2)">把鼠标放到任一段落上,点右侧 ✎ 写批注。批注存看板本机账本并同步到对应任务卡;要进仓库用顶部「导出」。</div>
+      <div class="lite" style="margin: 0 0 var(--s2)">把鼠标放到任一段落上,点右侧的 <Icon name="pencil" :size="14" /> 写批注。批注存看板本机账本并同步到对应任务卡;要进仓库用顶部「导出」。</div>
       <div v-if="!annos.length" class="lite">还没有批注。</div>
       <div v-for="a in annos" :key="a.id" class="ncard static">
         <div class="a">

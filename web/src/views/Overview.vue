@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // 多项目总览：先给结论和待处理事项，再展示项目统计与最近动态。
+import StatusTile from '@/components/StatusTile.vue'
+import Icon from '@/components/Icon.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { relTime } from '@/utils/format'
-import { emojiFor } from '@/api/schema'
+
 import ProgressRing from '@/components/ProgressRing.vue'
 import type { Board, Task } from '@/types'
 import type { CodexReport } from '@/types/codex'
@@ -177,7 +179,7 @@ function openTask(item: BlockedItem) {
         </header>
 
         <div v-if="actionTotal === 0 && !contextLoading" class="empty card">
-          <span class="ic">✨</span>
+          <span class="ic"><Icon name="sparkles" :size="36" /></span>
           现在没有需要立刻处理的事项<br>
           <span class="empty-help">出现待拍板、Codex 工单被驳回或任务被阻塞时，会自动排到这里。</span>
         </div>
@@ -257,7 +259,7 @@ function openTask(item: BlockedItem) {
         <div v-else-if="contextLoading" class="card cost-loading"><div class="skel wide" /><div class="skel medium" /></div>
 
         <div v-if="!boards.length" class="empty card">
-          <span class="ic">🗂️</span>
+          <span class="ic"><Icon name="archive" :size="36" /></span>
           暂无项目<br>
           <span class="empty-help">用看板命令注册项目后，项目统计和最近动态会自动出现。</span>
         </div>
@@ -286,8 +288,8 @@ function openTask(item: BlockedItem) {
             </div>
 
             <div class="status-list">
-              <span v-for="[status, count] in countsOf(board)" :key="status" class="badge" :class="statusTone(status)">
-                {{ emojiFor(status) }} {{ status }} {{ count }}
+              <span v-for="[status, count] in countsOf(board)" :key="status" class="badge tiled" :class="statusTone(status)">
+                <StatusTile :status="status" :size="14" decorative />{{ status }} {{ count }}
               </span>
             </div>
 
@@ -345,6 +347,8 @@ function openTask(item: BlockedItem) {
 .project-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); font-size: var(--fs-lg); font-weight: 600; }
 .project-repo { overflow: hidden; margin-top: var(--s1); color: var(--text-2); font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .project-alert { margin-top: var(--s2); }
+/* 徽章基类是 inline-block，装了色点就得换 flex。 */
+.tiled { display: inline-flex; align-items: center; gap: 5px; }
 .status-list { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .activity-list { display: flex; flex-direction: column; gap: var(--s1); border-top: 1px solid var(--line); padding-top: var(--s2); }
 .activity-row { display: flex; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--fs-sm); }

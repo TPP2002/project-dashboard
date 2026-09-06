@@ -87,6 +87,7 @@ export function saveNavGroups<T extends string>(storageKey: string, groups: NavG
 </script>
 
 <script setup lang="ts">
+import Icon from '@/components/Icon.vue'
 import { ref } from 'vue'
 
 interface NavItemPresentation {
@@ -192,7 +193,7 @@ function dropAtEnd(event: DragEvent, toGroupId: string) {
                   title="拖动排序或换组"
                   @dragstart="startDrag($event, group.id, item.id)"
                   @dragend="finishDrag"
-                >⠿</span>
+                ><Icon name="grip" :size="14" /></span>
                 <span class="item-title">{{ items[item.id]?.title || item.id }}</span>
                 <label class="visibility-toggle">
                   <input
@@ -265,13 +266,12 @@ function dropAtEnd(event: DragEvent, toGroupId: string) {
 .setting-item:hover { border-color: var(--line-strong); }
 .setting-item.dragging { opacity: .45; }
 .drag-handle {
+  display: grid;
+  place-items: center;
   width: var(--s5);
   color: var(--text-3);
   cursor: grab;
-  font-family: var(--mono);
-  font-size: var(--fs-lg);
   line-height: 1;
-  text-align: center;
   user-select: none;
 }
 .drag-handle:active { cursor: grabbing; }

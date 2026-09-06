@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 审阅台:读审计/外脑报告的地方(READER-INTO-BOARD,替代 docs/design/审计回流 的单文件阅读台)。
 // 三栏:报告架 | 正文(干净读法,改动只留边条) | 右栏(目录/提示/批注/拍板)。阅读偏好在「阅读设置」里,是个性化项。
+import Icon from '@/components/Icon.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { useReaderStore, FONT_MIN, FONT_MAX, type DiffMode, type NotesLayout } from '@/stores/reader'
@@ -114,7 +115,7 @@ async function decide(p: { did: string; answer: string }) {
     <header class="rhead">
       <div class="title">
         <h1>
-          <span aria-hidden="true">📖</span>
+          <Icon name="book" :size="20" />
           {{ reader.currentReport?.title || '审阅台' }}
           <span v-if="reader.currentReport?.version" class="badge info">{{ reader.currentReport.version }}</span>
           <span v-if="diffPill" class="badge n">{{ diffPill }}</span>
@@ -133,8 +134,8 @@ async function decide(p: { did: string; answer: string }) {
           :disabled="!reader.payload"
           :title="reader.currentReviewed ? '撤销后这份报告回到「待审阅」那一组' : '读完了就标一下,报告架里会挪到「已审阅」那一组'"
           @click="toggleReviewed"
-        >{{ reader.currentReviewed ? '✓ 已审阅' : '标记已审阅' }}</button>
-        <button type="button" class="btn btn-sm" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen">⚙︎ 阅读设置</button>
+        ><Icon v-if="reader.currentReviewed" name="check" :size="14" />{{ reader.currentReviewed ? '已审阅' : '标记已审阅' }}</button>
+        <button type="button" class="btn btn-sm" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Icon name="settings" :size="14" /> 阅读设置</button>
         <button type="button" class="btn btn-sm" :disabled="!reader.annos.length" title="把本报告的批注写成仓库 docs 下的 JSON(不 commit)" @click="exportAnnos">导出批注 {{ reader.annos.length || '' }}</button>
       </div>
       <section v-if="settingsOpen" class="settings card" role="dialog" aria-label="阅读设置">

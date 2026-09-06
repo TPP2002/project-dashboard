@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/Icon.vue'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import CodexReport from '@/components/codex/CodexReport.vue'
 import CodexJobsTab from '@/components/codex/CodexJobsTab.vue'
@@ -40,7 +41,7 @@ onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 <template>
   <div class="page">
     <header class="toolbar">
-      <div><h1>🤖 Codex</h1><p>本机全部 Codex 活动与派单工单</p></div>
+      <div><h1><Icon name="bot" class="head-ic" :size="20" />Codex</h1><p>本机全部 Codex 活动与派单工单</p></div>
       <span class="spacer" />
       <label class="auto"><input v-model="autoRefresh" type="checkbox"> 每 10 秒自动刷新</label>
       <button class="btn btn-sm" @click="refresh">刷新</button>

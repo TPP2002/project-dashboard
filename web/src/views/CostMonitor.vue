@@ -9,6 +9,7 @@
  * 【卡级登记】施工对话用 CLI `cost <卡> --agents "sonnet:3,opus:1"` 自报每张卡
  * 用了哪些 agent;本页明细汇总展示,点卡号可打开详情抽屉。
  */
+import Icon from '@/components/Icon.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import type { Task } from '@/types'
@@ -160,7 +161,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
   <div class="page">
     <header class="page-head">
       <div>
-        <h1>💰 成本监管</h1>
+        <h1><Icon name="coins" class="head-ic" :size="20" />成本监管</h1>
         <p class="page-subtitle">
           本机对话流水的真实 token 数；跑在别的机器上的对话不在此账内。
         </p>
@@ -213,14 +214,14 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
         :spend="spendBreakdown"
       />
       <div v-else class="empty card">
-        <span class="ic">📭</span>
+        <span class="ic"><Icon name="inbox" :size="36" animated /></span>
         Codex 汇总暂时不可用<br>
         <span class="empty-help">有可归属到当前项目的会话后，这里会出现 Claude、Codex 与合计摘要。</span>
       </div>
 
 
       <p class="fine">
-        💡 折算口径:你实付的是订阅费——美元是「同样的量若按 API 牌价直购值多少钱」的等价参考
+        <Icon name="zap" :size="14" /> 折算口径:你实付的是订阅费——美元是「同样的量若按 API 牌价直购值多少钱」的等价参考
         (无缓存假想 ${{ usd0(usage.usd.noCache) }} − 折后 ${{ usd0(usage.usd.actual) }} = 净省 ${{ usd0(usage.usd.saved) }};牌价缓存于 2026-06,变价改 core/costUsage.cjs 的 PRICE 表)。
       </p>
 
@@ -240,7 +241,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
           <section class="detail-section">
             <h3>按天</h3>
             <div v-if="!dailyRows.length" class="empty">
-              <span class="ic">📅</span>
+              <span class="ic"><Icon name="calendar" :size="36" /></span>
               期间没有逐日记录<br>
               <span class="empty-help">本机产生 Claude 或 Codex 会话后，会按自然日列在这里。</span>
             </div>
@@ -266,7 +267,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
           <section class="detail-section">
             <h3>Claude 按模型</h3>
             <div v-if="!modelRows.length" class="empty">
-              <span class="ic">🧠</span>
+              <span class="ic"><Icon name="bot" :size="36" /></span>
               期间没有模型用量<br>
               <span class="empty-help">Claude 对话写入本机流水后，会按模型汇总在这里。</span>
             </div>
@@ -289,7 +290,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
           <section class="detail-section">
             <h3>各任务卡施工成本</h3>
             <div v-if="!costTasks.length" class="empty">
-              <span class="ic">🧾</span>
+              <span class="ic"><Icon name="file" :size="36" /></span>
               当前项目还没有任务登记施工成本<br>
               <span class="empty-help">施工对话收官时运行 <code>cost &lt;卡号&gt; --project {{ store.currentProjectId }} --agents "sonnet:3,opus:1"</code> 后会出现。</span>
             </div>

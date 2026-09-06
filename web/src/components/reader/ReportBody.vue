@@ -7,6 +7,7 @@
 //     现在按钮落在段落自己的 padding 里,悬停区连成一片。
 //  ② 只能整段批注。现在框选文字即弹工具条:批注 / 荧光笔,批注还会记住选区,回来能看见批的是哪句。
 //  ③ 荧光笔:选区偏移存本机账本,换读法、换字号都标得回来。
+import Icon from '@/components/Icon.vue'
 import { computed, ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import type { DocBlock } from '@/utils/reader/diff'
 import type { ReaderNoteLayer, ReaderAnno, ReaderHighlight, MarkColor } from '@/api/reader'
@@ -307,8 +308,8 @@ onBeforeUnmount(() => {
             @click="b.kind === 'changed' && toggleOld(b.id)"
           />
           <div class="ptools">
-            <button type="button" title="给整段写批注(想批某一句就直接框选那句)" @click="startAnno(b)">✎</button>
-            <button v-if="b.kind === 'changed'" type="button" title="看旧文" @click="toggleOld(b.id)">⇄</button>
+            <button type="button" title="给整段写批注(想批某一句就直接框选那句)" @click="startAnno(b)"><Icon name="pencil" :size="14" /></button>
+            <button v-if="b.kind === 'changed'" type="button" title="看旧文" @click="toggleOld(b.id)"><Icon name="rotateCcw" :size="14" /></button>
           </div>
 
           <div v-if="b.kind === 'removed'" class="old shown">
@@ -329,7 +330,7 @@ onBeforeUnmount(() => {
                 class="hmark"
                 :title="`这一节有 ${notesByBlock.get(b.id)!.length} 条边注,点开`"
                 @click="toggleNotes(b.id)"
-              >ⓘ {{ notesByBlock.get(b.id)!.length }}</button>
+              ><Icon name="message" :size="14" />{{ notesByBlock.get(b.id)!.length }}</button>
             </div>
             <div v-if="b.kind === 'changed'" class="old">
               <span class="tag">{{ prevLabel || '上一版' }} 旧文</span>
@@ -379,7 +380,7 @@ onBeforeUnmount(() => {
       @mousedown.prevent
       @click.stop
     >
-      <button v-if="!bar.markId" type="button" class="sb-anno" title="对选中的这句写批注" @click="barAnno">✎ 批注</button>
+      <button v-if="!bar.markId" type="button" class="sb-anno" title="对选中的这句写批注" @click="barAnno"><Icon name="pencil" :size="14" />批注</button>
       <span v-if="!bar.markId" class="sb-sep" />
       <button
         v-for="c in COLORS"
@@ -390,7 +391,7 @@ onBeforeUnmount(() => {
         :title="bar.markId ? '换成' + c.label : c.label + '色荧光笔'"
         @click="barMark(c.id)"
       />
-      <button v-if="barHasMark" type="button" class="sb-clear" title="取消这里的荧光笔" @click="barClear">✕ 取消高亮</button>
+      <button v-if="barHasMark" type="button" class="sb-clear" title="取消这里的荧光笔" @click="barClear"><Icon name="x" :size="14" />取消高亮</button>
     </div>
   </section>
 </template>
@@ -423,6 +424,7 @@ onBeforeUnmount(() => {
 .blk :deep(ins) { text-decoration: none; }
 .blk :deep(del) { color: var(--bad); }
 .new { position: relative; }
+.hmark, .sb-anno, .sb-clear { display: inline-flex; align-items: center; gap: var(--s1); }
 .hmark { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 var(--s2) 0; padding: 0 8px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--text-2); font: inherit; font-family: var(--mono); font-size: var(--fs-xs); cursor: pointer; line-height: 1.7; }
 .hmark:hover { background: var(--surface-3); color: var(--text); }
 .old { display: none; margin: 0 0 var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-sm); background: var(--warn-bg); color: var(--text-2); font-size: .92em; border-left: 3px solid var(--warn); }

@@ -4,6 +4,7 @@
 // 2) 每周吞吐·按项目堆叠：近12周每周完工多少、精力花在哪个项目
 // 3) 周内节奏：周一~周日的完工分布——自己哪天效率最高
 // 4) 周转时长分布：从开工到完工用了几天——发现拖尾任务
+import Icon from '@/components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
@@ -205,7 +206,7 @@ watch([boards], () => { updCfd(); updWeekly(); updWeekday(); updCycle() })
 <template>
   <div>
     <div class="head">
-      <h2>📊 洞察</h2>
+      <h2><Icon name="chart" class="head-ic" :size="20" />洞察</h2>
       <span class="muted small">项目管理四张图 · 全部现算不落盘</span>
       <span class="spacer" />
       <div class="scope">

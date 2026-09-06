@@ -2,6 +2,9 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ConnDot from './ConnDot.vue'
+import Icon from './Icon.vue'
+// 图标动效三档（关 / 微 / 活泼）也归外观面板管，和灯条配色并排。
+import IconMotionSettings from './IconMotionSettings.vue'
 // 灯条配色（全站 + 分部位）整块搬进 SpectrumSettings，它 import 时会自动还原上次的配色。
 import SpectrumSettings from './SpectrumSettings.vue'
 
@@ -40,7 +43,7 @@ function applyTheme(value: ThemeChoice, persist = true) {
 if (typeof document !== 'undefined') applyTheme(readTheme())
 
 export default defineComponent({
-  components: { ConnDot, SpectrumSettings },
+  components: { ConnDot, Icon, IconMotionSettings, SpectrumSettings },
   setup() {
     const store = useBoardStore()
     const appearanceOpen = ref(false)
@@ -83,7 +86,7 @@ export default defineComponent({
 
 <template>
   <header class="topbar">
-    <div class="brand"><span aria-hidden="true">▦</span><b>项目看板</b></div>
+    <div class="brand"><Icon name="kanban" :size="20" /><b>项目看板</b></div>
     <div v-if="store.projectList.length" class="proj">
       <label class="sr-only" for="project-select">当前项目</label>
       <select id="project-select" :value="store.currentProjectId ?? ''" @change="onProject">
@@ -92,7 +95,7 @@ export default defineComponent({
     </div>
     <span class="spacer" />
     <ConnDot :state="store.conn" />
-    <button class="btn btn-sm quiet refresh" type="button" title="刷新全部" aria-label="刷新全部" @click="store.refresh()">↻</button>
+    <button class="btn btn-sm quiet refresh" type="button" title="刷新全部" aria-label="刷新全部" @click="store.refresh()"><Icon name="refresh" :size="16" /></button>
 
     <div ref="appearanceRoot" class="appearance">
       <button
@@ -103,7 +106,7 @@ export default defineComponent({
         aria-controls="appearance-panel"
         @click.stop="appearanceOpen = !appearanceOpen"
       >
-        <span aria-hidden="true">◐</span><span>外观</span>
+        <Icon name="settings" :size="16" /><span>外观</span>
       </button>
       <section v-if="appearanceOpen" id="appearance-panel" class="appearance-panel" role="dialog" aria-label="外观设置">
         <div class="appearance-group">
@@ -120,6 +123,7 @@ export default defineComponent({
           </div>
         </div>
         <SpectrumSettings />
+        <IconMotionSettings />
       </section>
     </div>
 
@@ -131,7 +135,8 @@ export default defineComponent({
       aria-label="待拍板中心"
       @click="store.centerScopeAll = true"
     >
-      ?<span v-if="store.pendingCount" class="badge warn dot">{{ store.pendingCount }}</span>
+      <Icon name="bell" :size="20" />
+      <span v-if="store.pendingCount" class="badge warn dot">{{ store.pendingCount }}</span>
     </router-link>
   </header>
 </template>
@@ -157,7 +162,7 @@ export default defineComponent({
   cursor: pointer;
   font-size: var(--fs-sm);
 }
-.refresh { font-size: var(--fs-md); }
+.refresh { padding-inline: var(--s2); }
 .appearance { position: relative; }
 .appearance-trigger { white-space: nowrap; }
 .appearance-panel {
@@ -175,25 +180,12 @@ export default defineComponent({
   box-shadow: var(--shadow);
 }
 .theme-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s1); }
-.appearance-choice {
-  padding: var(--s1) var(--s2);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--surface-2);
-  color: var(--text-2);
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  transition: background .14s ease, border-color .14s ease, color .14s ease;
-}
-.appearance-choice:hover,
-.appearance-choice[aria-pressed="true"] { background: var(--surface-3); border-color: var(--line-strong); color: var(--text); }
 .bell {
   position: relative;
+  display: inline-flex;
   padding: var(--s1) var(--s2);
   border-radius: var(--r);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: var(--fs-md);
 }
 .bell:hover { background: var(--surface-2); text-decoration: none; }
 .bell.hot { color: var(--warn); }

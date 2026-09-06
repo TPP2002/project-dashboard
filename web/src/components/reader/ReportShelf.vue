@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 报告架:先按「待审阅 / 已审阅」分两段(负责人 0905 要求两者别混在一张单子里),
 // 段内再按回运批次分组;状态徽章 + 批注/荧光笔数;点选打开。
+import Icon from '@/components/Icon.vue'
 import { computed } from 'vue'
 import type { ReaderManifest, ReaderReportMeta, ReaderReview } from '@/api/reader'
 
@@ -70,7 +71,7 @@ const fmtDay = (iso?: string) => (iso ? iso.slice(5, 10).replace('-', '-') : '')
 
       <section class="section">
         <header class="sec-head clickable" role="button" tabindex="0" :aria-expanded="showReviewed" @click="emit('toggle-reviewed')" @keydown.enter.space.prevent="emit('toggle-reviewed')">
-          <span>{{ showReviewed ? '▾' : '▸' }} 已审阅</span><span class="mono">{{ doneCount }}</span>
+          <span class="with-icon"><Icon name="chevron" :size="14" :rotate="showReviewed ? 0 : 270" />已审阅</span><span class="mono">{{ doneCount }}</span>
         </header>
         <template v-if="showReviewed">
           <p v-if="!doneCount" class="none">还没有标记过已审阅的报告。读完一份,在页头点「标记已审阅」。</p>
@@ -86,7 +87,7 @@ const fmtDay = (iso?: string) => (iso ? iso.slice(5, 10).replace('-', '-') : '')
             >
               <div class="t">{{ rep.title }}</div>
               <div class="meta">
-                <span class="badge ok">✓ 已审阅<template v-if="reviews[rep.key]"> {{ fmtDay(reviews[rep.key].at) }}</template></span>
+                <span class="badge ok with-icon"><Icon name="check" :size="14" />已审阅<template v-if="reviews[rep.key]"> {{ fmtDay(reviews[rep.key].at) }}</template></span>
                 <span v-if="annoCounts[rep.key]" class="badge info">批注 {{ annoCounts[rep.key] }}</span>
                 <span v-if="markCounts[rep.key]" class="badge n">标记 {{ markCounts[rep.key] }}</span>
               </div>
@@ -108,6 +109,7 @@ const fmtDay = (iso?: string) => (iso ? iso.slice(5, 10).replace('-', '-') : '')
 </template>
 
 <style scoped>
+.with-icon { display: inline-flex; align-items: center; gap: var(--s1); }
 .shelf { overflow: auto; padding: var(--s2); border-right: 1px solid var(--line); background: var(--surface); min-height: 0; }
 .section + .section { margin-top: var(--s3); padding-top: var(--s2); border-top: 1px solid var(--line); }
 .sec-head { display: flex; justify-content: space-between; align-items: center; padding: var(--s2); font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
