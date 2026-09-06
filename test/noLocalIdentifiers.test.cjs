@@ -14,7 +14,7 @@ const { TextDecoder } = require('node:util');
 const { DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
-const BINARY_EXTENSIONS = new Set(['.png', '.pdf', '.ico', '.exe']);
+const BINARY_EXTENSIONS = new Set(['.png', '.pdf', '.ico', '.exe', '.docx']);
 const FORBIDDEN_FILE = path.join(DASHBOARD_HOME, 'opensource-forbidden.txt');
 const MAIN_TEST = 'A2: 全部被 git 跟踪的文本文件不含本机路径、项目显示名或主机名';
 // 合成无命中夹具，避免扫描测试自身时命中夹具的源码字面量。
