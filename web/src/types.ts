@@ -74,6 +74,10 @@ export interface Task {
   blockReason?: string
   nextMilestone?: string
   parkedNote?: string
+  /** 解除暂缓的依据(CLI unpark --reason 写入;卡走到「可复工」后要在卡面上看得见) */
+  unparkReason?: string
+  /** 解除暂缓的日期(YYYY-MM-DD) */
+  unparkedAt?: string
   forbiddenZones?: string[]
   fileScope?: string[]
   docs?: DocRef[]

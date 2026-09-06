@@ -153,13 +153,14 @@ onUnmounted(() => {
             </section>
 
             <!-- 依赖 / 阻塞 -->
-            <section v-if="task.deps && (hasArr(task.deps.dependsOn) || hasArr(task.deps.blockedBy) || hasArr(task.deps.relatedTasks)) || task.blockReason || task.parkedNote" class="sec block">
+            <section v-if="task.deps && (hasArr(task.deps.dependsOn) || hasArr(task.deps.blockedBy) || hasArr(task.deps.relatedTasks)) || task.blockReason || task.parkedNote || task.unparkReason" class="sec block">
               <div class="sec-t">依赖 / 阻塞</div>
               <div class="kv" v-if="hasArr(task.deps?.dependsOn)"><span>依赖</span><b>{{ task.deps!.dependsOn!.join(', ') }}</b></div>
               <div class="kv" v-if="hasArr(task.deps?.blockedBy)"><span>被阻塞</span><b class="warn">{{ task.deps!.blockedBy!.join(', ') }}</b></div>
               <div class="kv" v-if="hasArr(task.deps?.relatedTasks)"><span>关联</span><b>{{ task.deps!.relatedTasks!.join(', ') }}</b></div>
               <div class="note" v-if="task.blockReason">🚧 {{ task.blockReason }}</div>
               <div class="note" v-if="task.parkedNote">🅿️ {{ task.parkedNote }}</div>
+              <div class="note ok" v-if="task.unparkReason">🔄 {{ task.unparkReason }}<span v-if="task.unparkedAt" class="note-when mono">{{ task.unparkedAt }}</span></div>
             </section>
 
             <!-- 决策（含内联拍板） -->
@@ -246,6 +247,9 @@ onUnmounted(() => {
 .kv b { font-weight: 600; }
 .kv b.warn, .warn { color: var(--warn); }
 .note { padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--warn-bg); color: var(--warn); font-size: var(--fs-base); }
+/* 解除暂缓是好消息,别跟阻塞/暂缓一样刷成警告色 */
+.note.ok { background: var(--ok-bg); color: var(--ok); }
+.note-when { margin-left: var(--s2); color: var(--text-3); font-size: var(--fs-sm); }
 .inline-list, .decision-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .secondary-list { margin-top: var(--s2); }
 .dec { display: flex; flex-direction: column; gap: var(--s2); background: var(--surface-2); }
