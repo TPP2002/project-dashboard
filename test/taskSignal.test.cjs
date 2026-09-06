@@ -56,7 +56,7 @@ function fixtureBoard() {
         deps: { blockedBy: ['T-UPSTREAM-DONE'] } },
       // 假卡住③:暂缓是负责人自己按的暂停键,不是挡路石
       { id: 'T-PARKED', title: '搁置中', status: '暂缓', wave: 0, parkedNote: '等设计定稿',
-        worktree: ['F:/wt/parked'] },
+        worktree: ['F:/code-repo/wt-parked'] },
       { id: 'T-UPSTREAM-OPEN', title: '还没做的上游', status: '未开工', wave: 0 },
       { id: 'T-UPSTREAM-DONE', title: '做完了的上游', status: '已完工', wave: 0 },
       // 施工中的两张:一张刚动过,一张很久没动
@@ -220,7 +220,7 @@ test('占用防撞:完工卡的历史分支不算抢占,打开开关才算', () 
 
   // 暂缓卡仍占着 worktree,默认口径下必须留着。
   const wt = signal.occupancy(tasks, 'worktree', { isGenerated: isGeneratedArtifact });
-  assert.deepEqual(ids(wt.find((r) => r.v === 'F:/wt/parked').tasks), ['T-PARKED']);
+  assert.deepEqual(ids(wt.find((r) => r.v === 'F:/code-repo/wt-parked').tasks), ['T-PARKED']);
 });
 
 test('占用防撞:自动生成物照旧不算冲突(沿用 generatedArtifacts 判据,别在这儿又松一次口)', () => {
