@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "description": "多项目管理可视化看板（全局工具）：零依赖 CLI + 零依赖 server + Vite/Vue 前端",
+  "//serve": "serve/start 起的是【开发实例】（代码根是本检出 → mode=dev、端口 6070 段）。负责人日常用的那份由 启动看板.bat / dashboard.sh 从发布副本起（6060 段）——见 SERVER-RUNS-ON-LIVE-CHECKOUT。",
   "scripts": {
     "test": "node --test",
     "cli": "node cli/index.cjs",
     "build": "npm --prefix web run build",
+    "release": "node cli/index.cjs release",
     "serve": "node server/server.cjs",
     "start": "node server/server.cjs"
   }
