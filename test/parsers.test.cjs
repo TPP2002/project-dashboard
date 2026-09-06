@@ -14,13 +14,13 @@ test('parseIndexTable 剥删除线 + 抽可靠字段', () => {
     '| P09 | [标题B](P09-y.md) | ✅ 真实待开工 | 没开始 |',
     '', '## 二、别的', 'xxx',
   ].join('\n');
-  const { tasks } = parseIndexTable(md, 'docs/plans/股市清零工程');
+  const { tasks } = parseIndexTable(md, 'docs/plans/示例工程');
   assert.equal(tasks.length, 2);
   const p1 = tasks.find((t) => t.id === 'P01');
   assert.equal(p1.status, '已完工');
   assert.equal(p1.title, '标题A');
   assert.deepEqual(p1.gitBranch, ['stock-r14-21']); // 删除线里的 r14-99 已被剥离，不入库
-  assert.deepEqual(p1.docs, ['docs/plans/股市清零工程/P01-x.md']);
+  assert.deepEqual(p1.docs, ['docs/plans/示例工程/P01-x.md']);
   assert.equal(tasks.find((t) => t.id === 'P09').status, '待开工');
 });
 

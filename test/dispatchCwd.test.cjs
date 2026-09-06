@@ -4,7 +4,7 @@
  *
  * 治的病:三个派单入口(单卡 / 整项目 / 短触发)都拿 proj.mainRepo 当新对话的 cwd。
  * mainRepo 是「板的家」不是「代码的家」——cluster 这类板与代码分家的项目里,
- * 板在 F:\cluster-ops(非 git 仓、无 CLAUDE.md),代码在 F:\stock-rogue。
+ * 板在 F:\board-repo(非 git 仓、无 CLAUDE.md),代码在 F:\code-repo。
  * 派出去的对话落在前者 = 没有协议锚、没有 git、认领闸门也拦不住,等于站在空地上开工。
  *
  * 夹具沿用 codeRepoSplit.test.cjs 的「cluster 形状」:mainRepo = 普通目录,codeRepo = 另一处。
@@ -35,8 +35,8 @@ const writeRegistry = (projects) => fs.writeFileSync(REG, JSON.stringify({ schem
 const mkdir = (name) => { const p = path.join(TMP, name); fs.mkdirSync(p, { recursive: true }); return p; };
 
 test('派单落脚点:板与代码分家时,进「代码的家」而不是「板的家」', () => {
-  const boardHome = mkdir('cluster-board-home'); // 对应 F:\cluster-ops:只放板,不是 git 仓
-  const codeRepo = mkdir('cluster-code-repo');   // 对应 F:\stock-rogue:卡真正要改的代码在这
+  const boardHome = mkdir('cluster-board-home'); // 对应 F:\board-repo:只放板,不是 git 仓
+  const codeRepo = mkdir('cluster-code-repo');   // 对应 F:\code-repo:卡真正要改的代码在这
   writeRegistry({
     cluster: {
       name: '副机集群', mainRepo: boardHome, codeRepo,
@@ -49,7 +49,7 @@ test('派单落脚点:板与代码分家时,进「代码的家」而不是「板
 
 test('派单落脚点:没写 codeRepo 的老项目照旧用 mainRepo(零改动)', () => {
   const repo = mkdir('rogue-repo');
-  writeRegistry({ rogue: { name: '股市肉鸽', mainRepo: repo } });
+  writeRegistry({ rogue: { name: '示例项目·游戏', mainRepo: repo } });
   assert.strictEqual(server.dispatchCwd('rogue'), repo, 'codeRepo 缺省必须回落 mainRepo');
 });
 
@@ -68,7 +68,7 @@ test('Codex 面板取仓:板与代码分家时,jobs 台账与派单器 cwd 都�
   const codeRepo = mkdir('codex-code-repo');
   writeRegistry({
     rogue: {
-      name: '股市肉鸽', mainRepo: boardHome, codeRepo,
+      name: '示例项目·游戏', mainRepo: boardHome, codeRepo,
       board: path.join(boardHome, '.dashboard', 'board.json'),
     },
   });
@@ -78,7 +78,7 @@ test('Codex 面板取仓:板与代码分家时,jobs 台账与派单器 cwd 都�
 
 test('Codex 面板取仓:没写 codeRepo 的老项目照旧用 mainRepo(零改动)', () => {
   const repo = mkdir('codex-rogue-repo');
-  writeRegistry({ rogue: { name: '股市肉鸽', mainRepo: repo } });
+  writeRegistry({ rogue: { name: '示例项目·游戏', mainRepo: repo } });
   assert.strictEqual(server.codexRepo(), repo, 'codeRepo 缺省必须回落 mainRepo');
 });
 

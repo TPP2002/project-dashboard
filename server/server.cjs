@@ -55,7 +55,7 @@ const VERSION = '1.0';
 const DASH_ROOT = path.resolve(__dirname, '..');            // 这份代码的家（发布副本 / 主工位检出 / 安装目录）
 const DIST_DIR = path.join(DASH_ROOT, 'web', 'dist');        // 前端生产产物（批次7产出，未必已存在）
 const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯一写者）
-// registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / A 股主仓）
+// registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / 示例项目·模拟器主仓）
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
 
 // —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——
@@ -141,7 +141,7 @@ function resolveProjectSafe(id) {
  * 派单开出来的新对话应该站在哪个文件夹里 =「代码的家」codeRepo。
  *
  * 治的病：原先三个派单入口各写一遍 `proj.mainRepo`，而 mainRepo 是「板的家」。
- * 板可自成一家（cluster：板在 F:\cluster-ops，卡改的代码全在 F:\stock-rogue），
+ * 板可自成一家（cluster：板在 F:\board-repo，卡改的代码全在 F:\code-repo），
  * 此时派出去的对话落在一个非 git 仓、没有 CLAUDE.md 的空壳目录里——协议锚、
  * git 认领闸门、开工三查全部失效，对话等于站在空地上开工
  * （SERVER-GIT-CWD-USES-MAINREPO，2026-09-06）。
@@ -202,7 +202,7 @@ function deriveSummary(board) {
  * 尽力探测各项目的同步 git hook 是否已安装（health 的可选字段 hooksInstalled）。
  * 判据：**codeRepo（代码的家）** 的 post-commit 存在且包含转发本项目 id 的同步块。
  * 认 codeRepo 不认 mainRepo：hook 挂在「提交发生的那个仓」上，板可自成一家
- * （cluster：板在 F:\cluster-ops、代码在 F:\stock-rogue）；去板那边找必然扑空、
+ * （cluster：板在 F:\board-repo、代码在 F:\code-repo）；去板那边找必然扑空、
  * 体检恒报「hook 未安装」（SERVER-GIT-CWD-USES-MAINREPO，与 cli/gitSync.cjs doctor 同口径）。
  * 多项目可共用代码仓，仅认 "dashboard" 字样会把其它项目的 hook 误判成本项目已装。
  * 任何异常都当 false，绝不抛。

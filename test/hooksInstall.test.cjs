@@ -195,7 +195,7 @@ test('mainRepo 非 git 仓、codeRepo 才是真仓时，hooks-install 应落进 
   clean(dir);
 });
 
-test('两个项目共用同一个 codeRepo（如 rogue/cluster 都在 F:\\stock-rogue）时，各自装的 hook/settings/CLAUDE.md 共存，互不顶替（CLUSTER-CODEREPO-HOOK-COLLISION）', () => {
+test('两个项目共用同一个 codeRepo（如 rogue/cluster 都在 F:\\code-repo）时，各自装的 hook/settings/CLAUDE.md 共存，互不顶替（CLUSTER-CODEREPO-HOOK-COLLISION）', () => {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-shared-')));
   const reg = path.join(dir, 'registry.json');
   const codeRepo = path.join(dir, 'shared-repo'); fs.mkdirSync(codeRepo);

@@ -75,13 +75,13 @@ test('Codex 可执行文件递归过滤后按修改时间取最新', (t) => {
 
 test('project 推导兼容主仓、worktree、自身路径、大小写和混合分隔符', () => {
   const projects = {
-    rogue: { name: '股市肉鸽(独立游戏·Steam)', mainRepo: 'F:\\stock-rogue' },
-    mama: { name: '妈妈方法', mainRepo: 'F:\\mama-method' },
+    rogue: { name: '示例项目·游戏', mainRepo: 'F:\\code-repo' },
+    mama: { name: '示例项目·文档库', mainRepo: 'F:\\legacy-repo' },
   };
-  const dashboard = 'C:\\Users\\Administrator\\.claude\\dashboard';
-  assert.equal(inferProjectName('F:\\stock-rogue', projects, dashboard), '股市肉鸽(独立游戏·Steam)');
-  assert.equal(inferProjectName('f:/STOCK-ROGUE/.codex\\worktrees/job-x', projects, dashboard), '股市肉鸽(独立游戏·Steam)');
-  assert.equal(inferProjectName('c:/USERS/administrator/.claude/dashboard/web', projects, dashboard), '项目管理看板');
+  const dashboard = 'C:\\Users\\demo\\.claude\\dashboard';
+  assert.equal(inferProjectName('F:\\code-repo', projects, dashboard), '示例项目·游戏');
+  assert.equal(inferProjectName('f:/CODE-REPO/.codex\\worktrees/job-x', projects, dashboard), '示例项目·游戏');
+  assert.equal(inferProjectName('c:/USERS/demo/.claude/dashboard/web', projects, dashboard), '项目管理看板');
   assert.equal(inferProjectName('D:\\unrelated\\repo', projects, dashboard), '其它');
 });
 

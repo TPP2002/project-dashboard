@@ -19,7 +19,7 @@
 | 层 | 事实 | 出处 |
 |---|---|---|
 | 症状 | 合进 master 的新命令不生效;主工位切到功能分支时全机器 hook 跑的是那条分支的代码 | 卡面原话(HOOK-CLAIM-GATE-MULTI-PROJECT 当时无法部署) |
-| 直接病因 | hook 文件里焊死的是 `node "C:/Users/Administrator/.claude/dashboard/cli/index.cjs" …` 这个**绝对路径** | 实测 4 个仓的 `.git/hooks/{pre-commit,post-commit,post-merge}`、3 个仓的 `.claude/settings.json`、全局 `~/.claude/settings.json` 的 TodoWrite 钩子 |
+| 直接病因 | hook 文件里焊死的是 `node "C:/Users/demo/.claude/dashboard/cli/index.cjs" …` 这个**绝对路径** | 实测 4 个仓的 `.git/hooks/{pre-commit,post-commit,post-merge}`、3 个仓的 `.claude/settings.json`、全局 `~/.claude/settings.json` 的 TodoWrite 钩子 |
 | 更深病因 | `cli/hooksInstall.cjs` 顶部 `const CLI = path.join(DASHBOARD_HOME,'cli','index.cjs')`,拿**数据根**当**代码根**用 | `cli/hooksInstall.cjs` 第 26 行附近 |
 | 最深根 | `core/resolveProject.cjs` 明文规定「DASHBOARD_HOME 只决定数据往哪读写,代码定位一律走 `__dirname`」,hooksInstall 违反了这条自家约定;而且**根本没有「发布/部署」这一层概念**,「代码在哪」= 「谁在改的那个目录」 | `core/resolveProject.cjs` 头注 + 产品手册 §4.4 |
 
@@ -33,11 +33,11 @@
 
 | 位置 | 状况 |
 |---|---|
-| `F:\game` `F:\Questline` `F:\stock-rogue` `F:\百卉园艺` | 三个 git hook 全装了,路径全指主工位 |
-| `F:\game` `F:\Questline` `F:\百卉园艺` 的 `.claude/settings.json` | Stop / PostToolUse 钩子各 3 处引用主工位路径 |
+| `F:\app-repo` `F:\quest-repo` `F:\code-repo` `F:\shop-repo` | 三个 git hook 全装了,路径全指主工位 |
+| `F:\app-repo` `F:\quest-repo` `F:\shop-repo` 的 `.claude/settings.json` | Stop / PostToolUse 钩子各 3 处引用主工位路径 |
 | `~/.claude/settings.json` | 全局 TodoWrite 进度钩子引用主工位路径(**所有对话**都会触发) |
-| `F:\stock-rogue` 的 30+ 个 worktree | 共享同一份 `.git/hooks`,等于全部受影响 |
-| `F:\lhjy` `F:\mama-method` `F:\cluster-ops` 自动化求职 看板仓自身 | 没装 hook,不受影响(看板仓自己没装 claim 闸门,本卡顺带不改) |
+| `F:\code-repo` 的 30+ 个 worktree | 共享同一份 `.git/hooks`,等于全部受影响 |
+| `F:\quant-repo` `F:\legacy-repo` `F:\board-repo` 示例项目·求职 看板仓自身 | 没装 hook,不受影响(看板仓自己没装 claim 闸门,本卡顺带不改) |
 
 另外 **看板网页服务**(`server/server.cjs`,由 `启动看板.bat` 起)同样跑在主工位上,同一族病;不在本卡 fileScope,已另立卡登记(见文末)。
 
@@ -97,7 +97,7 @@
 
 **触发时机(拍板项之二,见下)**:默认写进看板项目的收官序列(合并入 master 的那个对话跑 `cli release`),体检兜底。
 
-**一次性迁移(本机)**:跑一次 `cli release` → 对 game / questline / rogue / baihui 各重跑一次 `hooks-install`(幂等,只换锚块里的路径)→ 重跑 `hooks-global` → grep 核对所有 hook 与 settings 里不再出现 `dashboard/cli/index.cjs` → 真提交一次验闸门。
+**一次性迁移(本机)**:跑一次 `cli release` → 对已装过 hook 的各项目各重跑一次 `hooks-install`(幂等,只换锚块里的路径)→ 重跑 `hooks-global` → grep 核对所有 hook 与 settings 里不再出现 `dashboard/cli/index.cjs` → 真提交一次验闸门。
 
 **保险(治法②那一小块)**:看板主工位装一个 `post-checkout` 钩子,切离主干时打印一行提醒「主工位应停在 master,施工去 dashboard-wt」;不拦。
 
@@ -137,7 +137,7 @@
 
 - 2026-09-06 已登记待拍板 d1(走哪条治法)、d2(发布怎么触发)到看板,等负责人拍板。
 - 2026-09-06 负责人拍板:**d1 走①发布副本,顺带把②的"切分支提醒钩子"当保险装上(只提醒不拦);d2 走 A**。放行开工。
-- 施工方:本机没有 Codex CLI(`which codex` 找不到),派单器只存在于 stock-rogue 项目的 TS 脚本里,对本仓不可用 → §17.0 例外①,本对话自干。
+- 施工方:本机没有 Codex CLI(`which codex` 找不到),派单器只存在于 项目侧派单 TS 脚本里,对本仓不可用 → §17.0 例外①,本对话自干。
 
 ## 施工落地记录(阶段④)
 

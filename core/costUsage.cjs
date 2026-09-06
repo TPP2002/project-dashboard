@@ -6,7 +6,7 @@
  * 其中每条 assistant 消息自带 message.usage(输入/输出/缓存 token)+ message.model + isSidechain
  * (true = 子 agent 的消息)。订阅用户看不到美元,但 token 流水是全的——这里聚合的就是它。
  *
- * 【项目目录映射】costRoots 路径按「非字母数字一律变 '-'」编码成目录名(F:\stock-rogue → F--stock-rogue);
+ * 【项目目录映射】costRoots 路径按「非字母数字一律变 '-'」编码成目录名(F:\code-repo → F--code-repo);
  * 含 worktree 的目录按边界前缀匹配，归最长登记前缀；同址并列时显式标记共享。
  *
  * 【增量缓存】jsonl 只追加不改写,按 (size, mtimeMs) 判断文件是否变过:没变直接用上次的

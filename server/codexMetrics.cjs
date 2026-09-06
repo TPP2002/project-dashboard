@@ -14,7 +14,7 @@ function localDate(value) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// 三条线口径与项目仓 stock-rogue 的 scripts/codex/codex-brief.cjs 的 quotaBand 保持一致
+// 三条线口径与项目侧派单脚本的 quotaBand 保持一致
 // (负责人 2026-09-05 拍板：单位是「已用百分比」，不是剩余额度)。改其中一处务必同步改另一处。
 const STOP_DISPATCH_AT_USED = 95;
 const REMIND_RESET_AT_USED = 98;

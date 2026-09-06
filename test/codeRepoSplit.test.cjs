@@ -3,7 +3,7 @@
  * codeRepoSplit.test.cjs —— 「看板归属 ≠ 代码归属」的分离（CLUSTER-BOARD-REPO-PATH-WRONG）。
  *
  * 治的病:registry 里 mainRepo 一个字段同时扛两个语义——「板放哪」和「代码在哪」。
- * 板自成一家、代码却住在别人仓里的项目(cluster:板在 F:\cluster-ops、代码在 F:\stock-rogue)
+ * 板自成一家、代码却住在别人仓里的项目(cluster:板在 F:\board-repo、代码在 F:\code-repo)
  * 一进来这个字段就必然自相矛盾:按板走则 git 类动作全落在非仓目录上 fatal,按代码走则板找不着。
  *
  * 拆法:registry 新增可选 codeRepo(缺省回落 mainRepo,老项目零改动),
@@ -28,8 +28,8 @@ const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, ma
 
 /**
  * 搭「cluster 形状」的夹具:
- *   boardHome —— 只放板的普通目录(**不是 git 仓**),对应 F:\cluster-ops
- *   codeRepo  —— 真 git 仓,卡改的是这里的代码,对应 F:\stock-rogue
+ *   boardHome —— 只放板的普通目录(**不是 git 仓**),对应 F:\board-repo
+ *   codeRepo  —— 真 git 仓,卡改的是这里的代码,对应 F:\code-repo
  * registry 直接写 JSON(register 子命令没有 codeRepo 入口,本用例只验解析与消费侧)。
  */
 function setupSplit() {
@@ -55,7 +55,7 @@ test('resolveProject:没写 codeRepo 时回落 mainRepo(老项目零改动)', ()
   try {
     const repo = path.join(d, 'repo'); fs.mkdirSync(repo);
     const reg = path.join(d, 'registry.json');
-    fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: { g: { name: 'A股', mainRepo: repo } } }));
+    fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: { g: { name: '示例项目·模拟器', mainRepo: repo } } }));
     const r = resolveProject('g', { registryPath: reg });
     assert.strictEqual(r.codeRepo, repo, 'codeRepo 缺省必须等于 mainRepo');
   } finally { clean(d); }

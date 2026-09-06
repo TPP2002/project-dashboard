@@ -121,8 +121,8 @@ test('getUsage:前缀匹配 worktree 目录、分桶聚合、坏行跳过、增�
 });
 
 test('mapRepoToPrefix:非字母数字一律变 -(与 Claude Code 目录编码一致)', () => {
-  assert.equal(mapRepoToPrefix('F:\\stock-rogue'), 'F--stock-rogue');
-  assert.equal(mapRepoToPrefix('C:\\Users\\Administrator\\Documents\\自动化求职'), 'C--Users-Administrator-Documents------');
+  assert.equal(mapRepoToPrefix('F:\\code-repo'), 'F--code-repo');
+  assert.equal(mapRepoToPrefix('C:\\Users\\demo\\Documents\\job-repo'), 'C--Users-demo-Documents-job-repo');
 });
 
 test('getUsage:美元折算(缓存价生效,无TTL细分保守归1h桶)', async () => {

@@ -24,7 +24,7 @@
  *
  * 【多项目共享一个 codeRepo 时必须共存，不能互相顶替】(CLUSTER-CODEREPO-HOOK-COLLISION，2026-09-06)
  * codeRepo 分家后（见头部 CLUSTER-BOARD-REPO-PATH-WRONG），出现了"两个项目共用同一个代码仓"的形状：
- * rogue 和 cluster 都把 codeRepo 指向 F:\stock-rogue。原先 git hook 锚 / settings.json 幂等判断都
+ * rogue 和 cluster 都把 codeRepo 指向 F:\code-repo。原先 git hook 锚 / settings.json 幂等判断都
  * 是【单例】的——不认项目 id，只认"是不是本工具装的"，于是给 cluster 装一次会把 rogue 的条目连锅端掉。
  * 治法：post-commit/post-merge 的锚、settings.json 的 Stop/PostToolUse 条目都按【项目 id】隔离
  * （pre-commit 内容本就与 id 无关，仍保持单例，见 installGitHooks 内注释）；CLAUDE.md 锚同理按 id 分段。
@@ -371,7 +371,7 @@ function installCcSettings(codeRepo, id, registryFwd) {
 // 装/更新项目 CLAUDE.md 里的"看板协议"锚段——让每个新对话进项目就自动看到规矩。
 // 幂等 upsert：有锚就替换锚间内容，无锚就在末尾追加。绝不动锚外用户内容。
 // 锚按项目 id 分段（<!-- dashboard-protocol:<id> begin/end -->）——多个项目共用同一个 codeRepo
-// 时（如 rogue/cluster 都在 F:\stock-rogue），各自的协议段共存，不再互相覆盖
+// 时（如 rogue/cluster 都在 F:\code-repo），各自的协议段共存，不再互相覆盖
 // （CLUSTER-CODEREPO-HOOK-COLLISION）。旧版（无 id 的单一锚）识别为 LEGACY_BEGIN/END，
 // 仅用于一次性迁移：本项目若没有自己的锚、但发现旧锚，就地转换成本项目的新锚
 // （等价于"最后装的项目赢"，不比迁移前更差；迁移后各项目各自安好）。

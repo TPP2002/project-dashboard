@@ -32,7 +32,7 @@ test('生成物判据:该认的认出来,该放过的别误伤', () => {
     'docs\\INDEX-自动生成.md',            // Windows 反斜杠写法
     './docs/INDEX-自动生成.md',
     '.dashboard/board.json',
-    'F:/stock-rogue/.dashboard/INDEX.md',
+    'F:/code-repo/.dashboard/INDEX.md',
     'package-lock.json',
     'web/package-lock.json',
     'pnpm-lock.yaml',

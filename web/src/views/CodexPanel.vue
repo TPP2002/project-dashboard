@@ -40,7 +40,7 @@ onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 <template>
   <div class="page">
     <header class="toolbar">
-      <div><h1>🤖 Codex</h1><p>本机全部 Codex 活动与 stock-rogue 派单工单</p></div>
+      <div><h1>🤖 Codex</h1><p>本机全部 Codex 活动与派单工单</p></div>
       <span class="spacer" />
       <label class="auto"><input v-model="autoRefresh" type="checkbox"> 每 10 秒自动刷新</label>
       <button class="btn btn-sm" @click="refresh">刷新</button>

@@ -3,7 +3,7 @@
  * server.test.cjs —— server/server.cjs 端到端（spawn 真实进程 + fetch/SSE 断言）。
  *
  * 全程临时 registry（DASHBOARD_REGISTRY）+ 随机高位端口（DASHBOARD_PORT）+ 不开浏览器
- * （DASHBOARD_NO_OPEN=1），绝不碰真实 registry / A 股主仓。共享一个 server 实例，各测试
+ * （DASHBOARD_NO_OPEN=1），绝不碰真实 registry / 示例项目·模拟器主仓。共享一个 server 实例，各测试
  * 在同一临时 registry 里注册各自独立项目（server 每次请求都重读 registry，天然隔离）。
  *
  * 覆盖：

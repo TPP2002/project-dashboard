@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const { validate, emptyBoard, STATUS, emojiFor } = require('../core/boardSchema.cjs');
 
 function baseBoard() {
-  const b = emptyBoard({ id: 'game', name: 'A股', mainRepo: 'F:\\game' });
+  const b = emptyBoard({ id: 'game', name: '示例项目·模拟器', mainRepo: 'F:\\app-repo' });
   b.tasks.push({
     id: 'P01', title: 'R9挂单改价', status: '已完工', wave: 0, percent: 100,
     dates: { design: '2026-06-02', start: '2026-06-03', done: '2026-06-09' },

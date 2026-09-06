@@ -3,10 +3,10 @@
  * safePath.cjs —— 路径安全（治本 R4）
  *
  * 1) normalizeReal：用 fs.realpathSync.native 规范化路径（解 junction/symlink、统一
- *    Windows 盘符大小写 f:\game → F:\game）。一切进锁/registry/比对的路径先过它，
- *    避免 F:\Game 与 f:\game 被当成两个 project、两把锁 → 双写。
+ *    Windows 盘符大小写 f:\app-repo → F:\app-repo）。一切进锁/registry/比对的路径先过它，
+ *    避免 F:\App-repo 与 f:\app-repo 被当成两个 project、两把锁 → 双写。
  * 2) resolveInsideRoot：把用户输入解析进白名单根内，用 realpath + path.relative 判逃逸
- *    （不用 startsWith —— startsWith("F:\game") 会被 F:\game-evil 骗过；且 junction 会
+ *    （不用 startsWith —— startsWith("F:\app-repo") 会被 F:\app-repo-evil 骗过；且 junction 会
  *    让 startsWith 检查通过、实际指向 root 外）。/api/doc 等按用户输入拼路径的入口必走它。
  */
 const fs = require('node:fs');

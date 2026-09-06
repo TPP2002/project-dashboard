@@ -7,8 +7,8 @@
  *
  * 【mainRepo 与 codeRepo 为什么要分家】(CLUSTER-BOARD-REPO-PATH-WRONG，2026-09-06)
  * 原先 mainRepo 一个字段扛两个语义——「板放哪」和「代码在哪」。绝大多数项目两者同址，
- * 直到出现「板自成一家、代码住在别人仓里」的项目：cluster 的板在 F:\cluster-ops，
- * 而它 93 张卡改的全是 F:\stock-rogue\scripts\bot\* 的代码。此时那一个字段必然自相矛盾：
+ * 直到出现「板自成一家、代码住在别人仓里」的项目：cluster 的板在 F:\board-repo，
+ * 而它 93 张卡改的全是 F:\code-repo\scripts\bot\* 的代码。此时那一个字段必然自相矛盾：
  * 指板则一切 git 动作落在非仓目录上 fatal（precheck 第一查「新鲜度」直接半瘫、
  * doctor 恒报「hook 未安装」），指代码则找不着板。
  * 拆法：mainRepo 仍是「板的家」（board/lock 缺省都从它推），新增可选 codeRepo =「代码的家」，

@@ -4,7 +4,7 @@
  *
  * 为什么单独成命令:这套判定原先是 pre-commit hook 里用 shell 拼出来的一段
  * `list --project <写死的id> | grep <分支名>`。0902 看板拆成 rogue/cluster/dashboard
- * 三个项目后,一个仓库里完全可能干别的项目的卡(实证:在 F:\stock-rogue 里干 cluster 项目的
+ * 三个项目后,一个仓库里完全可能干别的项目的卡(实证:在 F:\code-repo 里干 cluster 项目的
  * CI-SECONDARY-RUNNER-INSTALL,已正经 claim 却一律被拦,只能靠放行口硬闯)。
  * 病根不是「少扫了两个板」,而是判定逻辑焊死在 hook 文本里、没法演进——所以收进 CLI 当一等公民:
  *
