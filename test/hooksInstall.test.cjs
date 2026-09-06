@@ -70,6 +70,22 @@ test('新装：git hooks 带锚 + || true，settings 有 Stop/PostToolUse(Bash)'
   clean(t.dir);
 });
 
+test('CLAUDE.md 协议段里手敲命令的 CLI 路径与 git hook 焊的一致,不再写死 ~/.claude/dashboard/cli/index.cjs（CLAUDE-MD-ANCHOR-CLI-PATH）', () => {
+  const t = setup();
+  hooksInstall({ ...t.P });
+
+  const pc = read(t.pc);
+  const cliMatch = pc.match(/node "([^"]+cli\/index\.cjs)"/);
+  assert.ok(cliMatch, '应能从 git hook 里提取焊入的 CLI 绝对路径');
+  const cliPath = cliMatch[1];
+
+  const claudeMd = read(path.join(t.repo, 'CLAUDE.md'));
+  assert.doesNotMatch(claudeMd, /~\/\.claude\/dashboard\/cli\/index\.cjs/, '不许再写死指向"活检出"的路径(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT 同族问题)');
+  assert.ok(claudeMd.includes(`node "${cliPath}" add <任务id>`), 'add 示例应与 hook 焊的是同一份 CLI,而不是另外硬编码一条路径');
+  assert.ok(claudeMd.includes(`node "${cliPath}" claim <任务id>`), 'claim 示例同理');
+  clean(t.dir);
+});
+
 test('幂等：装两次不重复锚块 / 不重复 settings 条目', () => {
   const t = setup();
   hooksInstall({ ...t.P });
