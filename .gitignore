@@ -10,3 +10,4 @@ status-drafts/
 data/costUsageCache.json
 .dashboard/
 data/reader/
+/registry.json

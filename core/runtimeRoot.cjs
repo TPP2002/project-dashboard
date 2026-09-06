@@ -72,6 +72,26 @@ function resolveHookCliRoot(opts = {}) {
 }
 
 /**
+ * 显示用 CLI 根：与 hook 同优先级，但副本缺失时回落代码根，不让提示文案中断命令。
+ * env / codeRoot / releaseHome 可覆盖；只读文件系统，返回路径统一为正斜杠。
+ * @returns {{root:string, why:'env'|'self'|'release'|'fallback'}}
+ */
+function resolveDisplayCliRoot(opts = {}) {
+  // 优先级只写一遍:直接借 resolveHookCliRoot,不在这里抄第二份(抄了必然改一处漏一处)。
+  // 唯一的差别在末路——hook 宁可拒装,显示用的回落到当前代码根并标 why='fallback'。
+  let r;
+  try { r = resolveHookCliRoot(opts); }
+  catch { r = { root: opts.codeRoot || CODE_ROOT, why: 'fallback' }; }
+  return { root: r.root.replace(/\\/g, '/'), why: r.why };
+}
+
+/** 可粘贴的 node 命令；接受同一组路径覆盖，含空白的 CLI 路径必须双引号包裹。 */
+function displayCliCommand(opts = {}) {
+  const cli = path.join(resolveDisplayCliRoot(opts).root, 'cli', 'index.cjs').replace(/\\/g, '/');
+  return `node ${/\s/.test(cli) ? `"${cli}"` : cli}`;
+}
+
+/**
  * 这份代码是"哪种身份"在跑(SERVER-RUNS-ON-LIVE-CHECKOUT):
  *   · dev      —— 代码根是 git 检出 = 人正在改的那份(开发实例,不该给负责人用);
  *   · release  —— 代码根不是检出、但有 RELEASE.json 印章 = 发布副本(负责人日常用的就是它);
@@ -86,4 +106,5 @@ function runtimeMode(codeRoot = CODE_ROOT) {
 module.exports = {
   CODE_ROOT, STAMP_NAME, RUNTIME_PATHS, WEB_SOURCE_PATHS, WEB_BUILD_DEPS_PATHS, WEB_DIST_REL,
   isGitCheckout, releaseHome, readStamp, resolveHookCliRoot, runtimeMode,
+  resolveDisplayCliRoot, displayCliCommand,
 };
