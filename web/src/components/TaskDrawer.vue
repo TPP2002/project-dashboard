@@ -7,6 +7,7 @@ import { fetchDoc, docUrl } from '@/api/client'
 import { fmtDateTime, relTime } from '@/utils/format'
 import Icon from './Icon.vue'
 import StatusBadge from './StatusBadge.vue'
+import { humanTitle, specText, missingPlainTitle, plainTitleFixCommand } from '@/utils/taskTitle'
 import type { DocRef } from '@/types'
 
 const store = useBoardStore()
@@ -21,6 +22,25 @@ const progStale = computed(() => {
 })
 
 const hasArr = (a: unknown): a is unknown[] => Array.isArray(a) && a.length > 0
+
+// ---- 技术说明折叠 + 补人话标题一键复制 ----
+const specExpanded = ref(false)
+const copiedFix = ref(false)
+async function copyPlainTitleFix(t: { id: string }) {
+  const text = plainTitleFixCommand(pid.value, t.id)
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+  copiedFix.value = true
+  setTimeout(() => { copiedFix.value = false }, 4000)
+}
 
 // ---- 内联拍板 ----
 const picked = reactive<Record<string, string>>({})
@@ -66,8 +86,8 @@ async function preview(d: DocRef) {
   }
 }
 
-// 切换任务时重置文档预览
-watch(task, () => { activeDoc.value = null; docText.value = ''; docErr.value = '' })
+// 切换任务时重置文档预览 + 技术说明展开态
+watch(task, () => { activeDoc.value = null; docText.value = ''; docErr.value = ''; specExpanded.value = false; copiedFix.value = false })
 // 抽屉开关锁 body 滚动
 watch(task, (t) => { document.body.style.overflow = t ? 'hidden' : '' })
 
@@ -94,7 +114,24 @@ onUnmounted(() => {
           </header>
 
           <div class="d-body">
-            <h2 class="d-title">{{ task.title }}</h2>
+            <div class="d-title-row">
+              <h2 class="d-title">{{ humanTitle(task) }}</h2>
+              <button
+                v-if="missingPlainTitle(task)"
+                type="button"
+                class="badge warn icon-badge no-plain-title"
+                :title="plainTitleFixCommand(pid, task.id)"
+                @click="copyPlainTitleFix(task)"
+              ><Icon :name="copiedFix ? 'check' : 'pencil'" :size="14" />{{ copiedFix ? '已复制补充命令' : '无人话标题·点击复制补充命令' }}</button>
+            </div>
+
+            <section class="sec block spec-sec">
+              <button type="button" class="sec-t spec-toggle" @click="specExpanded = !specExpanded">
+                技术说明（给 AI）
+                <Icon name="chevron" :size="14" :rotate="specExpanded ? 180 : 0" />
+              </button>
+              <p class="d-spec" :class="{ clamped: !specExpanded }">{{ specText(task) }}</p>
+            </section>
 
             <div class="d-prog">
               <div class="glow-rail"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
@@ -233,7 +270,13 @@ onUnmounted(() => {
 .d-head { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); }
 .d-id { color: var(--text-2); font-weight: 700; }
 .d-body { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s4); overflow-y: auto; }
-.d-title { font-size: var(--fs-lg); line-height: 1.4; }
+.d-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.d-title { flex: 1; min-width: 0; font-size: var(--fs-lg); line-height: 1.4; }
+.no-plain-title { flex: none; border: 1px solid transparent; cursor: pointer; }
+.spec-sec { padding-top: 0; border-top: 0; }
+.spec-toggle { display: inline-flex; align-items: center; gap: var(--s1); border: 0; background: none; padding: 0; color: var(--text-3); cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.d-spec { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; }
+.d-spec.clamped { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .d-prog { display: flex; align-items: center; gap: var(--s3); }
 .d-prog .glow-rail { flex: 1; }
 .d-prog .pct { color: var(--text-2); font-size: var(--fs-sm); }

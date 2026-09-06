@@ -6,6 +6,7 @@ import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { DONE_STATUSES } from '@/api/schema'
 import DoneToggle from '@/components/DoneToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
@@ -63,7 +64,7 @@ function pendLight(t: Task): [Light, string] {
         </thead>
         <tbody>
           <tr v-for="t in tasks" :key="t.id" @click="store.openTask(t.id, pid)">
-            <td class="tcell"><span class="tid mono">{{ t.id }}</span><span class="tt">{{ t.title }}</span></td>
+            <td class="tcell"><span class="tid mono">{{ t.id }}</span><span class="tt">{{ humanTitle(t) }}</span></td>
             <td><span class="dot" :style="{ background: LIGHT[statusLight(t)] }" />{{ t.status }}</td>
             <td><span class="dot" :style="{ background: LIGHT[testLight(t)[0]] }" />{{ testLight(t)[1] }}</td>
             <td><span class="dot" :style="{ background: LIGHT[typeLight(t)[0]] }" />{{ typeLight(t)[1] }}</td>
