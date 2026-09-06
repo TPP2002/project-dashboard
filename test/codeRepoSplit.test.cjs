@@ -55,7 +55,7 @@ test('resolveProject:没写 codeRepo 时回落 mainRepo(老项目零改动)', ()
   try {
     const repo = path.join(d, 'repo'); fs.mkdirSync(repo);
     const reg = path.join(d, 'registry.json');
-    fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: { g: { name: 'A股', mainRepo: repo } } }));
+    fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: { g: { name: '示例项目·模拟器', mainRepo: repo } } }));
     const r = resolveProject('g', { registryPath: reg });
     assert.strictEqual(r.codeRepo, repo, 'codeRepo 缺省必须等于 mainRepo');
   } finally { clean(d); }

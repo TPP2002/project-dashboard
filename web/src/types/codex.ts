@@ -75,7 +75,7 @@ export interface SessionDetail extends SessionSummary {
   events: SessionEvent[]
 }
 
-// 分档口径与项目仓 code-repo 的 scripts/codex/codex-brief.cjs 的 quotaBand 一致
+// 分档口径与项目侧派单脚本的 quotaBand 保持一致
 // (负责人 2026-09-05 拍板：剩 ≤5% 停派 / ≤2% 提醒重置 / ≤1% Claude 接手)。
 export interface QuotaBand {
   code: 'ok' | 'stop-dispatch' | 'remind-reset' | 'handover' | 'unknown'
