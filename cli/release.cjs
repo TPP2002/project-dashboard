@@ -200,6 +200,55 @@ function releaseStatus(opts = {}) {
 }
 
 /**
+ * 在跑的看板服务是哪份代码(SERVER-RUNS-ON-LIVE-CHECKOUT)。
+ *
+ * 服务是常驻进程:合进主干 + `cli release` 之后,它要等下次启动才换新 —— 体检必须能说出这件事,
+ * 不然又回到"合了却一直不生效、谁也不知道"的老路。
+ * 探活走子进程(CLI 是同步的,Node 没有同步 HTTP);探不到就当没在跑,绝不因此判红。
+ * @param {{portBase?:number, portRange?:number, dest?:string}} [opts]
+ */
+function serviceStatus(opts = {}) {
+  const base = opts.portBase || 6060;
+  const range = opts.portRange === undefined ? 8 : opts.portRange;
+  const probe = `
+    const http = require('http');
+    const get = (port) => new Promise((res) => {
+      const r = http.get({ host: '127.0.0.1', port, path: '/api/health', timeout: 400 }, (s) => {
+        let d = ''; s.on('data', (c) => d += c); s.on('end', () => { try { res(JSON.parse(d)); } catch { res(null); } });
+      });
+      r.on('error', () => res(null)); r.on('timeout', () => { r.destroy(); res(null); });
+    });
+    (async () => {
+      for (let p = ${base}; p <= ${base + range}; p++) {
+        const h = await get(p);
+        if (h && h.service === 'claude-dashboard') { process.stdout.write(JSON.stringify(h)); return; }
+      }
+      process.stdout.write('null');
+    })();
+  `;
+  let health = null;
+  try { health = JSON.parse(execFileSync(process.execPath, ['-e', probe], { encoding: 'utf8', timeout: 15000, windowsHide: true }) || 'null'); }
+  catch { health = null; }
+
+  const stamp = readStamp(opts.dest ? path.resolve(opts.dest) : releaseHome());
+  const out = { running: !!health, health, text: '' };
+  if (!health) { out.text = `ℹ 看板服务没在跑(探了 ${base}~${base + range})`; return out; }
+  if (health.codeRoot === undefined) {
+    out.text = `⚠ 看板服务在跑(pid ${health.pid}),但它是老版本、报不出自己跑的是哪份代码——双击启动器换新`;
+    return out;
+  }
+  if (health.mode === 'dev') {
+    out.text = `⚠ 在 ${health.port} 上跑的是【开发实例】(代码根 ${health.codeRoot})——负责人日常用的那份该从发布副本起`;
+    return out;
+  }
+  const same = stamp && stamp.commit === health.releaseCommit;
+  out.text = same
+    ? `✔ 看板服务在跑 @ ${String(health.releaseCommit).slice(0, 12)}(= 发布副本,端口 ${health.port})`
+    : `⚠ 看板服务跑的是旧代码 @ ${String(health.releaseCommit || '?').slice(0, 12)},发布副本已是 ${stamp ? stamp.commit.slice(0, 12) : '?'}——下次双击启动器会自动换新`;
+  return out;
+}
+
+/**
  * release:导出 origin/<主干>(或 --commit)的运行期文件到发布副本,并现场构建前端产物。
  * @param {{source?:string, dest?:string, commit?:string, 'no-fetch'?:boolean, 'skip-web'?:boolean, 'print-dest'?:boolean}} flags
  * @param {{buildWeb?:Function}} [deps] 测试注入用(真构建要几十秒,单测只验接线与失败语义)
@@ -277,4 +326,4 @@ function release(flags = {}, deps = {}) {
   return { ok: true, dest, stamp, text };
 }
 
-module.exports = { release, releaseStatus, detectTrunk, buildWebDist };
+module.exports = { release, releaseStatus, serviceStatus, detectTrunk, buildWebDist };

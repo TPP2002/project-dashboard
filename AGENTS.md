@@ -17,6 +17,9 @@
     或独立安装版的 `<安装目录>/cli/index.cjs`）。
   - 各仓 git hook 里自动调的那份是**发布副本** `~/.claude/dashboard-release/cli/index.cjs`（由 `cli release` 从主干导出，
     不随任何对话切分支而变）；看板本身的代码合进主干后要跑一次 `release` 才在 hook 里生效。
+  - **负责人在用的网页服务也是从这份副本起的**（`启动看板.bat` / `dashboard.sh`）。所以看板代码收官时：
+    合进主干 → 跑一次 `cli release`（它会顺带把界面构建进副本）→ 告诉负责人「下次双击启动器会自动换新」。
+    没跑 `release`，等于改了个寂寞：hook 和他看的界面都还是旧的（SERVER-RUNS-ON-LIVE-CHECKOUT）。
   - `<项目id>` 见看板注册表（`registry.json`），或问用户。
 - **绝不手动编辑 `board.json`**——一切写入只经 CLI（它保证加锁、校验、原子写、留痕）。
 

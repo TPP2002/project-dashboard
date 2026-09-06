@@ -141,6 +141,15 @@
   治法是把「人正在改的那份」和「全机器跑的那份」物理分开：
   - `cli release`：`git fetch` 后从 **`origin/<主干>`** 经临时索引导出 `core/ cli/ server/ package.json` 到发布副本，
     写 `RELEASE.json` 印章（来源 commit / 时间），目录级换名。**与主工位当前分支、未提交改动完全无关**；`--commit <sha>` 可钉某个提交（回滚）。
+    并把**同一个 commit 的前端源码**导到临时目录现场构建，产物落进副本 `web/dist`（SERVER-RUNS-ON-LIVE-CHECKOUT，拍板 d1=A）：
+    界面与后台严格同源。构建树里同时导出 `core/`（`web/vite.config.ts` 要 `require('../core/boardSchema.cjs')`）、
+    依赖软链借主工位 `web/node_modules`（只读、收尾只摘链不递归删）。**构建失败 = 整单失败，旧副本原封不动**；
+    `--skip-web` 只发后台（印章记下来，那份副本起不出界面）。
+  - **看板网页服务也从发布副本起**（同卡）：`启动看板.bat` / `dashboard.sh` = 备依赖 → `cli release` → `node <副本>/server/server.cjs`，
+    进程落脚点留在检出、**绝不 cd 进副本**（Windows 上目录是谁的 cwd 就换不了名，下次发布必 `EBUSY`）。
+    服务是常驻进程：`/api/health` 报 `mode`(release/dev/installed) / `codeRoot` / `releaseCommit` / `releasedAt`，
+    启动时比对身份——同一份则复用，不同则关掉旧的接管同一端口（拍板 d2=A；`DASHBOARD_NO_RESTART=1` 可关）。
+    端口段按身份分开且不重叠：release `6060~6068`、dev（代码根是 git 检出）`6070~6078`，免得起 release 时误杀开发实例。
   - `hooks-install` / `hooks-global` 焊进 hook 的路径按 `core/runtimeRoot.cjs` 裁决，铁律「**hook 永远不许指进 git 检出**」：
     `DASHBOARD_HOOK_CLI_ROOT`（测试隔离）> 自身不是检出（分发版安装目录 / 发布副本自己）> 发布副本 > 拒装并指路 `release`。
   - 触发方式（拍板 d2=A）：**收官序列**里合并入主干的那个对话跑一次 `cli release`；`doctor`（本仓 hook 指着副本且副本落后时）与
@@ -263,7 +272,7 @@
 | `inbox --project [--tid]` | 「读看板接单」入口：无 tid 列待落地任务，给 tid 打印完整任务书。 |
 | `enroll` / `onboard` | 一键接入全新项目 / 引导。 |
 | `hooks-install` | 装 git hook + Claude Code hook（见 §8）。焊的是**发布副本**的路径，不是检出（§4.4）。 |
-| `release` | 把 `origin/<主干>` 的运行期代码导出成发布副本 `~/.claude/dashboard-release`（`--commit <sha>` 钉提交、`--no-fetch` 离线）。合进主干后跑一次让新代码在各仓 hook 里生效。 |
+| `release` | 把 `origin/<主干>` 的运行期代码 + 现场构建的网页界面导出成发布副本 `~/.claude/dashboard-release`（`--commit <sha>` 钉提交、`--no-fetch` 离线、`--skip-web` 只发后台、`--print-dest` 只打印目录给启动器用）。合进主干后跑一次，新代码才在各仓 hook 里生效；看板服务要等下次启动才换新。 |
 | `hooks-trunk-guard` | 给看板主工位装 `post-checkout` 提醒：切离主干只吵不拦（`--repo` / `--trunk` 可指定）。 |
 
 ---

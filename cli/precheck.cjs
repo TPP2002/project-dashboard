@@ -18,7 +18,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { readBoardOrNull } = require('./store.cjs');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
-const { releaseStatus } = require('./release.cjs');
+const { releaseStatus, serviceStatus } = require('./release.cjs');
 
 function git(repo, args, opts = {}) {
   try {
@@ -101,6 +101,12 @@ function precheck(flags) {
   // 合进 master ≠ 生效:落后就提醒收官方跑 `cli release`(负责人 0906 拍板 d2=A,不装计划任务)。
   try { L.push('  ' + releaseStatus().text); }
   catch (e) { L.push(`  ⚠ 发布副本状态读不出:${String((e && e.message) || e).split('\n')[0]}`); }
+  // 看板服务是常驻进程:发布了也要等下次启动才换新(SERVER-RUNS-ON-LIVE-CHECKOUT)。
+  // 只报一行现状,探不到就当没在跑,绝不因此拦人开工;测试/离线可用 DASHBOARD_SKIP_SERVICE_PROBE=1 跳过。
+  if (process.env.DASHBOARD_SKIP_SERVICE_PROBE !== '1') {
+    try { L.push('  ' + serviceStatus().text); }
+    catch (e) { L.push(`  ⚠ 看板服务状态探不出:${String((e && e.message) || e).split('\n')[0]}`); }
+  }
 
   // ── ② 看板占用 ──
   L.push('', '【② 看板占用】');
