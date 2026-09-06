@@ -2,9 +2,9 @@ name: CI
 
 # 合并闸(CI-BOOTSTRAP-CLOUD-RUNNER,2026-09-06)。
 #
-# 【为什么用 GitHub 云 runner,而不是借隔壁 code-repo 的自托管机器】
-#   · 借不成:那 5 个 runner 是**仓库级**注册在私有仓 TPP2002/code-repo 上的。
-#     GitHub 里只有组织级/企业级 runner 能跨仓共享,而 TPP2002 是个人账号,没有那一层。
+# 【为什么用 GitHub 云 runner,而不是借另一个私有仓的自托管机器】
+#   · 借不成:那 5 个 runner 是**仓库级**注册在另一个私有仓上的。
+#     GitHub 里只有组织级/企业级 runner 能跨仓共享,而对方是个人账号,没有那一层。
 #     真要共用同一台机器,只能在机器上再挂一个 runner 进程注册到本仓——多一个要看护的常驻进程。
 #   · 不必借:本仓是**公开仓**,云 runner 免费,且**不吃私有仓那份额度**
 #     (2026-07-29 CI-BILLING-BLOCKED 烧穿的正是那份)。

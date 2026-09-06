@@ -55,7 +55,7 @@ const VERSION = '1.0';
 const DASH_ROOT = path.resolve(__dirname, '..');            // 这份代码的家（发布副本 / 主工位检出 / 安装目录）
 const DIST_DIR = path.join(DASH_ROOT, 'web', 'dist');        // 前端生产产物（批次7产出，未必已存在）
 const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯一写者）
-// registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / A 股主仓）
+// registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / 示例项目·模拟器主仓）
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
 
 // —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——

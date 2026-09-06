@@ -66,7 +66,7 @@ test('纯函数：在一张手搓的提交图上按“分支自有提交是否�
     ['c0', { parents: [], subject: 'init' }],
     ['c1', { parents: ['c0'], subject: 'chore: 铺路' }],
     ['b1', { parents: ['c1'], subject: 'feat(P01): 老活落地' }],
-    ['M', { parents: ['c1', 'b1'], subject: 'Merge pull request #5 from TPP2002/br-p01' }],
+    ['M', { parents: ['c1', 'b1'], subject: 'Merge pull request #5 from owner/br-p01' }],
     ['c3', { parents: ['M'], subject: 'docs: 收尾' }],
     ['b2', { parents: ['c3'], subject: 'feat(P02): 新活' }],
     ['b3', { parents: ['c3'], subject: 'chore: 早期提交，不带卡号' }], // 活分支 br-none

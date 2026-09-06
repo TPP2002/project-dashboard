@@ -97,7 +97,7 @@
 
 **触发时机(拍板项之二,见下)**:默认写进看板项目的收官序列(合并入 master 的那个对话跑 `cli release`),体检兜底。
 
-**一次性迁移(本机)**:跑一次 `cli release` → 对 game / questline / rogue / baihui 各重跑一次 `hooks-install`(幂等,只换锚块里的路径)→ 重跑 `hooks-global` → grep 核对所有 hook 与 settings 里不再出现 `dashboard/cli/index.cjs` → 真提交一次验闸门。
+**一次性迁移(本机)**:跑一次 `cli release` → 对已装过 hook 的各项目各重跑一次 `hooks-install`(幂等,只换锚块里的路径)→ 重跑 `hooks-global` → grep 核对所有 hook 与 settings 里不再出现 `dashboard/cli/index.cjs` → 真提交一次验闸门。
 
 **保险(治法②那一小块)**:看板主工位装一个 `post-checkout` 钩子,切离主干时打印一行提醒「主工位应停在 master,施工去 dashboard-wt」;不拦。
 
@@ -137,7 +137,7 @@
 
 - 2026-09-06 已登记待拍板 d1(走哪条治法)、d2(发布怎么触发)到看板,等负责人拍板。
 - 2026-09-06 负责人拍板:**d1 走①发布副本,顺带把②的"切分支提醒钩子"当保险装上(只提醒不拦);d2 走 A**。放行开工。
-- 施工方:本机没有 Codex CLI(`which codex` 找不到),派单器只存在于 code-repo 项目的 TS 脚本里,对本仓不可用 → §17.0 例外①,本对话自干。
+- 施工方:本机没有 Codex CLI(`which codex` 找不到),派单器只存在于 项目侧派单 TS 脚本里,对本仓不可用 → §17.0 例外①,本对话自干。
 
 ## 施工落地记录(阶段④)
 

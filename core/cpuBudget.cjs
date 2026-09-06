@@ -16,9 +16,11 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { DASHBOARD_HOME } = require('./resolveProject.cjs');
 
 /** 账本目录:与项目侧 scripts/lib/cpuLease.ts 的 LEASE_DIR 必须一致。 */
-const LEASE_DIR = process.env.CPU_LEASE_DIR || path.join('F:', 'code-repo', '.cpu-leases');
+// 本机布局靠 CPU_LEASE_DIR 环境变量配，仓里不写死任何人的机器。
+const LEASE_DIR = process.env.CPU_LEASE_DIR || path.join(DASHBOARD_HOME, '.cpu-leases');
 /** 预留租约的固定文件名与 holder 前缀(与项目侧常量对应)。 */
 const RESERVE_FILE = 'reserve-owner.json';
 const RESERVE_PREFIX = 'reserve:';
@@ -26,10 +28,12 @@ const RESERVE_PREFIX = 'reserve:';
 const STALE_MS = 90 * 1000;
 
 /** 专职算力机吃满 100%,其余(尤其兼着 CI runner、又是负责人日常在用的主机)压到 85%。 */
-const DEDICATED_HOSTS = new Set(['WORKSTATION-A', 'WORKSTATION-B']);
+// 本机布局靠 CPU_DEDICATED_HOSTS 环境变量配，仓里不写死任何人的机器；未配置时没有专职机。
+const DEDICATED_HOSTS = new Set((process.env.CPU_DEDICATED_HOSTS || '')
+  .split(/[;,]/).map((host) => host.trim().toUpperCase()).filter(Boolean));
 
 function quotaPct() {
-  return DEDICATED_HOSTS.has(os.hostname().toUpperCase()) ? 100 : 85;
+  return DEDICATED_HOSTS.has(os.hostname().trim().toUpperCase()) ? 100 : 85;
 }
 
 function totalCores() {

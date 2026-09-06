@@ -14,7 +14,7 @@ function boot() {
   const reg = path.join(dir, 'registry.json');
   fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
   const root = path.join(dir, 'repo'); fs.mkdirSync(root);
-  cmds.register({ id: 'g', name: 'A股', root, registry: reg });
+  cmds.register({ id: 'g', name: '示例项目·模拟器', root, registry: reg });
   return { dir, P: { project: 'g', registry: reg } };
 }
 const clean = (dir) => fs.rmSync(dir, { recursive: true, force: true });

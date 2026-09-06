@@ -20,7 +20,7 @@ function stripRevoked(line) {
   return line.replace(/~~[^~]*~~/g, '').replace(/<del>[\s\S]*?<\/del>/gi, '');
 }
 
-/** 从状态文字判定 status 枚举（兼容 A 股"已完工/待开工/被卡"与 示例项目·任务线"就位/已入main/🟡进行中/未认领"） */
+/** 从状态文字判定 status 枚举（兼容 示例项目·模拟器"已完工/待开工/被卡"与 示例项目·任务线"就位/已入main/🟡进行中/未认领"） */
 function statusFromText(t) {
   if (/暂缓|被卡/.test(t)) return '暂缓';
   if (/压轴|殿后|排在所有.*之后/.test(t)) return '压轴';
@@ -37,7 +37,7 @@ function statusFromText(t) {
 /**
  * 解析任务台账 → tasks[]。扫全文表格，第一列匹配任务号的行即一条任务。
  * @param {string} md 台账全文
- * @param {string} [docPrefix] 文档链接前缀（=台账文件相对 docsRoot 的目录），A 股为 docs/plans/示例工程、根级台账为空
+ * @param {string} [docPrefix] 文档链接前缀（=台账文件相对 docsRoot 的目录），示例项目·模拟器为 docs/plans/示例工程、根级台账为空
  */
 function parseIndexTable(md, docPrefix = '') {
   const revoked = [];
@@ -46,7 +46,7 @@ function parseIndexTable(md, docPrefix = '') {
     if (stripped !== l) revoked.push(l.trim());
     return stripped;
   });
-  const idRe = /^(P\d+|M\d+|W\d+|HOTFIX[-\w]*|QT-?\d+)$/i; // 任务号：A 股 P/HOTFIX/QT + 示例项目·任务线 M/W
+  const idRe = /^(P\d+|M\d+|W\d+|HOTFIX[-\w]*|QT-?\d+)$/i; // 任务号：示例项目·模拟器 P/HOTFIX/QT + 示例项目·任务线 M/W
   const tasks = [];
   const seen = new Set();
   for (let i = 0; i < lines.length; i++) {
