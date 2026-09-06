@@ -45,6 +45,7 @@ const costUsage = require('../core/costUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
+const { hookInstalledFor } = require('../core/hookProbe.cjs');
 
 // ============ 常量 ============
 
@@ -199,10 +200,11 @@ function deriveSummary(board) {
 
 /**
  * 尽力探测各项目的同步 git hook 是否已安装（health 的可选字段 hooksInstalled）。
- * 判据：**codeRepo（代码的家）** 的 .git/hooks/post-commit 存在且内容含 "dashboard" 标记。
+ * 判据：**codeRepo（代码的家）** 的 post-commit 存在且包含转发本项目 id 的同步块。
  * 认 codeRepo 不认 mainRepo：hook 挂在「提交发生的那个仓」上，板可自成一家
  * （cluster：板在 F:\board-repo、代码在 F:\code-repo）；去板那边找必然扑空、
  * 体检恒报「hook 未安装」（SERVER-GIT-CWD-USES-MAINREPO，与 cli/gitSync.cjs doctor 同口径）。
+ * 多项目可共用代码仓，仅认 "dashboard" 字样会把其它项目的 hook 误判成本项目已装。
  * 任何异常都当 false，绝不抛。
  */
 function hooksInstalledMap(projects) {
@@ -212,9 +214,7 @@ function hooksInstalledMap(projects) {
     try {
       const proj = resolveProjectSafe(id);
       if (proj) {
-        const hook = path.join(proj.codeRepo, '.git', 'hooks', 'post-commit');
-        const txt = fs.readFileSync(hook, 'utf8');
-        installed = /dashboard/i.test(txt);
+        installed = hookInstalledFor(proj.codeRepo, id);
       }
     } catch (_) { installed = false; }
     out[id] = installed;
