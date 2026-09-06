@@ -13,6 +13,7 @@ const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 
 const { releaseHome } = require('../core/runtimeRoot.cjs');
 const { releaseStatus } = require('./release.cjs');
+const { hookInstalledFor } = require('../core/hookProbe.cjs');
 
 function resolveProj(flags) {
   return resolveProject(flags.project, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
@@ -93,8 +94,8 @@ function doctor(flags) {
 
   // 1) hook 自检
   const hookPath = path.join(repo, '.git', 'hooks', 'post-commit');
-  const hookOk = fs.existsSync(hookPath) && /dashboard/.test(safeRead(hookPath));
-  if (!hookOk) issues.push('同步 hook 未安装（.git/hooks/post-commit），board 可能过时 → 跑 `hooksInstall` 修复');
+  const hookOk = hookInstalledFor(repo, proj.id);
+  if (!hookOk) issues.push((fs.existsSync(hookPath) ? '本项目的同步块未装（共用仓里别的项目装了不算）' : '本项目的同步 hook 未安装，board 可能过时') + ' → 跑 `hooksInstall` 修复');
 
   // 1.6) 发布副本新鲜度（HOOK-CLI-POINTS-AT-LIVE-CHECKOUT，负责人 0906 拍板 d2=A：收官手动 release、体检落后就提醒）。
   // 只在【本仓 hook 确实指着发布副本】时才查——hook 指别处（测试隔离 / 尚未迁移）时，机器上碰巧有没有副本
