@@ -139,3 +139,85 @@ test('hooksInstall 后 doctor 不再报 hook 未装', () => {
     assert.doesNotMatch(rep.text, /hook 未安装|未装/, '装 hook 后 doctor 不该再报未装');
   } finally { clean(t.dir); }
 });
+
+// ---------------------------------------------------------------------------
+// DOCTOR-FIX-MISSING-NEVER-CLEARS —— doctor 的「已记入」口径必须与 unionShas 同源。
+// 现场证据（2026-09-07 只读探针）：rogue 板恒报 11 条漂移、cluster 5 条，逐条比对后
+// 【真缺 0 条】——那些提交板里全都有，只是 done --commit 存的是 40 位全哈希，而 doctor
+// 只认「恰好 12 位」或「恰好 7 位」。于是 doctor 报缺 → --fix 调 syncFromGit → unionShas
+// 按前缀关系认出是同一个提交、什么也没加（changed=0）→ 下次 doctor 照报，备份文件每跑一次多一份。
+// ---------------------------------------------------------------------------
+
+/** 数 board 旁边的 .bak-* 备份文件个数。 */
+function countBackups(boardPath) {
+  const dir = path.dirname(boardPath);
+  const base = path.basename(boardPath);
+  return fs.readdirSync(dir).filter((f) => f.startsWith(base + '.bak-')).length;
+}
+
+test('doctor：板里存 40 位全哈希时不算漂移，--fix 也不该落备份', () => {
+  const t = setupRepo();
+  try {
+    cmds.add({ _: ['P01'], title: 'x', ...t.P });
+    commit(t.repo, 'a.txt', 'fix(P01): 修一个问题');
+    const full = execFileSync('git', ['-C', t.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    assert.equal(full.length, 40, '前提：拿到的是 40 位全哈希');
+    // 模拟 `done --commit <40位>` 的写法（真实板上 rogue 有 436 条这样的记录）
+    cmds.set({ _: ['P01'], field: 'commitShas', value: JSON.stringify([full]), ...t.P });
+
+    const rep = doctor({ ...t.P });
+    assert.doesNotMatch(rep.text, /未记入 board|漂移/, '板里已有同一提交（全哈希），不该报漏记');
+
+    doctor({ ...t.P, fix: true });
+    assert.equal(countBackups(t.board), 0, '没有真漂移就不该生成 .bak 备份');
+  } finally { clean(t.dir); }
+});
+
+test('doctor：板里存 8 位短哈希时不算漂移，但 sync 会把它升到 12 位并报 changed', () => {
+  const t = setupRepo();
+  try {
+    cmds.add({ _: ['P01'], title: 'x', ...t.P });
+    commit(t.repo, 'a.txt', 'fix(P01): 修一个问题');
+    const full = execFileSync('git', ['-C', t.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    cmds.set({ _: ['P01'], field: 'commitShas', value: JSON.stringify([full.slice(0, 8)]), ...t.P });
+
+    assert.doesNotMatch(doctor({ ...t.P }).text, /未记入 board|漂移/, '8 位短哈希是同一个提交，不算漏记');
+    const r = syncFromGit({ ...t.P });
+    assert.equal(r.changed, 1, '精度从 8 位升到 12 位是真改动，changed 必须如实报（不能只比数组长度）');
+    assert.deepEqual(findTask(t, 'P01').commitShas, [full.slice(0, 12)], '升级为 12 位，不并存两种写法');
+  } finally { clean(t.dir); }
+});
+
+test('doctor --fix：连跑两次只留一份备份（第二次已无漂移可补）', () => {
+  const t = setupRepo();
+  try {
+    cmds.add({ _: ['P01'], title: 'x', ...t.P });
+    commit(t.repo, 'a.txt', 'fix(P01): 真的还没记进板');
+
+    assert.match(doctor({ ...t.P }).text, /未记入 board/, '真漂移要照报');
+    doctor({ ...t.P, fix: true });
+    assert.equal(countBackups(t.board), 1, '第一次真补齐 → 留一份回退点');
+    assert.ok(findTask(t, 'P01').commitShas.length >= 1, '漂移已补进板');
+
+    const rep2 = doctor({ ...t.P, fix: true });
+    assert.doesNotMatch(rep2.text, /未记入 board/, '补过之后不该再报同一批漂移');
+    assert.equal(countBackups(t.board), 1, '第二次无事可补 → 不许再攒一份备份');
+  } finally { clean(t.dir); }
+});
+
+test('sync-from-git：真有变更时要在 activity 留痕', () => {
+  const t = setupRepo();
+  try {
+    cmds.add({ _: ['P01'], title: 'x', ...t.P });
+    commit(t.repo, 'a.txt', 'fix(P01): 落地');
+    const r = syncFromGit({ ...t.P });
+    assert.equal(r.changed, 1);
+    const acts = (readBoard(t.board).activity || []).filter((a) => /sync-from-git/.test(a.text || ''));
+    assert.equal(acts.length, 1, 'changed>0 就该留一条 sync-from-git 流水');
+    assert.equal(acts[0].author, 'git-hook');
+
+    syncFromGit({ ...t.P }); // 无新变更
+    const acts2 = (readBoard(t.board).activity || []).filter((a) => /sync-from-git/.test(a.text || ''));
+    assert.equal(acts2.length, 1, 'changed=0 不该往流水里灌噪音');
+  } finally { clean(t.dir); }
+});

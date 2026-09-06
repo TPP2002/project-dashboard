@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
-const { readBoard, readBoardOrNull, mutate, unionBy, unionShas } = require('./store.cjs');
+const { readBoard, readBoardOrNull, mutate, unionBy, unionShas, hasCommit } = require('./store.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 
 const { releaseHome } = require('../core/runtimeRoot.cjs');
@@ -63,18 +63,25 @@ function syncFromGit(flags) {
   const branch = typeof flags.branch === 'string' ? flags.branch.trim() : '';
   const commit = typeof flags.commit === 'string' ? flags.commit.trim() : '';
   const { perTask, scanned } = scanCommits(repo, taskIds, { n: flags.n ? parseInt(flags.n, 10) : 300, commit });
+  const snap = (t) => JSON.stringify([t.commitShas || [], t.prNumbers || [], t.gitBranch || []]);
   let changed = 0;
   mutate(proj, (b) => {
+    changed = 0; // mutator 在锁内跑，board 是锁内重读的那份；计数每次从头算，免重入时叠加
     for (const t of b.tasks || []) {
       const info = perTask[t.id];
       if (!info) continue;
-      const bC = (t.commitShas || []).length, bP = (t.prNumbers || []).length, bB = (t.gitBranch || []).length;
+      const before = snap(t);
       t.commitShas = unionShas([...(t.commitShas || []), ...info.commits]);
       if (info.prs.size) t.prNumbers = unionBy([...(t.prNumbers || []), ...info.prs], String);
       if (branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
-      if (t.commitShas.length !== bC || t.prNumbers.length !== bP || (t.gitBranch || []).length !== bB) changed++;
+      // 比【内容】不比【长度】：板里存的 8 位短哈希被 unionShas 升成 12 位时数组长度纹丝不动，
+      // 但板确实变了。只比长度会让这类改动报成 changed=0，下游据此判「无需备份/无需留痕」就全错。
+      if (snap(t) !== before) changed++;
     }
-  }, changed ? { ts: new Date().toISOString(), author: 'git-hook', type: 'note', text: `sync-from-git：${changed} 个任务的 git 字段已更新`, taskId: null } : null);
+    // 函数形态：这条流水依赖 changed，必须等 mutator 跑完才算得出来（见 store.mutate 头注）。
+  }, () => (changed
+    ? { ts: new Date().toISOString(), author: 'git-hook', type: 'note', text: `sync-from-git：${changed} 个任务的 git 字段已更新`, taskId: null }
+    : null));
   return { ok: true, changed, scanned };
 }
 
@@ -125,13 +132,17 @@ function doctor(flags) {
   if (badDecisions.length) issues.push(`${badDecisions.length} 条待拍板不合格（skill §6.2）：\n    ` + badDecisions.slice(0, 10).join('\n    ') + (badDecisions.length > 10 ? `\n    ...（共 ${badDecisions.length} 条）` : ''));
 
   // 2) git 派生字段漂移（git 有、board 缺）
+  // 诊断与修复必须同窗口：--n 传下去，别一个看 300 条、一个看别的条数。
+  const scanN = flags.n ? parseInt(flags.n, 10) : 300;
   const taskIds = (board.tasks || []).map((t) => t.id);
-  const { perTask } = scanCommits(repo, taskIds);
+  const { perTask } = scanCommits(repo, taskIds, { n: scanN });
   let missing = 0;
   for (const t of board.tasks || []) {
     const info = perTask[t.id]; if (!info) continue;
-    const have = new Set((t.commitShas || []).map(String));
-    for (const c of info.commits) if (!have.has(c) && !have.has(c.slice(0, 7))) missing++;
+    // 「已记入」= store.hasCommit，与 --fix 真正执行的 unionShas 同一口径。
+    // 曾经这里只认「恰好 12 位或恰好 7 位」，于是 done --commit 存的 40 位全哈希一律被算成漏记，
+    // 报了也补不进（DOCTOR-FIX-MISSING-NEVER-CLEARS）。
+    for (const c of info.commits) if (!hasCommit(t.commitShas, c)) missing++;
   }
   if (missing > 0) issues.push(`${missing} 条 git 提交未记入 board（git 派生字段漂移）→ 加 --fix 自动补`);
 
@@ -139,8 +150,18 @@ function doctor(flags) {
   let fixBackup = null;
   if (flags.fix && missing > 0) {
     fixBackup = backup(proj.board);
-    const r = syncFromGit(flags);
-    issues.push(`已备份 ${path.basename(fixBackup)} 并自动补齐（changed=${r.changed}）`);
+    // commit 显式清掉：doctor 是【整窗口对账】，修复也得按整窗口来。
+    // 把外面传进来的 --commit 带下去，会变成「诊断看一整窗、修复只修一条」，又是一次口径分裂。
+    const r = syncFromGit({ ...flags, commit: undefined });
+    if (r.changed === 0) {
+      // 兜底：真没改动就别留垃圾备份 —— 「每跑一次 --fix 多攒一个 .bak」就是这么来的。
+      // 口径统一后正常走不到这里；留着防并发（doctor 读板在锁外，别的进程可能抢先补过了）。
+      try { fs.unlinkSync(fixBackup); } catch { /* 删不掉就留着，不影响结论 */ }
+      fixBackup = null;
+      issues.push('已尝试自动补齐，但 board 实际无需改动（changed=0，未留备份）');
+    } else {
+      issues.push(`已备份 ${path.basename(fixBackup)} 并自动补齐（changed=${r.changed}）`);
+    }
   }
 
   const result = {};
