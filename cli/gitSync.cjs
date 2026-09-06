@@ -79,8 +79,9 @@ function syncFromGit(flags) {
 }
 
 /** doctor：对账 git↔board + 自检 hook + 有边界 --fix。 */
+let backupSequence = 0; // 连续备份用序号区分，避免同毫秒覆盖。
 function backup(boardPath) {
-  const bak = boardPath + '.bak-' + Date.now().toString(36);
+  const bak = boardPath + '.bak-' + Date.now().toString(36) + '-' + (++backupSequence);
   try { atomicWriteJsonSync(bak, readBoard(boardPath)); } catch { /* ignore */ }
   return bak;
 }
@@ -88,7 +89,7 @@ function doctor(flags) {
   const proj = resolveProj(flags);
   const repo = proj.codeRepo; // 同 syncFromGit：hook 与提交都在「代码的家」
 
-  const board = readBoardOrNull(proj.board);
+  let board = readBoardOrNull(proj.board);
   if (!board) return { ok: false, text: '✖ board.json 不存在' };
   const issues = [];
 
@@ -135,17 +136,19 @@ function doctor(flags) {
   if (missing > 0) issues.push(`${missing} 条 git 提交未记入 board（git 派生字段漂移）→ 加 --fix 自动补`);
 
   // 3) --fix：备份 + syncFromGit（只补 git 派生字段，语义字段绝不碰）
+  let fixBackup = null;
   if (flags.fix && missing > 0) {
-    const bak = backup(proj.board);
+    fixBackup = backup(proj.board);
     const r = syncFromGit(flags);
-    issues.push(`已备份 ${path.basename(bak)} 并自动补齐（changed=${r.changed}）`);
+    issues.push(`已备份 ${path.basename(fixBackup)} 并自动补齐（changed=${r.changed}）`);
   }
 
   const result = {};
-  let branchSummary = '';
+  let branchSummary = '', cleanupSummary = '';
   if (flags.branches) {
-    // Stop 钩子的默认 doctor 不加载提交图；分支体检只报告，不参与 --fix。
-    const { auditBoardBranches } = require('./branchAudit.cjs');
+    // Stop 钩子的默认 doctor 不加载提交图；补提交后体检必须使用最新台账。
+    if (flags.fix && missing > 0) board = readBoardOrNull(proj.board);
+    const { auditBoardBranches, planBranchCleanup, applyBranchCleanup } = require('./branchAudit.cjs');
     const audit = auditBoardBranches(board, repo);
     result.branchAudit = audit;
     const { ok, suspect, unknown } = audit.summary;
@@ -156,10 +159,36 @@ function doctor(flags) {
       if (suspect > 30) details.push(`...（共 ${suspect} 条，--json 看全量）`);
       issues.push(branchSummary + ' → 可疑条目：\n    ' + details.join('\n    '));
     }
+    if (flags.fix) {
+      const plan = planBranchCleanup(board.tasks || [], audit.entries);
+      const skippedText = `跳过 有依赖关系 ${plan.skipped.related} / 分支没正主 ${plan.skipped.noOwner}`;
+      let removed = 0, bak = null;
+      if (plan.removals.length > 0) {
+        // 补提交前若已备份，整次修复共用这份原样备份，保留完整回退点。
+        const backupPath = fixBackup || backup(proj.board);
+        if (!fs.existsSync(backupPath)) throw new Error('分支台账备份失败，未执行清理');
+        bak = path.basename(backupPath);
+        const activity = { ts: new Date().toISOString(), author: 'doctor', type: 'note', text: '', taskId: null };
+        mutate(proj, (b) => {
+          removed = applyBranchCleanup(b, plan.removals);
+          activity.text = `doctor --branches --fix：摘掉 ${removed} 条误扣分支（备份 ${bak}；${skippedText}）`;
+        }, activity);
+      }
+      audit.cleanup = { removed, skipped: plan.skipped, backup: bak, entries: plan.removals };
+      if (removed > 0) {
+        const details = plan.removals.slice(0, 30)
+          .map((entry) => `${entry.taskId}·${entry.branch}（正主 ${entry.otherIds.join('、')}）`);
+        if (plan.removals.length > 30) details.push(`...（共 ${plan.removals.length} 条，--json 看全量）`);
+        issues.push(`已按体检结果摘掉 ${removed} 条误扣分支（备份 ${bak}）：\n    ` + details.join('\n    '));
+      } else {
+        cleanupSummary = `分支台账无需清理（${skippedText}）`;
+      }
+    }
   }
   result.ok = issues.length === 0;
   result.text = issues.length ? issues.map((s) => '• ' + s).join('\n') : '✔ board 与 git 一致、hook 已装';
   if (branchSummary && !result.branchAudit.summary.suspect) result.text += '\n' + branchSummary;
+  if (cleanupSummary) result.text += '\n' + cleanupSummary;
   return result;
 }
 
