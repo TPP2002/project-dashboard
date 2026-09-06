@@ -70,6 +70,22 @@ test('新装：git hooks 带锚 + || true，settings 有 Stop/PostToolUse(Bash)'
   clean(t.dir);
 });
 
+test('CLAUDE.md 协议段里手敲命令的 CLI 路径与 git hook 焊的一致,不再写死 ~/.claude/dashboard/cli/index.cjs（CLAUDE-MD-ANCHOR-CLI-PATH）', () => {
+  const t = setup();
+  hooksInstall({ ...t.P });
+
+  const pc = read(t.pc);
+  const cliMatch = pc.match(/node "([^"]+cli\/index\.cjs)"/);
+  assert.ok(cliMatch, '应能从 git hook 里提取焊入的 CLI 绝对路径');
+  const cliPath = cliMatch[1];
+
+  const claudeMd = read(path.join(t.repo, 'CLAUDE.md'));
+  assert.doesNotMatch(claudeMd, /~\/\.claude\/dashboard\/cli\/index\.cjs/, '不许再写死指向"活检出"的路径(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT 同族问题)');
+  assert.ok(claudeMd.includes(`node "${cliPath}" add <任务id>`), 'add 示例应与 hook 焊的是同一份 CLI,而不是另外硬编码一条路径');
+  assert.ok(claudeMd.includes(`node "${cliPath}" claim <任务id>`), 'claim 示例同理');
+  clean(t.dir);
+});
+
 test('幂等：装两次不重复锚块 / 不重复 settings 条目', () => {
   const t = setup();
   hooksInstall({ ...t.P });
@@ -153,6 +169,85 @@ test('pre-commit 硬闸门：未 claim 直接 commit 应被拒（skill §11.9 �
   const log = execFileSync('git', ['-C', t.repo, 'log', '--oneline'], { encoding: 'utf8' });
   assert.match(log, /urgent/, '紧急放行应生效');
   clean(t.dir);
+});
+
+test('mainRepo 非 git 仓、codeRepo 才是真仓时，hooks-install 应落进 codeRepo 而非 mainRepo（CLUSTER-BOARD-REPO-PATH-WRONG）', () => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-split-')));
+  const reg = path.join(dir, 'registry.json');
+  const boardHome = path.join(dir, 'board-home'); fs.mkdirSync(boardHome);
+  const codeRepo = path.join(dir, 'code-repo'); fs.mkdirSync(codeRepo);
+  git(codeRepo, ['init', '-q']);
+  git(codeRepo, ['config', 'user.email', 't@t.t']);
+  git(codeRepo, ['config', 'user.name', 't']);
+  fs.writeFileSync(reg, JSON.stringify({
+    schemaVersion: '1.0',
+    projects: { split: { name: '拆分', mainRepo: boardHome, codeRepo } },
+  }));
+  const P = { project: 'split', registry: reg };
+
+  assert.doesNotThrow(() => hooksInstall({ ...P }), 'mainRepo 不是 git 仓时，hooks-install 不该再因此报错');
+
+  assert.ok(fs.existsSync(path.join(codeRepo, '.git', 'hooks', 'post-commit')), 'git hook 应装进 codeRepo（代码的家）');
+  assert.ok(fs.existsSync(path.join(codeRepo, '.claude', 'settings.json')), 'settings.json 应落进 codeRepo');
+  assert.ok(fs.existsSync(path.join(codeRepo, 'CLAUDE.md')), 'CLAUDE.md 锚段应落进 codeRepo');
+  assert.ok(!fs.existsSync(path.join(boardHome, '.claude')), 'settings.json 不该落进 mainRepo（板的家）');
+  assert.ok(!fs.existsSync(path.join(boardHome, 'CLAUDE.md')), 'CLAUDE.md 不该落进 mainRepo');
+  clean(dir);
+});
+
+test('两个项目共用同一个 codeRepo（如 rogue/cluster 都在 F:\\code-repo）时，各自装的 hook/settings/CLAUDE.md 共存，互不顶替（CLUSTER-CODEREPO-HOOK-COLLISION）', () => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'hooks-shared-')));
+  const reg = path.join(dir, 'registry.json');
+  const codeRepo = path.join(dir, 'shared-repo'); fs.mkdirSync(codeRepo);
+  git(codeRepo, ['init', '-q']);
+  git(codeRepo, ['config', 'user.email', 't@t.t']);
+  git(codeRepo, ['config', 'user.name', 't']);
+  fs.writeFileSync(reg, JSON.stringify({
+    schemaVersion: '1.0',
+    projects: {
+      alpha: { name: 'Alpha', mainRepo: path.join(dir, 'alpha-board'), codeRepo },
+      beta: { name: 'Beta', mainRepo: path.join(dir, 'beta-board'), codeRepo },
+    },
+  }));
+  fs.mkdirSync(path.join(dir, 'alpha-board'));
+  fs.mkdirSync(path.join(dir, 'beta-board'));
+
+  hooksInstall({ project: 'alpha', registry: reg });
+  hooksInstall({ project: 'beta', registry: reg });
+
+  const pc = read(path.join(codeRepo, '.git', 'hooks', 'post-commit'));
+  assert.match(pc, /#dashboard-hook:begin:alpha/, 'alpha 的 post-commit 块应还在');
+  assert.match(pc, /#dashboard-hook:begin:beta/, 'beta 的 post-commit 块不该把 alpha 的顶掉');
+  // 每块自带 sync-from-git + render-index 两行，各含一次 --project "<id>"，故一块正常就是 2 次。
+  assert.equal((pc.match(/#dashboard-hook:begin:alpha/g) || []).length, 1, 'alpha 块只出现一次，没被重复安装');
+  assert.equal((pc.match(/#dashboard-hook:begin:beta/g) || []).length, 1, 'beta 块只出现一次');
+  assert.equal((pc.match(/--project "alpha"/g) || []).length, 2, 'alpha 块内 sync-from-git/render-index 各一次');
+  assert.equal((pc.match(/--project "beta"/g) || []).length, 2, 'beta 块内 sync-from-git/render-index 各一次');
+
+  const pre = read(path.join(codeRepo, '.git', 'hooks', 'pre-commit'));
+  assert.equal((pre.match(/#dashboard-hook:begin/g) || []).length, 1,
+    'pre-commit 内容与项目 id 无关，应保持单例，不因两个项目各装一次而重复');
+
+  const st = readJson(path.join(codeRepo, '.claude', 'settings.json'));
+  assert.equal(st.hooks.Stop.length, 2, 'alpha/beta 的 Stop 兜底应共存，不是互相顶替');
+  assert.ok(st.hooks.Stop.some((e) => /--project "alpha"/.test(e.hooks[0].command)));
+  assert.ok(st.hooks.Stop.some((e) => /--project "beta"/.test(e.hooks[0].command)));
+  const bashEntries = st.hooks.PostToolUse.filter((e) => e.matcher === 'Bash');
+  assert.equal(bashEntries.length, 2, 'alpha/beta 的 PostToolUse(Bash) 应共存');
+
+  const claudeMd = read(path.join(codeRepo, 'CLAUDE.md'));
+  assert.match(claudeMd, /dashboard-protocol:alpha begin/, 'alpha 的 CLAUDE.md 协议段应还在');
+  assert.match(claudeMd, /dashboard-protocol:beta begin/, 'beta 的协议段不该把 alpha 的顶掉');
+
+  // 重装 alpha：只刷新 alpha 自己那份，不影响 beta 已装的部分（幂等 + 隔离同时成立）。
+  hooksInstall({ project: 'alpha', registry: reg });
+  const pc2 = read(path.join(codeRepo, '.git', 'hooks', 'post-commit'));
+  assert.equal((pc2.match(/#dashboard-hook:begin:alpha/g) || []).length, 1, '重装 alpha 不重复自己的块');
+  assert.equal((pc2.match(/#dashboard-hook:begin:beta/g) || []).length, 1, '重装 alpha 不影响 beta 的块');
+  const st2 = readJson(path.join(codeRepo, '.claude', 'settings.json'));
+  assert.equal(st2.hooks.Stop.length, 2, '重装 alpha 后 Stop 仍是两条（各自一条），不是 3 条或 1 条');
+
+  clean(dir);
 });
 
 test('端到端：git commit 后 board 被 hook 自动更新、doctor 不再报未装', () => {
