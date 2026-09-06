@@ -19,7 +19,7 @@ function createCodexApi({
   function context(res) {
     const repo = resolveRogueRepo();
     if (!repo) {
-      sendJson(res, 404, { ok: false, error: 'registry.json 中没有可用的 projects.rogue.mainRepo' });
+      sendJson(res, 404, { ok: false, error: 'registry.json 中没有可用的 projects.rogue 代码仓(codeRepo/mainRepo 都读不出)' });
       return null;
     }
     return { repo, jobsRoot: path.join(repo, '.codex', 'jobs') };
