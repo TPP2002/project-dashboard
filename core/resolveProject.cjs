@@ -25,7 +25,8 @@ const os = require('node:os');
 const { normalizeReal } = require('./safePath.cjs');
 
 // DASHBOARD_HOME = 看板"数据根"（registry.json + snapshots/ 落此处）。
-// 默认 ~/.claude/dashboard（Claude Code 集成布局）；standalone 分发版由启动器
+// 默认仍是 ~/.claude/dashboard，仅存数据；代码检出已迁出，位置由使用者自定。
+// standalone 分发版由启动器
 // 把 DASHBOARD_HOME 指向安装目录，从而脱离 ~/.claude 耦合、在任意社区机器上可写。
 // 注意：代码定位（core/cli/server/web 的 require）一律走 __dirname 相对路径，
 // 不受本变量影响——DASHBOARD_HOME 只决定"数据往哪读/写"。

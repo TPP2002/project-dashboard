@@ -1,0 +1,28 @@
+{
+  "_comment": "复制成 registry.json 放到 DASHBOARD_HOME 下，将占位符替换为自己的项目名称与路径；本机注册表不进版本库。",
+  "schemaVersion": "1.0",
+  "projects": {
+    "example-basic": {
+      "name": "示例项目（最简）",
+      "mainRepo": "C:\\path\\to\\your-project",
+      "board": "C:\\path\\to\\your-project\\.dashboard\\board.json"
+    },
+    "example-split": {
+      "name": "示例项目（看板与代码分家）",
+      "mainRepo": "/path/to/your-board-project",
+      "codeRepo": "/path/to/your-code-project",
+      "board": "/path/to/your-board-project/.dashboard/board.json"
+    },
+    "example-with-docs": {
+      "name": "示例项目（费用与文档）",
+      "mainRepo": "C:\\path\\to\\your-documented-project",
+      "board": "C:\\path\\to\\your-documented-project\\.dashboard\\board.json",
+      "costRoots": [
+        "C:\\path\\to\\your-documented-project",
+        "C:\\path\\to\\your-worktree"
+      ],
+      "index": "C:\\path\\to\\your-documented-project\\docs\\INDEX.md",
+      "docsRoot": "C:\\path\\to\\your-documented-project\\docs"
+    }
+  }
+}

@@ -37,7 +37,7 @@ const url = require('url');
 const { execFile } = require('child_process');
 
 const { resolveProject, readRegistry, REGISTRY_PATH } = require('../core/resolveProject.cjs');
-const { readStamp, runtimeMode } = require('../core/runtimeRoot.cjs');
+const { readStamp, runtimeMode, displayCliCommand } = require('../core/runtimeRoot.cjs');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const cpuBudget = require('../core/cpuBudget.cjs');
@@ -710,7 +710,7 @@ function handleDispatchTask(req, res) {
 }
 
 function buildProjectDispatchPrompt(pid, proj, items) {
-  const CLI = 'node ~/.claude/dashboard/cli/index.cjs';
+  const CLI = displayCliCommand();
   const lines = [
     '# 【看板整项目派单】此对话由项目管理看板一键启动,负责落地本项目全部已拍板决策',
     '',
@@ -779,7 +779,7 @@ function buildProjectDispatchPrompt(pid, proj, items) {
 }
 
 function buildDispatchPrompt(pid, proj, task, decision) {
-  const CLI = 'node ~/.claude/dashboard/cli/index.cjs';
+  const CLI = displayCliCommand();
   return [
     '# 【看板派单】此对话由项目管理看板一键启动',
     '',
@@ -873,13 +873,15 @@ function streamFile(res, fullPath, status) {
 
 /** dist 未构建时的占位页：让 API 先可用、并提示怎么把前端 build 出来 */
 function sendPlaceholder(res, status) {
+  const buildRoot = DASH_ROOT.replace(/\\/g, '/')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <title>项目管理看板</title>
 <style>body{font-family:system-ui,"Microsoft YaHei",sans-serif;max-width:720px;margin:8vh auto;padding:0 24px;color:#222;line-height:1.7}
 code{background:#f2f2f2;padding:2px 6px;border-radius:4px}a{color:#2563eb}h1{font-size:20px}</style>
 <h1>项目管理看板 · 服务已就绪</h1>
 <p>后端 API 正在运行，但前端界面（<code>web/dist</code>）还没构建。</p>
-<p>构建前端：<code>cd ~/.claude/dashboard &amp;&amp; npm install &amp;&amp; npm run build</code>，然后刷新本页。</p>
+<p>构建前端：<code>cd &quot;${buildRoot}&quot; &amp;&amp; npm install &amp;&amp; npm run build</code>，然后刷新本页。</p>
 <p>API 自测入口：
 <a href="/api/health">/api/health</a> ·
 <a href="/api/projects">/api/projects</a></p>`;

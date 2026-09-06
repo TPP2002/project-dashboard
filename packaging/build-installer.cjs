@@ -24,7 +24,7 @@ const cp = require('node:child_process');
 const { RUNTIME_PATHS } = require('../core/runtimeRoot.cjs');
 
 // ---------- 路径 ----------
-const DASH = path.resolve(__dirname, '..');            // ~/.claude/dashboard（看板源码根）
+const DASH = path.resolve(__dirname, '..');            // 当前看板源码根，与数据根 DASHBOARD_HOME 无关
 const PKG = __dirname;                                  // packaging/
 const STAGING = path.join(PKG, 'staging');              // 暂存区（安装目录的镜像）
 const ROOT = path.join(STAGING, 'root');                // 将成为安装目录的内容

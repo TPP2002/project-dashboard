@@ -13,17 +13,17 @@
 **你的职责 = 一边干活，一边把状态经命令行写回看板**，让监督你的人随时看清进度。人只负责看进度 + 在岔路口拍板。
 
 - 看板 CLI：`node <看板CLI路径> <命令> --project <项目id>`
-  - `<看板CLI路径>` 通常是看板安装目录下的 `cli/index.cjs`（如 `~/.claude/dashboard/cli/index.cjs`，
-    或独立安装版的 `<安装目录>/cli/index.cjs`）。
+  - `<看板CLI路径>` 以发布副本 `~/.claude/dashboard-release/cli/index.cjs`，
+    或独立安装版的 `<安装目录>/cli/index.cjs` 为准。
   - 各仓 git hook 里自动调的那份是**发布副本** `~/.claude/dashboard-release/cli/index.cjs`（由 `cli release` 从主干导出，
     不随任何对话切分支而变）；看板本身的代码合进主干后要跑一次 `release` 才在 hook 里生效。
   - **负责人在用的网页服务也是从这份副本起的**（`启动看板.bat` / `dashboard.sh`）。所以看板代码收官时：
     合进主干 → 跑一次 `release`（它会顺带把界面构建进副本）→ 告诉负责人「下次双击启动器会自动换新」。
     没跑 `release`，等于改了个寂寞：hook 和他看的界面都还是旧的（SERVER-RUNS-ON-LIVE-CHECKOUT）。
-  - **发布要用副本自己的 CLI**：`node ~/.claude/dashboard-release/cli/index.cjs release --source ~/.claude/dashboard`。
+  - **发布要用副本自己的 CLI**：`node ~/.claude/dashboard-release/cli/index.cjs release --source <代码检出目录>`。
     拿一个落后的主工位去 `node cli/index.cjs release`，跑的是那份**旧的发布工具**——副本代码是新的、界面却没建出来
     （0906 迁移当天真踩过）。`precheck` 会报「副本里没有网页界面」兜底，启动器也已改成优先用副本的 CLI。
-  - `<项目id>` 见看板注册表（`registry.json`），或问用户。
+  - `<项目id>` 见 `DASHBOARD_HOME` 下的看板注册表（`registry.json`），或问用户；新配置可照抄 [registry.example.json](registry.example.json)，复制为该数据目录下的 `registry.json` 后填写本机路径。
 - **绝不手动编辑 `board.json`**——一切写入只经 CLI（它保证加锁、校验、原子写、留痕）。
 
 ---
