@@ -101,6 +101,65 @@ test('park 转暂缓并记理由', () => {
   clean(dir);
 });
 
+test('park 后不经 unpark 直接 claim 被拒', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.park({ _: ['P01'], reason: '等上游', ...P });
+  assert.throws(() => cmds.claim({ _: ['P01'], branch: 'b', ...P }), /非法迁移/);
+  clean(dir);
+});
+
+test('unpark 清除暂缓信息、记录解除依据和流水后能 claim', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.park({ _: ['P01'], reason: '等上游', note: '遗留A', ...P });
+  const { task } = cmds.unpark({ _: ['P01'], reason: '上游已就绪', author: 'tester', ...P });
+  assert.equal(task.status, '可复工');
+  assert.equal(task.blockReason, undefined);
+  assert.equal(task.parkedNote, undefined);
+  assert.equal(task.unparkReason, '上游已就绪');
+  assert.match(task.unparkedAt, /^\d{4}-\d{2}-\d{2}$/);
+  const { readBoard } = require('../cli/store.cjs');
+  const { resolveProject } = require('../core/resolveProject.cjs');
+  const proj = resolveProject(P.project, { registryPath: P.registry });
+  const activity = readBoard(proj.board).activity.filter((a) => a.type === 'unpark');
+  assert.equal(activity.length, 1);
+  assert.equal(activity[0].taskId, 'P01');
+  assert.equal(activity[0].author, 'tester');
+  assert.equal(activity[0].text, '复工 P01：上游已就绪');
+  assert.equal(cmds.claim({ _: ['P01'], branch: 'b', ...P }).task.status, '施工中');
+  clean(dir);
+});
+
+test('unpark 非暂缓卡被拒', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  assert.throws(() => cmds.unpark({ _: ['P01'], reason: '上游已就绪', ...P }), /非法迁移/);
+  clean(dir);
+});
+
+test('unpark 缺卡号或解除依据被拒', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.park({ _: ['P01'], reason: '等上游', ...P });
+  assert.throws(() => cmds.unpark({ _: [], reason: '上游已就绪', ...P }), /缺参数.*unpark/);
+  assert.throws(() => cmds.unpark({ _: ['P01'], ...P }), /缺参数.*--reason/);
+  clean(dir);
+});
+
+test('再次 park 会抹掉上一轮的解除依据（不留两套说法）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.park({ _: ['P01'], reason: '等上游', ...P });
+  cmds.unpark({ _: ['P01'], reason: '上游已就绪', ...P });
+  const { task } = cmds.park({ _: ['P01'], reason: '又被别的卡挡住', ...P });
+  assert.equal(task.status, '暂缓');
+  assert.equal(task.blockReason, '又被别的卡挡住');
+  assert.equal(task.unparkReason, undefined);
+  assert.equal(task.unparkedAt, undefined);
+  clean(dir);
+});
+
 test('sync-progress 按分支找施工中任务、只进不退、封顶 95', () => {
   const { dir, P } = setup();
   cmds.add({ _: ['P01'], title: 'x', ...P });

@@ -349,7 +349,24 @@ function park(flags) {
   const board = mutate(proj, (b) => {
     const t = findTask(b, id); t.status = '暂缓'; t.blockReason = reason;
     if (flags.note) t.parkedNote = String(flags.note);
+    // 再次暂缓要抹掉上一轮的解除依据：否则卡挂着「暂缓」却还带着上次的复工理由与日期，
+    // show 出来两套说法并存，读的人分不清哪条是当下的（与 unpark 删 blockReason 同一道理）。
+    delete t.unparkReason; delete t.unparkedAt;
   }, act('park', flags.author, `暂缓 ${id}：${reason}`, id));
+  return okTask(board, id);
+}
+// 解除暂缓是一次有依据的决定，须单独留痕，不能混进 claim（PARK-HAS-NO-UNPARK）。
+// 旧阻塞理由与遗留说明必须删除，解除依据另存，避免复工后仍被当作硬阻塞。
+function unpark(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'unpark <taskId> --reason <解除依据>');
+  const reason = String(need(flags.reason, '--reason <解除依据>'));
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, id);
+    if (t.status !== '暂缓') throw new Error(`unpark 非法迁移：${t.status} → 可复工（只能从 暂缓）`);
+    t.status = '可复工'; delete t.blockReason; delete t.parkedNote;
+    t.unparkReason = reason; t.unparkedAt = today();
+  }, act('unpark', flags.author, `复工 ${id}：${reason}`, id));
   return okTask(board, id);
 }
 function block(flags) {
@@ -464,4 +481,4 @@ function cost(flags) {
   return okTask(board, id);
 }
 
-module.exports = { register, add, claim, progress, syncProgress, pending, decide, markLanded, park, block, done, note, set, list, show, cost, deriveStats };
+module.exports = { register, add, claim, progress, syncProgress, pending, decide, markLanded, park, unpark, block, done, note, set, list, show, cost, deriveStats };
