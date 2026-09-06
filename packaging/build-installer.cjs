@@ -6,7 +6,8 @@
  *      不需要预装 Node.js、不需要联网、不碰 ~/.claude（数据落安装目录）。
  *
  * 用法（在装有 Node 的开发机上跑一次，产出 exe 拿去分发）：
- *   node packaging/build-installer.cjs [--version 1.0.0]
+ *   node packaging/build-installer.cjs [--version 1.0.0] [--skip-selfcheck]
+ *   node packaging/build-installer.cjs --help
  *
  * 依赖：
  *   - Node（跑本脚本 + 被打包进去当运行时，用的是本机 process.execPath）。
@@ -18,7 +19,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const http = require('node:http');
 const cp = require('node:child_process');
+const { RUNTIME_PATHS } = require('../core/runtimeRoot.cjs');
 
 // ---------- 路径 ----------
 const DASH = path.resolve(__dirname, '..');            // ~/.claude/dashboard（看板源码根）
@@ -26,9 +29,6 @@ const PKG = __dirname;                                  // packaging/
 const STAGING = path.join(PKG, 'staging');              // 暂存区（安装目录的镜像）
 const ROOT = path.join(STAGING, 'root');                // 将成为安装目录的内容
 const OUTDIR = path.join(PKG, 'dist');                  // 安装器 exe 输出目录
-const ASSETS = path.join(PKG, 'assets');                // 图标等素材
-const ICON = path.join(ASSETS, 'icon.ico');             // 品牌图标
-const TRAY_SRC = path.join(PKG, 'tray', 'Dashboard.cs');// 托盘启动器源码
 const NODE_EXE = process.execPath;                      // 本机 node.exe，直接当运行时打包
 
 // ---------- 版本 ----------
@@ -36,8 +36,6 @@ function parseArg(name, def) {
   const i = process.argv.indexOf('--' + name);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
 }
-const pkgJson = JSON.parse(fs.readFileSync(path.join(DASH, 'package.json'), 'utf8'));
-const VERSION = parseArg('version', pkgJson.version || '1.0.0');
 const APPNAME = '项目管理看板';
 const APPID = 'ProjectDashboard';                        // 安装目录 / 卸载注册表键（ASCII，稳）
 
@@ -53,15 +51,15 @@ function findMakensis() {
     }
   } catch (_) { /* 缓存不存在 */ }
   // 也看 PATH / 常见安装位置
-  candidates.push('C:\\Program Files (x86)\\NSIS\\makensis.exe');
-  candidates.push('C:\\Program Files\\NSIS\\makensis.exe');
+  candidates.push(path.join('C:', 'Program Files (x86)', 'NSIS', 'makensis.exe'));
+  candidates.push(path.join('C:', 'Program Files', 'NSIS', 'makensis.exe'));
   for (const c of candidates) { if (fs.existsSync(c)) return c; }
   return null;
 }
 
 // ---------- 找 csc（.NET 编译器，用于编托盘启动器；缺则回退 .bat）----------
 function findCsc() {
-  const fw = 'C:\\Windows\\Microsoft.NET\\Framework64';
+  const fw = path.join('C:', 'Windows', 'Microsoft.NET', 'Framework64');
   const cands = [];
   try {
     for (const d of fs.readdirSync(fw)) {
@@ -90,58 +88,65 @@ function dirSizeMB(p) {
   return total / 1048576;
 }
 
-// ============ 1. 校验前置 ============
-console.log('== 项目管理看板 · 打包 ==');
-console.log('  看板源码：' + DASH);
-console.log('  版本    ：' + VERSION);
+/**
+ * 同步重建 dest（必填，调用方指定的安装目录），源码只读。
+ * distDir/nodeExe 可注入；缺前端入口或任何运行期路径就抛错。
+ * 返回启动器、图标和体积信息，供 main 生成原有安装脚本；log 可用空函数静音。
+ */
+function stageRoot(opts = {}) {
+  const DASH = path.resolve(opts.src ?? path.resolve(__dirname, '..'));
+  if (typeof opts.dest !== 'string' || !opts.dest.trim()) throw new Error('搭建安装目录必须指定 dest。');
+  const ROOT = path.resolve(opts.dest);
+  const NODE_EXE = path.resolve(opts.nodeExe ?? process.execPath);
+  const DIST_DIR = path.resolve(opts.distDir ?? path.join(DASH, 'web', 'dist'));
+  const ICON = path.join(DASH, 'packaging', 'assets', 'icon.ico');
+  const TRAY_SRC = path.join(DASH, 'packaging', 'tray', 'Dashboard.cs');
+  const log = opts.log ?? console.log;
 
-const MAKENSIS = findMakensis();
-if (!MAKENSIS) {
-  console.error('\n[X] 没找到 makensis.exe（NSIS 3 编译器）。');
-  console.error('    方案A：装过 electron-builder 的机器上其缓存自带（本脚本会自动找）。');
-  console.error('    方案B：到 https://nsis.sourceforge.io/ 下载安装 NSIS 3，再重试。');
-  process.exit(1);
-}
-console.log('  makensis：' + MAKENSIS);
+  // 清空前先确认目标不包含源码，也不落进将要拷贝的目录，免得误删输入或递归拷自己。
+  const contains = (parent, child) => {
+    const rel = path.relative(parent, child);
+    return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + path.sep));
+  };
+  const inputs = [...RUNTIME_PATHS.map(rel => path.join(DASH, rel)), DIST_DIR, NODE_EXE];
+  if (contains(ROOT, DASH) || inputs.some(input => contains(ROOT, input) || contains(input, ROOT))) {
+    throw new Error('安装目录不能覆盖源码或待拷贝的输入：' + ROOT);
+  }
+  if (!fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
+    throw new Error('前端产物缺 index.html：' + DIST_DIR + '；请先构建 web/dist，或指定 distDir。');
+  }
+  for (const rel of RUNTIME_PATHS) {
+    if (!fs.existsSync(path.join(DASH, rel))) throw new Error('缺少运行期路径：' + rel);
+  }
+  const VERSION = opts.version ?? JSON.parse(fs.readFileSync(path.join(DASH, 'package.json'), 'utf8')).version;
 
-const DIST_SRC = path.join(DASH, 'web', 'dist', 'index.html');
-if (!fs.existsSync(DIST_SRC)) {
-  console.error('\n[X] web/dist 还没构建。先在 web 目录跑：npm install && npm run build');
-  process.exit(1);
-}
-console.log('  node.exe：' + NODE_EXE + '（' + (fs.statSync(NODE_EXE).size / 1048576).toFixed(1) + 'MB）');
+  // ============ 1. 清空并搭建 staging ============
+  log('\n[1/6] 搭建暂存目录 ...');
+  rmrf(ROOT);
+  mkdirp(ROOT);
 
-// ============ 2. 清空并搭建 staging ============
-console.log('\n[1/5] 搭建暂存目录 ...');
-rmrf(STAGING);
-mkdirp(ROOT);
+  // 和 cli release 共用白名单，目录整拷：以后新增同目录模块也不会漏带。
+  for (const rel of RUNTIME_PATHS) copy(path.join(DASH, rel), path.join(ROOT, rel));
+  mkdirp(path.join(ROOT, 'web'));
+  copy(DIST_DIR, path.join(ROOT, 'web', 'dist'));
+  if (fs.existsSync(path.join(DASH, 'README.md'))) copy(path.join(DASH, 'README.md'), path.join(ROOT, 'README.md'));
 
-// —— 应用代码（只拷运行期需要的，剔除测试/开发件）——
-copy(path.join(DASH, 'core'), path.join(ROOT, 'core'));
-copy(path.join(DASH, 'cli'), path.join(ROOT, 'cli'));
-mkdirp(path.join(ROOT, 'server'));
-copy(path.join(DASH, 'server', 'server.cjs'), path.join(ROOT, 'server', 'server.cjs'));
-mkdirp(path.join(ROOT, 'web'));
-copy(path.join(DASH, 'web', 'dist'), path.join(ROOT, 'web', 'dist'));
-copy(path.join(DASH, 'package.json'), path.join(ROOT, 'package.json'));
-if (fs.existsSync(path.join(DASH, 'README.md'))) copy(path.join(DASH, 'README.md'), path.join(ROOT, 'README.md'));
+  // —— 使用手册放到根，用户一眼能找到 ——
+  const manualSrc = path.join(DASH, 'docs', '看板使用手册.md');
+  if (fs.existsSync(manualSrc)) copy(manualSrc, path.join(ROOT, '使用手册.md'));
 
-// —— 使用手册放到根，用户一眼能找到 ——
-const manualSrc = path.join(DASH, 'docs', '看板使用手册.md');
-if (fs.existsSync(manualSrc)) copy(manualSrc, path.join(ROOT, '使用手册.md'));
+  // —— 内嵌 Node 运行时 ——
+  mkdirp(path.join(ROOT, 'node-runtime'));
+  copy(NODE_EXE, path.join(ROOT, 'node-runtime', 'node.exe'));
 
-// —— 内嵌 Node 运行时 ——
-mkdirp(path.join(ROOT, 'node-runtime'));
-copy(NODE_EXE, path.join(ROOT, 'node-runtime', 'node.exe'));
+  // —— 干净的 registry（绝不带打包机上的私人项目路径）——
+  writeUtf8(path.join(ROOT, 'registry.json'), JSON.stringify({ schemaVersion: '1.0', projects: {} }, null, 2) + '\n');
 
-// —— 干净的 registry（绝不带打包机上的私人项目路径）——
-writeUtf8(path.join(ROOT, 'registry.json'), JSON.stringify({ schemaVersion: '1.0', projects: {} }, null, 2) + '\n');
+  // ============ 2. 生成启动器 / 助手脚本 / 说明 ============
+  log('[2/6] 生成启动器与说明 ...');
 
-// ============ 3. 生成启动器 / 助手脚本 / 说明 ============
-console.log('[2/5] 生成启动器与说明 ...');
-
-// 主启动器：设 DASHBOARD_HOME=安装目录，用内嵌 node 起 server
-const launcherBat =
+  // 主启动器：设 DASHBOARD_HOME=安装目录，用内嵌 node 起 server
+  const launcherBat =
 `@echo off
 chcp 65001 >nul
 title ${APPNAME}
@@ -164,10 +169,10 @@ echo.
 echo 看板已停止，可关闭本窗口。
 pause >nul
 `;
-writeUtf8Bom(path.join(ROOT, '启动看板.bat'), launcherBat);
+  writeUtf8Bom(path.join(ROOT, '启动看板.bat'), launcherBat);
 
-// 添加项目助手：向导式包装 cli register，非技术用户也能加项目
-const addProjectBat =
+  // 添加项目助手：向导式包装 cli register，非技术用户也能加项目
+  const addProjectBat =
 `@echo off
 chcp 65001 >nul
 title ${APPNAME} - 添加项目
@@ -191,10 +196,10 @@ echo 之后可用命令给项目加任务：node-runtime\\node.exe cli\\index.cj
 echo.
 pause
 `;
-writeUtf8Bom(path.join(ROOT, '添加项目.bat'), addProjectBat);
+  writeUtf8Bom(path.join(ROOT, '添加项目.bat'), addProjectBat);
 
-// Node.js 再分发声明（MIT，附带义务）
-const notice =
+  // Node.js 再分发声明（MIT，附带义务）
+  const notice =
 `本安装包内嵌了 Node.js 运行时（node-runtime\\node.exe）。
 
 Node.js 版权归 Node.js 贡献者与 OpenJS Foundation 所有，以 MIT 许可证发布。
@@ -203,10 +208,10 @@ Node.js 版权归 Node.js 贡献者与 OpenJS Foundation 所有，以 MIT 许可
 
 「项目管理看板」自身的许可与版权由其作者决定；本文件仅声明所内嵌第三方组件。
 `;
-writeUtf8(path.join(ROOT, 'NOTICE-第三方声明.txt'), notice);
+  writeUtf8(path.join(ROOT, 'NOTICE-第三方声明.txt'), notice);
 
-// 首次使用速览
-const quickstart =
+  // 首次使用速览
+  const quickstart =
 `${APPNAME} · 快速开始
 ${'='.repeat(40)}
 
@@ -221,47 +226,181 @@ ${'='.repeat(40)}
 详细图文见同目录「使用手册.md」。
 数据只存在本安装目录（registry.json + 各项目的 .dashboard\\board.json），不联网、不上传。
 `;
-writeUtf8Bom(path.join(ROOT, '开始使用.txt'), quickstart);
+  writeUtf8Bom(path.join(ROOT, '开始使用.txt'), quickstart);
 
-// —— 品牌图标 + 托盘启动器 ——
-let hasIcon = fs.existsSync(ICON);
-if (hasIcon) copy(ICON, path.join(ROOT, 'icon.ico'));
-else console.warn('  [!] 缺 assets/icon.ico，将用默认图标（可先跑 packaging/make-icon.ps1 生成）。');
+  // —— 品牌图标 + 托盘启动器 ——
+  let hasIcon = fs.existsSync(ICON);
+  if (hasIcon) copy(ICON, path.join(ROOT, 'icon.ico'));
+  else log('  [!] 缺 assets/icon.ico，将用默认图标（可先跑 packaging/make-icon.ps1 生成）。');
 
-let useTray = false;
-const csc = findCsc();
-if (csc && fs.existsSync(TRAY_SRC)) {
-  const trayOut = path.join(ROOT, 'Dashboard.exe');
-  const cscArgs = ['/nologo', '/target:winexe', '/codepage:65001',
-    '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.dll',
-    '/out:' + trayOut, TRAY_SRC];
-  if (hasIcon) cscArgs.splice(3, 0, '/win32icon:' + ICON);
-  const rc = cp.spawnSync(csc, cscArgs, { encoding: 'utf8' });
-  if (rc.status === 0 && fs.existsSync(trayOut)) {
-    useTray = true;
-    console.log('  ✔ 托盘启动器 Dashboard.exe 已编译（隐藏黑窗口 + 托盘图标）。');
+  let useTray = false;
+  const csc = findCsc();
+  if (csc && fs.existsSync(TRAY_SRC)) {
+    const trayOut = path.join(ROOT, 'Dashboard.exe');
+    const cscArgs = ['/nologo', '/target:winexe', '/codepage:65001',
+      '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll', '/reference:System.dll',
+      '/out:' + trayOut, TRAY_SRC];
+    if (hasIcon) cscArgs.splice(3, 0, '/win32icon:' + ICON);
+    const rc = cp.spawnSync(csc, cscArgs, { encoding: 'utf8', windowsHide: true });
+    if (rc.status === 0 && fs.existsSync(trayOut)) {
+      useTray = true;
+      log('  ✔ 托盘启动器 Dashboard.exe 已编译（隐藏黑窗口 + 托盘图标）。');
+    } else {
+      log('  [!] 托盘启动器编译失败，回退到 启动看板.bat（带控制台窗口）。');
+      if (rc.stderr) log('      ' + rc.stderr.split('\n').slice(0, 4).join('\n      '));
+      if (rc.error) log('      ' + rc.error.message);
+    }
   } else {
-    console.warn('  [!] 托盘启动器编译失败，回退到 启动看板.bat（带控制台窗口）。');
-    if (rc.stderr) console.warn('      ' + rc.stderr.split('\n').slice(0, 4).join('\n      '));
+    log('  [!] 没找到 csc（.NET 编译器）或托盘源码，用 启动看板.bat（带控制台窗口）。');
   }
-} else {
-  console.warn('  [!] 没找到 csc（.NET 编译器）或托盘源码，用 启动看板.bat（带控制台窗口）。');
+  // 主启动目标：有托盘用 Dashboard.exe，否则用 .bat
+  const LAUNCH_TARGET = useTray ? 'Dashboard.exe' : '启动看板.bat';
+  const ICON_REF = hasIcon ? '$INSTDIR\\icon.ico' : (useTray ? '$INSTDIR\\Dashboard.exe' : '$INSTDIR\\node-runtime\\node.exe');
+
+  return { root: ROOT, useTray, hasIcon, launchTarget: LAUNCH_TARGET, iconRef: ICON_REF, sizeMB: dirSizeMB(ROOT), version: VERSION };
 }
-// 主启动目标：有托盘用 Dashboard.exe，否则用 .bat
-const LAUNCH_TARGET = useTray ? 'Dashboard.exe' : '启动看板.bat';
-const ICON_REF = hasIcon ? '$INSTDIR\\icon.ico' : (useTray ? '$INSTDIR\\Dashboard.exe' : '$INSTDIR\\node-runtime\\node.exe');
 
-// ============ 4. 生成 NSIS 脚本 ============
-console.log('[3/5] 生成 NSIS 脚本 ...');
-mkdirp(OUTDIR);
-const installedMB = Math.ceil(dirSizeMB(ROOT));
-const outExe = path.join(OUTDIR, `${APPNAME}-安装程序-v${VERSION}.exe`);
-const nsiPath = path.join(PKG, 'installer.nsi');
+/**
+ * 用内嵌运行时检查安装目录，成功返回本次子进程的 health。
+ * timeoutMs 默认 30000 毫秒；失败带 stderr 开头，无论成败都等子进程退出后才返回。
+ */
+async function selfCheckStagedRoot(root, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 30000;
+  const log = opts.log ?? console.log;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('自检 timeoutMs 必须是正数。');
+  root = path.resolve(root);
+  // 随机只用于避开日常服务端口，不参与业务数据；仍须核对 pid，防止单实例复用造成假绿。
+  const port = 40000 + Math.floor(Math.random() * 20001);
+  log(`  自检：用内嵌 node 启动服务（端口 ${port}）...`);
+  let child;
+  try {
+    child = cp.spawn(path.join(root, 'node-runtime', 'node.exe'), [path.join(root, 'server', 'server.cjs')], {
+      cwd: root,
+      env: { ...process.env, DASHBOARD_HOME: root, DASHBOARD_REGISTRY: path.join(root, 'registry.json'),
+        DASHBOARD_NO_OPEN: '1', DASHBOARD_PORT: String(port) },
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+  } catch (err) {
+    throw new Error('自检启动失败：' + err.message + '\n子进程 stderr：（尚未启动，无输出）');
+  }
 
-// NSIS 里用到的绝对路径统一转成反斜杠
-const bs = (p) => p.replace(/\//g, '\\');
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(0, 16384); });
+  let exited = false;
+  const exit = new Promise(resolve => child.once('exit', () => { exited = true; resolve(); }));
+  // close 晚于 exit，确保 stderr 已读完、Windows 上可执行文件也已释放。
+  const closed = new Promise(resolve => child.once('close', resolve));
+  let request, pollTimer, deadlineTimer, killTimer;
+  let settled = false;
+  let health, failure;
+  try {
+    health = await new Promise((resolve, reject) => {
+      const finish = (err, value) => {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err); else resolve(value);
+      };
+      const fail = err => finish(err);
+      child.once('error', err => fail(new Error('子进程启动或终止失败：' + err.message)));
+      child.once('exit', (code, signal) => fail(new Error(`子进程提前退出（退出码 ${code}，信号 ${signal || '无'}）`)));
+      deadlineTimer = setTimeout(() => fail(new Error(`等待 /api/health 超时（${timeoutMs} 毫秒）`)), timeoutMs);
 
-const nsi =
+      function poll() {
+        if (settled) return;
+        request = http.get({ host: '127.0.0.1', port, path: '/api/health', agent: false }, res => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('error', fail);
+          res.on('data', chunk => {
+            body += chunk;
+            if (body.length > 65536) fail(new Error('健康响应过大，无法验证服务身份。'));
+          });
+          res.on('end', () => {
+            if (settled) return;
+            let value;
+            try { value = JSON.parse(body); }
+            catch (err) { fail(new Error('健康响应不是有效 JSON：' + err.message)); return; }
+            if (res.statusCode !== 200 || value?.ok !== true || value?.service !== 'claude-dashboard' || value?.pid !== child.pid) {
+              fail(new Error(`健康响应不属于本次启动的服务（HTTP ${res.statusCode}，期望 pid ${child.pid}，收到 ${body.slice(0, 512)}）`));
+              return;
+            }
+            finish(null, value);
+          });
+        });
+        request.setTimeout(1000, () => request.destroy(new Error('探活请求超时')));
+        // 启动阶段的连接拒绝属于尚未就绪；总超时统一兜底，不无限重试。
+        request.once('error', () => { if (!settled) pollTimer = setTimeout(poll, 100); });
+      }
+      poll();
+    });
+  } catch (err) {
+    failure = err;
+  } finally {
+    settled = true;
+    clearTimeout(deadlineTimer);
+    clearTimeout(pollTimer);
+    if (request) request.destroy();
+    if (child.pid && !exited) {
+      child.kill();
+      killTimer = setTimeout(() => child.kill('SIGKILL'), 3000);
+      await exit;
+      clearTimeout(killTimer);
+    }
+    await closed;
+  }
+  if (failure) {
+    const excerpt = stderr.trim().split(/\r?\n/).slice(0, 12).join('\n') || '（无输出）';
+    throw new Error(`自检失败（端口 ${port}，pid ${child.pid || '未启动'}）：${failure.message}\n子进程 stderr（前几行）：\n${excerpt}`);
+  }
+  log(`  ✔ 自检通过：服务正常应答，pid ${health.pid}；自检进程已退出。`);
+  return health;
+}
+
+async function main() {
+  const log = console.log;
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    log('用法：node packaging/build-installer.cjs [--version 1.0.0] [--skip-selfcheck]');
+    log('默认在编译安装器前启动内嵌服务自检；--skip-selfcheck 仅用于调试。');
+    return;
+  }
+  try {
+    // ============ 校验前置（只有直接执行脚本才跑，require 保持安静） ============
+    const pkgJson = JSON.parse(fs.readFileSync(path.join(DASH, 'package.json'), 'utf8'));
+    const VERSION = parseArg('version', pkgJson.version || '1.0.0');
+    log('== 项目管理看板 · 打包 ==');
+    log('  看板源码：' + DASH);
+    log('  版本    ：' + VERSION);
+    const MAKENSIS = findMakensis();
+    if (!MAKENSIS) {
+      throw new Error('没找到 makensis.exe（NSIS 3 编译器）。\n' +
+        '    方案A：装过 electron-builder 的机器上其缓存自带（本脚本会自动找）。\n' +
+        '    方案B：到 https://nsis.sourceforge.io/ 下载安装 NSIS 3，再重试。');
+    }
+    log('  makensis：' + MAKENSIS);
+    log('  node.exe：' + NODE_EXE + '（' + (fs.statSync(NODE_EXE).size / 1048576).toFixed(1) + 'MB）');
+    const { useTray, hasIcon, launchTarget: LAUNCH_TARGET, iconRef: ICON_REF, sizeMB } = stageRoot({ dest: ROOT, version: VERSION, log });
+    const ICON = path.join(DASH, 'packaging', 'assets', 'icon.ico');
+
+    // ============ 3. 自检（先验能启动，再花时间压缩） ============
+    if (process.argv.includes('--skip-selfcheck')) log('[3/6] [!] 已跳过启动自检（仅供调试）。');
+    else {
+      log('[3/6] 检查安装目录能否正常启动 ...');
+      await selfCheckStagedRoot(ROOT, { log });
+    }
+
+    // ============ 4. 生成 NSIS 脚本 ============
+    log('[4/6] 生成 NSIS 脚本 ...');
+    mkdirp(OUTDIR);
+    const installedMB = Math.ceil(sizeMB);
+    const outExe = path.join(OUTDIR, `${APPNAME}-安装程序-v${VERSION}.exe`);
+    const nsiPath = path.join(STAGING, 'installer.nsi');
+
+    // NSIS 里用到的绝对路径统一转成反斜杠
+    const bs = (p) => p.replace(/\//g, '\\');
+
+    const nsi =
 `Unicode true
 !include "MUI2.nsh"
 
@@ -328,25 +467,30 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\\${APPID}"
 SectionEnd
 `;
-writeUtf8Bom(nsiPath, nsi);
+    writeUtf8Bom(nsiPath, nsi);
 
-// ============ 5. 调 makensis 编译 ============
-console.log('[4/5] 调 makensis 编译安装器（LZMA solid 压缩，稍慢）...');
-const r = cp.spawnSync(MAKENSIS, [nsiPath], { encoding: 'utf8' });
-if (r.stdout) process.stdout.write(r.stdout.split('\n').slice(-12).join('\n') + '\n');
-if (r.status !== 0) {
-  console.error('\n[X] makensis 编译失败（退出码 ' + r.status + '）。');
-  if (r.stderr) console.error(r.stderr);
-  process.exit(1);
+    // ============ 5. 调 makensis 编译 ============
+    log('[5/6] 调 makensis 编译安装器（LZMA solid 压缩，稍慢）...');
+    const r = cp.spawnSync(MAKENSIS, [nsiPath], { encoding: 'utf8', windowsHide: true });
+    if (r.stdout) log(r.stdout.split('\n').slice(-12).join('\n'));
+    if (r.status !== 0) {
+      throw new Error('makensis 编译失败（退出码 ' + r.status + '）。\n' + (r.stderr || r.error?.message || ''));
+    }
+
+    // ============ 完成 ============
+    log('[6/6] 完成 ✔');
+    if (fs.existsSync(outExe)) {
+      log('\n安装器已生成：');
+      log('  ' + outExe);
+      log('  体积：' + (fs.statSync(outExe).size / 1048576).toFixed(1) + 'MB（安装后约 ' + installedMB + 'MB）');
+    } else {
+      throw new Error('编译似乎成功但没找到产物：' + outExe);
+    }
+  } catch (err) {
+    log('\n[X] ' + err.message);
+    process.exit(1);
+  }
 }
 
-// ============ 完成 ============
-console.log('[5/5] 完成 ✔');
-if (fs.existsSync(outExe)) {
-  console.log('\n安装器已生成：');
-  console.log('  ' + outExe);
-  console.log('  体积：' + (fs.statSync(outExe).size / 1048576).toFixed(1) + 'MB（安装后约 ' + installedMB + 'MB）');
-} else {
-  console.error('[X] 编译似乎成功但没找到产物：' + outExe);
-  process.exit(1);
-}
+module.exports = { stageRoot, selfCheckStagedRoot };
+if (require.main === module) main();
