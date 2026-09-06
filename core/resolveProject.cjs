@@ -3,7 +3,7 @@
  * resolveProject.cjs —— 项目定位（治本 R4）
  *
  * CLI 一律用 --project <id> 显式定位，绝不靠 cwd 猜（worktree/junction 丛林里 cwd 反查会失灵）。
- * 读全局 registry.json，把 id 映射到 { mainRepo, codeRepo, board, lock, docsRoot }，路径全部 realpath 规范化。
+ * 读全局 registry.json，把 id 映射到 { mainRepo, codeRepo, costRoots, board, lock, docsRoot }，路径全部 realpath 规范化。
  *
  * 【mainRepo 与 codeRepo 为什么要分家】(CLUSTER-BOARD-REPO-PATH-WRONG，2026-09-06)
  * 原先 mainRepo 一个字段扛两个语义——「板放哪」和「代码在哪」。绝大多数项目两者同址，
@@ -13,6 +13,11 @@
  * doctor 恒报「hook 未安装」），指代码则找不着板。
  * 拆法：mainRepo 仍是「板的家」（board/lock 缺省都从它推），新增可选 codeRepo =「代码的家」，
  * 凡是要跑 git / 找正本的消费方一律读 codeRepo；不写就回落 mainRepo，老项目零改动。
+ *
+ * 【费用为什么单列 costRoots】(SERVER-CODEX-COST-USES-MAINREPO，2026-09-06)
+ * 对话可能开在板目录、共享盘或专用工位，费用归属要认登记的对话目录清单，不能靠代码仓猜。
+ * 缺省仍只用 mainRepo：这是保留所有未登记项目原有数字的兼容承诺，不能顺带加入 codeRepo。
+ * 显式清单按登记顺序规范化、去重；尚未建出的工位也可登记，由 normalizeReal 解析已有祖先。
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -42,7 +47,7 @@ function readRegistry(registryPath = REGISTRY_PATH) {
  * 解析 projectId → 路径集合。
  * @param {string} projectId
  * @param {{registryPath?: string}} [opts]
- * @returns {{id:string,name:string,mainRepo:string,codeRepo:string,board:string,lock:string,docsRoot:string,indexPath:string|null}}
+ * @returns {{id:string,name:string,mainRepo:string,codeRepo:string,costRoots:string[],board:string,lock:string,docsRoot:string,indexPath:string|null}}
  */
 function resolveProject(projectId, opts = {}) {
   if (!projectId) throw new Error('必须指定 --project <id>（禁止按 cwd 猜项目）');
@@ -53,6 +58,10 @@ function resolveProject(projectId, opts = {}) {
     throw new Error(`未注册的项目 "${projectId}"。已注册：${known}。请先 cli register。`);
   }
   const mainRepo = normalizeReal(entry.mainRepo);
+  const costRoots = Array.isArray(entry.costRoots) && entry.costRoots.length
+    ? [...new Set(entry.costRoots.filter((root) => typeof root === 'string' && root.trim()).map(normalizeReal))]
+    : [mainRepo];
+  if (!costRoots.length) costRoots.push(mainRepo);
   const board = entry.board ? normalizeReal(entry.board) : path.join(mainRepo, '.dashboard', 'board.json');
   return {
     id: projectId,
@@ -60,6 +69,7 @@ function resolveProject(projectId, opts = {}) {
     mainRepo,
     // codeRepo：跑 git / 找正本的消费方读这个（缺省 = mainRepo，见文件头注）。
     codeRepo: entry.codeRepo ? normalizeReal(entry.codeRepo) : mainRepo,
+    costRoots,
     board,
     lock: board + '.lock',
     docsRoot: entry.docsRoot ? normalizeReal(entry.docsRoot) : mainRepo,

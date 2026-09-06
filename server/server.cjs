@@ -399,6 +399,25 @@ function handleCpuStatus(req, res) {
 }
 
 /**
+ * 费用只认登记的对话目录；跨项目保留同址前缀，供聚合层暴露并列归属。
+ * 只读解析，路径异常的其他项目逐个跳过，不能拖垮本项目的费用查询。
+ * @returns {{prefixes:string[],otherPrefixes:string[]}|null} 未注册或本项目解析失败时 null。
+ */
+function costPrefixes(pid) {
+  const proj = resolveProjectSafe(pid);
+  if (!proj) return null;
+  const prefixes = [...new Set(proj.costRoots.map(costUsage.mapRepoToPrefix))];
+  const otherPrefixes = new Set();
+  for (const otherPid of Object.keys(readRegistrySafe().projects || {})) {
+    if (otherPid === pid) continue;
+    const other = resolveProjectSafe(otherPid);
+    if (!other) continue;
+    for (const root of other.costRoots) otherPrefixes.add(costUsage.mapRepoToPrefix(root));
+  }
+  return { prefixes, otherPrefixes: [...otherPrefixes] };
+}
+
+/**
  * token 成本聚合(GET /api/cost?project=<id>&days=<n>)。
  * 读 ~/.claude/projects 下该项目(含其 worktree 目录)的对话流水,按天/按模型/主·子agent聚合;
  * 订阅套餐看不到美元,这里给的是本机流水里的真实 token 数(BOARD-COST-MONITOR,0901)。
@@ -406,11 +425,11 @@ function handleCpuStatus(req, res) {
 function handleCostUsage(req, res, query) {
   const pid = String(query.project || '');
   const proj = resolveProjectSafe(pid);
-  if (!proj) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
+  const selected = costPrefixes(pid);
+  if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
-  const prefix = costUsage.mapRepoToPrefix(proj.mainRepo);
   return Promise.all([
-    costUsage.getUsage({ prefix, days }),
+    costUsage.getUsage({ ...selected, days }),
     codexApi.getCostUsage(days, proj.name || pid),
   ])
     .then(([usage, codex]) => {
@@ -419,6 +438,8 @@ function handleCostUsage(req, res, query) {
       const codexTokens = codex.selected.tokens;
       sendJson(res, 200, {
         ok: true,
+        costRoots: proj.costRoots,
+        sharedDirs: usage.sharedDirs,
         usage,
         codex,
         quota,
@@ -998,4 +1019,4 @@ process.on('uncaughtException', (e) => { console.error('[uncaught]', e && (e.sta
 // (派单要 spawn 真实终端窗口跑 claude,单测碰不得,只能验落脚点怎么算出来的)。
 if (require.main === module) main();
 
-module.exports = { dispatchCwd, codexRepo };
+module.exports = { dispatchCwd, codexRepo, costPrefixes };
