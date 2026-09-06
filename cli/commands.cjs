@@ -10,6 +10,7 @@ const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require(
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { emptyBoard, STATUS, emojiFor } = require('../core/boardSchema.cjs');
 const { normalizeReal } = require('../core/safePath.cjs');
+const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
 
 // ---------- helpers ----------
@@ -23,6 +24,20 @@ const today = () => {
 const nowIso = () => new Date().toISOString();
 function need(v, usage) { if (v === undefined || v === true || v === '') throw new Error('缺参数。用法: ' + usage); return v; }
 function asArray(v) { return v === undefined ? [] : Array.isArray(v) ? v : [v]; }
+/**
+ * 建卡/认领填了自动生成物就当场提醒(卡 BOARD-FILESCOPE-INDEX-POLLUTION)。
+ * 只提醒不拦:字段照原样收下(对人有信息量),但判撞车的那两处会忽略它——
+ * 与其让人以为"填了就被保护了",不如当场说清楚。
+ */
+function warnGeneratedScopes(scopes) {
+  const bad = asArray(scopes).filter((s) => isGeneratedArtifact(s));
+  if (!bad.length) return;
+  process.stderr.write(
+    `⚠ 文件范围里有自动生成物:${bad.join('、')}\n` +
+    '  这类文件谁干活都会碰(自动生成的目录/锁文件/构建产物),已按原样记进卡里,\n' +
+    '  但并行判断(哪些卡能同时派)与占用防撞会忽略它——靠它是挡不住撞车的。\n' +
+    '  建卡指引:fileScope 只填这张卡真正要动的手写文件。\n');
+}
 function getRegistryPath(flags) { return flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH; }
 function resolveProj(flags) { return resolveProject(need(flags.project, '--project <id>'), { registryPath: getRegistryPath(flags) }); }
 function okTask(board, id) { return { ok: true, task: (board.tasks || []).find((x) => x.id === id) }; }
@@ -89,6 +104,7 @@ function add(flags) {
     if (scopes.length) t.fileScope = scopes;
     b.tasks.push(t);
   }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}${plainTitle ? '（人话标题 ' + plainTitle + '）' : ''}`, id));
+  warnGeneratedScopes(scopes);
   return okTask(board, id);
 }
 
@@ -109,6 +125,7 @@ function claim(flags) {
     if (branches.length) t.gitBranch = unionBy([...(t.gitBranch || []), ...branches], String);
     if (scopes.length) t.fileScope = unionBy([...(t.fileScope || []), ...scopes], String);
   }, act('claim', author, `认领 ${id}：分支 ${branches.join(',') || '-'}${scopes.length ? '，文件域 ' + scopes.join(',') : ''}`, id));
+  warnGeneratedScopes(scopes);
   return okTask(board, id);
 }
 

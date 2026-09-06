@@ -296,3 +296,30 @@ test('GET /api/stream → 收到 board:changed 广播（mtime 轮询 R7）', asy
     } finally { clearInterval(poke); }
   } finally { closeSse(sse); }
 });
+
+test('GET /api/health → 共用仓仅有 alpha 同步块时，beta 的 hooksInstalled 为 false', async () => {
+  const codeRepo = path.join(SRV.dir, 'shared-hook-code-repo');
+  fs.mkdirSync(path.join(codeRepo, '.git', 'hooks'), { recursive: true });
+  fs.writeFileSync(path.join(codeRepo, '.git', 'hooks', 'post-commit'), [
+    '#!/bin/sh',
+    '#dashboard-hook:begin:alpha',
+    'node "/test/cli/index.cjs" sync-from-git --project "alpha" || true',
+    '#dashboard-hook:end',
+    '',
+  ].join('\n'));
+  const reg = JSON.parse(fs.readFileSync(SRV.reg, 'utf8'));
+  for (const id of ['alpha', 'beta']) {
+    const boardHome = path.join(SRV.dir, 'shared-hook-board-' + id);
+    fs.mkdirSync(boardHome);
+    reg.projects[id] = {
+      name: id, mainRepo: boardHome, codeRepo,
+      board: path.join(boardHome, '.dashboard', 'board.json'),
+    };
+  }
+  fs.writeFileSync(SRV.reg, JSON.stringify(reg));
+
+  const { status, body } = await getJson('/api/health');
+  assert.equal(status, 200);
+  assert.equal(body.hooksInstalled.alpha, true);
+  assert.equal(body.hooksInstalled.beta, false, '共用仓里 alpha 装过不代表 beta 已装');
+});
