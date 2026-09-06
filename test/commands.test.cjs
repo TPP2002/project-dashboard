@@ -235,3 +235,59 @@ test('note --task 后面漏写值要报错，不许当成没给卡号', () => {
   assert.throws(() => cmds.note({ task: true, text: '漏写值', ...P }), /task/);
   clean(dir);
 });
+
+// ---------------------------------------------------------------------------
+// DECIDE-LEAVES-STATUS-STALE —— 答完最后一条决策，卡就该自己从「待拍板」走到「已拍板」。
+// 为什么翻默认：负责人拍板走的是网页那条路，而 server 的 /api/decide 从来不带 --promote，
+// 于是拍完板卡还挂着「待拍板」，要有人记得手工 `set` 一次才对得上事实。靠人记 = 必失守，
+// 看板于是长期落后于事实（skill §0「看板状态永不落后于事实」正是要防这个）。
+// 想让卡继续留在「待拍板」的，用 --no-promote。
+// ---------------------------------------------------------------------------
+
+/** 给某卡挂一条合规的待拍板（三件套齐全，过 §6.2 校验）。 */
+function addPending(P, id, q) {
+  return cmds.pending({ _: [id], q, opt: ['A', 'B'], rec: 'B',
+    background: '【场景】这是单元测试用的背景描述文字需要够长才能通过校验器所以我在这里多写一些占位内容以确保。【问题】用于占位以通过 skill 六点二的字数最小值检查。【要做的事】占位。【为什么重要】占位。',
+    'pros-A': '【好处】A 的好处。【代价】A 的代价描述在这里。',
+    'pros-B': '【好处】B 的好处。【代价】B 的代价描述在这里。',
+    reason: '推荐 B 的理由描述需要写得足够长才能通过校验器所以我在这里多写一些内容占位。',
+    ...P });
+}
+
+test('decide：答完最后一条 → 默认自动 待拍板→已拍板（不必记得加 --promote）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  assert.equal(addPending(P, 'P01', 'A?').task.status, '待拍板');
+  assert.equal(cmds.decide({ _: ['P01'], did: 'd1', answer: 'B', ...P }).task.status, '已拍板');
+  clean(dir);
+});
+
+test('decide：还有没答完的决策 → 状态不动（只答一条不算拍完板）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  addPending(P, 'P01', '第一问?');
+  addPending(P, 'P01', '第二问?');
+  const after1 = cmds.decide({ _: ['P01'], did: 'd1', answer: 'B', ...P }).task;
+  assert.equal(after1.status, '待拍板', '还剩 d2 没答，不许前进');
+  assert.equal(cmds.decide({ _: ['P01'], did: 'd2', answer: 'A', ...P }).task.status, '已拍板', '最后一条答完才前进');
+  clean(dir);
+});
+
+test('decide --no-promote：显式要求留在待拍板时不动状态', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  addPending(P, 'P01', 'A?');
+  const t = cmds.decide({ _: ['P01'], did: 'd1', answer: 'B', 'no-promote': true, ...P }).task;
+  assert.equal(t.status, '待拍板');
+  assert.equal(t.decisions[0].answer, 'B', '答案照样落库，只是不动状态');
+  clean(dir);
+});
+
+test('decide：卡不在「待拍板」时一律不动状态（施工中的卡拍板不该被拽回去）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  addPending(P, 'P01', 'A?');
+  cmds.claim({ _: ['P01'], branch: 'br1', ...P });
+  assert.equal(cmds.decide({ _: ['P01'], did: 'd1', answer: 'B', ...P }).task.status, '施工中');
+  clean(dir);
+});
