@@ -34,10 +34,13 @@ function buildStatusMarkdown(board) {
 function renderIndex(flags) {
   const proj = resolveProj(flags);
   const indexPath = flags.index ? path.resolve(flags.index) : (proj.indexPath || path.join(proj.docsRoot, 'INDEX.md'));
+  let src = '';
+  try { src = fs.readFileSync(indexPath, 'utf8'); } catch (e) {
+    if (e.code !== 'ENOENT' || flags.index) throw e;
+    return { ok: true, text: `ℹ ${indexPath} 不存在：本项目没有 INDEX 台账，无需渲染（要用就先建这个文件并插一对锚）。` };
+  }
   const board = readBoard(proj.board);
   const generated = buildStatusMarkdown(board);
-  let src = '';
-  try { src = fs.readFileSync(indexPath, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const b = src.indexOf(BEGIN), e = src.indexOf(END);
   if (b === -1 || e === -1 || e < b) {
     throw new Error(`INDEX 缺少 dashboard:status 锚。请在 ${indexPath} 需要的位置插入一对：\n  ${BEGIN} -->\n  ${END}\n再重跑 render-index（绝不猜位置覆盖人工内容）。`);
