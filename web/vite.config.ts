@@ -32,6 +32,25 @@ function boardSchemaVirtualPlugin(): Plugin {
   }
 }
 
+// 同样的手法给「自动生成物判据」：core/generatedArtifacts.cjs 自己吐出 ESM 源码，
+// 前端 import 'virtual:generated-artifacts'。判撞车这件事 CLI / server / 前端必须同一份判据，
+// 前端另抄一份正则迟早对不上（卡 BOARD-FILESCOPE-INDEX-POLLUTION）。
+function generatedArtifactsVirtualPlugin(): Plugin {
+  const VID = 'virtual:generated-artifacts'
+  const RESOLVED = '\0' + VID
+  return {
+    name: 'virtual-generated-artifacts',
+    resolveId(id) {
+      if (id === VID) return RESOLVED
+    },
+    load(id) {
+      if (id !== RESOLVED) return
+      const require = createRequire(import.meta.url)
+      return require('../core/generatedArtifacts.cjs').toEsmSource()
+    },
+  }
+}
+
 // base './'：dist 可被 server 从任意子路径静态托管。
 // 默认 dev：/api 代理到真 server(127.0.0.1:6060)。
 // mode=mock（npm run dev:mock）：改用内置 mock 中间件联调，业务代码无 mock 分支。
@@ -39,7 +58,7 @@ export default defineConfig(({ mode }) => {
   const useMock = mode === 'mock'
   return {
     base: './',
-    plugins: [vue(), boardSchemaVirtualPlugin(), ...(useMock ? [mockApiPlugin()] : [])],
+    plugins: [vue(), boardSchemaVirtualPlugin(), generatedArtifactsVirtualPlugin(), ...(useMock ? [mockApiPlugin()] : [])],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
