@@ -126,7 +126,7 @@ node server/server.cjs                                    # 起服务（自动�
 | `claim <id> --branch` | 认领任务 → 施工中 |
 | `progress <id> --percent` | 回写进度 |
 | `pending <id> --q --opt… --rec` | 登记待拍板问题 |
-| `decide <id> --did --answer` | 拍板 |
+| `decide <id> --did --answer` | 拍板；答完最后一条决策自动 待拍板→已拍板（`--no-promote` 可留在待拍板） |
 | `done <id> [--pr --commit]` | 完工 |
 | `list` / `show <id>｜--pending` | 查询 / 待拍板中心 |
 | `hooks-install --project <id>` | 给项目装 git hook（自动同步 + 未认领拦提交）；hook 指向**发布副本**，不指向看板检出 |

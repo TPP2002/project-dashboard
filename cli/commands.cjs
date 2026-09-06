@@ -301,18 +301,25 @@ function pending(flags) {
 }
 
 // ---------- decide（拍板：填答案） ----------
+// 状态前进【默认开】（DECIDE-LEAVES-STATUS-STALE）：答完最后一条决策，卡自己从「待拍板」走到「已拍板」。
+// 为什么不是让调用方记得加 --promote：负责人真正拍板的入口是网页，而 server 的 /api/decide 从来
+// 不带这个 flag，于是拍完板卡还挂着「待拍板」，得有人再手工 `set` 一次才对得上事实 —— 靠人记 = 必失守，
+// 看板就此长期落后于事实（skill §0）。要让卡继续留在「待拍板」，显式给 --no-promote。
+// 三道闸缺一不可：本卡【全部】决策都已答 + 卡此刻【正挂在待拍板】+ 没给 --no-promote。
+// 施工中/暂缓等其它状态一律不动，免得拍个板把卡的真实进度拽回去。
 function decide(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'decide <taskId> --did <dN> --answer <答案> [--promote]');
+  const id = need(flags._[0], 'decide <taskId> --did <dN> --answer <答案> [--no-promote]');
   const did = need(flags.did, '--did <dN>');
   const answer = need(flags.answer, '--answer <答案>');
+  const promote = !flags['no-promote']; // --promote 仍可传，是历史写法的等价 no-op
   const board = mutate(proj, (b) => {
     const t = findTask(b, id);
     const d = (t.decisions || []).find((x) => x.id === did);
     if (!d) throw new Error(`decision ${did} 不存在`);
     if (!d.options.includes(answer) && !d.allowCustom) throw new Error(`答案「${answer}」不在选项 ${d.options.join('/')} 中`);
     d.answer = answer; d.decidedAt = today();
-    if (flags.promote && (t.decisions || []).every((x) => x.answer !== null) && t.status === '待拍板') t.status = '已拍板';
+    if (promote && (t.decisions || []).every((x) => x.answer !== null) && t.status === '待拍板') t.status = '已拍板';
   }, act('decide', flags.author || '看板', `拍板 ${id}·${did}=${answer}`, id));
   return okTask(board, id);
 }
