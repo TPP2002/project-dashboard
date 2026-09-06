@@ -1,30 +1,39 @@
 <script setup lang="ts">
 // 风险面板：跨项目的 暂缓 / 阻塞 / 待拍板 任务，三分组。点卡开抽屉。
+//
+// 「阻塞」只列**真的还被挡着**的卡（判据 = core/taskSignal.cjs 的 isBlocked）：完工卡上残留的
+// blockReason / blockedBy 不算（0907 审计 B2：这一列此前把已完工卡也列进来），上游全做完的也不算
+// ——那种卡已经可以开工了，不是风险。上游做完而卡上还挂着 blockedBy 的，单独报一句数，
+// 免得负责人以为自己的卡凭空消失了。
 import Icon from '@/components/Icon.vue'
 import { computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ScopeToggle from '@/components/ScopeToggle.vue'
+import { indexBoard, isBlocked, isParked, isUnblocked, unfinishedBlockers } from 'virtual:task-signal'
 import type { Board, Task } from '@/types'
 
 const store = useBoardStore()
 
-interface Row { pid: string; pname: string; task: Task }
+interface Row { pid: string; pname: string; task: Task; blockers: string[] }
 const groups = computed(() => {
   const parked: Row[] = []
   const blocked: Row[] = []
   const pending: Row[] = []
+  let cleared = 0
   for (const b of store.allBoards as Board[]) {
     // 默认只看当前项目（跟随顶栏项目切换）；「全部项目」开关可跨项目聚合。
     if (!store.centerScopeAll && b.project.id !== store.currentProjectId) continue
+    const index = indexBoard(b)
     for (const t of b.tasks) {
-      const row = { pid: b.project.id, pname: b.project.name, task: t }
-      if (t.status === '暂缓') parked.push(row)
-      else if ((t.deps?.blockedBy?.length ?? 0) > 0 || t.blockReason) blocked.push(row)
+      const row = { pid: b.project.id, pname: b.project.name, task: t, blockers: [] as string[] }
+      if (isParked(t)) parked.push(row)
+      else if (isBlocked(t, index)) blocked.push({ ...row, blockers: unfinishedBlockers(t, index) })
+      else if (isUnblocked(t, index)) cleared++
       if ((t.decisions ?? []).some((d) => d.answer == null)) pending.push(row)
     }
   }
-  return { parked, blocked, pending }
+  return { parked, blocked, pending, cleared }
 })
 function open(r: Row) { store.openTask(r.task.id, r.pid) }
 </script>
@@ -51,8 +60,12 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
         <div v-for="r in groups.blocked" :key="r.pid + r.task.id" class="rcard card" @click="open(r)">
           <div class="rtop"><span class="pill">{{ r.pname }}</span><span class="mono tid">{{ r.task.id }}</span><StatusBadge :status="r.task.status" small /></div>
           <div class="rtitle">{{ r.task.title }}</div>
-          <div v-if="r.task.deps?.blockedBy?.length" class="reason">被 {{ r.task.deps.blockedBy.join(', ') }} 阻塞</div>
+          <div v-if="r.blockers.length" class="reason">被 {{ r.blockers.join('、') }} 阻塞</div>
           <div v-if="r.task.blockReason" class="reason"><Icon name="alertTri" :size="14" />{{ r.task.blockReason }}</div>
+        </div>
+        <!-- 上游做完了、卡上却还挂着 blockedBy 的，从这一列消失是对的；不说一声会像数据丢了。 -->
+        <div v-if="groups.cleared" class="muted small cleared">
+          另有 {{ groups.cleared }} 张卡的上游已完工，阻塞已自动解除，可以开工了。
         </div>
       </section>
 
@@ -84,5 +97,6 @@ function open(r: Row) { store.openTask(r.task.id, r.pid) }
 .reason > .icon { margin-top: 2px; }
 .reason.warn { color: var(--warn); }
 .reason.note { color: var(--text-3); }
+.cleared { padding: var(--s2) var(--s1); line-height: 1.5; }
 .small { font-size: var(--fs-sm); }
 </style>
