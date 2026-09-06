@@ -11,6 +11,9 @@ const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { readBoard, readBoardOrNull, mutate, unionBy, unionShas } = require('./store.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 
+const { releaseHome } = require('../core/runtimeRoot.cjs');
+const { releaseStatus } = require('./release.cjs');
+
 function resolveProj(flags) {
   return resolveProject(flags.project, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
 }
@@ -92,6 +95,17 @@ function doctor(flags) {
   const hookPath = path.join(repo, '.git', 'hooks', 'post-commit');
   const hookOk = fs.existsSync(hookPath) && /dashboard/.test(safeRead(hookPath));
   if (!hookOk) issues.push('同步 hook 未安装（.git/hooks/post-commit），board 可能过时 → 跑 `hooksInstall` 修复');
+
+  // 1.6) 发布副本新鲜度（HOOK-CLI-POINTS-AT-LIVE-CHECKOUT，负责人 0906 拍板 d2=A：收官手动 release、体检落后就提醒）。
+  // 只在【本仓 hook 确实指着发布副本】时才查——hook 指别处（测试隔离 / 尚未迁移）时，机器上碰巧有没有副本
+  // 与这个仓无关，不该拿它决定 doctor 的红绿。
+  if (hookOk) {
+    const relHome = releaseHome();
+    if (safeRead(hookPath).includes(relHome.replace(/\\/g, '/') + '/cli/index.cjs')) {
+      const rs = releaseStatus({ dest: relHome });
+      if (rs.exists && rs.behind > 0) issues.push(rs.text.replace(/^[⚠✖] /, '') + '（本仓 hook 跑的就是这份副本）');
+    }
+  }
 
   // 1.5) 待拍板质量 lint（skill §6.2/§6.3 硬规则）——已在的 decisions 缺三件套就报
   const badDecisions = [];

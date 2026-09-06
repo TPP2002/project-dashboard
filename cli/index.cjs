@@ -45,6 +45,9 @@ const REGISTRY = {
   'docs-audit': ['./docsAudit.cjs', 'docsAudit'],
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
   'claim-check': ['./claimCheck.cjs', 'claimCheck'],
+  // 发布副本(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT):各仓 hook 只认它;合进主干后跑一次让新代码生效
+  release: ['./release.cjs', 'release'],
+  'hooks-trunk-guard': ['./hooksInstall.cjs', 'hooksTrunkGuard'],
   'mark-landed': ['./commands.cjs', 'markLanded'],
   'sync-progress': ['./commands.cjs', 'syncProgress'],
   inbox: ['./inboxCmd.cjs', 'inbox'],
