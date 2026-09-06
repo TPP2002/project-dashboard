@@ -8,7 +8,7 @@
  * 事实源:
  *   · 报告清单 = <项目 docsRoot>/docs/design/审计回流/reader.json(仓库正本,每批回运往里加)
  *   · 报告正文/上一版/边注 = 清单里写的相对路径,一律经 resolveInsideRoot 白名单根校验(与 /api/doc 同规矩)
- *   · 批注主存 = <看板根>/data/reader/<project>/<key>.json(与 board.json 同级的本机账本:加锁 + 原子写)
+ *   · 批注主存 = <DASHBOARD_HOME>/data/reader/<project>/<key>.json(数据根中的本机账本:加锁 + 原子写)
  *   · 批注镜像 = 对应看板卡的 note(经 CLI,和 decide 一样只经 execFile 数组传参,不拼 shell)
  *   · 荧光笔与「已审阅」标记(READER-USABILITY-ROUND2)同住这份账本、同一把锁:
  *     荧光笔是纯阅读痕迹不镜像看板;「已审阅」只记在本机,不回写仓库 reader.json 的 status。
@@ -32,8 +32,10 @@ const HL_COLORS = new Set(['yellow', 'green', 'blue', 'pink']);
 const REVIEW_STATES = new Set(['已审阅', '未审阅']);
 
 function createReaderApi(deps) {
-  const { resolveProjectSafe, sendJson, readBody, bodyMax, dashRoot, cliIndex, registry, registryPath, pollBoards } = deps;
-  const DATA_DIR = path.join(dashRoot, 'data', 'reader');
+  // dashRoot 是代码根,用于启动 CLI 的工作目录。
+  // dataRoot 是 DASHBOARD_HOME 数据根,批注主存不随发布副本替换。
+  const { resolveProjectSafe, sendJson, readBody, bodyMax, dashRoot, dataRoot, cliIndex, registry, registryPath, pollBoards } = deps;
+  const DATA_DIR = path.join(dataRoot, 'data', 'reader');
 
   // ---------- 读仓库文件(全部走白名单根) ----------
   function readRepoText(proj, rel) {
