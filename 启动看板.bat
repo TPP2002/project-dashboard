@@ -54,11 +54,6 @@ if not exist "web\node_modules" (
   echo [1/3] 界面依赖已就绪。
 )
 
-rem ---- 发布：把 origin/主干 的代码导出成发布副本，并用同一个提交现场构建界面 ----
-echo [2/3] 正在发布最新版本（导出主干代码 + 构建界面，可能要几十秒）...
-node cli\index.cjs release
-set "REL_ERR=!errorlevel!"
-
 rem ---- 找到发布副本目录（服务从它起）----
 set "REL="
 for /f "usebackq delims=" %%i in (`node cli\index.cjs release --print-dest`) do set "REL=%%i"
@@ -69,6 +64,18 @@ if not defined REL (
   pause
   exit /b 1
 )
+
+rem ---- 发布：把 origin/主干 的代码导出成发布副本，并用同一个提交现场构建界面 ----
+rem 用【发布副本自己的】发布命令来发布（它是已发布、没人在改的那份）；副本还不存在时才用本检出的引导一次。
+rem 为什么讲究这个：本检出可能落后好几个提交，拿它的旧发布命令去发新代码，会发出一份"代码是新的、
+rem 界面却没建出来"的副本（迁移当天真踩过一次）。
+echo [2/3] 正在发布最新版本（导出主干代码 + 构建界面，可能要几十秒）...
+if exist "!REL!\cli\index.cjs" (
+  node "!REL!\cli\index.cjs" release --source "%~dp0."
+) else (
+  node cli\index.cjs release
+)
+set "REL_ERR=!errorlevel!"
 
 if not "!REL_ERR!"=="0" (
   if exist "!REL!\server\server.cjs" (

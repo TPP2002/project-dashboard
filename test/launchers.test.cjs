@@ -33,6 +33,12 @@ for (const f of ['启动看板.bat', 'dashboard.sh']) {
     assert.match(s, /上一次发布好的那份|上一份/, '发布失败要说清"用的是上一份副本"');
     assert.ok(!/cd\s+[/\\]d?\s*"?%REL%|cd\s+"\$REL"/.test(s), '不许把当前目录切进发布副本(会锁住目录,下次发布换名必失败)');
   });
+
+  test(`${f}:发布优先用副本自己的 CLI(本检出可能落后,旧发布工具建不出界面)`, () => {
+    const s = read(f);
+    assert.match(s, /(!REL!|\$REL)[\\/]cli[\\/]index\.cjs["']? release --source/, '副本在就用副本的发布命令,并把本检出当来源');
+    assert.match(s, /index\.cjs release\b/, '副本还不存在时要能用本检出的命令引导一次');
+  });
 }
 
 test('serviceStatus:探不到服务时如实说"没在跑",不报错也不瞎猜', () => {

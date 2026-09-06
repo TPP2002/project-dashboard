@@ -39,16 +39,24 @@ else
   echo "[1/3] 界面依赖已就绪。"
 fi
 
-# ---- 发布：导出 origin/主干 的代码 + 用同一个提交现场构建界面 ----
-echo "[2/3] 正在发布最新版本（导出主干代码 + 构建界面，可能要几十秒）..."
-REL_OK=1
-node cli/index.cjs release || REL_OK=0
-
+# ---- 找到发布副本目录（服务从它起）----
 REL="$(node cli/index.cjs release --print-dest)"
 if [ -z "$REL" ]; then
   echo
   echo "[X] 取不到发布副本目录，起不了服务。上面 node 的输出里有原因。"
   exit 1
+fi
+
+# ---- 发布：导出 origin/主干 的代码 + 用同一个提交现场构建界面 ----
+# 用【发布副本自己的】发布命令来发布（它是已发布、没人在改的那份）；副本还不存在时才用本检出的引导一次。
+# 为什么讲究这个：本检出可能落后好几个提交，拿它的旧发布命令去发新代码，会发出一份"代码是新的、
+# 界面却没建出来"的副本（迁移当天真踩过一次）。
+echo "[2/3] 正在发布最新版本（导出主干代码 + 构建界面，可能要几十秒）..."
+REL_OK=1
+if [ -f "$REL/cli/index.cjs" ]; then
+  node "$REL/cli/index.cjs" release --source "$(pwd)" || REL_OK=0
+else
+  node cli/index.cjs release || REL_OK=0
 fi
 
 if [ "$REL_OK" = "0" ]; then
