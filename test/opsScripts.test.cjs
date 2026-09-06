@@ -92,6 +92,32 @@ test('precheck:三段齐全,施工中占用与待拍板可见', () => {
   clean(dir);
 });
 
+test('precheck:远程主干叫 master(非 main)时仍能算出落后多少(PRECHECK-ASSUMES-ORIGIN-MAIN)', () => {
+  const { dir, repo } = gitEnv();
+  const bare = path.join(dir, 'origin.git');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'master', bare], { encoding: 'utf8' });
+  G(repo, 'remote', 'add', 'origin', bare);
+  G(repo, 'push', '-q', 'origin', 'main:refs/heads/master');
+  G(repo, 'remote', 'set-head', 'origin', 'master');
+
+  // 从另一个 clone 往远端 master 再推一个提交,让 repo 相对 origin/master 落后 1 个
+  const clone = path.join(dir, 'clone');
+  execFileSync('git', ['clone', '-q', bare, clone], { encoding: 'utf8' });
+  G(clone, 'config', 'user.email', 't@t'); G(clone, 'config', 'user.name', 't');
+  fs.writeFileSync(path.join(clone, 'b.txt'), '2');
+  G(clone, 'add', '.'); G(clone, 'commit', '-q', '-m', 'extra on remote master');
+  G(clone, 'push', '-q', 'origin', 'master');
+  G(repo, 'fetch', '-q', 'origin');
+
+  const reg = path.join(dir, 'registry.json');
+  fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
+  const P = { project: 'p', registry: reg };
+  cmds.register({ id: 'p', name: '测试项目', root: repo, registry: reg });
+  const r = precheck({ ...P, 'no-fetch': true });
+  assert.match(r.text, /落后 origin\/master 1 个提交/, '主干叫 master 时也要能报出落后数,不能"算不出"');
+  clean(dir);
+});
+
 // ── BOARD-CLEANUP-DELETES-MAIN(0906 负责人拍 A)────────────────────────────
 // 命门 = 干线(main/master/仓库实际默认分支)在任何走法下都不能被 cleanup 删掉。
 // 上面的 gitEnv() 没有远程,origin/<干线> 解析不出来 → 删分支那条路整个走不到,
