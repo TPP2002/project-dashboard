@@ -4,13 +4,14 @@
  * 单一事实源:无论看板界面派单、还是新对话跑 `cli inbox` 读看板,都用同一份生成器,
  * 保证对话拿到的任务书一致。
  */
-const CLI = 'node ~/.claude/dashboard/cli/index.cjs';
+const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 /**
  * 短触发指令——给新对话粘贴用(避开命令行长度/转义,funnel through cli inbox)。
  * 用户在【桌面端 Claude Code】新开一个对话,粘贴这一句,那对话自己去读看板拿完整任务书。
  */
 function shortTrigger(pid, tid) {
+  const CLI = displayCliCommand();
   return [
     `你被【项目管理看板】指派接手任务 ${tid}(项目 ${pid})。`,
     `请立刻运行下面命令拿到完整任务书,然后严格按它执行(先 cli claim 再动代码):`,
@@ -21,6 +22,7 @@ function shortTrigger(pid, tid) {
 
 /** 任务级任务书:一个任务的所有 unlanded decisions 打包,一个对话统一施工。 */
 function buildTaskDispatchPrompt(pid, projName, task, decisions) {
+  const CLI = displayCliCommand();
   const lines = [
     `# 【看板派单】此对话负责落地任务 ${task.id} 的全部已拍板决策`,
     '',
@@ -103,4 +105,4 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions) {
   return lines.join('\n');
 }
 
-module.exports = { buildTaskDispatchPrompt, shortTrigger, CLI };
+module.exports = { buildTaskDispatchPrompt, shortTrigger, get CLI() { return displayCliCommand(); } };
