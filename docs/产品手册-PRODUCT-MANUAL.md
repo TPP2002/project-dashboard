@@ -257,7 +257,7 @@
 | `note --text [--task]` / `set <id> --field --value` | 记活动流 / 通用兜底赋值。 |
 | `list [--status --wave]` / `show <id>｜--pending` | 查询 / 待拍板中心。 |
 | `sync-from-git [--branch --n]` | 从 git 自动派生 commit/pr/branch（hook 调用）。 |
-| `doctor [--fix] [--branches]` | 对账 git↔board + 自检 hook + 有边界的修复；`--branches` 只读体检分支台账，报告可信、可疑与无法核实条目。 |
+| `doctor [--fix] [--branches]` | 对账 git↔board + 自检 hook + 有边界的修复；`--branches` 只读体检分支台账，报告可信、可疑与无法核实条目；`--branches --fix` 仅摘掉有提交反证、全部正主都挂着该分支且双向无依赖关系的误扣分支，摘前备份、摘后留痕，重跑幂等。 |
 | `render-index [--index <INDEX.md>] [--dry-run]` | 从 board 生成 INDEX 状态段（HTML 锚之间，幂等）。 |
 | `snapshot [--out --stamp]` | 导出 board 快照（git 外备份）。 |
 | `inbox --project [--tid]` | 「读看板接单」入口：无 tid 列待落地任务，给 tid 打印完整任务书。 |
