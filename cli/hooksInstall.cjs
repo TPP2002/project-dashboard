@@ -375,10 +375,10 @@ function installClaudeMd(mainRepo, projId, projName) {
 **具体步骤**(动代码之前跑):
 \`\`\`bash
 # 若任务还不在看板 → 先 add(用你自己编的 id 或用户给的 id)
-node ~/.claude/dashboard/cli/index.cjs add <任务id> --project ${projId} --title "<一句话标题>"
+node ${q(CLI)} add <任务id> --project ${projId} --title "<一句话标题>"
 
 # claim(必做)——本次施工的正式认领凭据
-node ~/.claude/dashboard/cli/index.cjs claim <任务id> --project ${projId} --branch <本次分支名>
+node ${q(CLI)} claim <任务id> --project ${projId} --branch <本次分支名>
 \`\`\`
 
 > **\`--project\` 填这张卡实际所属的项目,不一定是 \`${projId}\`。** 一个仓库里完全可能干别的项目的卡;
