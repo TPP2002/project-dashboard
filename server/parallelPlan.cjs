@@ -1,5 +1,7 @@
 'use strict';
 
+const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
+
 /**
  * 可并行任务清单 —— 回答一个具体问题:**现在这些卡里,哪几张可以同时派给不同对话去做?**
  *
@@ -33,12 +35,18 @@ function idPrefix(id) {
  * 把 glob 归一成"用于判重叠的目录键"。
  * 比对的是**目录层级**而不是精确文件:两张卡都在 src/engine/market/ 下就算可能撞,
  * 宁可保守——误判成撞车的代价(少派一张)远小于漏判(两个人改同一个文件)。
+ *
+ * 自动生成物(docs/INDEX-自动生成.md、lock 文件、dist/ 等)在这里一律不算数:
+ * 那是谁干活都会碰的文件,拿它判撞车会把"这两张卡都写过文档吗"当成"这两张卡会打架吗",
+ * 让完全不相干的卡只能串行派(卡 BOARD-FILESCOPE-INDEX-POLLUTION,判据见 core/generatedArtifacts.cjs)。
+ * 一张卡的 fileScope 若**全是**生成物,等同于没填文件范围 → 退回按卡号前缀猜,并照旧标注是猜的。
  */
 function scopeKeys(fileScope) {
   if (!Array.isArray(fileScope)) return [];
   const keys = new Set();
   for (const raw of fileScope) {
     if (typeof raw !== 'string' || !raw.trim()) continue;
+    if (isGeneratedArtifact(raw)) continue;
     // 统一分隔符、砍掉通配段与花括号枚举,只留前面的稳定目录部分
     const normalized = raw.trim().replace(/\\/g, '/').replace(/\{[^}]*\}/g, '');
     const segments = normalized.split('/').filter(Boolean);
