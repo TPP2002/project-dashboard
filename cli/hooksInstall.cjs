@@ -2,11 +2,12 @@
 /**
  * hooksInstall.cjs —— 装"同步三重保险"里的【git hook 自动派生】+【CC 兜底对账】两环（治本 R2）。
  *
- * 为什么存在：board 同步不能押"对话记得调 CLI"。本命令给主仓装两类 hook，
- * 让 commit / 对话结束时自动把 git 事实反推进 board，人不在场也不漂：
- *   1) <mainRepo>/.git/hooks/post-commit  —— commit 后自动 sync-from-git + render-index
- *      <mainRepo>/.git/hooks/post-merge   —— 分支并入后自动 sync-from-git
- *   2) <mainRepo>/.claude/settings.json   —— CC 的 Stop(每次对话结束跑 doctor 兜底对账)
+ * 为什么存在：board 同步不能押"对话记得调 CLI"。本命令给【代码的家】(proj.codeRepo，
+ * 板自成一家时不同于 proj.mainRepo，见 resolveProject.cjs 的 CLUSTER-BOARD-REPO-PATH-WRONG 头注)
+ * 装两类 hook，让 commit / 对话结束时自动把 git 事实反推进 board，人不在场也不漂：
+ *   1) <codeRepo>/.git/hooks/post-commit  —— commit 后自动 sync-from-git + render-index
+ *      <codeRepo>/.git/hooks/post-merge   —— 分支并入后自动 sync-from-git
+ *   2) <codeRepo>/.claude/settings.json   —— CC 的 Stop(每次对话结束跑 doctor 兜底对账)
  *      + PostToolUse/Bash(检测到 git commit 就 sync-from-git)
  *
  * 三条铁律（方案第七节 · 失败隔离）：
@@ -14,11 +15,21 @@
  *   · 【不覆盖用户已有内容】——git hook 无锚则追加、有锚则只换锚块；settings.json 只并入 hooks 键。
  *   · 写 settings.json 走 core/atomicWrite（禁裸 writeFileSync）。
  *
- * 幂等：重复运行只更新自己那一块（git hook 靠 #dashboard-hook 锚、settings 靠 CLI 路径特征识别）。
+ * 幂等：重复运行只更新自己那一块（git hook 靠 #dashboard-hook:<id> 锚、settings 靠 CLI 路径特征
+ * + 项目 id 双重识别，见下方 CLUSTER-CODEREPO-HOOK-COLLISION）。
  *
  * 实测结论（本机 Windows + Git 2.47 + Node 24）：git 用自带 sh 跑 hook，
  * `node "C:/正斜杠/绝对/index.cjs"` 可被原生 node 正确解析——故 hook 里嵌【解析后的正斜杠绝对路径】，
  * 比依赖 `~` 展开 + MSYS 路径翻译更稳。
+ *
+ * 【多项目共享一个 codeRepo 时必须共存，不能互相顶替】(CLUSTER-CODEREPO-HOOK-COLLISION，2026-09-06)
+ * codeRepo 分家后（见头部 CLUSTER-BOARD-REPO-PATH-WRONG），出现了"两个项目共用同一个代码仓"的形状：
+ * rogue 和 cluster 都把 codeRepo 指向 F:\code-repo。原先 git hook 锚 / settings.json 幂等判断都
+ * 是【单例】的——不认项目 id，只认"是不是本工具装的"，于是给 cluster 装一次会把 rogue 的条目连锅端掉。
+ * 治法：post-commit/post-merge 的锚、settings.json 的 Stop/PostToolUse 条目都按【项目 id】隔离
+ * （pre-commit 内容本就与 id 无关，仍保持单例，见 installGitHooks 内注释）；CLAUDE.md 锚同理按 id 分段。
+ * 迁移：三处都保留"识别旧版无 id 锚"的兜底——旧锚被下一次重装的项目原地转换成带 id 的新锚
+ * （等价于今天"最后装的项目赢"，不比现状更差；从此以后各项目各自重装一遍即可稳定共存）。
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -51,10 +62,18 @@ function looksLikeOurs(cmd) {
 }
 
 // git hook 锚：注释行（# 开头即 shell 注释），begin/end 夹一块可幂等替换的区间。
-const BEGIN = '#dashboard-hook:begin';
+// 锚带 blockId（形如 #dashboard-hook:begin:<blockId>）——多个项目共用同一 codeRepo 时，
+// 各自的块按 blockId 区分，重装一个不再殃及另一个（CLUSTER-CODEREPO-HOOK-COLLISION）。
 const END = '#dashboard-hook:end';
-// 非全局：正常只有一块，只替换第一处即可（避免多块被替成 N 个相同块）。
-const BLOCK_RE = /#dashboard-hook:begin[\s\S]*?#dashboard-hook:end[^\n]*\n?/;
+// 正则元字符转义：blockId 目前只会是项目 id（已在 hooksInstall() 顶部挡过特殊字符）或常量
+// 'claim-gate'，仍防御性转义，避免 id 恰好含正则特殊字符时把锚匹配搞炸。
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function anchorBegin(blockId) { return `#dashboard-hook:begin:${blockId}`; }
+function ownBlockRe(blockId) {
+  return new RegExp(`#dashboard-hook:begin:${escapeRe(blockId)}[^\\n]*[\\s\\S]*?#dashboard-hook:end[^\\n]*\\n?`);
+}
+// 旧版锚（本次改动前装的，begin 后没有 `:blockId`）——仅用于一次性迁移，见 upsertHookContent 头注。
+const LEGACY_BLOCK_RE = /#dashboard-hook:begin(?!:)[^\n]*[\s\S]*?#dashboard-hook:end[^\n]*\n?/;
 
 function resolveProj(flags) {
   return resolveProject(flags.project, {
@@ -79,10 +98,10 @@ function cliLine(sub, id, registryFwd, tail) {
   return line + ' || true';
 }
 
-/** 用 begin/end 锚包出一块 hook 片段（末尾留一个空行，保证块后有换行）。 */
-function buildBlock(lines) {
+/** 用 begin/end 锚包出一块 hook 片段（末尾留一个空行，保证块后有换行）。blockId 见上方锚定义。 */
+function buildBlock(blockId, lines, note) {
   return [
-    `${BEGIN} —— 看板自动同步（dashboard hooks-install 维护，勿手改；删本块即卸载）`,
+    `${anchorBegin(blockId)} —— ${note}（dashboard hooks-install 维护，勿手改；删本块即卸载）`,
     ...lines,
     END,
     '',
@@ -90,38 +109,42 @@ function buildBlock(lines) {
 }
 
 /**
- * upsert hook 文件内容（不覆盖用户原内容）：
+ * upsert hook 文件内容（不覆盖用户原内容），按 blockId 隔离：
  *   · 空/不存在 → 带 #!/bin/sh 新建；
- *   · 已含锚   → 只替换锚块（幂等，顺带刷新路径/id）；
- *   · 有内容无锚 → 末尾追加锚块（保留用户原脚本，不加第二个 shebang）。
+ *   · 已含【本 blockId 的】锚 → 只替换这一块（幂等，顺带刷新路径/id），其它 blockId 的块原样保留；
+ *   · 无本 blockId 的锚，但含【旧版无 id 锚】→ 就地转换成本 blockId 的新锚（一次性迁移，
+ *     语义等价于"最后装的项目赢"——不比迁移前更差；迁移后各项目的锚各自独立，不再互相顶替）；
+ *   · 都没有 → 末尾追加本 blockId 的新锚块（保留用户原脚本 / 其它项目已迁移的块，不加第二个 shebang）。
  */
-function upsertHookContent(existing, block) {
+function upsertHookContent(existing, blockId, block) {
   if (!existing || existing.trim() === '') return '#!/bin/sh\n' + block;
-  if (BLOCK_RE.test(existing)) return existing.replace(BLOCK_RE, block);
+  const ownRe = ownBlockRe(blockId);
+  if (ownRe.test(existing)) return existing.replace(ownRe, block);
+  if (LEGACY_BLOCK_RE.test(existing)) return existing.replace(LEGACY_BLOCK_RE, block);
   const sep = existing.endsWith('\n') ? '' : '\n';
   return existing + sep + '\n' + block;
 }
 
 /**
- * 定位主仓 hooks 目录：主仓 .git 恒为目录 → <.git>/hooks；
+ * 定位代码仓 hooks 目录：codeRepo 的 .git 恒为目录 → <.git>/hooks；
  * 若 .git 是文件（worktree/子模块重定向，防御）→ 解析 gitdir 后取其 hooks。
  */
-function resolveHooksDir(mainRepo) {
-  const gitPath = path.join(mainRepo, '.git');
+function resolveHooksDir(codeRepo) {
+  const gitPath = path.join(codeRepo, '.git');
   let st;
   try { st = fs.statSync(gitPath); }
-  catch { throw new Error(`${mainRepo} 不是 git 仓库（无 .git），请先在主仓 git init`); }
+  catch { throw new Error(`${codeRepo} 不是 git 仓库（无 .git），请先在代码仓 git init`); }
   if (st.isDirectory()) return path.join(gitPath, 'hooks');
   const m = fs.readFileSync(gitPath, 'utf8').match(/gitdir:\s*(.+)/);
   if (!m) throw new Error(`${gitPath} 不是有效的 .git 指针文件`);
   const raw = m[1].trim();
-  const gitDir = path.isAbsolute(raw) ? raw : path.resolve(mainRepo, raw);
+  const gitDir = path.isAbsolute(raw) ? raw : path.resolve(codeRepo, raw);
   return path.join(gitDir, 'hooks');
 }
 
 /** 写/追加 git hooks（post-commit / post-merge），带锚幂等、chmod 0755。 */
-function installGitHooks(mainRepo, id, registryFwd) {
-  const hooksDir = resolveHooksDir(mainRepo);
+function installGitHooks(codeRepo, id, registryFwd) {
+  const hooksDir = resolveHooksDir(codeRepo);
   fs.mkdirSync(hooksDir, { recursive: true });
   // pre-commit：看板"claim 硬闸门"——commit 前检查看板里有没有匹配当前分支的施工中任务，
   // 无 → 拦下 commit，报告"未 claim"并给补救命令。**这是唯一能强制对话遵守协议的手段**。
@@ -149,35 +172,39 @@ function installGitHooks(mainRepo, id, registryFwd) {
     `fi`,
   ];
 
+  // pre-commit 的 blockId 固定为 'claim-gate'：内容只取决于 CLI 路径 + registryFwd，与项目 id
+  // 无关（哪个项目装都一样），所以保持单例，不按 id 隔离——按 id 隔离只会让同一份闸门代码
+  // 在同一个仓库里凭空重复 N 份（CLUSTER-CODEREPO-HOOK-COLLISION 治的是"内容因 id 而异却被
+  // 单例覆盖"，pre-commit 恰好不属于这类）。
   const plan = {
     // pre-commit：claim 硬闸门(注意：本 hook 不能加 || true，需要真拦截)
-    'pre-commit': [
-      `${BEGIN} —— 看板 claim 硬闸门（dashboard hooks-install 维护，勿手改；删本块即卸载）`,
+    'pre-commit': { blockId: 'claim-gate', content: [
+      `${anchorBegin('claim-gate')} —— 看板 claim 硬闸门（dashboard hooks-install 维护，勿手改；删本块即卸载）`,
       ...preCommitCheck,
       END,
       '',
-    ].join('\n'),
+    ].join('\n') },
     // commit 后：先从 git 反推 board，再刷 INDEX 状态段。两行各自 || true，互不牵连。
     // 分支与提交就地读、显式传：worktree 共享同一份 .git/hooks，钩子不报"是谁触发的"，
     // sync 那头就无从分辨，只能拿个采样值广播给一窗口的历史卡（张冠李戴的来源）。
-    'post-commit': buildBlock([
+    'post-commit': { blockId: id, content: buildBlock(id, [
       '__BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")',
       '__SHA=$(git rev-parse HEAD 2>/dev/null || echo "")',
       cliLine('sync-from-git', id, registryFwd, '--branch "$__BR" --commit "$__SHA"'),
       cliLine('render-index', id, registryFwd),
-    ]),
+    ], '看板自动同步') },
     // 分支并入后：反推 board（合并带来的 commit / status:merged 等）。
     // 刻意不传 --branch：合并带进来的提交属于源分支，而这里只知道当前分支，
     // 传了就等于把当前分支扣到一批别人的卡上；补 commit/PR 号不需要分支信息。
-    'post-merge': buildBlock([
+    'post-merge': { blockId: id, content: buildBlock(id, [
       cliLine('sync-from-git', id, registryFwd),
-    ]),
+    ], '看板自动同步') },
   };
   const written = [];
-  for (const [name, block] of Object.entries(plan)) {
+  for (const [name, { blockId, content }] of Object.entries(plan)) {
     const p = path.join(hooksDir, name);
     const existing = fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
-    atomicWriteFileSync(p, upsertHookContent(existing, block), { fsyncData: false });
+    atomicWriteFileSync(p, upsertHookContent(existing, blockId, content), { fsyncData: false });
     try { fs.chmodSync(p, 0o755); } catch { /* Windows 无 x 位，无害 */ }
     written.push(name);
   }
@@ -293,9 +320,9 @@ function hooksGlobal(_flags) {
     '  非看板项目里会静默跳过,不影响。' };
 }
 
-/** 读-合并-写 <mainRepo>/.claude/settings.json：并入 Stop + PostToolUse hook，不覆盖既有键。 */
-function installCcSettings(mainRepo, id, registryFwd) {
-  const settingsPath = path.join(mainRepo, '.claude', 'settings.json');
+/** 读-合并-写 <codeRepo>/.claude/settings.json：并入 Stop + PostToolUse hook，不覆盖既有键。 */
+function installCcSettings(codeRepo, id, registryFwd) {
+  const settingsPath = path.join(codeRepo, '.claude', 'settings.json');
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
 
   let settings = {};
@@ -308,10 +335,15 @@ function installCcSettings(mainRepo, id, registryFwd) {
   }
   settings.hooks = settings.hooks || {};
 
-  // 幂等 + 不动用户手写条目：只剔除"本工具此前装的"（looksLikeOurs：新路径或旧路径+我方子命令），再插新块。
-  const isMine = (entry) => entry && Array.isArray(entry.hooks)
-    && entry.hooks.some((h) => h && looksLikeOurs(h.command));
-  const keepOthers = (arr) => (Array.isArray(arr) ? arr.filter((e) => !isMine(e)) : []);
+  // 幂等 + 不动用户手写条目 + 不动别的项目的条目（CLUSTER-CODEREPO-HOOK-COLLISION）：
+  // 只剔除"本工具装的、且是本项目 id 那条"——「本工具装的」用 looksLikeOurs 判（认新路径/旧路径两种，
+  // 治 HOOK-CLI-POINTS-AT-LIVE-CHECKOUT 的路径漂移)，「是本项目那条」再叠加 id 的引号包裹形式
+  // （cliLine 用双引号 `--project "id"`，postToolUseCommand/todoWriteCommand 用单引号 `'id'`），
+  // 两种引号都认。共享同一 codeRepo 的另一个项目此前装的条目只含 looksLikeOurs、不含本 id，天然被跳过保留。
+  const isMineForId = (entry) => entry && Array.isArray(entry.hooks)
+    && entry.hooks.some((h) => h && typeof h.command === 'string'
+      && looksLikeOurs(h.command) && (h.command.includes(`"${id}"`) || h.command.includes(`'${id}'`)));
+  const keepOthers = (arr) => (Array.isArray(arr) ? arr.filter((e) => !isMineForId(e)) : []);
 
   settings.hooks.Stop = keepOthers(settings.hooks.Stop);
   settings.hooks.Stop.push({
@@ -338,14 +370,22 @@ function installCcSettings(mainRepo, id, registryFwd) {
  */
 // 装/更新项目 CLAUDE.md 里的"看板协议"锚段——让每个新对话进项目就自动看到规矩。
 // 幂等 upsert：有锚就替换锚间内容，无锚就在末尾追加。绝不动锚外用户内容。
-function installClaudeMd(mainRepo, projId, projName) {
-  const cmdPath = path.join(mainRepo, 'CLAUDE.md');
-  const BEGIN = '<!-- dashboard-protocol: begin -->';
-  const END = '<!-- dashboard-protocol: end -->';
+// 锚按项目 id 分段（<!-- dashboard-protocol:<id> begin/end -->）——多个项目共用同一个 codeRepo
+// 时（如 rogue/cluster 都在 F:\code-repo），各自的协议段共存，不再互相覆盖
+// （CLUSTER-CODEREPO-HOOK-COLLISION）。旧版（无 id 的单一锚）识别为 LEGACY_BEGIN/END，
+// 仅用于一次性迁移：本项目若没有自己的锚、但发现旧锚，就地转换成本项目的新锚
+// （等价于"最后装的项目赢"，不比迁移前更差；迁移后各项目各自安好）。
+function installClaudeMd(codeRepo, projId, projName) {
+  const cmdPath = path.join(codeRepo, 'CLAUDE.md');
+  const BEGIN = `<!-- dashboard-protocol:${projId} begin -->`;
+  const END = `<!-- dashboard-protocol:${projId} end -->`;
+  const LEGACY_BEGIN = '<!-- dashboard-protocol: begin -->';
+  const LEGACY_END = '<!-- dashboard-protocol: end -->';
   const block = `${BEGIN}
 ## 🎯 项目管理看板 · 本项目已接入(自动装于 dashboard hooks-install)
 
-**本项目已注册进全局项目管理看板(项目 id: \`${projId}\`)。本节是【硬约束】,不是建议。**
+**本项目已注册进全局项目管理看板(项目 id: \`${projId}\`)。本节是【硬约束】,不是建议。
+本仓库可能同时接入其它项目的看板协议(各自独立一段,锚不同);动手前先确认这张卡实际属于哪个项目。**
 
 ### ⚠️ 优先级声明(读第一句话)
 
@@ -411,19 +451,28 @@ ${END}`;
 
   let src = '';
   try { src = fs.readFileSync(cmdPath, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  let out;
+  let out, action;
   if (src) {
     const b = src.indexOf(BEGIN), e = src.indexOf(END);
     if (b !== -1 && e !== -1 && e > b) {
       out = src.slice(0, b) + block + src.slice(e + END.length);
+      action = 'updated';
     } else {
-      out = src.trimEnd() + '\n\n' + block + '\n';
+      const lb = src.indexOf(LEGACY_BEGIN), le = src.indexOf(LEGACY_END);
+      if (lb !== -1 && le !== -1 && le > lb) {
+        out = src.slice(0, lb) + block + src.slice(le + LEGACY_END.length);
+        action = 'migrated';
+      } else {
+        out = src.trimEnd() + '\n\n' + block + '\n';
+        action = 'appended';
+      }
     }
   } else {
     out = `# ${projName || projId} · CLAUDE 协作说明\n\n${block}\n`;
+    action = 'created';
   }
   atomicWriteFileSync(cmdPath, out);
-  return { path: cmdPath, action: src ? (src.includes(BEGIN) ? 'updated' : 'appended') : 'created' };
+  return { path: cmdPath, action };
 }
 
 function hooksInstall(flags) {
@@ -435,12 +484,15 @@ function hooksInstall(flags) {
   // 仅测试隔离时把 registry 也焊进 hook（正斜杠绝对路径）；生产不传 → hook 用默认全局 registry。
   const registryFwd = flags.registry ? path.resolve(flags.registry).replace(/\\/g, '/') : null;
 
-  const git = installGitHooks(proj.mainRepo, proj.id, registryFwd);
-  const cc = installCcSettings(proj.mainRepo, proj.id, registryFwd);
-  const cmd = installClaudeMd(proj.mainRepo, proj.id, proj.name);
+  // codeRepo 而非 mainRepo：hook / settings.json / CLAUDE.md 都要落在「代码的家」——
+  // commit 和编码会话真实发生的地方（同 gitSync.cjs 的 CLUSTER-BOARD-REPO-PATH-WRONG 治法）。
+  // mainRepo 只是「板的家」，板自成一家的项目（如 cluster）里它可能根本不是 git 仓。
+  const git = installGitHooks(proj.codeRepo, proj.id, registryFwd);
+  const cc = installCcSettings(proj.codeRepo, proj.id, registryFwd);
+  const cmd = installClaudeMd(proj.codeRepo, proj.id, proj.name);
 
   const text =
-    `✔ 已装同步 hook @ ${proj.name}（${proj.mainRepo}）\n` +
+    `✔ 已装同步 hook @ ${proj.name}（${proj.codeRepo}）\n` +
     `  · git hooks：${git.written.join(', ')} → ${git.hooksDir}\n` +
     `  · CC settings：Stop(doctor 兜底) + PostToolUse(Bash·git commit→sync) → ${cc.settingsPath}\n` +
     `  · CLAUDE.md 看板协议锚段：${cmd.action} → ${cmd.path}\n` +
