@@ -31,13 +31,27 @@
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
   --cn: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans SC", system-ui, sans-serif;
 
-  /* —— 光谱（默认冷谱） —— */
-  --spectrum: linear-gradient(90deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4);
-  --spectrum-v: linear-gradient(180deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4);
-  --spectrum-preview-cool: linear-gradient(90deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8);
-  --spectrum-preview-warm: linear-gradient(90deg, #f0b429, #f5825b, #e8619d, #a86fd8);
-  --spectrum-preview-full: linear-gradient(90deg, #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8);
-  --spectrum-preview-duo: linear-gradient(90deg, #4ad9c4, #6d8cff);
+  /* —— 光谱色站（灯条颜色的唯一来源；前端读它拼渐变、进度环读它做描边） ——
+     每套都以首色收尾（… → 首色）把色环闭合：闭合后平移「一整张背景图」画面完全复原，
+     循环才没有接缝；缺了这个收尾色，流光每跑完一轮就会在接缝处硬切一下。 */
+  --spec-cool: #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4;
+  --spec-warm: #f0b429, #f5825b, #e8619d, #a86fd8, #f0b429;
+  --spec-full: #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8, #ff5f6d;
+  --spec-duo: #4ad9c4, #6d8cff, #4ad9c4;
+
+  /* 全站生效色站（默认冷谱）：预设走下面的 [data-spectrum] 规则，自定义配色由前端写内联变量覆盖。 */
+  --spec-active: var(--spec-cool);
+
+  /* 分部位色站：默认全部跟随全站，前端只要给某一个写内联变量，该部位就单独换色。 */
+  --spec-bar: var(--spec-active);    /* 任务进度条（任务卡 / 抽屉 / 看板顶部 / CPU 预算） */
+  --spec-ring: var(--spec-active);   /* 项目进度环（总览页圆环） */
+  --spec-top: var(--spec-active);    /* 卡片顶边流光 */
+  --spec-edge: var(--spec-active);   /* 施工中 / 运行中的左侧竖条 */
+  --spec-quota: var(--spec-active);  /* Codex 额度条 */
+
+  /* 旧别名：审阅台等页面仍直接引用整条渐变。 */
+  --spectrum: linear-gradient(90deg, var(--spec-active));
+  --spectrum-v: linear-gradient(180deg, var(--spec-active));
 
   /* 旧页面过渡期别名：只指向新令牌，不保留第二套数值。 */
   --bg-soft: var(--surface); --panel: var(--surface); --panel-2: var(--surface-2);
@@ -84,20 +98,10 @@
   --hl-yellow: #574a17; --hl-green: #204527; --hl-blue: #1d3a5e; --hl-pink: #4e2437;
 }
 
-[data-spectrum="warm"] {
-  --spectrum: linear-gradient(90deg, #f0b429, #f5825b, #e8619d, #a86fd8, #f0b429);
-  --spectrum-v: linear-gradient(180deg, #f0b429, #f5825b, #e8619d, #a86fd8, #f0b429);
-}
-
-[data-spectrum="full"] {
-  --spectrum: linear-gradient(90deg, #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8, #ff5f6d);
-  --spectrum-v: linear-gradient(180deg, #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8, #ff5f6d);
-}
-
-[data-spectrum="duo"] {
-  --spectrum: linear-gradient(90deg, #4ad9c4, #6d8cff, #4ad9c4);
-  --spectrum-v: linear-gradient(180deg, #4ad9c4, #6d8cff, #4ad9c4);
-}
+/* 预设光谱切换：只换「全站生效色站」，所有灯条与进度环跟着走。 */
+[data-spectrum="warm"] { --spec-active: var(--spec-warm); }
+[data-spectrum="full"] { --spec-active: var(--spec-full); }
+[data-spectrum="duo"] { --spec-active: var(--spec-duo); }
 
 /* ============================================================
    Reset 与全局排版
@@ -222,21 +226,33 @@ tbody tr:hover { background: var(--surface-2); }
 .skel { height: var(--s3); border-radius: var(--r-sm); background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
-/* 流光只供系统心跳、运行行边、进度填充和注意卡片顶边使用。 */
-.glow { position: relative; background-image: var(--spectrum); background-size: 220% 100%; animation: slide 3.4s linear infinite; }
+/* 流光只供系统心跳、运行行边、进度填充和注意卡片顶边使用。
+   —— 无缝循环的算法要点（改这段前先读）——
+   背景图铺成元素的 2 倍宽（200%），一轮动画正好把它推走「整整一张图」。
+   注意 background-position 的百分比不是「图宽的百分比」，而是按「元素宽 − 图宽」折算：
+   图宽 200% 时推到 -200% 恰好等于 1 张图（复原），而旧写法的 220% / -220% 推的是 1.2 张图，
+   跑完一轮画面对不上，于是每轮结束都硬跳一下。配合色站首尾同色，肉眼就再也找不到接缝。 */
+.glow { position: relative; background-image: linear-gradient(90deg, var(--spec-top)); background-size: 200% 100%; animation: slide 3.4s linear infinite; }
 .glow-top { height: 2px; border-radius: 1px; }
 .glow-rail, .progress { height: 6px; overflow: hidden; border-radius: 3px; background-color: var(--surface-3); }
-.glow-rail > i, .progress > i { display: block; height: 100%; border-radius: 3px; background-image: var(--spectrum); background-size: 220% 100%; animation: slide 3.4s linear infinite; transition: width .14s ease; }
-.glow-edge { position: absolute; inset: 0 auto 0 0; width: 2px; background-image: var(--spectrum-v); background-size: 100% 220%; animation: slideY 3.4s linear infinite; }
-@keyframes slide { to { background-position: -220% 0; } }
-@keyframes slideY { to { background-position: 0 -220%; } }
+.glow-rail > i, .progress > i { display: block; height: 100%; border-radius: 3px; background-image: linear-gradient(90deg, var(--spec-bar)); background-size: 200% 100%; animation: slide 3.4s linear infinite; transition: width .14s ease; }
+.glow-rail.quota-rail > i { background-image: linear-gradient(90deg, var(--spec-quota)); }
+.glow-edge { position: absolute; inset: 0 auto 0 0; width: 2px; background-image: linear-gradient(180deg, var(--spec-edge)); background-size: 100% 200%; animation: slideY 3.4s linear infinite; }
+@keyframes slide { to { background-position: -200% 0; } }
+@keyframes slideY { to { background-position: 0 -200%; } }
 
-/* 顶栏光谱预览：数值逐字取自规范，组件内不出现颜色字面量。 */
+/* 顶栏光谱预览：颜色一律取自色站变量，组件内不出现颜色字面量。 */
 .spectrum-swatch { width: 44px; height: 14px; padding: 0; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
-.spectrum-swatch[data-spectrum-choice="cool"] { background-image: var(--spectrum-preview-cool); }
-.spectrum-swatch[data-spectrum-choice="warm"] { background-image: var(--spectrum-preview-warm); }
-.spectrum-swatch[data-spectrum-choice="full"] { background-image: var(--spectrum-preview-full); }
-.spectrum-swatch[data-spectrum-choice="duo"] { background-image: var(--spectrum-preview-duo); }
+.spectrum-swatch[data-spectrum-choice="cool"] { background-image: linear-gradient(90deg, var(--spec-cool)); }
+.spectrum-swatch[data-spectrum-choice="warm"] { background-image: linear-gradient(90deg, var(--spec-warm)); }
+.spectrum-swatch[data-spectrum-choice="full"] { background-image: linear-gradient(90deg, var(--spec-full)); }
+.spectrum-swatch[data-spectrum-choice="duo"] { background-image: linear-gradient(90deg, var(--spec-duo)); }
+.spectrum-swatch[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+
+/* 外观面板的分组骨架：顶栏（主题）与灯条配色两个组件共用，故放在全局层。 */
+.appearance-group + .appearance-group { margin-top: var(--s4); }
+.appearance-label { margin-bottom: var(--s2); color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .12em; text-transform: uppercase; }
+.spectrum-options { display: flex; align-items: center; gap: var(--s2); }
 
 /* 旧页面仍在引用的基础工具类。 */
 .pill { display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.25; white-space: nowrap; }

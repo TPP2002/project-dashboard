@@ -140,7 +140,26 @@ function doctor(flags) {
     issues.push(`已备份 ${path.basename(bak)} 并自动补齐（changed=${r.changed}）`);
   }
 
-  return { ok: issues.length === 0, text: issues.length ? issues.map((s) => '• ' + s).join('\n') : '✔ board 与 git 一致、hook 已装' };
+  const result = {};
+  let branchSummary = '';
+  if (flags.branches) {
+    // Stop 钩子的默认 doctor 不加载提交图；分支体检只报告，不参与 --fix。
+    const { auditBoardBranches } = require('./branchAudit.cjs');
+    const audit = auditBoardBranches(board, repo);
+    result.branchAudit = audit;
+    const { ok, suspect, unknown } = audit.summary;
+    branchSummary = `分支台账体检（--branches）：可疑 ${suspect} 条 / 可信 ${ok} 条 / 无法核实 ${unknown} 条`;
+    if (suspect) {
+      const details = audit.entries.filter((entry) => entry.verdict === 'suspect').slice(0, 30)
+        .map((entry) => `${entry.taskId}·${entry.branch}：${entry.reason}`);
+      if (suspect > 30) details.push(`...（共 ${suspect} 条，--json 看全量）`);
+      issues.push(branchSummary + ' → 可疑条目：\n    ' + details.join('\n    '));
+    }
+  }
+  result.ok = issues.length === 0;
+  result.text = issues.length ? issues.map((s) => '• ' + s).join('\n') : '✔ board 与 git 一致、hook 已装';
+  if (branchSummary && !result.branchAudit.summary.suspect) result.text += '\n' + branchSummary;
+  return result;
 }
 
 module.exports = { syncFromGit, doctor, scanCommits };

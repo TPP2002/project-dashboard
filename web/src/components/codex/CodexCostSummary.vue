@@ -104,7 +104,7 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
         </div>
         <span class="quota-value">{{ quota.usedPercent == null ? '数据不足' : quota.usedPercent + '%' }}</span>
       </div>
-      <div class="glow-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="quota.usedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
+      <div class="glow-rail quota-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="quota.usedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
         <i :style="{ width: quotaPercent + '%' }" />
       </div>
     </div>

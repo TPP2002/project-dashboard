@@ -2,22 +2,16 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ConnDot from './ConnDot.vue'
+// 灯条配色（全站 + 分部位）整块搬进 SpectrumSettings，它 import 时会自动还原上次的配色。
+import SpectrumSettings from './SpectrumSettings.vue'
 
 type ThemeChoice = 'light' | 'dark' | 'system'
-type SpectrumChoice = 'cool' | 'warm' | 'full' | 'duo'
 
 const THEME_KEY = 'board-theme'
-const SPECTRUM_KEY = 'board-spectrum'
 const THEMES: ReadonlyArray<{ value: ThemeChoice; label: string }> = [
   { value: 'light', label: '浅色' },
   { value: 'dark', label: '深色' },
   { value: 'system', label: '跟随系统' },
-]
-const SPECTRA: ReadonlyArray<{ value: SpectrumChoice; label: string }> = [
-  { value: 'cool', label: '冷谱' },
-  { value: 'warm', label: '暖谱' },
-  { value: 'full', label: '全光谱' },
-  { value: 'duo', label: '双色' },
 ]
 
 function readStorage(key: string): string | null {
@@ -35,11 +29,6 @@ function readTheme(): ThemeChoice {
   return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
 }
 
-function readSpectrum(): SpectrumChoice {
-  const value = readStorage(SPECTRUM_KEY)
-  return value === 'cool' || value === 'warm' || value === 'full' || value === 'duo' ? value : 'cool'
-}
-
 function applyTheme(value: ThemeChoice, persist = true) {
   const root = document.documentElement
   if (value === 'system') root.removeAttribute('data-theme')
@@ -47,25 +36,16 @@ function applyTheme(value: ThemeChoice, persist = true) {
   if (persist) writeStorage(THEME_KEY, value)
 }
 
-function applySpectrum(value: SpectrumChoice, persist = true) {
-  document.documentElement.setAttribute('data-spectrum', value)
-  if (persist) writeStorage(SPECTRUM_KEY, value)
-}
-
-// 模块一加载就先还原外观，再由 Vue 挂载界面，避免首屏使用错误主题。
-if (typeof document !== 'undefined') {
-  applyTheme(readTheme())
-  applySpectrum(readSpectrum())
-}
+// 模块一加载就先还原主题，再由 Vue 挂载界面，避免首屏使用错误主题。
+if (typeof document !== 'undefined') applyTheme(readTheme())
 
 export default defineComponent({
-  components: { ConnDot },
+  components: { ConnDot, SpectrumSettings },
   setup() {
     const store = useBoardStore()
     const appearanceOpen = ref(false)
     const appearanceRoot = ref<HTMLElement | null>(null)
     const theme = ref<ThemeChoice>(readTheme())
-    const spectrum = ref<SpectrumChoice>(readSpectrum())
 
     function onProject(event: Event) {
       store.selectProject((event.target as HTMLSelectElement).value)
@@ -74,11 +54,6 @@ export default defineComponent({
     function chooseTheme(value: ThemeChoice) {
       theme.value = value
       applyTheme(value)
-    }
-
-    function chooseSpectrum(value: SpectrumChoice) {
-      spectrum.value = value
-      applySpectrum(value)
     }
 
     function onDocumentPointerDown(event: PointerEvent) {
@@ -99,8 +74,8 @@ export default defineComponent({
     })
 
     return {
-      store, appearanceOpen, appearanceRoot, theme, spectrum, themes: THEMES, spectra: SPECTRA,
-      onProject, chooseTheme, chooseSpectrum,
+      store, appearanceOpen, appearanceRoot, theme, themes: THEMES,
+      onProject, chooseTheme,
     }
   },
 })
@@ -144,22 +119,7 @@ export default defineComponent({
             >{{ option.label }}</button>
           </div>
         </div>
-        <div class="appearance-group">
-          <div class="appearance-label">光谱</div>
-          <div class="spectrum-options">
-            <button
-              v-for="option in spectra"
-              :key="option.value"
-              class="spectrum-swatch"
-              type="button"
-              :data-spectrum-choice="option.value"
-              :aria-label="option.label"
-              :title="option.label"
-              :aria-pressed="spectrum === option.value"
-              @click="chooseSpectrum(option.value)"
-            />
-          </div>
-        </div>
+        <SpectrumSettings />
       </section>
     </div>
 
@@ -206,20 +166,13 @@ export default defineComponent({
   top: calc(100% + var(--s2));
   right: 0;
   width: min(320px, calc(100vw - var(--s4)));
+  max-height: min(72vh, 560px);
+  overflow-y: auto;
   padding: var(--s4);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow);
-}
-.appearance-group + .appearance-group { margin-top: var(--s4); }
-.appearance-label {
-  margin-bottom: var(--s2);
-  color: var(--text-3);
-  font-family: var(--mono);
-  font-size: var(--fs-xs);
-  letter-spacing: .12em;
-  text-transform: uppercase;
 }
 .theme-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s1); }
 .appearance-choice {
@@ -234,8 +187,6 @@ export default defineComponent({
 }
 .appearance-choice:hover,
 .appearance-choice[aria-pressed="true"] { background: var(--surface-3); border-color: var(--line-strong); color: var(--text); }
-.spectrum-options { display: flex; align-items: center; gap: var(--s2); }
-.spectrum-swatch[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
 .bell {
   position: relative;
   padding: var(--s1) var(--s2);

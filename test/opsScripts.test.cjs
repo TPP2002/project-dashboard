@@ -92,6 +92,32 @@ test('precheck:三段齐全,施工中占用与待拍板可见', () => {
   clean(dir);
 });
 
+test('precheck:远程主干叫 master(非 main)时仍能算出落后多少(PRECHECK-ASSUMES-ORIGIN-MAIN)', () => {
+  const { dir, repo } = gitEnv();
+  const bare = path.join(dir, 'origin.git');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'master', bare], { encoding: 'utf8' });
+  G(repo, 'remote', 'add', 'origin', bare);
+  G(repo, 'push', '-q', 'origin', 'main:refs/heads/master');
+  G(repo, 'remote', 'set-head', 'origin', 'master');
+
+  // 从另一个 clone 往远端 master 再推一个提交,让 repo 相对 origin/master 落后 1 个
+  const clone = path.join(dir, 'clone');
+  execFileSync('git', ['clone', '-q', bare, clone], { encoding: 'utf8' });
+  G(clone, 'config', 'user.email', 't@t'); G(clone, 'config', 'user.name', 't');
+  fs.writeFileSync(path.join(clone, 'b.txt'), '2');
+  G(clone, 'add', '.'); G(clone, 'commit', '-q', '-m', 'extra on remote master');
+  G(clone, 'push', '-q', 'origin', 'master');
+  G(repo, 'fetch', '-q', 'origin');
+
+  const reg = path.join(dir, 'registry.json');
+  fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
+  const P = { project: 'p', registry: reg };
+  cmds.register({ id: 'p', name: '测试项目', root: repo, registry: reg });
+  const r = precheck({ ...P, 'no-fetch': true });
+  assert.match(r.text, /落后 origin\/master 1 个提交/, '主干叫 master 时也要能报出落后数,不能"算不出"');
+  clean(dir);
+});
+
 // ── BOARD-CLEANUP-DELETES-MAIN(0906 负责人拍 A)────────────────────────────
 // 命门 = 干线(main/master/仓库实际默认分支)在任何走法下都不能被 cleanup 删掉。
 // 上面的 gitEnv() 没有远程,origin/<干线> 解析不出来 → 删分支那条路整个走不到,
@@ -140,6 +166,41 @@ test('cleanup:干线叫 master 的仓库,已合入的支线要真的删掉(修�
   assert.ok(hasBranch(repo, 'master'), '干线 master 必须还在');
   assert.ok(!hasBranch(repo, 'feat-1'), '已合入的支线应被清掉(写死 origin/main 时这里会漏删)');
   assert.match(r.text, /origin\/master/, '合入校验应对着本仓真正的干线 master');
+  clean(dir);
+});
+
+// ── CLEANUP-ASSUMES-MAIN-BRANCH(0906 用户报,同日修)────────────────────────
+// 命门 = 合并方式是「压成一条」(squash)的仓库,已经合入的支线也要能被判定为「删除安全」。
+// is-ancestor 对 squash 恒为假(干线上是全新提交,分支提交不是它的祖先),
+// 旧逻辑会把这种仓库的所有支线都误判为「未合入」,永远清不掉。
+test('cleanup:squash 合并的仓库,已合入的支线要能被识别并删掉(is-ancestor 对 squash 恒假)', () => {
+  const { dir, repo } = gitEnvRemote('main');
+  const wt = path.join(dir, 'wt1');
+  G(repo, 'worktree', 'add', '-q', wt, '-b', 'feat-1');
+  fs.writeFileSync(path.join(wt, 'feature.txt'), 'new feature');
+  G(wt, 'add', '.'); G(wt, 'commit', '-q', '-m', 'feat: add feature');
+  // 模拟 GitHub 的 squash merge:不用 git merge,直接在干线上提交一个内容相同的新提交
+  G(repo, 'checkout', '-q', 'main');
+  fs.writeFileSync(path.join(repo, 'feature.txt'), 'new feature');
+  G(repo, 'add', '.'); G(repo, 'commit', '-q', '-m', 'feat: add feature (#1)');
+  G(repo, 'push', '-q', 'origin', 'main');
+  G(repo, 'checkout', '-q', '--detach', 'HEAD'); // 让开 main,好让 cleanup 操作分支
+  const r = cleanup({ repo, worktree: wt, branch: 'feat-1', yes: true });
+  assert.ok(hasBranch(repo, 'main'), '干线 main 必须还在');
+  assert.ok(!hasBranch(repo, 'feat-1'), '【命门】squash 已合入的支线应被识别并清掉,不能永远判「未合入」');
+  assert.match(r.text, /squash 合并/, '应明说是靠 squash 识别判定的合入,而非 is-ancestor');
+  clean(dir);
+});
+
+test('cleanup:squash 场景下真的没合入的支线,不能被误删', () => {
+  const { dir, repo } = gitEnvRemote('main');
+  const wt = path.join(dir, 'wt1');
+  G(repo, 'worktree', 'add', '-q', wt, '-b', 'feat-2');
+  fs.writeFileSync(path.join(wt, 'unmerged.txt'), 'still in progress');
+  G(wt, 'add', '.'); G(wt, 'commit', '-q', '-m', 'wip');
+  const r = cleanup({ repo, worktree: wt, branch: 'feat-2', yes: true });
+  assert.ok(hasBranch(repo, 'feat-2'), '【命门】没合入的分支绝不能被误判为 squash 已合入');
+  assert.match(r.text, /未合入 origin\/main/);
   clean(dir);
 });
 
