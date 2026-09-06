@@ -140,12 +140,40 @@
 
 ---
 
-## 拍板记录
+## 拍板记录(2026-09-06 负责人当场拍板,看板卡 decisions 已同步)
 
-> 待负责人拍板后回填(d1 / d2 结论 + 日期)。看板卡 `SERVER-RUNS-ON-LIVE-CHECKOUT` 的 `decisions` 里有同样两条。
+- **d1(前端产物怎么进副本)= A 发布时现场构建**:`cli release` 把同一个 commit 的前端源码导到临时目录建一次,产物进副本。
+- **d2(旧版本服务怎么处置)= A 自动重启**:比对版本,不是最新就关掉旧的、用新的接管同一端口(`DASHBOARD_NO_RESTART=1` 可关)。
+- 同时放行进阶段④,一口气做到收官。
 
-- d1(前端产物怎么进副本):**待拍板**
-- d2(旧版本服务怎么处置):**待拍板**
+---
+
+## 施工记录与验收证据(阶段④,同日完成)
+
+**施工方**:本方自干(本项目 `AGENTS.md` / 开工须知没有"施工默认派 Codex"的硬默认,§17.0 判定不适用)。
+
+| 任务 | 提交 | 落地要点 |
+|---|---|---|
+| T1 副本带界面 | `1e23b89` | `buildWebDist()`:导出树带 `core/`(vite.config 要 `require('../core/boardSchema.cjs')`)、依赖软链借主工位那份、收尾只摘链;两道机器闸(build 脚本漂了 / 依赖没装)当场失败指路;`--skip-web` / `--print-dest`;印章记 `web.builtFrom` |
+| T3 服务报家门 + 自动换新 | `be03d55` | health 增 `mode/codeRoot/releaseCommit/releasedAt`;启动比对身份,不同就关旧接管同端口;端口段 release `6060~6068` / dev `6070~6078` **不重叠**(重叠会误杀开发实例) |
+| T2 启动器 + T4 体检与文档 | `fb07363` | 两个启动器改成"备依赖 → 发布 → 从副本起服务",落脚点不进副本;`serviceStatus()` 接进 `precheck`;手册/产品手册/AGENTS.md/package.json 跟着改口径 |
+
+**测试**:新增 `releaseWeb`(6 条)、`serverRuntimeIdentity`(6 条)、`launchers`(5 条),都先在改前跑红再转绿
+(releaseWeb 6 红→绿、serverRuntimeIdentity 5 红 1 绿→全绿、launchers 4 红→绿)。合并 `origin/master` 后全量 `node --test`:
+**276 pass / 0 fail,退出码 0**。
+
+**真机端到端**(不只是单测):
+1. 真跑 `cli release`(真 vite 构建)→ 副本里 43 个运行期文件 + 50 个界面文件,耗时 6.3s,印章 `web.builtFrom` = 同一个 commit;
+2. 从副本起服务 → `/api/health` 报 `mode:release`、`codeRoot` 指副本、`releaseCommit` 对得上;浏览器拿到的 `index.html` 就是副本里那份;
+   `registry` 仍指 `~/.claude/dashboard`(数据根没被搬走,符合第 ④ 节);
+3. **服务运行期间再发布一次 → 成功**(证明落脚点纪律避开了 Windows 的 `EBUSY`);
+4. 换个 commit 再发布后启动 → 控制台明写"在跑的是 ac4cc6…、这一份是 fb0736…",关掉旧 pid、**新实例接管同一个端口 6155**。
+
+**已知边界(如实记)**:
+- 发布多花几十秒(本机实测 6s 左右),且要求发布机装了前端依赖——启动器第一次会替用户装;
+- 已在跑的服务不会自己换新,要等下次启动(这正是 d2=A 处理的那一步);
+- 分发安装版的托盘启动器(`packaging/tray/Dashboard.cs`)按安装目录布局起服务,本卡不动它;
+  仓库根那个 `kanban-launcher.exe` 缺 `node-runtime/` 本来就跑不起来,不是"跑了旧代码"。
 
 ---
 
