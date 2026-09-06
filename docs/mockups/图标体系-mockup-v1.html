@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 图标体系 mockup v1(去 emoji)</title>
+<style>
+/* ===== 看板设计系统令牌(照抄 web/src/styles/base.css;.dark 是深色那套,用于并排展示) ===== */
+:root, .light{--bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;--line:#e4e4e2;--line-strong:#d2d2cf;--text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;--ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;--bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;--shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+ --r-sm:4px;--r:6px;--r-lg:8px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px;
+ --fs-xs:11px;--fs-sm:12.5px;--fs-base:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;--fs-2xl:28px;
+ --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+ --spec-active:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4}
+.dark{--bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;--line:#242426;--line-strong:#343437;--text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;--ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;--bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;--shadow:none}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:var(--fs-md);line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:600;color:var(--text)}
+.mono{font-family:var(--mono)}
+.muted{color:var(--text-2)}
+.small{font-size:var(--fs-sm)}
+/* ===== 页面骨架 ===== */
+.doc{max-width:1560px;margin:0 auto;padding:var(--s6) var(--s5) 80px}
+.doc-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;margin-bottom:var(--s5)}
+.doc-head h1{font-size:var(--fs-2xl);letter-spacing:-.02em;color:#1a1a19}
+.doc-head p{margin:var(--s1) 0 0;color:#5c5c58;font-size:var(--fs-md);max-width:920px}
+.tag{display:inline-block;padding:2px var(--s2);border-radius:var(--r-sm);background:#fdf3e0;color:#9a6b12;font-family:var(--mono);font-size:var(--fs-xs);margin-left:var(--s2);vertical-align:middle}
+.sec{margin-top:var(--s6)}
+.sec > h2{font-size:var(--fs-xl);color:#1a1a19;letter-spacing:-.01em}
+.sec > h2 .no{color:#8e8e89;font-family:var(--mono);font-size:var(--fs-md);margin-right:var(--s2)}
+.sec > p{margin:var(--s2) 0 var(--s4);color:#5c5c58;max-width:980px}
+.rule{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--s3);margin-top:var(--s4)}
+.rule > div{background:#fff;border:1px solid #e4e4e2;border-radius:var(--r);padding:var(--s3) var(--s4)}
+.rule b{display:block;color:#1a1a19;margin-bottom:var(--s1)}
+.rule span{color:#5c5c58;font-size:var(--fs-sm);line-height:1.6}
+/* 并排两套主题 */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+.pane{background:var(--bg);color:var(--text);border:1px solid var(--line-strong);border-radius:var(--r-lg);padding:var(--s4);position:relative;overflow:hidden}
+.pane::before{content:attr(data-label);position:absolute;top:8px;right:12px;color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase}
+.pane.dark{background:var(--bg)}
+/* ===== 图标底座(方案核心:一套 24 网格线条图标,继承文字色) ===== */
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s14{width:14px;height:14px}.ic.s16{width:16px;height:16px}.ic.s18{width:18px;height:18px}.ic.s20{width:20px;height:20px}.ic.s24{width:24px;height:24px}.ic.s32{width:32px;height:32px;stroke-width:1.5}
+/* 图标全集网格 */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:var(--s2)}
+.cell{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s3);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.cell .ic{color:var(--text)}
+.cell .nm{font-family:var(--mono);font-size:var(--fs-xs);color:var(--text-2);line-height:1.3}
+.cell .use{font-size:var(--fs-xs);color:var(--text-3);line-height:1.3}
+/* 看板组件复刻 */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:var(--s1) var(--s2);border:1px solid transparent;border-radius:var(--r-sm);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.6;white-space:nowrap}
+.badge.n{background:var(--surface-3);color:var(--text-2)}.badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.bad{background:var(--bad-bg);color:var(--bad)}.badge.info{background:var(--info-bg);color:var(--info)}.badge.compact{padding:0 var(--s1)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:var(--s1) var(--s2);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-3);color:var(--text-2);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.25;white-space:nowrap}
+.card{position:relative;overflow:hidden;padding:var(--s3) var(--s4);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);padding:var(--s2) var(--s3);border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface-2);color:var(--text);font:inherit;font-size:var(--fs-base)}
+.btn-sm{padding:var(--s1) var(--s2);font-size:var(--fs-sm)}
+.glow-rail{height:6px;overflow:hidden;border-radius:3px;background:var(--surface-3)}
+.glow-rail>i{display:block;height:100%;border-radius:3px;background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide 3.4s linear infinite}
+.glow-edge{position:absolute;inset:0 auto 0 0;width:2px;background-image:linear-gradient(180deg,var(--spec-active));background-size:100% 200%;animation:slideY 3.4s linear infinite}
+@keyframes slide{to{background-position:-200% 0}}@keyframes slideY{to{background-position:0 -200%}}
+/* 对照表 */
+table.cmp{width:100%;border-collapse:collapse;font-size:var(--fs-base)}
+table.cmp th,table.cmp td{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+table.cmp th{color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);font-weight:500;letter-spacing:.1em;text-transform:uppercase}
+.was{opacity:.55;text-decoration:line-through;text-decoration-color:var(--bad);text-decoration-thickness:1px}
+.emoji{font-size:16px;line-height:1}
+/* 页头对照 */
+.ph{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-xl);font-weight:600;letter-spacing:-.01em;line-height:1.3}
+.ph .ic{color:var(--text-2)}
+.ph small{font-size:var(--fs-sm);font-weight:400;color:var(--text-2);margin-left:var(--s2)}
+.rowline{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) 0;border-bottom:1px dashed var(--line)}
+.rowline:last-child{border-bottom:0}
+.rowline .lab{width:56px;color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);flex:none}
+/* 泳道头 / 任务卡 */
+.column{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s2);display:flex;flex-direction:column;gap:var(--s2)}
+.column-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);padding:var(--s1)}
+.tcard{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:var(--s2);padding:var(--s3) var(--s4);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r)}
+.tcard-head{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-sm)}
+.tid{color:var(--text-2);font-weight:600;font-family:var(--mono)}
+.spacer{flex:1}
+.ttitle{font-size:var(--fs-base);line-height:1.4}
+.tdesc{color:var(--text-3);font-size:var(--fs-sm);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prog{display:flex;align-items:center;gap:var(--s2)}.prog .glow-rail{flex:1}.pct{min-width:32px;color:var(--text-2);font-size:var(--fs-xs);text-align:right;font-family:var(--mono)}.prog-time{color:var(--text-3);font-size:var(--fs-xs);white-space:nowrap}.prog-time.stale{color:var(--warn)}
+.meta{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+/* 抽屉片段 */
+.sec-t{color:var(--text-3);font-size:var(--fs-xs);font-weight:600;letter-spacing:.1em;text-transform:uppercase;margin-bottom:var(--s2)}
+.note{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);border-radius:var(--r);background:var(--warn-bg);color:var(--warn);font-size:var(--fs-base)}
+.note.ok{background:var(--ok-bg);color:var(--ok)}
+.inline-list{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+/* 侧栏 */
+.nav{display:grid;gap:var(--s1);width:200px;padding:var(--s2);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.nav .g{color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase;padding:var(--s2) var(--s2) var(--s1)}
+.nav .item{display:flex;align-items:center;gap:var(--s2);padding:var(--s2) var(--s3);border:1px solid transparent;border-radius:var(--r);color:var(--text-2);font-size:var(--fs-base)}
+.nav .item.on{background:var(--surface-3);border-color:var(--line);color:var(--text);font-weight:600}
+.nav .icg{width:24px;color:var(--text-3);font-family:var(--mono);text-align:center;flex:none}
+.nav .ic{color:var(--text-3)}
+.nav .item.on .ic,.nav .item.on .icg{color:var(--text)}
+.nav .cnt{margin-left:auto;min-width:16px;padding-inline:var(--s1);text-align:center}
+/* 空态 */
+.empty{padding:var(--s5) var(--s4);color:var(--text-3);font-size:var(--fs-base);text-align:center;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r)}
+.empty .ic{display:block;margin:0 auto var(--s2);color:var(--text-3);opacity:.7}
+.empty .big{display:block;margin-bottom:var(--s2);font-size:var(--fs-2xl);opacity:.5}
+.empty-help{font-size:var(--fs-sm);display:block}
+.done-toggle{display:inline-flex;align-items:center;gap:6px;padding:var(--s1) var(--s2);border:1px solid var(--line);border-radius:var(--r);color:var(--text-2);font-size:var(--fs-sm)}
+.done-toggle.on{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
+.stat{display:inline-flex;flex-direction:column;align-items:center;min-width:104px;padding:var(--s3) var(--s5);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r)}
+.stat .v{font-family:var(--mono);font-size:var(--fs-xl);font-variant-numeric:tabular-nums;line-height:1.15;display:inline-flex;align-items:center;gap:6px}
+.stat .l{margin-top:var(--s1);color:var(--text-2);font-size:var(--fs-sm)}
+.stat.fire .v{color:var(--warn)}
+/* 实施说明 */
+pre{margin:0;padding:var(--s3) var(--s4);background:#1a1a19;color:#e7e7e8;border-radius:var(--r);font-family:var(--mono);font-size:var(--fs-sm);line-height:1.6;overflow:auto}
+table.map{width:100%;border-collapse:collapse;font-size:var(--fs-sm);background:#fff;border:1px solid #e4e4e2;border-radius:var(--r);overflow:hidden}
+table.map th,table.map td{padding:6px var(--s3);border-bottom:1px solid #e4e4e2;text-align:left;vertical-align:middle}
+table.map th{color:#8e8e89;font-family:var(--mono);font-size:var(--fs-xs);font-weight:500;letter-spacing:.1em;text-transform:uppercase;background:#f6f6f5}
+table.map td.e{font-size:15px}
+table.map td .ic{color:#1a1a19}
+.q{background:#fff;border:1px solid #e4e4e2;border-left:3px solid #2b5fa8;border-radius:var(--r);padding:var(--s3) var(--s4);margin-top:var(--s3)}
+.q b{color:#1a1a19}
+.q span{color:#5c5c58;font-size:var(--fs-sm)}
+@media (max-width:1100px){.pair{grid-template-columns:1fr}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ===== 图标精灵:全部内联 SVG,24×24 网格,1.75 描边,继承 currentColor ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-kanban" viewBox="0 0 24 24"><rect x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="9.25" y="4" width="5.5" height="11" rx="1.2"/><rect x="15.5" y="4" width="5.5" height="7" rx="1.2"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.6a2.6 2.6 0 0 1 4.9 1.1c0 1.8-2.5 2-2.5 3.6"/><path d="M12 17.2h.01"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.8-5.2"/></symbol>
+    <symbol id="i-check-filled" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor" stroke="none"/><path d="m8.5 12.2 2.4 2.4 4.8-5.2" stroke="var(--bg)" stroke-width="2.2"/></symbol>
+    <symbol id="i-hammer" viewBox="0 0 24 24"><path d="m15 12-8.4 8.4a1.6 1.6 0 0 1-2.3-2.3L12.7 9.7"/><path d="m18 15 3.5-3.5"/><path d="m21.5 11.5-1.9-1.9a2 2 0 0 1-.6-1.4V7l-2.3-2.3a6 6 0 0 0-4.2-1.7L9 3l.9.8A6.2 6.2 0 0 1 12 8.4V10l2 2h1.2a2 2 0 0 1 1.4.6l1.9 1.9"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h11.5l-2.2 4 2.2 4H5"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.9l-5.3 2.8 1.1-5.9-4.3-4.1 5.9-.8z"/></symbol>
+    <symbol id="i-circle-dashed" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3.4 3.4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 1.9"/></symbol>
+    <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+    <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/></symbol>
+    <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M3 12h5.5M15.5 12H21"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m3 12.4 9 4.8 9-4.8"/><path d="m3 17 9 4.8 9-4.8"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.3l2 2h8.7A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-tree" viewBox="0 0 24 24"><path d="M12 22v-4"/><path d="m7 18 5-7 5 7z"/><path d="m8.5 12.5 3.5-5 3.5 5"/><path d="m10 8 2-3.5 2 3.5"/></symbol>
+    <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+    <symbol id="i-alert-tri" viewBox="0 0 24 24"><path d="M12 3.5 2.9 19a1.2 1.2 0 0 0 1 1.8h16.2a1.2 1.2 0 0 0 1-1.8z"/><path d="M12 9.5v4.5M12 17.5h.01"/></symbol>
+    <symbol id="i-parking" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.5 17V7h3.8a3 3 0 0 1 0 6H9.5"/></symbol>
+    <symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 3v6h6"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3v5h5"/><path d="M8.5 13h7M8.5 17h5"/></symbol>
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3.1-6.8"/><path d="M3 3v6h6"/><path d="M12 7v5l3.5 2"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 20v-7M11 20V5M17 20v-10"/><path d="M3 20h18"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+    <symbol id="i-alert-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16.5h.01"/></symbol>
+    <symbol id="i-list-checks" viewBox="0 0 24 24"><path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></symbol>
+    <symbol id="i-gantt" viewBox="0 0 24 24"><path d="M4 6h8M8 12h9M12 18h8"/></symbol>
+    <symbol id="i-network" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.4 13.3 7.2 4.2M15.6 6.5 8.4 10.7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+    <symbol id="i-coins" viewBox="0 0 24 24"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M17.9 10.6a5.5 5.5 0 1 1-7.3 7.3"/><path d="M7.5 6.5h1.2v4"/><path d="m16.3 14 .7.7-2.6 2.6"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M2.5 4.5H9a2 2 0 0 1 2 2v13.5a2 2 0 0 0-2-2H2.5z"/><path d="M21.5 4.5H15a2 2 0 0 0-2 2v13.5a2 2 0 0 1 2-2h6.5z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9"/><path d="M10.3 20.5a1.9 1.9 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="M4.5 3.5v3M3 5h3M19.5 16.5v3M18 18h3"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.6 5.2 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.6-6.8A2 2 0 0 0 16.6 4H7.4a2 2 0 0 0-1.8 1.2z"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 21.5c4 0 6.5-2.6 6.5-6.3 0-2.7-1.6-4.9-3.1-6.3-.4 1.7-1.3 2.7-2.5 3.2.1-2.9-1.4-5.7-4.2-7.6.5 2.7-.8 4.6-2.2 6.4C5.4 12.4 5.5 14 5.5 15.2c0 3.7 2.5 6.3 6.5 6.3z"/></symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M20.5 14.5a2 2 0 0 1-2 2H8l-4.5 4V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V8"/><path d="M10 12.5h4"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+    <symbol id="i-trending" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3 16.5a2 2 0 0 1 3-2.6L8 16"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3.5 20.5 7 8 19.5H4.5V16z"/><path d="m14.5 6 3.5 3.5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 2.5 8.5 4.5v10L12 21.5 3.5 17V7z"/><path d="m3.5 7 8.5 4.5L20.5 7"/><path d="M12 11.5v10"/></symbol>
+  </defs>
+</svg>
+
+<div class="doc">
+  <div class="doc-head">
+    <div>
+      <h1>看板 · 图标体系 mockup v1 <span class="tag">AUD-UI-ICONSET-NO-EMOJI · 待过目</span></h1>
+      <p>目的只有一个:把界面里的 emoji 全部换成一套统一的线条图标。<b>不改配色、不改布局、不改字号间距</b>——所有色值与令牌照抄 base.css,你现在满意的样子保持不动。每一组都左浅右深并排给你看。</p>
+    </div>
+  </div>
+
+  <div class="rule">
+    <div><b>一套图标,一个来源</b><span>24×24 网格、1.75 描边、圆头圆角;内联 SVG 精灵,零依赖、零网络请求。约 45 个够用。</span></div>
+    <div><b>图标只做辅助,不做主角</b><span>颜色永远继承文字色(currentColor),不自己带色;需要语义色时由所在徽章/文字给。</span></div>
+    <div><b>状态 = 形状 + 语义色</b><span>十个状态各一个形状,配现有五档语义色(n / info / warn / ok / bad);色弱也能靠形状分辨。</span></div>
+    <div><b>尺寸只有四档</b><span>14 徽章内 · 16 行内与卡片 · 20 页头 · 32 空态。不出现别的尺寸。</span></div>
+    <div><b>终端不动</b><span>CLI 输出、INDEX 渲染里的 emoji 保留——终端里它是最紧凑的表达;只改网页。</span></div>
+  </div>
+
+  <!-- ===================== 1 图标全集 ===================== -->
+  <div class="sec">
+    <h2><span class="no">01</span>图标全集(45 个)</h2>
+    <p>左列浅色、右列深色,同一份 SVG。名字是将来 <span class="mono">&lt;Icon name="…"&gt;</span> 的 key,下面一行小字是它替换的对象。</p>
+    <div class="pair" id="iconGrid"></div>
+  </div>
+
+  <!-- ===================== 2 状态体系 ===================== -->
+  <div class="sec">
+    <h2><span class="no">02</span>状态体系:十个状态,形状 + 语义色</h2>
+    <p>这是全站用得最多的地方(泳道头、卡片、抽屉、总览、波次、风险、验收)。现在「已拍板」和「已完工」共用一个 ✅,靠位置猜;方案里已拍板是空心勾、已完工是实心勾,施工中用锤子,暂缓用暂停,一眼分清。第 11 行「已作废」是报告建议新增的状态,先把形状占上。</p>
+    <div class="pair" id="statusPair"></div>
+  </div>
+
+  <!-- ===================== 3 页头 ===================== -->
+  <div class="sec">
+    <h2><span class="no">03</span>页头:去掉 🚀 这类符号,图标退到文字色的次级灰</h2>
+    <p>页头图标用 20px、颜色是 text-2(比标题淡一档),不抢标题。也给出「完全不要图标」的版本(见每组最后一行),你可以二选一。</p>
+    <div class="pair" id="headerPair"></div>
+  </div>
+
+  <!-- ===================== 4 任务卡 + 抽屉 ===================== -->
+  <div class="sec">
+    <h2><span class="no">04</span>任务卡与抽屉里的小标签</h2>
+    <p>卡片上的 ❓ 待拍板角标、🌿 分支、🤖 档位;抽屉里的 🚧 阻塞、🅿️ 暂缓遗留、🔄 复工依据、📁 文件域、⛔ 禁区、📄 文档,全部换成 14px 图标,放在原来的位置、用原来的徽章底色。</p>
+    <div class="pair" id="cardPair"></div>
+  </div>
+
+  <!-- ===================== 5 侧栏 ===================== -->
+  <div class="sec">
+    <h2><span class="no">05</span>侧栏导航:现在用的是字符符号(⌂ ▦ ◎ …),要不要一并统一?</h2>
+    <p>侧栏上一轮重构已经不用 emoji,用的是 Unicode 几何符号,但各字体下粗细不一、在 Windows 上偶有缺字。建议一并换成同一套图标,粗细才会一致。左边是现状,右边是方案(两栏都用浅色,好直接比)。</p>
+    <div class="pair" id="navPair"></div>
+  </div>
+
+  <!-- ===================== 6 空态 / 开关 / 类型标 ===================== -->
+  <div class="sec">
+    <h2><span class="no">06</span>空态、折叠开关、活动类型、连击</h2>
+    <p>空态的大 emoji(🎉 ✨ 📭 🈳)换成 32px 淡色图标;「显示已完工」开关的 🗂️/✅ 换成归档/勾;活动流每种类型一个小图标;每日成果的 🔥 换成火焰线条图标(仍用警示色)。</p>
+    <div class="pair" id="miscPair"></div>
+  </div>
+
+  <!-- ===================== 7 实施说明 ===================== -->
+  <div class="sec">
+    <h2><span class="no">07</span>实施说明(给施工方看,你可以略过)</h2>
+    <p>方案通过后,施工只做三件事:加一个 Icon 组件、加一张 emoji→图标映射表、把 web/src 里出现的 emoji 逐个替换。CLI 与 core 不动。</p>
+<pre>// web/src/components/Icon.vue —— 唯一的图标出口
+&lt;Icon name="hammer" :size="16" /&gt;          // 行内
+&lt;Icon name="help" :size="14" /&gt;            // 徽章内
+&lt;Icon :name="statusIcon(task.status)" /&gt;   // 状态:api/schema.ts 里 STATUS_ICON 映射
+&lt;Icon name="inbox" :size="32" class="empty-ic" /&gt;
+
+// 规则
+· 只有 14 / 16 / 20 / 32 四档;stroke 1.75(32 档 1.5)
+· 颜色永远 currentColor,不传 color prop
+· 装饰性图标 aria-hidden;单独承载语义时 role="img" + aria-label
+· 全部 path 内联在一个 &lt;svg&gt;&lt;symbol&gt; 精灵里,构建期打进主包,不引 icon 库
+· core/boardSchema.cjs 的 STATUS_EMOJI 保留给 CLI;前端不再 import emojiFor</pre>
+    <div style="height:12px"></div>
+    <table class="map">
+      <thead><tr><th>现在的 emoji</th><th>出现在哪</th><th>换成</th><th>图标名</th></tr></thead>
+      <tbody id="mapBody"></tbody>
+    </table>
+
+    <div class="q"><b>请你拍这几个小口味(回复编号即可)</b><br>
+      <span>① 已完工:实心勾(方案默认)还是空心勾 + 更深的绿?　② 施工中:锤子(方案默认)还是一个转动的进度弧?　③ 侧栏字符符号要不要一并换成这套图标(方案建议换)?　④ 页头保留一个淡灰图标(方案默认)还是干脆不要图标只留标题?</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- 数据 ----------
+const ICONS = [
+  ['home','总览 ⌂ / 🏠'],['kanban','看板 ▦ / 📋'],['help','待拍板 ❓'],['arrow-up-right','待落地 🚀 ↗'],['history','拍板历史 📜'],
+  ['calendar','每日成果 📆'],['chart','洞察 📊'],['activity','活动流 📜'],['alert-circle','风险 ⚠️'],['layers','波次 🌊 / W1'],
+  ['list-checks','验收 🚦'],['merge','占用 💥'],['gantt','甘特 📅'],['network','依赖 🕸️'],['search','搜索 🔍'],
+  ['cpu','算力 ⚡'],['coins','成本 💰'],['bot','Codex / 档位 🤖'],['book','审阅台 📖'],['bell','顶栏铃铛 ❓'],
+  ['circle-dashed','状态·未开工 ⬜'],['clock','状态·待开工 📋'],['check-circle','状态·已拍板 ✅'],['check-filled','状态·已完工 ✅'],['hammer','状态·施工中 🔨'],
+  ['refresh','状态·可复工 🔄'],['flag','状态·收官 🏁'],['pause','状态·暂缓 🚫'],['star','状态·压轴 🎬'],['x-circle','状态·已作废(新)'],
+  ['branch','分支 🌿'],['pr','PR 号'],['commit','提交 ⚙'],['tree','worktree 🌲'],['folder','文件域 📁'],
+  ['ban','禁区 ⛔'],['alert-tri','阻塞理由 🚧'],['parking','暂缓遗留 🅿️'],['rotate-ccw','复工依据 🔄'],['file','文档 📄'],
+  ['sparkles','空态·全清 🎉 ✨'],['inbox','空态·暂无 📭 🈳'],['target','空态·拍板历史 🎯'],['flame','连击 🔥'],['archive','折叠已完工 🗂️'],
+  ['zap','运行中 / 心跳'],['trending','进度更新 📈'],['message','留言(新)'],['hand','认领 🙋'],['copy','复制卡号 📋'],
+];
+const STATUSES = [
+  ['未开工','circle-dashed','n','⬜'],['待开工','clock','info','📋'],['待拍板','help','warn','❓'],['已拍板','check-circle','ok','✅'],
+  ['施工中','hammer','info','🔨'],['可复工','refresh','info','🔄'],['收官','flag','ok','🏁'],['已完工','check-filled','ok','✅'],
+  ['暂缓','pause','bad','🚫'],['压轴','star','warn','🎬'],['已作废(新)','x-circle','n','—'],
+];
+const HEADERS = [
+  ['🚀 待落地','arrow-up-right','待落地'],['❓ 待拍板','help','待拍板'],['📜 拍板历史','history','拍板历史'],['📆 每日成果','calendar','每日成果'],
+  ['🚦 现在能同时派几张','list-checks','现在能同时派几张'],['💥 占用防撞','merge','占用防撞'],['🕸️ 依赖关系图','network','依赖关系图'],['💰 成本监管','coins','成本监管'],
+];
+const MAP = [
+  ['🚀','待落地页头','arrow-up-right'],['❓','待拍板页头 / 卡片角标 / 铃铛','help · bell'],['📜','拍板历史 / 活动流页头','history · activity'],['📆 📊','每日成果 / 洞察页头','calendar · chart'],
+  ['⚠️ 🌊 🚦 💥 📅 🕸️ 🔍','风险 / 波次 / 验收 / 占用 / 甘特 / 依赖 / 搜索 页头','alert-circle · layers · list-checks · merge · gantt · network · search'],
+  ['⚡ 💰 🤖 📖','算力 / 成本 / Codex / 审阅台 页头','cpu · coins · bot · book'],
+  ['⬜ 📋 ❓ ✅ 🔨 🔄 🏁 ✅ 🚫 🎬','状态徽章(泳道头 / 总览 / 波次 / 风险 / 验收)','STATUS_ICON 映射,见 02'],
+  ['🌿 🌲 ⚙ 📁 ⛔','分支 / worktree / 提交 / 文件域 / 禁区 标签','branch · tree · commit · folder · ban'],
+  ['🚧 🅿️ 🔄 📄','抽屉:阻塞 / 暂缓遗留 / 复工依据 / 文档','alert-tri · parking · rotate-ccw · file'],
+  ['🤖','建议档位徽章','bot'],['🗂️ ✅','显示已完工 开关','archive · check'],
+  ['🎉 ✨ 📭 🈳 📋 🗂️ 🎯','各页空态大图','sparkles · inbox · target(32px,text-3)'],
+  ['🏁 🙋 📈 ✅ ❓ 📝 🚫 ⛔','活动流 / 每日成果 的动作类型标','flag · hand · trending · check · help · pencil · pause · ban'],
+  ['🔥','连续产出 ≥3 天','flame(仍用 warn 色)'],['💡','甘特 / 成本 页的提示框','不用图标,只留左侧色条'],
+];
+
+// ---------- 渲染 ----------
+const ic = (n, cls = 's16') => `<svg class="ic ${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const pane = (label, dark, html) => `<div class="pane ${dark ? 'dark' : 'light'}" data-label="${label}">${html}</div>`;
+
+// 01 图标全集
+document.getElementById('iconGrid').innerHTML = [false, true].map(d => pane(d ? '深色' : '浅色', d,
+  `<div class="grid">${ICONS.map(([n, u]) => `<div class="cell">${ic(n, 's20')}<div><div class="nm">${n}</div><div class="use">${u}</div></div></div>`).join('')}</div>`)).join('');
+
+// 02 状态
+const statusTable = () => `<table class="cmp"><thead><tr><th>状态</th><th>现在</th><th>方案·徽章</th><th>方案·泳道头</th><th>只留色点(极窄处)</th></tr></thead><tbody>${
+  STATUSES.map(([s, n, tone, e]) => `<tr>
+    <td>${s}</td>
+    <td><span class="badge ${tone} was"><span class="emoji">${e}</span> ${s.replace('(新)','')}</span></td>
+    <td><span class="badge ${tone}">${ic(n, 's14')} ${s.replace('(新)','')}</span></td>
+    <td><div class="column-head" style="padding:0"><span class="badge ${tone}">${ic(n, 's14')} ${s.replace('(新)','')}</span><span class="badge n">12</span></div></td>
+    <td><span style="display:inline-flex;align-items:center;gap:6px;color:var(--text-2);font-size:var(--fs-sm)"><i style="width:8px;height:8px;border-radius:50%;background:var(--${tone === 'n' ? 'text-3' : tone});display:inline-block"></i>${s.replace('(新)','')}</span></td>
+  </tr>`).join('')}</tbody></table>`;
+document.getElementById('statusPair').innerHTML = [false, true].map(d => pane(d ? '深色' : '浅色', d, statusTable())).join('');
+
+// 03 页头
+const headerRows = () => HEADERS.map(([was, n, txt]) => `<div class="rowline"><span class="lab">现在</span><div class="ph was">${was}</div></div><div class="rowline"><span class="lab">方案</span><div class="ph">${ic(n, 's20')}${txt}<small>${txt === '待落地' ? '已拍板但还没落地——按任务派单' : ''}</small></div></div>`).join('')
+  + `<div class="rowline"><span class="lab">备选</span><div class="ph">待落地<small>不要图标,只留标题</small></div></div>`;
+document.getElementById('headerPair').innerHTML = [false, true].map(d => pane(d ? '深色' : '浅色', d, headerRows())).join('');
+
+// 04 任务卡 + 抽屉
+const cardBlock = () => `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)">
+    <div>
+      <div class="sec-t">现在</div>
+      <div class="column"><div class="column-head"><span class="badge info was"><span class="emoji">🔨</span> 施工中</span><span class="badge n">9</span></div>
+        <div class="tcard"><span class="glow-edge"></span>
+          <div class="tcard-head"><span class="tid">AUD-UI-OVERVIEW-SIGNAL</span><span class="spacer"></span><span class="badge warn"><span class="emoji" style="font-size:12px">❓</span>2</span></div>
+          <div class="ttitle">总览说有 307 件事要我处理,其实绝大多数不用管</div>
+          <div class="tdesc">基线(mama 项目,1920 宽实测):总览 KPI"需要你处理"=307(待拍板 47 + 卡住 258 + 驳回 2)。① Overview.vue blockedItems 改为尊重 store.centerScopeAll…</div>
+          <div class="prog"><div class="glow-rail"><i style="width:45%"></i></div><span class="pct">45%</span><span class="prog-time stale">⚠ 42 分钟前</span></div>
+          <div class="meta"><span class="pill">🌿 fix/overview-signal</span><span class="pill">PR #33</span><span class="pill">W1</span><span class="badge info">🤖 opus·中</span></div>
+        </div></div>
+    </div>
+    <div>
+      <div class="sec-t">方案</div>
+      <div class="column"><div class="column-head"><span class="badge info">${ic('hammer','s14')} 施工中</span><span class="badge n">9</span></div>
+        <div class="tcard"><span class="glow-edge"></span>
+          <div class="tcard-head"><span class="tid">AUD-UI-OVERVIEW-SIGNAL</span><span class="spacer"></span><span class="badge warn">${ic('help','s14')}2</span></div>
+          <div class="ttitle">总览说有 307 件事要我处理,其实绝大多数不用管</div>
+          <div class="tdesc">基线(mama 项目,1920 宽实测):总览 KPI"需要你处理"=307(待拍板 47 + 卡住 258 + 驳回 2)。① Overview.vue blockedItems 改为尊重 store.centerScopeAll…</div>
+          <div class="prog"><div class="glow-rail"><i style="width:45%"></i></div><span class="pct">45%</span><span class="prog-time stale">${ic('clock','s14')} 42 分钟前</span></div>
+          <div class="meta"><span class="pill">${ic('branch','s14')} fix/overview-signal</span><span class="pill">${ic('pr','s14')} #33</span><span class="pill">${ic('layers','s14')} W1</span><span class="badge info">${ic('bot','s14')} opus·中</span></div>
+        </div></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);margin-top:var(--s4)">
+    <div class="card">
+      <div class="sec-t">抽屉 · 现在</div>
+      <div class="inline-list" style="margin-bottom:var(--s2)"><span class="pill">🌿 fix/unpark-reason</span><span class="pill">🌲 wt-3</span><span class="pill">PR #30</span><span class="pill">⚙ 2fab091f</span></div>
+      <div class="inline-list" style="margin-bottom:var(--s2)"><span class="badge info">📁 web/src/types.ts</span><span class="badge bad">⛔ core/**</span></div>
+      <div class="note" style="margin-bottom:var(--s2)">🚧 等 PR #29 合并后才能验</div>
+      <div class="note" style="margin-bottom:var(--s2)">🅿️ 遗留:测试还没补</div>
+      <div class="note ok" style="margin-bottom:var(--s2)">🔄 复工依据:上游已合入 <span class="mono small">2026-09-07</span></div>
+      <div class="inline-list"><span class="btn btn-sm">📄 对账与施工分解.md</span><span class="pill">打开 ↗</span></div>
+    </div>
+    <div class="card">
+      <div class="sec-t">抽屉 · 方案</div>
+      <div class="inline-list" style="margin-bottom:var(--s2)"><span class="pill">${ic('branch','s14')} fix/unpark-reason</span><span class="pill">${ic('tree','s14')} wt-3</span><span class="pill">${ic('pr','s14')} #30</span><span class="pill">${ic('commit','s14')} 2fab091f</span></div>
+      <div class="inline-list" style="margin-bottom:var(--s2)"><span class="badge info">${ic('folder','s14')} web/src/types.ts</span><span class="badge bad">${ic('ban','s14')} core/**</span></div>
+      <div class="note" style="margin-bottom:var(--s2)">${ic('alert-tri','s16')} 等 PR #29 合并后才能验</div>
+      <div class="note" style="margin-bottom:var(--s2)">${ic('parking','s16')} 遗留:测试还没补</div>
+      <div class="note ok" style="margin-bottom:var(--s2)">${ic('rotate-ccw','s16')} 复工依据:上游已合入 <span class="mono small">2026-09-07</span></div>
+      <div class="inline-list"><span class="btn btn-sm">${ic('file','s14')} 对账与施工分解.md</span><span class="pill">打开 ${ic('arrow-up-right','s14')}</span></div>
+    </div>
+  </div>`;
+document.getElementById('cardPair').innerHTML = [false, true].map(d => pane(d ? '深色' : '浅色', d, cardBlock())).join('');
+
+// 05 侧栏
+const NAV_NOW = [['每天要看',[['⌂','总览',''],['?','待拍板','warn|47'],['▥','审阅台',''],['◎','Codex',''],['⇉','能同时派几张',''],['☷︎','每日成果','ok|6']]],['项目管理',[['▦','看板','on'],['↗','待落地','info|471'],['↺','拍板历史','']]],['花销与算力',[['¤','成本',''],['⌁','算力','']]]];
+const NAV_NEW = [['每天要看',[['home','总览',''],['help','待拍板','warn|47'],['book','审阅台',''],['bot','Codex',''],['list-checks','能同时派几张',''],['calendar','每日成果','ok|6']]],['项目管理',[['kanban','看板','on'],['arrow-up-right','待落地','info|471'],['history','拍板历史','']]],['花销与算力',[['coins','成本',''],['cpu','算力','']]]];
+const navHtml = (groups, useIcon) => `<div class="nav">${groups.map(([g, items]) => `<div class="g">${g}</div>${items.map(([i, t, f]) => {
+  const on = f === 'on'; const [tone, cnt] = (f && f.includes('|')) ? f.split('|') : ['', ''];
+  return `<div class="item ${on ? 'on' : ''}">${useIcon ? ic(i, 's16') : `<span class="icg">${i}</span>`}<span>${t}</span>${cnt ? `<span class="badge ${tone} cnt">${cnt}</span>` : ''}</div>`;
+}).join('')}`).join('')}</div>`;
+document.getElementById('navPair').innerHTML = pane('现在 · 字符符号', false, navHtml(NAV_NOW, false)) + pane('方案 · 同一套图标', false, navHtml(NAV_NEW, true));
+
+// 06 空态等
+const miscBlock = () => `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)">
+    <div>
+      <div class="sec-t">现在</div>
+      <div class="empty"><span class="big">🎉</span>所有项目都没有待拍板事项。<span class="empty-help">任务登记新的未答决策后,会带着选项和推荐自动出现在这里。</span></div>
+      <div style="height:8px"></div>
+      <div class="empty"><span class="big">📭</span>暂无活动,任务有新进展后会显示在这里。</div>
+      <div style="height:12px"></div>
+      <div class="inline-list"><span class="done-toggle">🗂️ 显示已完工(220 个已折叠)</span><span class="done-toggle on">✅ 已显示全部(220 个已完工)· 点此收起</span></div>
+      <div style="height:12px"></div>
+      <div class="inline-list"><span class="pill">🏁 完工 5</span><span class="pill">🙋 认领 2</span><span class="pill">📈 进度更新 4</span><span class="pill">✅ 拍板 1</span><span class="pill">❓ 登记待拍板 1</span><span class="pill">📝 备注 3</span></div>
+      <div style="height:12px"></div>
+      <div class="stat fire"><b class="v">6<i style="font-style:normal;font-size:14px">🔥</i></b><span class="l">连续产出(天)</span></div>
+    </div>
+    <div>
+      <div class="sec-t">方案</div>
+      <div class="empty">${ic('sparkles','s32')}所有项目都没有待拍板事项。<span class="empty-help">任务登记新的未答决策后,会带着选项和推荐自动出现在这里。</span></div>
+      <div style="height:8px"></div>
+      <div class="empty">${ic('inbox','s32')}暂无活动,任务有新进展后会显示在这里。</div>
+      <div style="height:12px"></div>
+      <div class="inline-list"><span class="done-toggle">${ic('archive','s14')} 显示已完工(220 个已折叠)</span><span class="done-toggle on">${ic('check','s14')} 已显示全部(220 个已完工)· 点此收起</span></div>
+      <div style="height:12px"></div>
+      <div class="inline-list"><span class="pill">${ic('flag','s14')} 完工 5</span><span class="pill">${ic('hand','s14')} 认领 2</span><span class="pill">${ic('trending','s14')} 进度更新 4</span><span class="pill">${ic('check','s14')} 拍板 1</span><span class="pill">${ic('help','s14')} 登记待拍板 1</span><span class="pill">${ic('pencil','s14')} 备注 3</span></div>
+      <div style="height:12px"></div>
+      <div class="stat fire"><b class="v">6${ic('flame','s18')}</b><span class="l">连续产出(天)</span></div>
+    </div>
+  </div>`;
+document.getElementById('miscPair').innerHTML = [false, true].map(d => pane(d ? '深色' : '浅色', d, miscBlock())).join('');
+
+// 07 映射表
+document.getElementById('mapBody').innerHTML = MAP.map(([e, where, to]) => `<tr><td class="e">${e}</td><td>${where}</td><td>${to.split(' · ').map(n => /^[a-z-]+$/.test(n) ? ic(n, 's16') : '').join(' ')}</td><td class="mono small">${to}</td></tr>`).join('');
+</script>
+</body>
+</html>
