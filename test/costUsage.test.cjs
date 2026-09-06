@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const cmds = require('../cli/commands.cjs');
-const { getUsage, mapRepoToPrefix } = require('../core/costUsage.cjs');
+const { getUsage, mapRepoToPrefix, selectProjectDirs } = require('../core/costUsage.cjs');
 const { validate } = require('../core/boardSchema.cjs');
 
 function setup() {
@@ -143,4 +143,86 @@ test('getUsage:美元折算(缓存价生效,无TTL细分保守归1h桶)', async 
   assert.ok(Math.abs(r.usd.saved - 0.0085) < 1e-9, `saved=${r.usd.saved}`);
   assert.ok(r.byDay[0].usdActual > 0, '按天也应带折算');
   clean(dir);
+});
+
+test('selectProjectDirs:独占多个前缀,保留目录原序并去重', () => {
+  const dirNames = ['Z--desk-wt', 'F--x', 'Z--desk', 'Z--desk-wt', 'Y--other'];
+  assert.deepEqual(selectProjectDirs(dirNames, {
+    prefixes: ['F--x', 'Z--desk', 'Z--desk'], otherPrefixes: ['Y--other'],
+  }), { dirs: ['Z--desk-wt', 'F--x', 'Z--desk'], shared: [] });
+});
+
+test('selectProjectDirs:归最长前缀,别人更长就让出,自己更长仍保留', () => {
+  assert.deepEqual(selectProjectDirs([
+    'F--x', 'F--x-team', 'F--x-team-wt', 'F--x-team-local', 'F--x-team-local-other',
+  ], {
+    prefixes: ['F--x', 'F--x-team-local'], otherPrefixes: ['F--x-team', 'F--x-team-local-other'],
+  }), { dirs: ['F--x', 'F--x-team-local'], shared: [] });
+});
+
+test('selectProjectDirs:最长前缀完全并列时同时进 dirs 与 shared', () => {
+  assert.deepEqual(selectProjectDirs([
+    'F--x-team-wt', 'F--x', 'F--x-team', 'F--x-team-wt', 'F--x-team-deep',
+  ], {
+    prefixes: ['F--x', 'F--x-team'], otherPrefixes: ['F--x-team', 'F--x-team-deep'],
+  }), {
+    dirs: ['F--x-team-wt', 'F--x', 'F--x-team'], shared: ['F--x-team-wt', 'F--x-team'],
+  });
+});
+
+test('selectProjectDirs:F--x 只含自己和 F--x-* ,不吞 F--x2', () => {
+  assert.deepEqual(selectProjectDirs(['F--x2', 'F--x--wt', 'F--x', 'F--xy', 'F--x-branch'], {
+    prefixes: ['F--x'], otherPrefixes: [],
+  }), { dirs: ['F--x--wt', 'F--x', 'F--x-branch'], shared: [] });
+});
+
+test('getUsage:只给老参数 prefix 仍扫描自己与 worktree,排除相邻仓', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-legacy-'));
+  t.after(() => clean(dir));
+  const root = path.join(dir, 'projects');
+  const ts = new Date().toISOString();
+  for (const [name, output] of [['F--legacy', 11], ['F--legacy-wt', 7], ['F--legacy2', 900]]) {
+    fs.mkdirSync(path.join(root, name), { recursive: true });
+    fs.writeFileSync(path.join(root, name, 'a.jsonl'), jsonlLine({ ts, model: 'claude-opus-5', output }));
+  }
+  const r = await getUsage({ prefix: 'F--legacy', projectsRoot: root, cachePath: path.join(dir, 'cache.json') });
+  assert.deepEqual(r.dirs, ['F--legacy', 'F--legacy-wt']);
+  assert.equal(r.totals.output, 18);
+  assert.equal(r.scanned, 2);
+  assert.deepEqual(r.sharedDirs, []);
+});
+
+test('getUsage:prefixes 优先于 prefix,仲裁后扫描并暴露 sharedDirs,跨前缀复用缓存', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'usage-roots-'));
+  t.after(() => clean(dir));
+  const root = path.join(dir, 'projects');
+  const cachePath = path.join(dir, 'cache.json');
+  const ts = new Date().toISOString();
+  for (const [name, output] of [
+    ['F--x', 11], ['F--x-team', 900], ['F--x2', 800], ['F--desk', 7], ['F--desk-wt', 3], ['Z--old', 700],
+  ]) {
+    fs.mkdirSync(path.join(root, name), { recursive: true });
+    fs.writeFileSync(path.join(root, name, 'a.jsonl'), jsonlLine({ ts, model: 'claude-opus-5', output }));
+  }
+  const r = await getUsage({
+    prefix: 'Z--old', prefixes: ['F--x', 'F--desk', 'F--desk-wt', 'F--x'],
+    otherPrefixes: ['F--x-team', 'F--desk'], projectsRoot: root, cachePath,
+  });
+  assert.deepEqual(r.dirs, ['F--desk', 'F--desk-wt', 'F--x']);
+  assert.deepEqual(r.sharedDirs, ['F--desk'], 'worktree 的本项目前缀更长,不算并列');
+  assert.equal(r.totals.output, 21);
+  assert.equal(r.scanned, 3, '同一目录命中多个前缀也只能扫描一次');
+  const cached = await getUsage({ prefixes: ['F--desk'], projectsRoot: root, cachePath });
+  assert.deepEqual(cached.dirs, ['F--desk', 'F--desk-wt']);
+  assert.equal(cached.totals.output, 10);
+  assert.equal(cached.scanned, 0);
+  assert.equal(cached.cachedFiles, 2, '缓存仍按文件绝对路径复用');
+});
+
+test('getUsage:没有有效本项目前缀时仍抛错,显式空 prefixes 不回落 prefix', async () => {
+  for (const opts of [{}, { prefix: '' }, { prefixes: [] }, { prefix: 'F--old', prefixes: [] }, {
+    prefixes: [], otherPrefixes: ['F--other'],
+  }]) {
+    await assert.rejects(getUsage(opts), /缺 prefix/);
+  }
 });
