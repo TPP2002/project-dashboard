@@ -20,6 +20,15 @@
  * 【安全设计】默认 dry-run:只输出体检报告 + 将要执行的命令清单,一步不执行;
  * 加 --yes 才真动手。远程分支永远不动(合并时多半已删,漏删的列出来人工处理)。
  *
+ * 【squash 合并识别】CLEANUP-ASSUMES-MAIN-BRANCH(0906 用户报,同日修):
+ *   ③ 的 is-ancestor 只认「分支尖端是干线的祖先」,这只对真 merge / rebase 落地成立——
+ *   合并方式若是「压成一条」(squash),干线上是一个全新提交,分支提交永远不会是它的祖先,
+ *   is-ancestor 对这类仓库恒为假。后果:合并方式是 squash 的仓库,清工位永远判「未合入」,
+ *   临时支线永远删不掉。现在:is-ancestor 没过时,再用 git-delete-squashed 那套经典手法兜底——
+ *   把分支树接到 merge-base 上造一个"假提交",用 git cherry 比对它的 patch-id 是否已经在
+ *   干线里出现过;命中就说明这条分支的内容已经被完整 squash 进干线了,同样判「删除安全」。
+ *   这一步只在本地建悬空 commit 对象(不建引用,不碰工作区),失败就当没通过、保守不删。
+ *
  * 用法:node cli/index.cjs cleanup --repo <主仓> --worktree <工位路径> [--branch <分支名>] [--yes]
  */
 const fs = require('node:fs');
@@ -44,6 +53,25 @@ function isLinkDir(p) {
  * 宁可漏删一条恰好叫 develop 的支线(人工一条命令的事),也不能再误删一次干线。
  */
 const COMMON_TRUNKS = ['main', 'master', 'trunk', 'develop', 'development'];
+
+/**
+ * squash 合并识别(git-delete-squashed 经典手法):is-ancestor 判不出「已被压成一条合入」时兜底用。
+ * 把 branch 的树接到它与 trunk 的 merge-base 上,造一个不入库的悬空提交,
+ * 用 git cherry 比对这个悬空提交的 patch-id 是否已经在 origin/<trunk> 里——命中即视为已合入。
+ * 任何一步失败都保守返回 false(不判定为已合入),不抛错、不影响主流程。
+ */
+function isSquashMerged(repo, branch, trunk) {
+  const base = git(repo, ['merge-base', branch, `origin/${trunk}`]);
+  if (!base.ok || !base.out) return false;
+  const tree = git(repo, ['rev-parse', `${branch}^{tree}`]);
+  if (!tree.ok || !tree.out) return false;
+  const synthetic = git(repo, ['commit-tree', tree.out, '-p', base.out, '-m', '_squash-check_']);
+  if (!synthetic.ok || !synthetic.out) return false;
+  const cherry = git(repo, ['cherry', `origin/${trunk}`, synthetic.out]);
+  if (!cherry.ok) return false;
+  // git cherry 每行以 '-' 开头 = 该 patch-id 已经在 upstream 里出现过(已合入);'+' = 没有
+  return cherry.out.trim().startsWith('-');
+}
 
 /** 问出这个仓库的干线(默认分支)到底叫什么;探测不出返回 null。绝不写死 main。 */
 function defaultBranchOf(repo) {
@@ -116,6 +144,7 @@ function cleanup(flags) {
   // 分支处理资格:①分支还在吗 ②是不是干线 ③合入了吗。三关全过才允许进删除计划。
   let branchMerged = null;
   let branchActionable = false;
+  let mergedVia = null; // 'ancestor' | 'squash' —— 决定删分支时用 -d 还是 -D(见下方计划)
   if (branch) {
     const gone = !git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).ok;
     if (gone) {
@@ -130,9 +159,11 @@ function cleanup(flags) {
       git(repo, ['fetch', '--quiet'], { timeout: 30000 });
       const anc = git(repo, ['merge-base', '--is-ancestor', branch, `origin/${trunk}`]);
       branchMerged = anc.ok;
-      branchActionable = anc.ok;
+      mergedVia = branchMerged ? 'ancestor' : null;
+      if (!branchMerged && isSquashMerged(repo, branch, trunk)) { branchMerged = true; mergedVia = 'squash'; }
+      branchActionable = branchMerged;
       L.push(branchMerged
-        ? `  ✔ ${branch} 已合入 origin/${trunk}(is-ancestor 通过,删除安全)`
+        ? `  ✔ ${branch} 已合入 origin/${trunk}(${mergedVia === 'squash' ? '内容已被 squash 合并,patch-id 命中' : 'is-ancestor 通过'},删除安全)`
         : `  ✖ ${branch} 未合入 origin/${trunk} —— 不删这个分支(要么还没收官,要么成果会丢)`);
     }
   }
@@ -153,13 +184,18 @@ function cleanup(flags) {
   }
   plan.push({ desc: 'git worktree prune(清悬空登记)', run: () => { const r = git(repo, ['worktree', 'prune']); if (!r.ok) throw new Error(r.out); } });
   if (branchActionable && branchMerged) {
+    // squash 路径:git branch -d 自己内部也是 is-ancestor 那套判断,对 squash 恒报「未合并」——
+    // 我们已经用 patch-id 独立验过内容安全,这里必须直接 -D,再用 -d 只会重演同一个假阴性。
+    const squash = mergedVia === 'squash';
     plan.push({
-      desc: `git branch -d ${branch}(已验合入;若报错先核 is-ancestor 结论,别硬 -D)`,
+      desc: squash
+        ? `git branch -D ${branch}(squash 合并已用 patch-id 验证,-d 自身的 is-ancestor 检查对 squash 必报「未合并」,直接强删)`
+        : `git branch -d ${branch}(已验合入;若报错先核 is-ancestor 结论,别硬 -D)`,
       run: () => {
-        const r = git(repo, ['branch', '-d', branch]);
+        const r = git(repo, ['branch', squash ? '-D' : '-d', branch]);
         if (!r.ok) {
           // 已知坑:多 worktree 下 -d 可能误报;is-ancestor 已过,报错文案里带提示但不自动升级 -D
-          throw new Error(r.out + '\n      (is-ancestor 已通过——多 worktree 下 -d 有误报前科,人工核后可 -D)');
+          throw new Error(r.out + (squash ? '' : '\n      (is-ancestor 已通过——多 worktree 下 -d 有误报前科,人工核后可 -D)'));
         }
       },
     });
@@ -192,4 +228,4 @@ function cleanup(flags) {
   return { ok: true, text: L.join('\n') };
 }
 
-module.exports = { cleanup, defaultBranchOf, COMMON_TRUNKS };
+module.exports = { cleanup, defaultBranchOf, isSquashMerged, COMMON_TRUNKS };
