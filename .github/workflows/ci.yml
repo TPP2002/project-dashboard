@@ -16,9 +16,10 @@ name: CI
 #   .cmd 钩子安装都是 Windows 语义),测试里有一批断言就是冲着这些去的。
 #   在 Linux 上跑等于换了个环境验一个永远不会在那儿运行的程序。公开仓的 Windows runner 同样免费。
 #
-# 【为什么没有 npm install 这一步】本仓 CLI/server/core 全部零依赖(package.json 无
-#   dependencies/devDependencies),`npm test` 就是 `node --test`。web/ 那套 Vite 依赖
-#   与本闸无关,不在这里装。
+# 【为什么要 npm ci】CLI/server/core 仍然零运行时依赖,但根目录自 2026-09-07 起带一个 devDependency
+#   tsx(Codex 派单器是 TS,派单器与施工现场的几条单测经 `node --import tsx` 起子进程测 TS 纯函数)。
+#   不装它这批测试在 CI 上必红(PR #43 首跑 19 条 ERR_MODULE_NOT_FOUND)。按 lock 装,十来秒。
+#   web/ 那套 Vite 依赖与本闸无关,不在这里装。
 
 on:
   pull_request:
@@ -50,5 +51,8 @@ jobs:
 
       # 注:这里**不配** git 全局身份。四处建临时仓的测试助手(gitE2e / hooksInstall /
       # opsScripts / codeRepoSplit)都各自 `git config` 了仓内身份,全局那份是多余的。
+      - name: 根目录依赖(只有 tsx,按 lock 装)
+        run: npm ci --no-audit --no-fund
+
       - name: node --test(全量)
         run: npm test
