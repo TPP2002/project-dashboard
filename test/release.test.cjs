@@ -11,7 +11,9 @@
  *   · hook 的 CLI 根取值规则「永不指进 git 检出」:环境变量 > 自身非检出 > 发布副本 > 拒装;
  *   · 副本根带 board/kb 短别名垫片,displayCliCommand 有垫片就用短名(AUD-CLI-BATCH-AND-AUTOPROJECT ④/审计 A11);
  *   · 【自举】改的要是发布工具本身,起头的旧工具不许自己铺副本 —— 要把新版导到暂存目录、由新版一次铺成
- *     (AD-20260907-RELEASE-SELF-BOOTSTRAP:病是"连跑两次才真生效",跑了也可能没生效,比忘了跑更隐蔽)。
+ *     (AD-20260907-RELEASE-SELF-BOOTSTRAP:病是"连跑两次才真生效",跑了也可能没生效,比忘了跑更隐蔽);
+ *   · 【快路径】副本已经是这一版(同一个提交 + 同一版发布工具)就不重发 —— 启动器每次双击都跑 release,
+ *     白重建一次界面实测 5.2s(AD-20260907-LAUNCH-SKIP-REBUILD)。
  *
  * 【0906 口径变更】release 默认会现场构建前端(SERVER-RUNS-ON-LIVE-CHECKOUT d1=A)。本文件的临时仓没有前端源码,
  * 关心的也不是界面,所以调用一律显式加 `skip-web`——不是绕过闸门,是这些用例本来就只验后台那半边。
@@ -338,5 +340,78 @@ test('目标 commit 里没有发布工具(极老提交 / 回滚到它诞生之�
   const out = release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')));
   assert.ok(!/自举|旧版发布工具/.test(out.text));
+  clean(t.dir);
+});
+
+// ——— 已经是这一版就不重发(AD-20260907-LAUNCH-SKIP-REBUILD)———
+// 启动器每次双击都无条件跑一遍 release,而绝大多数双击时主干根本没动:重导 50 个文件 + 重建界面
+// 实测 6.2s,纯属让人干等。快路径要能省掉这一遍,又不能把"该发的"也省掉。
+
+/** 假的界面构建:只数被叫了几次、顺手把 dist 落出来(真 vite 要五秒,单测不跑它)。 */
+function countingBuild(counter) {
+  return ({ outRoot }) => {
+    counter.n++;
+    write(outRoot, 'web/dist/index.html', '<html>假界面</html>');
+    return { files: 1, ms: 1, dist: path.join(outRoot, 'web', 'dist') };
+  };
+}
+
+test('快路径:副本已经是这一版 → 不重导、不重建;主干一动就照发不误', () => {
+  const t = setup();
+  const c = { n: 0 };
+  const deps = { buildWeb: countingBuild(c) };
+
+  const r1 = release({ source: t.work, dest: t.dest }, deps);
+  assert.equal(c.n, 1);
+  assert.ok(!r1.upToDate, '头一次当然要发');
+  assert.ok(r1.stamp.logic, '印章要记下【是哪版发布工具铺的】,快路径全靠它');
+
+  // 留个记号:真重发是目录级换名,记号必然跟着旧目录一起没
+  write(t.dest, 'MARK.txt', 'still here');
+  const r2 = release({ source: t.work, dest: t.dest }, deps);
+  assert.equal(r2.upToDate, true, '同一个提交 + 同一版发布工具 → 不该重发');
+  assert.equal(c.n, 1, '界面不许再建一遍 —— 这一遍就是启动器让人干等的那五秒');
+  assert.ok(fs.existsSync(path.join(t.dest, 'MARK.txt')), '副本目录压根没被换过');
+  assert.match(r2.text, /没重发/);
+
+  // 主干动了 → 老老实实重发
+  pushFromElsewhere(t, 'core/x.cjs', "module.exports = 'v2';\n", 'v2');
+  const r3 = release({ source: t.work, dest: t.dest }, deps);
+  assert.ok(!r3.upToDate, '主干动了还跳过,就等于合了却不生效');
+  assert.equal(c.n, 2);
+  assert.ok(!fs.existsSync(path.join(t.dest, 'MARK.txt')), '真发布会把目录整个换掉');
+  assert.equal(read(path.join(t.dest, 'core', 'x.cjs')), "module.exports = 'v2';\n");
+  clean(t.dir);
+});
+
+test('快路径:--force 照发;印章来路不明(老版本没记发布工具指纹)也照发', () => {
+  const t = setup();
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
+
+  write(t.dest, 'MARK.txt', 'x');
+  const rf = release({ source: t.work, dest: t.dest, 'skip-web': true, force: true });
+  assert.ok(!rf.upToDate, '--force 就是要重发');
+  assert.ok(!fs.existsSync(path.join(t.dest, 'MARK.txt')));
+
+  // 0907 之前发出去的副本,印章里没有 logic —— 不知道是哪版工具铺的,一律重发一次补上
+  const stampPath = path.join(t.dest, 'RELEASE.json');
+  const stamp = JSON.parse(read(stampPath)); delete stamp.logic;
+  fs.writeFileSync(stampPath, JSON.stringify(stamp));
+  write(t.dest, 'MARK.txt', 'x');
+  const r = release({ source: t.work, dest: t.dest, 'skip-web': true });
+  assert.ok(!r.upToDate, '来路不明的副本不许跳过 —— 文件是新的、发布行为却可能是旧工具留下的');
+  assert.ok(!fs.existsSync(path.join(t.dest, 'MARK.txt')));
+  assert.ok(JSON.parse(read(stampPath)).logic, '重发后印章要把指纹补上,下次才跳得掉');
+  clean(t.dir);
+});
+
+test('快路径:上一份是 --skip-web 发的(副本里没有界面),这次要界面 → 不许跳过', () => {
+  const t = setup();
+  const c = { n: 0 };
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
+  const r = release({ source: t.work, dest: t.dest }, { buildWeb: countingBuild(c) });
+  assert.ok(!r.upToDate, '副本里没界面还跳过,负责人打开看板只会看到占位页');
+  assert.equal(c.n, 1);
+  assert.ok(fs.existsSync(path.join(t.dest, 'web', 'dist', 'index.html')));
   clean(t.dir);
 });

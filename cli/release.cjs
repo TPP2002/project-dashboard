@@ -30,7 +30,16 @@
  * 不递归的两道保险见 release() 里 staleReleaseLogic 那段注释。--no-bootstrap 可关(应急),
  * 代价是新发布逻辑要等下一次才生效——那一次的输出会明说这件事,不让人以为白改了。
  *
- * 用法:node cli/index.cjs release [--commit <sha>] [--no-fetch] [--skip-web] [--source <检出>] [--dest <目录>] [--no-bootstrap]
+ * 【0907 扩容:已经是这一版就不重发】(AD-20260907-LAUNCH-SKIP-REBUILD)
+ * 启动器每次双击都跑一遍 release,而绝大多数双击时 origin/主干 根本没动 —— 重导 50 个运行期文件
+ * 再现场建一次界面,实测 6.2s(其中 vite 5.2s),纯属让人干等。所以发之前先看副本新不新鲜:
+ * 印章的 commit 就是这次要发的 sha、副本还是个能用的副本、要界面时界面真在、且【铺出这份副本的
+ * 发布工具】与本次运行的一致(印章里的 logic 指纹),四条都成立就直接返回"已是最新",不导也不建。
+ * 第四条不能省:文件是新的、发布行为却是旧工具留下的,正是上面那段自举要治的病 ——
+ * 老印章没有 logic 字段一律当不一致,先老实重发一次把它补上。--force 强制重发。
+ *
+ * 用法:node cli/index.cjs release [--commit <sha>] [--no-fetch] [--skip-web] [--source <检出>] [--dest <目录>]
+ *                                [--no-bootstrap] [--force]
  *   source 默认 = 当前运行的这份代码所在的检出;dest 默认 = ~/.claude/dashboard-release。
  *   代码根不是 git 检出(安装版 / 发布副本自己)→ 友好跳过。
  *   --skip-web:只发后台(紧急 CLI/hook 修复用),印章会记下来;那份副本起不出网页界面。
@@ -242,6 +251,37 @@ function sourceDigest(text) {
  * @param {string} sha 要发的提交
  * @returns {string[]} 不一致的仓内相对路径
  */
+/**
+ * 一个代码根里【整套发布逻辑】的合并指纹。进印章,用来回答"这份副本是哪个版本的发布工具铺的"。
+ * 缺文件也要算进去(用空串占位),否则"少了一个文件"和"那个文件是空的"会撞成同一个指纹。
+ * @param {string} root 代码根
+ */
+function releaseLogicDigest(root) {
+  const parts = RELEASE_LOGIC_PATHS.map((rel) => {
+    let body = '';
+    try { body = fs.readFileSync(path.join(root, ...rel.split('/')), 'utf8'); } catch { /* 缺就当空 */ }
+    return rel + ':' + sourceDigest(body);
+  });
+  return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 16);
+}
+
+/**
+ * 副本还新鲜吗 —— 新鲜就不用重发(AD-20260907-LAUNCH-SKIP-REBUILD)。四条全中才算新鲜:
+ *   ① 印章记的 commit 就是这次要发的 sha;
+ *   ② 副本还是个能用的副本(cli/index.cjs 与印章记下的垫片都在);
+ *   ③ 这次要界面的话,副本里的界面得真在(--skip-web 发出来的副本没有 dist);
+ *   ④ 铺出这份副本的发布工具与本次运行的是同一版(老印章没有 logic 字段 → 不新鲜,重发一次补上)。
+ * @returns {object|null} 新鲜就回那份印章,否则 null
+ */
+function freshCopy({ dest, sha, logic, wantWeb }) {
+  const stamp = readStamp(dest);
+  if (!stamp || stamp.commit !== sha || stamp.logic !== logic) return null;
+  if (!fs.existsSync(path.join(dest, 'cli', 'index.cjs'))) return null;
+  for (const name of stamp.shims || []) if (!fs.existsSync(path.join(dest, name))) return null;
+  if (wantWeb && !fs.existsSync(path.join(dest, ...WEB_DIST_REL.split('/'), 'index.html'))) return null;
+  return stamp;
+}
+
 function staleReleaseLogic(runningRoot, source, sha) {
   if (safeGit(source, ['cat-file', '-e', `${sha}:cli/release.cjs`]) === null) return [];
   const changed = [];
@@ -442,6 +482,22 @@ function release(flags = {}, deps = {}) {
     return bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed });
   }
 
+  // 【已是这一版就不重发】启动器每次双击都跑这条命令,而主干多半没动 —— 见头注 0907 那段。
+  // 放在自举闸【之后】:发布工具变了的那次必须真发,轮不到走这条快路径。
+  const logic = releaseLogicDigest(CODE_ROOT);
+  const fresh = flags.force ? null : freshCopy({ dest, sha, logic, wantWeb: !flags['skip-web'] });
+  if (fresh) {
+    const w = fresh.web && !fresh.web.skipped ? `,界面 ${fresh.web.files} 个文件` : '';
+    return {
+      ok: true, dest, stamp: fresh, upToDate: true,
+      text:
+        `✔ 发布副本已经是这一版,本次没重发 → ${dest}\n` +
+        `  ${refLabel} = ${sha.slice(0, 12)} —— 与副本印章同一个提交,发布工具也没变;重导重建纯属白等\n` +
+        `  上次发布于 ${fresh.releasedAt}${w}\n` +
+        '  真要强制重发(怀疑副本被人动过)加 --force。',
+    };
+  }
+
   const newDir = dest + '.new', oldDir = dest + '.old';
   rmrf(newDir); rmrf(oldDir);
   fs.mkdirSync(newDir, { recursive: true });
@@ -467,7 +523,8 @@ function release(flags = {}, deps = {}) {
 
   const stamp = {
     commit: sha, ref: refLabel, trunk, source, releasedAt: new Date().toISOString(),
-    paths: RUNTIME_PATHS, files: files.length, node: process.version, web, shims,
+    // 这份副本是哪个版本的发布工具铺的 —— 下次发布靠它判断"能不能跳过"(AD-20260907-LAUNCH-SKIP-REBUILD)
+    paths: RUNTIME_PATHS, files: files.length, node: process.version, web, shims, logic,
   };
   atomicWriteJsonSync(path.join(newDir, STAMP_NAME), stamp);
 
@@ -502,5 +559,5 @@ function release(flags = {}, deps = {}) {
 
 module.exports = {
   release, releaseStatus, serviceStatus, detectTrunk, buildWebDist, writeCliShims,
-  staleReleaseLogic, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV,
+  staleReleaseLogic, releaseLogicDigest, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV,
 };

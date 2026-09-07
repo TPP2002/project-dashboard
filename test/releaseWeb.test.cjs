@@ -110,7 +110,9 @@ test('构建失败 = 整单失败:旧副本原封不动,不留 .new 残渣', () 
   fs.writeFileSync(path.join(t.dest, 'web', 'dist', 'index.html'), '<!doctype html><title>上一版界面</title>');
 
   assert.throws(
-    () => release({ source: t.work, dest: t.dest, 'no-fetch': true }, { buildWeb: () => { throw new Error('前端构建失败,整单不发(副本保持原样):Boom'); } }),
+    // force:同一个提交连发两次,默认会走【已是这一版就不重发】的快路径(AD-20260907-LAUNCH-SKIP-REBUILD),
+    // 那样就压根构建不到、也就验不到构建失败=整单失败。本例要的正是那次构建,所以强制重发。
+    () => release({ source: t.work, dest: t.dest, 'no-fetch': true, force: true }, { buildWeb: () => { throw new Error('前端构建失败,整单不发(副本保持原样):Boom'); } }),
     /前端构建失败/,
   );
   const after = JSON.parse(read(path.join(t.dest, 'RELEASE.json')));
