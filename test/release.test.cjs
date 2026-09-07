@@ -279,13 +279,13 @@ test('自举:目标 commit 的发布工具变了 → 旧工具不自己铺副本
   clean(t.dir);
 });
 
-test('自举:新版发布工具跑挂 → 整单失败,旧副本原封不动(和构建失败一个口径)', () => {
+test('自举:目标 commit 自带的发布工具跑挂 → 整单失败,旧副本原封不动(和构建失败一个口径)', () => {
   const t = setup();
   release({ source: t.work, dest: t.dest, 'skip-web': true });   // 先有一份能用的旧副本
   const stampBefore = read(path.join(t.dest, 'RELEASE.json'));
 
   pushFilesFromElsewhere(t, { 'cli/release.cjs': '// v2\n', 'cli/index.cjs': "process.stderr.write('新工具炸了'); process.exit(1);\n" }, 'v2:新工具是坏的');
-  assert.throws(() => release({ source: t.work, dest: t.dest, 'skip-web': true }), /新版发布工具没跑通/);
+  assert.throws(() => release({ source: t.work, dest: t.dest, 'skip-web': true }), /目标 commit 自带的发布工具没跑通/);
   assert.equal(read(path.join(t.dest, 'RELEASE.json')), stampBefore, '副本必须原封不动 —— 宁可不发,也不发半拉子');
   assert.ok(!fs.existsSync(t.dest + '.boot'), '失败了也不许留暂存目录');
   clean(t.dir);
@@ -297,7 +297,7 @@ test('--no-bootstrap:照旧用旧工具发,但结尾明说【新逻辑这次没�
   const out = release({ source: t.work, dest: t.dest, 'skip-web': true, 'no-bootstrap': true });
   assert.equal(out.ok, true);
   assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')), '关掉自举就该照旧发');
-  assert.match(out.text, /旧版发布工具/);
+  assert.match(out.text, /不是同一版/);
   assert.match(out.text, /再跑一次/, '不提醒的话,人看见 ✔ 就以为发完了 —— 这正是本卡要治的病');
   clean(t.dir);
 });
@@ -329,7 +329,7 @@ test('收敛证据:发布工具与目标 commit 一模一样 → 不自举、一
   const out = release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.equal(out.bootstrapped, undefined, '一致就不该自举');
   assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')));
-  assert.ok(!/自举|旧版发布工具/.test(out.text), '一致时不该说这些话,免得每次发布都刷一遍噪音');
+  assert.ok(!/自举|不是同一版/.test(out.text), '一致时不该说这些话,免得每次发布都刷一遍噪音');
   clean(t.dir);
 });
 
@@ -339,7 +339,7 @@ test('目标 commit 里没有发布工具(极老提交 / 回滚到它诞生之�
   assert.deepEqual(staleReleaseLogic(REPO_ROOT, t.work, sha), []);
   const out = release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')));
-  assert.ok(!/自举|旧版发布工具/.test(out.text));
+  assert.ok(!/自举|不是同一版/.test(out.text));
   clean(t.dir);
 });
 

@@ -25,8 +25,10 @@
  * 这比"忘了跑 release"更隐蔽:跑了、也成功了,却没生效。
  * 治法:发布前先比对【本次运行的发布工具】与【目标 commit 里的那份】,不一致就自举——
  *   ① 把目标 commit 的运行期文件铺到暂存目录 <dest>.boot(**全程不碰副本**);
- *   ② 用暂存目录里的【新版 CLI】去发布真正的副本,--commit 钉死同一个 sha。
- * 副本因此从头到尾只被新版铺一次;新版跑挂了副本连碰都没碰过,旧副本原封不动(与构建失败同一个口径)。
+ *   ② 用暂存目录里的【目标 commit 自带的那份 CLI】去发布真正的副本,--commit 钉死同一个 sha。
+ * 说"目标自带的那份"而不是"新版":`--commit` 回滚时它反而比手头这份更老,而规矩是一样的 ——
+ * 副本长什么样,只能由【副本里那份工具】说了算。
+ * 副本因此从头到尾只被它铺一次;它跑挂了副本连碰都没碰过,旧副本原封不动(与构建失败同一个口径)。
  * 不递归的两道保险见 release() 里 staleReleaseLogic 那段注释。--no-bootstrap 可关(应急),
  * 代价是新发布逻辑要等下一次才生效——那一次的输出会明说这件事,不让人以为白改了。
  *
@@ -297,7 +299,7 @@ function staleReleaseLogic(runningRoot, source, sha) {
 }
 
 /**
- * 自举发布:先把新代码铺到【暂存目录】,再用新代码自己去发布真正的副本。
+ * 自举发布:先把目标 commit 的代码铺到【暂存目录】,再用它自己的发布工具去发布真正的副本。
  *
  * 为什么要过一遍暂存目录,而不是"先按旧逻辑发一版、再让副本自己重发一次":
  *   后者会让副本先落成一份【旧逻辑铺的半成品】,中途挂了就停在那份半成品上(界面/垫片可能是缺的),
@@ -329,7 +331,7 @@ function bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed }
     } catch (e) {
       const detail = String((e && (e.stderr || e.stdout || e.message)) || e).trim().split('\n').slice(-8).join('\n');
       throw new Error(
-        `新版发布工具没跑通,整单不发(副本保持原样):\n${detail}\n` +
+        `目标 commit 自带的发布工具没跑通,整单不发(副本保持原样):\n${detail}\n` +
         `  变了的发布逻辑:${changed.join(' ')}\n` +
         '  实在要先发一份应急,加 --no-bootstrap —— 但那一次新逻辑不会生效。');
     }
@@ -337,8 +339,8 @@ function bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed }
     let child = null;
     try { child = JSON.parse(String(stdout).trim().split('\n').pop()); } catch { /* 老版本 CLI 可能没有 --json */ }
     const note =
-      `\n⟳ 自举:起头的是【旧版发布工具】(${changed.join(' ')} 在新代码里变了),` +
-      '已自动改用刚导出的新版重跑,上面这份副本是新版一次铺成的。\n' +
+      `\n⟳ 自举:起头的发布工具和目标 commit 里的那份不是同一版(${changed.join(' ')} 有出入),` +
+      '已改用【目标 commit 自带的那份】重跑 —— 上面这份副本就是它一次铺成的。\n' +
       '  ——不必再手动跑第二次;要关掉加 --no-bootstrap。';
     const text = (child && child.text ? child.text : String(stdout).trim()) + note;
     return { ok: true, dest, stamp: (child && child.stamp) || null, bootstrapped: changed, text };
@@ -544,7 +546,8 @@ function release(flags = {}, deps = {}) {
   // 走到这里还对不上,只可能是自举被关掉了(或自举完仍不一致)。宁可话难听,也别让人以为已经发完
   const staleLine = !changed.length ? '' : (bootMark === 'child'
     ? `\n  ⚠ 自举跑完发布工具仍对不上(${changed.join(' ')})——这不该发生,请手动再跑一次 release 并查这几个文件`
-    : `\n  ⚠ 这一次是【旧版发布工具】跑的(${changed.join(' ')} 在新代码里变了),它铺进副本的新发布逻辑本次没生效;` +
+    : `\n  ⚠ 起头的发布工具和目标 commit 里的那份不是同一版(${changed.join(' ')} 有出入),这一次是用【起头那份】发的,` +
+      '\n    目标 commit 里的发布逻辑本次一点没作用到副本上;' +
       `\n    再跑一次同样的命令才会作用到副本上(本次自举被关掉了:--no-bootstrap 或 ${BOOTSTRAP_ENV})`);
   const text =
     `✔ 发布副本已更新 → ${dest}\n` +
