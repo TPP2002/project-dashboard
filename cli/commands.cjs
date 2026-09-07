@@ -5,10 +5,11 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { mutate, readBoard, findTask, unionBy, unionShas } = require('./store.cjs');
+const { mutate, mutateTask, readBoard, findTask, unionBy, unionShas } = require('./store.cjs');
 const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
-const { emptyBoard, STATUS, emojiFor } = require('../core/boardSchema.cjs');
+const { emptyBoard, STATUS } = require('../core/boardSchema.cjs');
+const { renderList, renderShowCard } = require('./renderTask.cjs');
 const { normalizeReal } = require('../core/safePath.cjs');
 const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
@@ -40,7 +41,9 @@ function warnGeneratedScopes(scopes) {
 }
 function getRegistryPath(flags) { return flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH; }
 function resolveProj(flags) { return resolveProject(need(flags.project, '--project <id>'), { registryPath: getRegistryPath(flags) }); }
-function okTask(board, id) { return { ok: true, task: (board.tasks || []).find((x) => x.id === id) }; }
+// changed：本次真正动了哪些字段，由 mutateTask 在锁内比前后快照得出。写命令的 --json 只回它，
+// 不回整卡（AUD-CLI-BRIEF-AND-HELP，审计 §4-A4）。
+function okTask(board, id, changed) { return { ok: true, task: (board.tasks || []).find((x) => x.id === id), changed: changed || [] }; }
 function act(type, author, text, taskId) { return { ts: nowIso(), author: author || 'cli', type, text, taskId: taskId || null }; }
 function setPath(obj, dotted, val) { const p = dotted.split('.'); let o = obj; for (let i = 0; i < p.length - 1; i++) { o[p[i]] = o[p[i]] || {}; o = o[p[i]]; } o[p[p.length - 1]] = val; }
 function deriveStats(b) {
@@ -88,7 +91,7 @@ function add(flags) {
     if (!plainTitle) throw new Error('--plain-title 不能是空字符串');
   }
   const scopes = asArray(flags.scope);
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     b.tasks = b.tasks || [];
     if (b.tasks.find((t) => t.id === id)) throw new Error(`任务 ${id} 已存在`);
     const t = {
@@ -105,7 +108,7 @@ function add(flags) {
     b.tasks.push(t);
   }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}${plainTitle ? '（人话标题 ' + plainTitle + '）' : ''}`, id));
   warnGeneratedScopes(scopes);
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 // ---------- claim（认领 → 施工中） ----------
@@ -116,7 +119,7 @@ function claim(flags) {
   const scopes = asArray(flags.scope);
   const author = flags.author || branches[0] || 'cli';
   const ALLOWED = ['未开工', '待开工', '可复工', '待拍板', '已拍板', '施工中'];
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     if (!ALLOWED.includes(t.status)) throw new Error(`claim 非法迁移：${t.status} → 施工中（只能从 ${ALLOWED.join('/')}）`);
     t.status = '施工中';
@@ -126,7 +129,15 @@ function claim(flags) {
     if (scopes.length) t.fileScope = unionBy([...(t.fileScope || []), ...scopes], String);
   }, act('claim', author, `认领 ${id}：分支 ${branches.join(',') || '-'}${scopes.length ? '，文件域 ' + scopes.join(',') : ''}`, id));
   warnGeneratedScopes(scopes);
-  return okTask(board, id);
+  const res = okTask(board, id, changed);
+  // --brief：认领即打印开工任务书，省掉"claim 完再 brief 一次"这一趟（AUD-CLI-BRIEF-AND-HELP）。
+  // 惰性 require：不带 --brief 的调用不该为它付启动成本。
+  if (flags.brief) {
+    const { buildBrief } = require('./brief.cjs');
+    res.text = `✔ claim ${id} → ${res.task.status}\n\n`
+      + buildBrief({ pid: proj.id, projName: proj.name, board, task: res.task });
+  }
+  return res;
 }
 
 // ---------- progress（里程碑回写） ----------
@@ -134,7 +145,7 @@ function progress(flags) {
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'progress <taskId> --percent <n> [--next <里程碑>] [--tests t/p/mff]');
   const pct = flags.percent !== undefined ? parseInt(flags.percent, 10) : undefined;
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     if (pct !== undefined) { if (isNaN(pct) || pct < 0 || pct > 100) throw new Error('--percent 应为 0-100'); t.percent = pct; }
     if (flags.next !== undefined) t.nextMilestone = String(flags.next);
@@ -142,7 +153,7 @@ function progress(flags) {
     if (flags.typecheck !== undefined) t.typecheck = flags.typecheck === true || flags.typecheck === 'true';
     t.lastProgressAt = nowIso(); // 盖"进度更新时间"戳,前端据此显示"更新于 X 前",让陈旧可见
   }, act('progress', flags.author, `进度 ${id}${pct !== undefined ? ' ' + pct + '%' : ''}${flags.next ? '：' + flags.next : ''}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 /**
@@ -197,12 +208,12 @@ function syncProgress(flags) {
   if (!cand) return { ok: true, skipped: `无施工中任务匹配分支 ${branch}` };
   const target = Math.max(cand.percent || 0, Math.min(95, Math.max(0, pct))); // 只进不退、封顶 95
   if (target <= (cand.percent || 0)) return { ok: true, skipped: `进度未前进(当前 ${cand.percent || 0}%)` };
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, cand.id, (b) => {
     const t = findTask(b, cand.id);
     t.percent = target;
     t.lastProgressAt = nowIso();
   }, act('progress', flags.author || 'todo-hook', `进度(自动) ${cand.id} ${target}%`, cand.id));
-  return okTask(board, cand.id);
+  return okTask(board, cand.id, changed);
 }
 
 // ---------- pending（登记待拍板问题） ----------
@@ -279,7 +290,7 @@ function pending(flags) {
       allowCustom: true,
     }, null, 2));
   }
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id); t.decisions = t.decisions || [];
     const did = flags.did || ('d' + (t.decisions.length + 1));
     if (t.decisions.find((d) => d.id === did)) throw new Error(`decision ${did} 已存在`);
@@ -297,7 +308,7 @@ function pending(flags) {
     });
     if (['未开工', '待开工'].includes(t.status)) t.status = '待拍板';
   }, act('pending', flags.author, `待拍板 ${id}：${payload.question}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 // ---------- decide（拍板：填答案） ----------
@@ -313,7 +324,7 @@ function decide(flags) {
   const did = need(flags.did, '--did <dN>');
   const answer = need(flags.answer, '--answer <答案>');
   const promote = !flags['no-promote']; // --promote 仍可传，是历史写法的等价 no-op
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     const d = (t.decisions || []).find((x) => x.id === did);
     if (!d) throw new Error(`decision ${did} 不存在`);
@@ -321,7 +332,7 @@ function decide(flags) {
     d.answer = answer; d.decidedAt = today();
     if (promote && (t.decisions || []).every((x) => x.answer !== null) && t.status === '待拍板') t.status = '已拍板';
   }, act('decide', flags.author || '看板', `拍板 ${id}·${did}=${answer}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 // ---------- mark-landed（拍板已代码落地，从"待落地队列"消失）----------
@@ -329,7 +340,7 @@ function markLanded(flags) {
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'mark-landed <taskId> --did <dN> [--commit <sha>]');
   const did = need(flags.did, '--did <dN>');
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     const d = (t.decisions || []).find((x) => x.id === did);
     if (!d) throw new Error(`decision ${did} 不存在`);
@@ -338,7 +349,7 @@ function markLanded(flags) {
     d.landedAt = today();
     if (flags.commit) d.landedCommit = String(flags.commit);
   }, act('note', flags.author || 'cli', `拍板 ${id}·${did} 已代码落地`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 // ---------- park / block ----------
@@ -346,14 +357,14 @@ function park(flags) {
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'park <taskId> --reason <理由> [--note <遗留>]');
   const reason = need(flags.reason, '--reason <理由>');
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id); t.status = '暂缓'; t.blockReason = reason;
     if (flags.note) t.parkedNote = String(flags.note);
     // 再次暂缓要抹掉上一轮的解除依据：否则卡挂着「暂缓」却还带着上次的复工理由与日期，
     // show 出来两套说法并存，读的人分不清哪条是当下的（与 unpark 删 blockReason 同一道理）。
     delete t.unparkReason; delete t.unparkedAt;
   }, act('park', flags.author, `暂缓 ${id}：${reason}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 // 解除暂缓是一次有依据的决定，须单独留痕，不能混进 claim（PARK-HAS-NO-UNPARK）。
 // 旧阻塞理由与遗留说明必须删除，解除依据另存，避免复工后仍被当作硬阻塞。
@@ -361,25 +372,25 @@ function unpark(flags) {
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'unpark <taskId> --reason <解除依据>');
   const reason = String(need(flags.reason, '--reason <解除依据>'));
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     if (t.status !== '暂缓') throw new Error(`unpark 非法迁移：${t.status} → 可复工（只能从 暂缓）`);
     t.status = '可复工'; delete t.blockReason; delete t.parkedNote;
     t.unparkReason = reason; t.unparkedAt = today();
   }, act('unpark', flags.author, `复工 ${id}：${reason}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 function block(flags) {
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'block <taskId> --by <taskId>... --reason <理由>');
   const by = asArray(flags.by);
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     t.deps = t.deps || { dependsOn: [], blockedBy: [], relatedTasks: [] };
     t.deps.blockedBy = unionBy([...(t.deps.blockedBy || []), ...by], String);
     if (flags.reason) t.blockReason = String(flags.reason);
   }, act('block', flags.author, `阻塞 ${id}：被 ${by.join(',')} 挡`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 // ---------- done（收官 / 完工） ----------
@@ -388,14 +399,14 @@ function done(flags) {
   const id = need(flags._[0], 'done <taskId> [--pr <n>...] [--commit <sha>...] [--collect]');
   const prs = asArray(flags.pr).map(Number).filter((n) => !isNaN(n));
   const commits = asArray(flags.commit).map(String);
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     t.status = flags.collect ? '收官' : '已完工';
     t.dates = t.dates || {}; t.dates.done = today(); t.percent = 100;
     if (prs.length) t.prNumbers = unionBy([...(t.prNumbers || []), ...prs], String);
     if (commits.length) t.commitShas = unionShas([...(t.commitShas || []), ...commits]);
   }, act('done', flags.author, `${flags.collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 // ---------- note（全局活动流） ----------
@@ -415,7 +426,10 @@ function note(flags) {
   }
   const taskId = 标志卡号 || 位置卡号 || null;
   // 卡号打错时由 boardSchema 的引用完整性校验在写前拦下（锁内校验，坏数据绝不落盘）。
-  mutate(proj, () => {}, act('note', flags.author, text, taskId));
+  // kind:'message' —— 这是"有人特意留的一句话"，区别于 add/set/mark-landed 那些同样记成
+  // type:'note' 的记账流水。brief 的「最近留言」只捡这种，否则整段技术说明会跟着流水又吐一遍
+  // （AUD-CLI-BRIEF-AND-HELP）。老数据没有这个标记，只会少显示，不会显示错。
+  mutate(proj, () => {}, { ...act('note', flags.author, text, taskId), kind: 'message' });
   return { ok: true, taskId, text: `✔ note${taskId ? ` → ${taskId}` : ' → （项目级留言，未挂任何卡）'}` };
 }
 
@@ -426,20 +440,27 @@ function set(flags) {
   const field = need(flags.field, '--field <点路径>');
   const raw = need(flags.value, '--value <json>');
   let val; try { val = JSON.parse(raw); } catch { val = raw; }
-  const board = mutate(proj, (b) => { setPath(findTask(b, id), field, val); },
+  const { board, changed } = mutateTask(proj, id, (b) => { setPath(findTask(b, id), field, val); },
     act('note', flags.author, `set ${id}.${field}=${raw}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 // ---------- list / show（只读，读时派生） ----------
+// 渲染全在 cli/renderTask.cjs：默认只给"扫一眼要判断的东西"，全量改成显式索取
+// （--all / --full / --fields）。旧版把 title（给模型看的技术说明，实测最长 2166 字）整段回吐、
+// 且默认含已完工，AI 每问一次看板就被塞上万 token（AUD-CLI-BRIEF-AND-HELP，审计 §4-A4）。
 function list(flags) {
   const proj = resolveProj(flags);
   const b = readBoard(proj.board);
-  let tasks = b.tasks || [];
-  if (flags.status) tasks = tasks.filter((t) => t.status === flags.status);
-  if (flags.wave !== undefined) tasks = tasks.filter((t) => String(t.wave) === String(flags.wave));
-  const rows = tasks.map((t) => `${emojiFor(t.status)} ${String(t.id).padEnd(10)} ${String(t.status).padEnd(6)} ${String(t.percent || 0).padStart(3)}%  ${t.gitBranch && t.gitBranch.length ? t.gitBranch.join(',') : '-'}  ${t.title}`);
-  return { ok: true, text: `${proj.name}  ${statsLine(deriveStats(b))}\n` + rows.join('\n') };
+  return {
+    ok: true,
+    text: renderList({
+      projName: proj.name,
+      statsLine: statsLine(deriveStats(b)),
+      tasks: b.tasks || [],
+      opts: flags,
+    }),
+  };
 }
 function show(flags) {
   const proj = resolveProj(flags);
@@ -451,8 +472,12 @@ function show(flags) {
     }
     return { ok: true, text: items.length ? `待拍板 ${items.length} 条：\n` + items.join('\n') : '无待拍板' };
   }
-  const id = need(flags._[0], 'show <taskId> | show --pending');
-  return { ok: true, text: JSON.stringify(findTask(b, id), null, 2) };
+  const id = need(flags._[0], 'show <taskId> [--full] | show --pending');
+  const task = findTask(b, id);
+  return {
+    ok: true,
+    text: flags.full ? JSON.stringify(task, null, 2) : renderShowCard(task, { pid: proj.id }),
+  };
 }
 
 // ---------- cost(施工成本登记:每卡记录用了哪些 agent/模型档;BOARD-COST-MONITOR 0901)----------
@@ -472,13 +497,13 @@ function cost(flags) {
   if (tokens !== undefined) entry.tokens = tokens;
   if (flags.note) entry.note = String(flags.note);
   const agentsText = Object.entries(agents).map(([k, v]) => `${k}×${v}`).join(' + ');
-  const board = mutate(proj, (b) => {
+  const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     t.cost = t.cost || { entries: [] };
     if (!Array.isArray(t.cost.entries)) t.cost.entries = [];
     t.cost.entries.push(entry);
   }, act('cost', flags.author, `登记施工成本 ${id}：${agentsText}${tokens !== undefined ? '，约 ' + tokens + ' tokens' : ''}`, id));
-  return okTask(board, id);
+  return okTask(board, id, changed);
 }
 
 module.exports = { register, add, claim, progress, syncProgress, pending, decide, markLanded, park, unpark, block, done, note, set, list, show, cost, deriveStats };

@@ -3,8 +3,13 @@
  * dispatchPrompt.cjs —— 派单"任务书"生成器(server 与 cli inbox 共用,零依赖纯字符串)。
  * 单一事实源:无论看板界面派单、还是新对话跑 `cli inbox` 读看板,都用同一份生成器,
  * 保证对话拿到的任务书一致。
+ *
+ * 正文那一半直接用 `brief.cjs` 的 buildBrief(AUD-CLI-BRIEF-AND-HELP):
+ * 派单任务书 = 开工任务书(brief) + 落地流程段。这样 `brief <卡号>`、`claim --brief`、
+ * `inbox --tid`、网页派单四个入口出的是同一份事实,不会再出现"派单说的和自己查的不一样"。
  */
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
+const { buildBrief, unlanded } = require('./brief.cjs');
 
 /**
  * 短触发指令——给新对话粘贴用(避开命令行长度/转义,funnel through cli inbox)。
@@ -20,49 +25,39 @@ function shortTrigger(pid, tid) {
   ].join('\n');
 }
 
-/** 任务级任务书:一个任务的所有 unlanded decisions 打包,一个对话统一施工。 */
-function buildTaskDispatchPrompt(pid, projName, task, decisions) {
+/**
+ * 任务级任务书:一个任务的所有 unlanded decisions 打包,一个对话统一施工。
+ * @param {string} pid 项目 id
+ * @param {string} projName 项目显示名
+ * @param {object} task 卡
+ * @param {object[]} [decisions] 要落地的决策;不给就按卡自己算(= 已拍板且未标落地)
+ * @param {object} [board] 整块板(算依赖状态与留言用;老调用方没传也不炸)
+ */
+function buildTaskDispatchPrompt(pid, projName, task, decisions, board) {
   const CLI = displayCliCommand();
+  const ds = decisions && decisions.length ? decisions : unlanded(task);
   const lines = [
     `# 【看板派单】此对话负责落地任务 ${task.id} 的全部已拍板决策`,
     '',
-    `你是被【项目管理看板】指派来落地一条/几条已拍板决策的。这条内容就是完整任务书,你不需要问用户"要做什么"。`,
+    '你是被【项目管理看板】指派来落地一条/几条已拍板决策的。下面就是完整任务书,你不需要问用户"要做什么"。',
+    `**本任务有 ${ds.length} 条已拍板决策要落地**(都是这一个任务的决策,由你一个对话统一施工)。`,
     '',
-    `**项目**:${projName || pid} (项目 id: \`${pid}\`,已接入看板)`,
-    `**任务**:${task.id} · ${task.title}`,
-    ...(task.modelHint ? [
-      `**建议档位**:🤖 ${task.modelHint}(第一段是主对话档,负责人开对话时已按它选;「+」后的子 agent 档由你施工中按 skill §12.2 路由表自行派发,不必请示)`,
-    ] : []),
-    `**本任务有 ${decisions.length} 条已拍板决策要落地**(都是这一个任务的决策,由你一个对话统一施工):`,
+    '---',
+    '',
+    // 开工事实(人话标题/技术说明/文件域/依赖及其状态/待拍板/已拍板答案/文档/留言)与 `brief` 同源。
+    buildBrief({ pid, projName, board, task, cli: CLI, includeNextSteps: false }),
     '',
     '---',
     '',
   ];
-  decisions.forEach((d, i) => {
-    lines.push(`## 决策 ${i + 1}/${decisions.length}:#${d.id}(用户拍于 ${d.decidedAt})`);
-    lines.push('');
-    lines.push(`**问题**:${d.question}`);
-    lines.push('');
-    lines.push('**用户拍的答案**:');
-    lines.push('');
-    lines.push('```');
-    lines.push(d.answer);
-    lines.push('```');
-    lines.push('');
-    if (d.recommendReason) {
-      lines.push(`**当时看板给的推荐理由**(参考,以用户答案为准):${d.recommendReason}`);
-      lines.push('');
-    }
-    lines.push('---');
-    lines.push('');
-  });
   lines.push('## 你的施工职责');
   lines.push('');
   lines.push('**读了再动手**:');
   lines.push('1. 项目根 `CLAUDE.md`——本项目的看板同步纪律(pre-commit 硬闸门会拦你不 claim 就 commit)');
   lines.push('2. skill `project-build-workflow` §11.2 认领协议 + §11.9 看板同步 + §6.2 拍板话术');
-  lines.push(`3. 本任务的设计文档(见 board.json 里 ${task.id}.docs 字段)`);
-  lines.push('4. 项目的 Codex 派单须知(本项目 `docs/开工须知-Codex派单.md` §0/§10/§11)——**写代码的活默认派 Codex**(0901 拍板/0905 重申),你只定契约、派单、验收、销卡;自干要对上例外表编号');
+  lines.push(`3. 本任务的设计文档(上面「参考文档」那一段;board.json 里是 ${task.id}.docs)`);
+  lines.push('4. 项目若有派单须知(`docs/开工须知*.md`)——里面写了本项目阶段④的默认施工方是谁;');
+  lines.push('   写了"施工默认派 Codex"的项目里,你只定契约、派单、验收、销卡,自干要对上例外表编号');
   lines.push('');
   lines.push('**落地流程(整个任务一次 claim,把上面所有决策一起做)**:');
   lines.push('');
@@ -72,12 +67,12 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions) {
   lines.push('# 认领本任务(整个任务只 claim 一次,不 claim git commit 会被 pre-commit 硬闸门拦)');
   lines.push(`${CLI} claim ${task.id} --project ${pid} --branch <你的分支名>`);
   lines.push('');
-  lines.push('# 按上面每条决策的答案落地实现...(阶段①②③自己做;阶段④写代码写成工单派 Codex → collect → land;自干要对上例外表编号)');
+  lines.push('# 按上面每条决策的答案落地实现...(阶段①②③自己做;阶段④按项目派单须知决定谁写代码)');
   lines.push('');
   lines.push('# 施工完成');
   lines.push(`${CLI} done ${task.id} --project ${pid} --pr <PR号> --commit <sha>`);
   lines.push('# 逐条标记决策已落地:');
-  decisions.forEach((d) => {
+  ds.forEach((d) => {
     lines.push(`${CLI} mark-landed ${task.id} --did ${d.id} --project ${pid}`);
   });
   lines.push('```');
@@ -91,7 +86,7 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions) {
   lines.push('  波次编号只属于项目原始计划的批次,新冒出来的任务不该塞进已有的高波次里。');
   lines.push('- 新任务若要拍板点,同样走 `cli pending --json` 三件套。');
   lines.push('');
-  const hasDesignAnswer = decisions.some((d) => /暂缓|编写一套|设计方案|联网|对抗审查/.test(d.answer || ''));
+  const hasDesignAnswer = ds.some((d) => /暂缓|编写一套|设计方案|联网|对抗审查/.test(d.answer || ''));
   if (hasDesignAnswer) {
     lines.push('**注意本任务含"去设计"类答案**(不是照代码改,而是启动新方案设计):');
     lines.push('- 不是现在动代码,而是新起一份设计方案文档(放 `docs/plans/` 下,沿用项目编号规则)');

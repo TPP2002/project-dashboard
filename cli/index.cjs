@@ -41,6 +41,8 @@ const REGISTRY = {
   done: ['./commands.cjs', 'done'], note: ['./commands.cjs', 'note'],
   set: ['./commands.cjs', 'set'], list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
   cost: ['./commands.cjs', 'cost'],
+  // 新对话开工的唯一入口(AUD-CLI-BRIEF-AND-HELP):一条命令给全开工信息,不用再拼 show+inbox+precheck
+  brief: ['./brief.cjs', 'brief'],
   precheck: ['./precheck.cjs', 'precheck'], cleanup: ['./cleanup.cjs', 'cleanup'],
   'docs-audit': ['./docsAudit.cjs', 'docsAudit'],
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
@@ -62,14 +64,60 @@ const REGISTRY = {
   enroll: ['./enroll.cjs', 'enroll'],
 };
 
+/**
+ * 帮助渲染(AUD-CLI-BRIEF-AND-HELP,审计 §4-A1)。惰性 require:不看帮助的调用不该为它付启动成本。
+ * @param {string} [cmd] 给了就打单条命令的一屏用法;不给就打全局一览。
+ * @returns {boolean} 有没有打出来(命令不存在时 false,交调用方按未知命令处理)
+ */
+function printHelp(cmd) {
+  const help = require('./help.cjs');
+  const { displayCliCommand } = require('../core/runtimeRoot.cjs');
+  const cli = displayCliCommand();
+  if (cmd) {
+    const text = help.renderCommandHelp(cmd, { cli });
+    if (!text) return false;
+    console.log(text);
+    return true;
+  }
+  console.log(help.renderGlobalHelp({ cli, commands: Object.keys(REGISTRY) }));
+  return true;
+}
+
+/**
+ * 写命令的 `--json` 只回变更摘要(AUD-CLI-BRIEF-AND-HELP,审计 §4-A4)。
+ * 旧版回吐整个 task 对象——技术说明、全部决策、全部提交号一次全给,几千 token,
+ * 而调用方要的只是"成了没、现在什么状态、动了哪些字段"。要整卡去 `show <卡号> --full`。
+ * 不带 task 的结果(note / doctor / list …)原样放行,它们各有各的形状。
+ */
+function slimJson(res) {
+  const t = res && res.task;
+  if (!t) return res;
+  return {
+    ok: res.ok !== false,
+    id: t.id,
+    status: t.status,
+    percent: t.percent || 0,
+    changed: res.changed || [],
+  };
+}
+
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);
-  if (!cmd || cmd === 'help' || cmd === '--help') {
-    console.log('用法: cli <命令> --project <id> [参数]\n命令: ' + Object.keys(REGISTRY).join(' '));
+  // `help <命令>` / 裸 help / 无参数：全局一览或单条用法。
+  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
+    const target = cmd === 'help' ? rest.find((a) => !a.startsWith('-')) : undefined;
+    if (target && !printHelp(target)) {
+      console.error('未知命令: ' + target + '。可用: ' + Object.keys(REGISTRY).join(' '));
+      process.exit(2);
+    }
+    if (!target) printHelp();
     process.exit(0);
   }
   const entry = REGISTRY[cmd];
   if (!entry) { console.error('未知命令: ' + cmd + '。可用: ' + Object.keys(REGISTRY).join(' ')); process.exit(2); }
+  // `<命令> --help`：必须抢在下面的 need() 与建卡机器闸之前，否则 `pending --help` 会被当成
+  // "缺参数 --project"、`add --help` 会被 --model 闸拦下 —— AGENTS.md 让施工方走的正是这条路。
+  if (rest.includes('--help') || rest.includes('-h')) { printHelp(cmd); process.exit(0); }
 
   let fn;
   try { fn = require(entry[0])[entry[1]]; }
@@ -105,7 +153,7 @@ function main() {
   }
   try {
     const res = fn(flags) || { ok: true };
-    if (flags.json) console.log(JSON.stringify(res));
+    if (flags.json) console.log(JSON.stringify(slimJson(res)));
     else if (res.text) console.log(res.text);
     else console.log(`✔ ${cmd}` + (res.task ? ` ${res.task.id} → ${res.task.status}` : ''));
   } catch (e) {
@@ -114,4 +162,7 @@ function main() {
   }
 }
 
-main();
+// 直接跑才分发；被 require 时只导出注册表（test/cliHelp.test.cjs 拿它逐条比对帮助覆盖率）。
+if (require.main === module) main();
+
+module.exports = { REGISTRY, parseFlags };
