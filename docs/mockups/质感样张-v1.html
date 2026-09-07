@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>看板 · 质感样张 v1</title>
+<style>
+:root{--mono:ui-monospace,Consolas,"SF Mono",Menlo,monospace}
+body{margin:0;background:#e9e9e5;color:#1c1c1a;font:14px/1.6 system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.doc{max-width:1160px;margin:0 auto;padding:36px 28px 64px}
+h1{font-size:24px;margin:0 0 8px}
+p{margin:0 0 10px;max-width:960px}
+.meta{font-family:var(--mono);font-size:12px;color:#7a7a74}
+.stage{margin:24px 0 8px;border-radius:8px;overflow:hidden;background:#0b0f18;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.stage svg{display:block;width:100%;height:auto}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px;font-size:13px}
+.legend div{background:#fff;border-radius:8px;padding:12px 14px}
+.legend b{display:block;margin-bottom:4px}
+.rules{margin-top:26px;background:#fff;border-radius:8px;padding:14px 18px}
+.rules li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="doc">
+<h1>质感样张 v1 · 块状 vs 合格</h1>
+<p>负责人的话："像 Python 初学者画圆画矩形画出来的块状动画。"这页把同一样东西用两种画法并排：<b>左边是块状</b>（几何原型当物体、一物一色、硬边、不照亮周围、刚体运动），<b>右边是这个项目要的</b>（有机轮廓、冷暖分离、软边层叠、辉光与受光、有生命曲线的运动）。标准全文在 docs/plans/AUD-FUN-WORKFLOOR/质感标准.md，以后每张画面工单都按它验收。</p>
+<p class="meta">四组对照：火焰 / 烟 · 排气冷气 / 灯塔光束 · 全部 SVG 矢量 + 滤镜，无外部依赖 · 2026-09-08</p>
+
+<div class="stage">
+<svg viewBox="0 0 1160 820" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <!-- 扰动：火 / 烟 / 气各一档频率 -->
+  <filter id="wobF" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.05 0.11" numOctaves="2" seed="2"><animate attributeName="seed" values="1;2;3;4;5;6;7;8" dur="0.6s" repeatCount="indefinite"/></feTurbulence><feDisplacementMap in="SourceGraphic" scale="9" xChannelSelector="R" yChannelSelector="G"/></filter>
+  <filter id="wobS" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="3" seed="5"/><feDisplacementMap in="SourceGraphic" scale="16"/></filter>
+  <filter id="wobV" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency="0.03 0.05" numOctaves="2" seed="9"><animate attributeName="seed" values="9;10;11;12" dur="2.4s" repeatCount="indefinite"/></feTurbulence><feDisplacementMap in="SourceGraphic" scale="7"/></filter>
+  <filter id="b2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2"/></filter>
+  <filter id="b4" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="4"/></filter>
+  <filter id="b9" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="9"/></filter>
+  <filter id="b16" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="16"/></filter>
+  <!-- 火 -->
+  <linearGradient id="gCore" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#fff2b8"/><stop offset="1" stop-color="#ffc857" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gMantle" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd166"/><stop offset=".5" stop-color="#ff8a1f"/><stop offset="1" stop-color="#ff4d00" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gOuter" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff6a2a" stop-opacity=".7"/><stop offset=".6" stop-color="#c8281c" stop-opacity=".45"/><stop offset="1" stop-color="#6b0f1a" stop-opacity="0"/></linearGradient>
+  <radialGradient id="gFireLight"><stop offset="0" stop-color="#ffb347" stop-opacity=".75"/><stop offset=".5" stop-color="#ff6a00" stop-opacity=".28"/><stop offset="1" stop-color="#ff4d00" stop-opacity="0"/></radialGradient>
+  <!-- 烟 -->
+  <radialGradient id="gPuff" cx=".42" cy=".38" r=".62"><stop offset="0" stop-color="#e6eaf1" stop-opacity=".95"/><stop offset=".55" stop-color="#aab3c3" stop-opacity=".8"/><stop offset="1" stop-color="#7d8798" stop-opacity="0"/></radialGradient>
+  <radialGradient id="gPuffShade"><stop offset="0" stop-color="#3b4356" stop-opacity=".7"/><stop offset="1" stop-color="#3b4356" stop-opacity="0"/></radialGradient>
+  <radialGradient id="gPuffHi"><stop offset="0" stop-color="#ffffff" stop-opacity=".7"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="gPuffWarm"><stop offset="0" stop-color="#ff9a3c" stop-opacity=".55"/><stop offset="1" stop-color="#ff9a3c" stop-opacity="0"/></radialGradient>
+  <radialGradient id="gPuffCool"><stop offset="0" stop-color="#8fb7ff" stop-opacity=".35"/><stop offset="1" stop-color="#8fb7ff" stop-opacity="0"/></radialGradient>
+  <!-- 冷气 -->
+  <radialGradient id="gVapor"><stop offset="0" stop-color="#ffffff" stop-opacity=".85"/><stop offset=".45" stop-color="#e9f3ff" stop-opacity=".45"/><stop offset="1" stop-color="#cfe3ff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="gBody" x1="0" x2="1"><stop offset="0" stop-color="#5b6372"/><stop offset=".18" stop-color="#e8ecf2"/><stop offset=".55" stop-color="#c9d0da"/><stop offset=".85" stop-color="#6c7484"/><stop offset="1" stop-color="#3a4150"/></linearGradient>
+  <!-- 光束 -->
+  <linearGradient id="gBeam" x1="0" x2="1"><stop offset="0" stop-color="#fff6d6" stop-opacity=".75"/><stop offset=".35" stop-color="#ffe9a8" stop-opacity=".32"/><stop offset="1" stop-color="#ffd977" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gBeamWide" x1="0" x2="1"><stop offset="0" stop-color="#ffe9a8" stop-opacity=".22"/><stop offset="1" stop-color="#ffe9a8" stop-opacity="0"/></linearGradient>
+  <radialGradient id="gLamp"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#fff1b0"/><stop offset=".65" stop-color="#ffc857" stop-opacity=".5"/><stop offset="1" stop-color="#ffc857" stop-opacity="0"/></radialGradient>
+  <linearGradient id="gSea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0e2238"/><stop offset="1" stop-color="#050a12"/></linearGradient>
+  <linearGradient id="gSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#070b16"/><stop offset=".7" stop-color="#101a2e"/><stop offset="1" stop-color="#2a3142"/></linearGradient>
+  <clipPath id="cSea"><rect x="-60" y="50" width="580" height="70"/></clipPath>
+  <clipPath id="cCell1"><rect x="0" y="0" width="580" height="205"/></clipPath>
+  <clipPath id="cCell2"><rect x="580" y="0" width="580" height="205"/></clipPath>
+</defs>
+
+<rect width="1160" height="820" fill="#0b0f18"/>
+<!-- 分隔 -->
+<g stroke="#1f2634" stroke-width="2"><line x1="580" y1="0" x2="580" y2="820"/><line x1="0" y1="205" x2="1160" y2="205"/><line x1="0" y1="410" x2="1160" y2="410"/><line x1="0" y1="615" x2="1160" y2="615"/></g>
+<g font-family="ui-monospace,Consolas,monospace" font-size="13" fill="#6a7590">
+  <text x="16" y="24">01 火焰 · 块状</text><text x="596" y="24">01 火焰 · 合格</text>
+  <text x="16" y="229">02 烟 · 块状</text><text x="596" y="229">02 烟 · 合格</text>
+  <text x="16" y="434">03 排气冷气 · 块状</text><text x="596" y="434">03 排气冷气 · 合格</text>
+  <text x="16" y="639">04 灯塔光束 · 块状</text><text x="596" y="639">04 灯塔光束 · 合格</text>
+</g>
+
+<!-- ===== 01 火焰 · 块状：三角形 + 一个橙 ===== -->
+<g transform="translate(290,40)">
+  <rect x="-22" y="-10" width="44" height="40" fill="#8a8f9a" stroke="#000"/>
+  <polygon points="-18,30 18,30 0,150" fill="#ff7a00" stroke="#000" stroke-width="1.5"/>
+  <polygon points="-9,30 9,30 0,110" fill="#ffe14d"/>
+  <rect x="-140" y="150" width="280" height="14" fill="#3a4152" stroke="#000"/>
+</g>
+<!-- ===== 01 火焰 · 合格 ===== -->
+<g transform="translate(870,40)">
+  <!-- 台面与被火照亮的地面 -->
+  <rect x="-160" y="150" width="320" height="16" fill="#2a3040"/>
+  <ellipse cx="0" cy="156" rx="150" ry="26" fill="url(#gFireLight)" filter="url(#b9)"/>
+  <ellipse cx="0" cy="150" rx="70" ry="9" fill="#ffd9a0" opacity=".35" filter="url(#b4)"/>
+  <!-- 发动机喷口 -->
+  <path d="M-22,-10 h44 l6,36 h-56 z" fill="#5b6372"/><path d="M-22,-10 h10 l4,36 h-14 z" fill="#8f97a6"/><path d="M12,-10 h10 l6,36 h-14 z" fill="#2c3240"/>
+  <ellipse cx="0" cy="26" rx="28" ry="6" fill="#1a1f2a"/>
+  <!-- 喷口大柔光 -->
+  <ellipse cx="0" cy="40" rx="46" ry="30" fill="#ffb347" opacity=".55" filter="url(#b16)"/>
+  <!-- 三层火舌 + 冲击菱 -->
+  <g filter="url(#wobF)">
+    <path d="M-34,26 C-46,70 -38,120 0,160 C38,120 46,70 34,26 Z" fill="url(#gOuter)" filter="url(#b4)"/>
+    <path d="M-24,26 C-32,62 -26,104 0,142 C26,104 32,62 24,26 Z" fill="url(#gMantle)"/>
+    <path d="M-12,26 C-16,56 -12,90 0,118 C12,90 16,56 12,26 Z" fill="url(#gCore)"/>
+    <g fill="#fff" opacity=".85">
+      <ellipse cx="0" cy="46" rx="7" ry="4"/><ellipse cx="0" cy="64" rx="5.5" ry="3.2"/><ellipse cx="0" cy="80" rx="4" ry="2.6"/><ellipse cx="0" cy="94" rx="2.6" ry="1.8"/>
+      <animate attributeName="opacity" values=".85;.5;.9;.6;.85" dur=".35s" repeatCount="indefinite"/>
+    </g>
+  </g>
+  <!-- 火苗抖动 -->
+  <animateTransform attributeName="transform" type="scale" additive="sum" values="1 1;1.03 .96;.98 1.04;1 1" dur=".28s" repeatCount="indefinite"/>
+</g>
+
+<!-- ===== 02 烟 · 块状：几个灰圆 ===== -->
+<g transform="translate(290,330)" fill="#8d8d8d" stroke="#000">
+  <circle cx="-90" cy="0" r="30"/><circle cx="-40" cy="-20" r="38"/><circle cx="20" cy="-10" r="34"/><circle cx="70" cy="10" r="28"/><circle cx="110" cy="-6" r="22"/>
+  <rect x="-140" y="40" width="280" height="14" fill="#3a4152"/>
+</g>
+<!-- ===== 02 烟 · 合格：花菜簇 + 体积阴影 + 高光 + 火光染底 + 月光染顶 ===== -->
+<g transform="translate(870,330)">
+  <rect x="-160" y="40" width="320" height="16" fill="#2a3040"/>
+  <ellipse cx="-90" cy="44" rx="120" ry="18" fill="url(#gFireLight)" filter="url(#b9)" opacity=".7"/>
+  <g filter="url(#wobS)">
+    <!-- 大团（老） -->
+    <g transform="translate(-60,-10)" opacity=".92">
+      <circle cx="-40" cy="10" r="42" fill="url(#gPuff)"/><circle cx="0" cy="-22" r="46" fill="url(#gPuff)"/><circle cx="44" cy="0" r="40" fill="url(#gPuff)"/><circle cx="14" cy="26" r="36" fill="url(#gPuff)"/><circle cx="-22" cy="-30" r="30" fill="url(#gPuff)"/><circle cx="60" cy="-30" r="28" fill="url(#gPuff)"/>
+      <circle cx="30" cy="26" r="46" fill="url(#gPuffShade)"/><circle cx="-14" cy="-34" r="34" fill="url(#gPuffHi)"/><circle cx="4" cy="-44" r="30" fill="url(#gPuffCool)"/>
+      <circle cx="-10" cy="40" r="52" fill="url(#gPuffWarm)"/>
+    </g>
+    <!-- 中团 -->
+    <g transform="translate(60,4)" opacity=".9">
+      <circle cx="-26" cy="8" r="30" fill="url(#gPuff)"/><circle cx="4" cy="-14" r="34" fill="url(#gPuff)"/><circle cx="34" cy="6" r="28" fill="url(#gPuff)"/><circle cx="10" cy="20" r="26" fill="url(#gPuff)"/>
+      <circle cx="22" cy="20" r="34" fill="url(#gPuffShade)"/><circle cx="-8" cy="-24" r="24" fill="url(#gPuffHi)"/><circle cx="0" cy="30" r="36" fill="url(#gPuffWarm)"/>
+    </g>
+    <!-- 小团（新，靠近火，最橙） -->
+    <g transform="translate(-130,14)" opacity=".95">
+      <circle cx="-10" cy="6" r="20" fill="url(#gPuff)"/><circle cx="12" cy="-8" r="22" fill="url(#gPuff)"/><circle cx="28" cy="10" r="18" fill="url(#gPuff)"/>
+      <circle cx="14" cy="14" r="22" fill="url(#gPuffShade)"/><circle cx="6" cy="10" r="30" fill="url(#gPuffWarm)"/>
+    </g>
+    <animateTransform attributeName="transform" type="translate" additive="sum" values="0 0;6 -4;0 0" dur="6s" repeatCount="indefinite"/>
+  </g>
+</g>
+
+<!-- ===== 03 冷气 · 块状：白条 ===== -->
+<g transform="translate(290,520)">
+  <rect x="-16" y="-60" width="32" height="150" fill="#d0d4dc" stroke="#000"/>
+  <rect x="18" y="-20" width="12" height="90" fill="#fff" stroke="#000"/>
+</g>
+<!-- ===== 03 冷气 · 合格：排气口 + 往下沉、散开的气团 + 雾丝 + 结霜环 ===== -->
+<g transform="translate(870,520)">
+  <rect x="-16" y="-70" width="32" height="170" fill="url(#gBody)"/>
+  <rect x="-16" y="-12" width="32" height="6" fill="#1a1f2a" opacity=".8"/>
+  <rect x="-16" y="10" width="32" height="70" fill="#ffffff" opacity=".18"/>
+  <rect x="-13" y="14" width="3" height="60" fill="#ffffff" opacity=".35"/><rect x="6" y="18" width="2" height="50" fill="#ffffff" opacity=".25"/>
+  <!-- 排气口 -->
+  <rect x="16" y="-4" width="10" height="5" fill="#8f97a6"/><rect x="24" y="-5" width="4" height="7" fill="#2c3240"/>
+  <ellipse cx="18" cy="-1" rx="14" ry="9" fill="#ffffff" opacity=".22" filter="url(#b4)"/>
+  <!-- 气团：越远越大越淡越低 -->
+  <g filter="url(#wobV)">
+    <g><ellipse cx="34" cy="2" rx="9" ry="6" fill="url(#gVapor)"/><ellipse cx="40" cy="6" rx="7" ry="5" fill="url(#gVapor)"/><ellipse cx="30" cy="8" rx="6" ry="4" fill="url(#gVapor)"/></g>
+    <g opacity=".8"><ellipse cx="52" cy="16" rx="15" ry="10" fill="url(#gVapor)"/><ellipse cx="62" cy="24" rx="12" ry="8" fill="url(#gVapor)"/><ellipse cx="44" cy="26" rx="11" ry="7" fill="url(#gVapor)"/></g>
+    <g opacity=".6"><ellipse cx="72" cy="42" rx="22" ry="14" fill="url(#gVapor)"/><ellipse cx="90" cy="54" rx="18" ry="12" fill="url(#gVapor)"/><ellipse cx="58" cy="58" rx="16" ry="10" fill="url(#gVapor)"/></g>
+    <g opacity=".38"><ellipse cx="96" cy="80" rx="30" ry="18" fill="url(#gVapor)"/><ellipse cx="124" cy="92" rx="24" ry="15" fill="url(#gVapor)"/><ellipse cx="76" cy="96" rx="22" ry="13" fill="url(#gVapor)"/></g>
+    <g opacity=".18"><ellipse cx="130" cy="120" rx="40" ry="22" fill="url(#gVapor)"/><ellipse cx="96" cy="128" rx="30" ry="18" fill="url(#gVapor)"/></g>
+    <animateTransform attributeName="transform" type="translate" additive="sum" values="0 0;3 4;0 0" dur="2.4s" repeatCount="indefinite"/>
+  </g>
+  <!-- 雾丝 -->
+  <path d="M28,-1 c 8,2 10,8 18,10" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.2" filter="url(#b2)"/>
+  <!-- 地面上的冷雾 -->
+  <ellipse cx="90" cy="118" rx="80" ry="10" fill="#dfeeff" opacity=".16" filter="url(#b9)"/>
+</g>
+
+<!-- ===== 04 光束 · 块状：平涂楔形 ===== -->
+<g transform="translate(60,700)">
+  <rect x="-14" y="-40" width="28" height="90" fill="#c0392b" stroke="#000"/><rect x="-16" y="-52" width="32" height="14" fill="#333" stroke="#000"/>
+  <polygon points="16,-46 480,-90 480,10" fill="#ffe680" opacity=".4"/>
+  <rect x="-60" y="50" width="580" height="60" fill="#1f3550"/>
+</g>
+<!-- ===== 04 光束 · 合格：两层软边 + 灯室光斑 + 海面亮斑 + 塔身挡住根部 ===== -->
+<g transform="translate(640,700)">
+  <rect x="-60" y="-85" width="580" height="135" fill="url(#gSky)"/>
+  <rect x="-60" y="50" width="580" height="70" fill="url(#gSea)"/>
+  <!-- 海面波纹 -->
+  <g stroke="#7fb3ff" stroke-opacity=".12" fill="none"><path d="M-60,66 q 20,-4 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0"/><path d="M-60,86 q 20,-3 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0"/><path d="M-60,104 q 20,-4 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0 t 40,0"/></g>
+  <!-- 光束（在塔身之后） -->
+  <g>
+    <polygon points="0,-46 500,-118 500,26" fill="url(#gBeamWide)" filter="url(#b16)"/>
+    <polygon points="0,-46 480,-96 480,4" fill="url(#gBeam)" filter="url(#b2)"/>
+    <polygon points="0,-46 470,-84 470,-8" fill="#fff8dc" opacity=".22" filter="url(#b9)"/>
+    <animateTransform attributeName="transform" type="rotate" values="-4 0 -46;4 0 -46;-4 0 -46" dur="9s" repeatCount="indefinite"/>
+  </g>
+  <!-- 海面被扫到的亮斑 -->
+  <g clip-path="url(#cSea)"><ellipse cx="300" cy="80" rx="150" ry="14" fill="#ffe9a8" opacity=".22" filter="url(#b9)"><animate attributeName="cx" values="240;360;240" dur="9s" repeatCount="indefinite"/></ellipse></g>
+  <!-- 灯塔 -->
+  <path d="M-14,-40 h28 l4,90 h-36 z" fill="#c9cdd6"/><path d="M-14,-40 h28 l4,90 h-36 z" fill="url(#gBody)" opacity=".55"/>
+  <g fill="#c0392b"><rect x="-13" y="-30" width="26" height="14"/><rect x="-12" y="0" width="26" height="14"/><rect x="-11" y="30" width="26" height="14"/></g>
+  <rect x="-16" y="-52" width="32" height="12" fill="#2a3040"/><rect x="-18" y="-56" width="36" height="4" fill="#3a4152"/>
+  <rect x="-10" y="-50" width="20" height="9" fill="#ffe9a8" opacity=".9"/><g stroke="#2a3040" stroke-width="1"><line x1="-4" y1="-50" x2="-4" y2="-41"/><line x1="3" y1="-50" x2="3" y2="-41"/></g>
+  <!-- 灯室光斑三层 -->
+  <circle cx="0" cy="-46" r="26" fill="url(#gLamp)" opacity=".55" filter="url(#b9)"/><circle cx="0" cy="-46" r="12" fill="url(#gLamp)" opacity=".9" filter="url(#b2)"/><circle cx="0" cy="-46" r="4" fill="#fff"/>
+  <!-- 灯塔在海里的倒影 -->
+  <g clip-path="url(#cSea)" opacity=".35"><path d="M-14,140 h28 l4,-90 h-36 z" fill="#c9cdd6" transform="translate(0,0)"/><g fill="#c0392b"><rect x="-13" y="116" width="26" height="14"/><rect x="-12" y="86" width="26" height="14"/><rect x="-11" y="56" width="26" height="14"/></g><ellipse cx="0" cy="146" rx="18" ry="6" fill="#fff1b0" opacity=".9" filter="url(#b4)"/></g>
+</g>
+</svg>
+</div>
+
+<div class="legend">
+  <div><b>块状为什么块状</b>圆当烟、三角当火、矩形当雾；一物一色只变深浅；全带黑边；光源不照亮周围；东西平移或直接出现。</div>
+  <div><b>合格的四件事</b>有机轮廓 + 噪声扰动；冷暖分离（阴影偏蓝、亮部偏暖、火光染橙、月光染蓝）；软边层叠不描线；每个光源有辉光并照亮它该照亮的面。</div>
+</div>
+
+<div class="rules">
+<b>以后每张画面稿按这八条验收（docs/plans/AUD-FUN-WORKFLOOR/质感标准.md §3）</b>
+<ol>
+<li>放大 200%，找不到裸露的几何原型当物体。</li>
+<li>光、气、火、水没有黑边硬边。</li>
+<li>每个光源周围有辉光，且照亮了它该照亮的东西。</li>
+<li>阴影偏冷、亮部偏暖，火光和月光互相染色。</li>
+<li>任何运动有缓动或惯性；粒子有生长-衰减曲线。</li>
+<li>前景 / 中景 / 背景分得出来。</li>
+<li>同类重复元素有变化。</li>
+<li>缩到 50% 仍分得清材质；放到 200% 每块面都有东西。</li>
+</ol>
+</div>
+
+<p style="margin-top:40px;color:#8e8e89;font-size:13px;text-align:center">看板 · AUD-FUN-WORKFLOOR · 质感样张 v1 · 2026-09-08</p>
+</div>
+</body>
+</html>
