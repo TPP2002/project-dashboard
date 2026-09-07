@@ -51,6 +51,25 @@ function generatedArtifactsVirtualPlugin(): Plugin {
   }
 }
 
+// 同上：「这张卡此刻还算不算数」的判据 core/taskSignal.cjs 也走虚拟模块 'virtual:task-signal'。
+// 总览的"需要你处理"、风险面板的"阻塞"、占用防撞的"冲突"全都建立在这一个判断上，
+// 三个视图各写各的正是审计 B1/B2 那堆假数字的来源，所以判据必须只有一份。
+function taskSignalVirtualPlugin(): Plugin {
+  const VID = 'virtual:task-signal'
+  const RESOLVED = '\0' + VID
+  return {
+    name: 'virtual-task-signal',
+    resolveId(id) {
+      if (id === VID) return RESOLVED
+    },
+    load(id) {
+      if (id !== RESOLVED) return
+      const require = createRequire(import.meta.url)
+      return require('../core/taskSignal.cjs').toEsmSource()
+    },
+  }
+}
+
 // base './'：dist 可被 server 从任意子路径静态托管。
 // 默认 dev：/api 代理到真 server(127.0.0.1:6060)。
 // mode=mock（npm run dev:mock）：改用内置 mock 中间件联调，业务代码无 mock 分支。
@@ -58,7 +77,7 @@ export default defineConfig(({ mode }) => {
   const useMock = mode === 'mock'
   return {
     base: './',
-    plugins: [vue(), boardSchemaVirtualPlugin(), generatedArtifactsVirtualPlugin(), ...(useMock ? [mockApiPlugin()] : [])],
+    plugins: [vue(), boardSchemaVirtualPlugin(), generatedArtifactsVirtualPlugin(), taskSignalVirtualPlugin(), ...(useMock ? [mockApiPlugin()] : [])],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
