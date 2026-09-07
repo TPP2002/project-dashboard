@@ -85,6 +85,22 @@ table.spec td.k{font-weight:600;white-space:nowrap}
 .mech .part.fresh{animation:flash .6s ease-out}
 @keyframes flash{0%{filter:brightness(2.6)}100%{filter:brightness(1)}}
 @keyframes rgbflow{to{stroke-dashoffset:-400}}
+.console{font-family:ui-monospace,Consolas,monospace;font-size:11px}
+.console .caption{font-size:9px;letter-spacing:.06em}
+.console .title{font-size:12px;letter-spacing:.03em}
+.console .screen-part{stroke-width:1.2;stroke-linejoin:round}
+.console .screen-part.off{opacity:.3}
+.console .screen-part.build,.console .progress-segment.build,.console .rec{animation:blink 1.2s ease-in-out infinite}
+.console .screen-part.pend,.console .progress-segment.pend{animation:blink 1.2s ease-in-out infinite}
+.console .screen-part.block,.console .progress-segment.block{animation:blink .7s ease-in-out infinite}
+.console-event{transition:transform .35s ease,opacity .35s ease}
+.scope-wave{fill:none;stroke-width:1.4;stroke-linejoin:round;stroke-dasharray:46 7;animation:scopeflow 1.8s linear infinite;transform-origin:0 183px}
+.console.powered .scope-wave{transform:scaleY(1.65)}
+@keyframes scopeflow{to{stroke-dashoffset:-106}}
+.scene-grain{opacity:.035;mix-blend-mode:overlay;pointer-events:none}
+@media (prefers-reduced-motion:reduce){
+  .stage *{animation:none!important;transition:none!important}
+}
 </style>
 </head>
 <body>
@@ -131,6 +147,11 @@ table.spec td.k{font-weight:600;white-space:nowrap}
   <div><b>背包</b>后掠翼状背包两片（深蓝外板 + 灰内板）、翼尖喷口；通电时翼尖与脚底喷焰、悬浮起伏、能量线沿前臂与小腿亮起。</div>
   <div><b>明暗</b>每块板：基色渐变 + 上缘高光棱线 + 下缘硬阴影面；主色蓝 / 浅蓝二色 + 深灰骨架 + 金饰 + 红灯；全身统一左上光源；外轮廓 2.2px、内部面板线 1.1px，放大不变粗（矢量描边不缩放）。</div>
   <div><b>未装 / 焊接中</b>未装 = 青色全息投影（平台两枚投影器打上去的，不是虚线）；焊接中 = 半透明实体 + 焊缝沿轮廓亮起（长度 = 进度）+ 扫描线上下走 + 焊接无人机在旁边打火花；待拍板 = 琥珀色闪 + 橙色检验无人机飞来扫描；阻塞 = 红色闪 + 龙门塔警灯 + 全场红光；完工 = 部件白闪一下扣上；项目 100% = 通电悬浮。</div>
+  <div><b>手臂定位</b>左右手臂的横向间距固定在外层支架上，呼吸起伏只作用于部件本身；扫描线按移位后的部件轮廓定位，焊到前臂时仍对准前臂。</div>
+  <div><b>工业零件架</b>带竖向拉丝的洞洞板、开孔槽钢、角撑、三层厚钢板和条码货位条；待装件落在板面上，带接触阴影、高光棱线和吊牌。架顶挂扳手、线缆与焊枪，底座有警示斜纹和在线灯。</div>
+  <div><b>装配控制台</b>金属外壳带螺钉、铭牌和实体按钮；玻璃叠扫描线、微光与斜向反射。剪影与二十九格进度条同步显示部件状态，下方保留最近三条事件，时钟逐秒更新，通电后波形变绿、振幅增大。</div>
+  <div><b>机库材质</b>墙板斜向拉丝、接缝亮暗边与固定污渍；地面花纹钢板、平台周围磨痕、台面同心刻线和警示外圈；管线高光与双箍、栏杆底座、灯罩内壁和双层光锥共同表现厚度。全场只叠一层静态细颗粒。</div>
+  <div><b>减少动效</b>跟随系统设置停止呼吸、摆头、悬浮、闪烁、旋翼、灯带、波形和事件过渡；扫描线静止，无人机直接落位，焊接不生成火花。按钮、装配进度和状态颜色仍保留。</div>
 </div>
 </section>
 
@@ -384,30 +405,114 @@ const DEFS = `<defs>
 </defs>`
 
 function mechSvg(prefix) {
-  return `<g class="mech idle" data-mech="${prefix}">${DRAW.map(n => { const p = byName[n]; return `<g class="${clsFor(n, 'done')}" data-part="${n}" transform="translate(${p.dx},0)">${p.build()}</g>` }).join('')}</g>`
+  // 横移归外层所有，部件的呼吸动画不能覆盖装配位置。
+  return `<g class="mech idle" data-mech="${prefix}">${DRAW.map(n => { const p = byName[n]; return `<g transform="translate(${p.dx},0)"><g class="${clsFor(n, 'done')}" data-part="${n}">${p.build()}</g></g>` }).join('')}</g>`
 }
-/** 机库大屏用的剪影：同一套几何，只填青色 */
-function silhouetteSvg(states) { return DRAW.map(n => `<polygon points="${P(byName[n].main)}" fill="${states[n] === 'done' ? '#34d7ff' : '#1a2440'}"/>`).join('') }
+const screenPaint = { done: '#34d7ff', off: '#1a2440', build: '#ffb020', pend: '#ffb020', block: '#ff4d5a', powered: '#8affc1' }
+function silhouetteSvg(states) { return DRAW.map(n => `<polygon class="screen-part ${states[n]}" data-screen-part="${n}" points="${P(byName[n].main)}" fill="${screenPaint[states[n]]}"/>`).join('') }
+function bounds(pts) {
+  const x = Math.min(...pts.map(p => p[0])), y = Math.min(...pts.map(p => p[1]))
+  return { x, y, width: Math.max(...pts.map(p => p[0])) - x, height: Math.max(...pts.map(p => p[1])) - y }
+}
+
+// 场景材质单独定义；特写继续只使用原有机甲渐变，纹理不进入逐帧重绘。
+const SCENE_DEFS = `<defs>
+  <pattern id="pWallBrush" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><path d="M1 0V7 M4 0V7" stroke="var(--scene-light)" stroke-width=".6" opacity=".05"/></pattern>
+  <pattern id="pRackBrush" width="6" height="12" patternUnits="userSpaceOnUse"><path d="M1 0V12 M4 0V12" stroke="var(--scene-light)" stroke-width=".6" opacity=".07"/></pattern>
+  <pattern id="pPegboard" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5.6" r="1.8" fill="url(#gGrey)"/><circle cx="5" cy="5" r="1.6" fill="url(#gDark)"/></pattern>
+  <pattern id="pDiamond" width="32" height="16" patternUnits="userSpaceOnUse"><path d="M2 5l6-3 2 1-6 3z M18 13l6-3 2 1-6 3z" fill="url(#gVisor)"/><path d="M4 7l6-3 M20 15l6-3" stroke="var(--scene-ink)" stroke-width="1"/></pattern>
+  <pattern id="pHazard" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><rect width="16" height="16" fill="url(#gDark)"/><rect width="8" height="16" fill="url(#gGold)"/></pattern>
+  <pattern id="pScreenLines" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 .5H4" stroke="var(--scene-light)" stroke-width="1" opacity=".065"/></pattern>
+  <pattern id="pScreenGrid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="var(--scene-light)" stroke-width=".5" opacity=".13"/></pattern>
+  <linearGradient id="gHousing" href="#gGreyD" x1="0" y1="0" x2="0" y2="1"/>
+  <linearGradient id="gLabel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--scene-paper)"/><stop offset="1" stop-color="var(--scene-paper)" stop-opacity=".72"/></linearGradient>
+  <radialGradient id="gScreenBloom" cx=".35" cy=".2" r=".9"><stop offset="0" stop-color="var(--console-cyan)" stop-opacity=".13"/><stop offset="1" stop-color="var(--console-cyan)" stop-opacity="0"/></radialGradient>
+  <filter id="fSceneGrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="17"/><feColorMatrix type="saturate" values="0"/></filter>
+  <clipPath id="clipConsoleGlass"><rect x="12" y="12" width="306" height="186" rx="2"/></clipPath>
+  <clipPath id="clipConsoleEvents"><rect x="122" y="128" width="184" height="42"/></clipPath>
+  <clipPath id="clipConsoleScope"><rect x="122" y="174" width="184" height="20"/></clipPath>
+</defs>`
+const shelfY = row => 78 + row * 78
+const rackCode = i => String.fromCharCode(65 + Math.floor(i / 4)) + (i % 4 + 1)
+function rackItemsSvg(names) {
+  return names.slice(0, 12).map((n, i) => {
+    const pts = byName[n].main, bb = bounds(pts), scale = Math.min(49 / bb.width, 54 / bb.height, .9)
+    const cx = 48 + (i % 4) * 68, base = shelfY(Math.floor(i / 4)), left = cx - bb.width * scale / 2
+    const edge = pts.map((p, k) => [p, pts[(k + 1) % pts.length]]).sort((a, b) => (a[0][1] + a[1][1]) - (b[0][1] + b[1][1]))[0]
+    const tagX = cx + 22, tagY = base - 18
+    return `<g data-stock="${n}"><ellipse cx="${cx}" cy="${base}" rx="${bb.width * scale / 2 + 3}" ry="2.2" fill="url(#gDark)" opacity=".8"/>
+      <g transform="translate(${left},${base - bb.height * scale}) scale(${scale}) translate(${-bb.x},${-bb.y})"><polygon points="${P(pts)}" fill="url(#gBlueD)" stroke="var(--scene-ink)" stroke-width="1.3" vector-effect="non-scaling-stroke"/><polyline points="${P(edge)}" fill="none" stroke="var(--scene-light)" stroke-width="1" opacity=".65" vector-effect="non-scaling-stroke"/></g>
+      <path d="M${cx + bb.width * scale / 3} ${base - 12}L${tagX + 2} ${tagY + 2}" stroke="var(--scene-metal)" fill="none"/>
+      <g transform="translate(${tagX},${tagY}) rotate(8)"><rect width="10" height="14" rx="1" fill="url(#gGrey)" stroke="var(--scene-ink)"/><circle cx="3" cy="3" r="1" fill="url(#gDark)"/><path d="M2 7H8 M2 10H6" stroke="var(--scene-light)" stroke-width=".6" opacity=".6"/></g></g>`
+  }).join('')
+}
+function rackSvg() {
+  return `<g data-rack transform="translate(1040,150)">
+    <path d="M0 0H292L302-6H10Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M292 0L302-6V250L292 256Z" fill="url(#gDark)"/>
+    <rect width="292" height="250" fill="url(#gGreyD)" stroke="var(--scene-ink)" stroke-width="2"/><rect x="12" y="8" width="268" height="234" fill="url(#pRackBrush)"/><rect x="12" y="8" width="268" height="234" fill="url(#pPegboard)"/>
+    ${[0, 280].map(x => `<g><rect x="${x}" width="12" height="250" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M${x + 2} 1V249" stroke="var(--scene-light)" opacity=".25"/>${Array.from({ length: 10 }, (_, i) => `<rect x="${x + 4}" y="${12 + i * 24}" width="4" height="7" rx="2" fill="url(#gDark)"/><circle cx="${x + 6}" cy="${14 + i * 24}" r="1" fill="var(--scene-ink)"/>`).join('')}</g>`).join('')}
+    <path d="M12 4H42L12 30Z M280 4H250L280 30Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><g fill="url(#gDark)"><circle cx="19" cy="10" r="2"/><circle cx="273" cy="10" r="2"/></g>
+    <g transform="translate(38,-42)"><rect width="216" height="34" rx="2" fill="url(#gHousing)" stroke="var(--scene-ink)"/><rect x="2" y="2" width="212" height="30" fill="url(#pPegboard)"/>
+      ${[16, 45].map((x, i) => `<g transform="translate(${x},4) rotate(${i ? 12 : -12},6,10)"><path d="M3 1L0 5 3 10 5 10 5 23Q7 27 9 23V10L12 5 9 1 9 6 5 6 5 1Z" fill="url(#gGrey)" stroke="var(--scene-ink)" stroke-width=".8"/><path d="M6 12V22" stroke="var(--scene-light)" opacity=".3"/></g>`).join('')}
+      <g fill="none" stroke="var(--scene-metal)" stroke-width="2"><ellipse cx="108" cy="18" rx="17" ry="10"/><ellipse cx="108" cy="18" rx="13" ry="8"/><ellipse cx="108" cy="18" rx="9" ry="6"/><path d="M122 21q14 10 18 3"/></g>
+      <path d="M163 11H184L191 16 185 20 176 17 172 29 165 27 168 17H162Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M189 17h10l3-5 M165 26q-9 6-19 2" fill="none" stroke="var(--scene-metal)" stroke-width="2"/>
+      <path d="M22 2v4 M51 2v4 M108 3v5 M173 2v6" stroke="var(--scene-light)" stroke-width="1.5" opacity=".45"/>
+    </g>
+    ${[0, 1, 2].map(row => { const y = shelfY(row); return `<path d="M12 ${y + 8}H280V${y + 15}H12Z" fill="url(#gDark)" opacity=".75"/><path d="M12 ${y - 4}H280L288 ${y + 2}H4Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><rect x="4" y="${y + 2}" width="284" height="9" fill="url(#gHousing)" stroke="var(--scene-ink)"/><path d="M5 ${y + 2}H287" stroke="var(--scene-light)" stroke-width="1" opacity=".55"/>
+      ${[0, 1, 2, 3].map(col => `<g transform="translate(${28 + col * 68},${y + 3})"><rect width="39" height="7" rx=".7" fill="url(#gLabel)"/><g stroke="var(--scene-ink)">${[0, 2, 5, 6, 9, 13, 15].map((x, k) => `<path d="M${3 + x} 1V6" stroke-width="${k % 3 === 0 ? 1.6 : .65}"/>`).join('')}</g><text x="23" y="6" font-family="ui-monospace,Consolas,monospace" font-size="7" fill="url(#gDark)">${rackCode(row * 4 + col)}</text></g>`).join('')}` }).join('')}
+    <g data-rack-items></g><rect x="-3" y="249" width="298" height="11" fill="url(#gGreyD)" stroke="var(--scene-ink)"/><rect x="6" y="251" width="256" height="6" fill="url(#pHazard)"/>
+    <path d="M1 260H22V265H1Z M270 260H292V265H270Z" fill="url(#gDark)"/><circle cx="279" cy="254" r="4" fill="url(#gDark)"/><circle cx="279" cy="253" r="2" fill="var(--console-on)" filter="url(#fglow)"/>
+    <text x="12" y="278" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="url(#gGrey)" letter-spacing="3">PARTS / STORES</text><g data-rack-overflow visibility="hidden"><rect x="240" y="3" width="36" height="12" fill="url(#gLabel)"/><text x="258" y="12" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="9" fill="url(#gDark)" data-rack-extra></text></g>
+  </g>`
+}
+function consoleSvg() {
+  return `<g class="console" data-board transform="translate(92,150)">
+    <path d="M4 6H334V220H4Z" fill="url(#gDark)" opacity=".8"/><rect width="330" height="216" rx="5" fill="url(#gHousing)" stroke="var(--scene-ink)" stroke-width="2"/><path d="M5 2H325 M2 5V209" stroke="var(--scene-light)" opacity=".3"/><rect x="8" y="8" width="314" height="194" rx="3" fill="url(#gDark)" stroke="var(--scene-metal)"/>
+    <g clip-path="url(#clipConsoleGlass)"><rect x="12" y="12" width="306" height="186" fill="#070a10"/><rect x="12" y="12" width="306" height="186" fill="url(#gScreenBloom)"/>
+      <g fill="#34d7ff"><text class="title" x="20" y="29">ASSEMBLY // BAY 02</text><circle class="rec" cx="226" cy="25" r="2"/><text class="caption" x="232" y="29">REC</text><text class="caption" x="310" y="29" text-anchor="end" data-clock>00:00:00</text>
+      <path d="M20 36H310 M113 42V189" fill="none" stroke="var(--scene-light)" opacity=".18"/><rect x="20" y="42" width="85" height="147" fill="url(#pScreenGrid)"/>
+      <g transform="translate(20,46) scale(.208)" filter="url(#fglow)" data-sil></g><text class="caption" x="23" y="193">UNIT / 02</text>
+      <text x="122" y="82" font-size="48" font-weight="800" data-pct>58%</text><text class="caption" x="306" y="52" text-anchor="end" data-count></text>
+      <g data-progress>${ORDER.map((n, i) => `<rect class="progress-segment off" data-progress-part="${n}" x="${122 + i * 6.3}" y="93" width="4.7" height="8" rx=".6" fill="${screenPaint.off}"/>`).join('')}</g>
+      <circle cx="125" cy="115" r="2.5" data-status-led/><text x="134" y="119" data-status>STANDBY</text><path d="M122 125H306 M122 172H306" stroke="var(--scene-light)" opacity=".16"/>
+      <g clip-path="url(#clipConsoleEvents)"><g transform="translate(123,138)" class="caption" data-events></g></g>
+      <g clip-path="url(#clipConsoleScope)"><path d="M122 183H306" stroke="var(--scene-light)" opacity=".13"/><polyline class="scope-wave" data-scope points="122,183 130,183 134,181 138,185 142,183 150,183 153,177 157,190 161,180 164,183 177,183 182,181 186,185 190,183 198,183 202,178 206,189 210,180 214,183 230,183 234,181 238,185 242,183 250,183 254,177 258,190 262,180 266,183 280,183 284,181 288,185 292,183 299,183 302,179 306,183"/></g></g>
+      <rect x="12" y="12" width="306" height="186" fill="url(#pScreenLines)" pointer-events="none"/><path d="M12 12H80L226 198H170Z" fill="var(--scene-paper)" opacity=".05" pointer-events="none"/>
+    </g>
+    ${[[5, 5], [325, 5], [5, 210], [325, 210]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.8" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M${x - 1.5} ${y}h3 M${x} ${y - 1.5}v3" stroke="var(--scene-ink)" stroke-width=".8"/>`).join('')}
+    <rect x="18" y="203" width="228" height="10" rx="1" fill="url(#gDark)"/><text class="caption" x="24" y="211" fill="url(#gVisor)">ASSEMBLY CONSOLE · BAY 02</text>
+    ${[277, 301].map((x, i) => `<circle cx="${x}" cy="209" r="5" fill="url(#gDark)"/><circle cx="${x}" cy="207" r="4" fill="url(#${i ? 'gVisor' : 'gRed'})" stroke="var(--scene-ink)"/><path d="M${x - 2} 205h4" stroke="var(--scene-light)" opacity=".5"/>`).join('')}
+  </g>`
+}
 
 /* ============================================================
    机库场景
    ============================================================ */
 const scene = $('[data-scene]'), stat = $('[data-stat]')
 const MX = 564, MY = 34, MS = .68
-scene.innerHTML = DEFS + `
+scene.innerHTML = DEFS + SCENE_DEFS + `
   <rect width="1400" height="520" fill="url(#gWall)"/>
+  <rect width="1400" height="400" fill="url(#pWallBrush)"/>
+  <g fill="none" stroke-width="1">${Array.from({ length: 60 }, (_, i) => { const x = (i % 12) * 120 + 2, row = Math.floor(i / 12), y = [2, 62, 152, 242, 332][row], h = [56, 86, 86, 86, 66][row]; return `<path d="M${x} ${y + h}V${y}H${x + 115}" stroke="var(--scene-light)" opacity=".12"/><path d="M${x + 115} ${y}V${y + h}H${x}" stroke="var(--scene-ink)" opacity=".8"/>` }).join('')}</g>
+  <g fill="var(--scene-ink)" opacity=".18">${[[367, 164], [1220, 254], [728, 71], [129, 338], [964, 345]].map(([x, y], i) => `<path d="M${x} ${y}l${22 + i * 3} -5 18 10 -8 17 -19 4 -12 -9 -11 3Z"/>`).join('')}</g>
   <g opacity=".9">${Array.from({ length: 12 }, (_, i) => `<line x1="${i * 120}" y1="0" x2="${i * 120}" y2="400" stroke="#0c1019" stroke-width="3"/>`).join('')}${Array.from({ length: 4 }, (_, i) => `<line x1="0" y1="${60 + i * 90}" x2="1400" y2="${60 + i * 90}" stroke="#0c1019" stroke-width="2"/>`).join('')}</g>
   <g fill="#2a3346">${Array.from({ length: 60 }, (_, i) => `<circle cx="${(i % 12) * 120 + 8}" cy="${Math.floor(i / 12) * 90 + 68}" r="2.2"/><circle cx="${(i % 12) * 120 + 112}" cy="${Math.floor(i / 12) * 90 + 68}" r="2.2"/>`).join('')}</g>
   <text x="40" y="150" font-family="ui-monospace,Consolas,monospace" font-size="120" font-weight="800" fill="#1c2436" opacity=".9">BAY 02</text>
   <rect x="0" y="14" width="1400" height="10" fill="#222a3a"/><rect x="0" y="24" width="1400" height="4" fill="#0f131c"/>
   <line class="rgb" x1="0" y1="30" x2="1400" y2="30" stroke="url(#gRgb)" stroke-width="3" stroke-dasharray="120 60" opacity=".7"/>
   <g stroke="#3a4458" stroke-width="6" fill="none"><path d="M0 46 H 520 Q 540 46 540 66 V 96"/><path d="M1400 52 H 980 Q 960 52 960 72 V 96"/></g>
+  <g stroke="var(--scene-light)" stroke-width="1" fill="none" opacity=".35"><path d="M0 44H520Q538 44 538 66V96"/><path d="M1400 50H980Q958 50 958 72V96"/></g>
+  <g fill="url(#gGrey)" stroke="var(--scene-ink)" stroke-width=".8">${[[130, 46], [360, 46], [1030, 52], [1280, 52]].map(([x, y]) => `<rect x="${x}" y="${y - 5}" width="3" height="10"/><rect x="${x + 7}" y="${y - 5}" width="3" height="10"/>`).join('')}<rect x="534" y="81" width="12" height="3"/><rect x="534" y="88" width="12" height="3"/><rect x="954" y="82" width="12" height="3"/><rect x="954" y="89" width="12" height="3"/></g>
   <g fill="#c9a227"><rect x="536" y="70" width="8" height="8"/><rect x="956" y="76" width="8" height="8"/></g>
   <g stroke="#2a3346" stroke-width="3" fill="none"><path d="M300 28 q 20 120 -10 260"/><path d="M1120 28 q -30 140 20 260"/></g>
-  <g>${[[250, 56], [700, 48], [1150, 56]].map(([x, y]) => `<rect x="${x - 26}" y="${y}" width="52" height="16" fill="#2a3346"/><rect x="${x - 20}" y="${y + 16}" width="40" height="6" fill="#ffe9b0" opacity=".9"/><polygon points="${x - 22},${y + 22} ${x + 22},${y + 22} ${x + 200},470 ${x - 200},470" fill="url(#gCone)"/>`).join('')}</g>
+  <g stroke="var(--scene-metal)" stroke-width=".6" fill="none" opacity=".45"><path d="M299 28q20 120-10 260"/><path d="M1119 28q-30 140 20 260"/></g>
+  <g>${[[250, 56], [700, 48], [1150, 56]].map(([x, y]) => `<polygon points="${x - 29},${y + 20} ${x + 29},${y + 20} ${x + 230},480 ${x - 230},480" fill="url(#gCone)" opacity=".28"/><polygon points="${x - 22},${y + 22} ${x + 22},${y + 22} ${x + 200},470 ${x - 200},470" fill="url(#gCone)"/><path d="M${x - 26} ${y}h52l-5 22h-42Z" fill="url(#gGreyD)" stroke="var(--scene-ink)"/><path d="M${x - 21} ${y + 4}h42l-4 14h-34Z" fill="url(#gGold)" opacity=".5"/><rect x="${x - 18}" y="${y + 16}" width="36" height="5" rx="2" fill="var(--scene-warm)"/><ellipse cx="${x}" cy="${y + 18}" rx="10" ry="2" fill="var(--scene-paper)" filter="url(#fglow)"/><path d="M${x - 23} ${y + 1}h46" stroke="var(--scene-light)" opacity=".4"/>`).join('')}</g>
   <g><rect x="0" y="112" width="1400" height="6" fill="#3a4458"/><rect x="0" y="118" width="1400" height="3" fill="#161c2a"/>${Array.from({ length: 36 }, (_, i) => `<rect x="${i * 40 + 6}" y="92" width="3" height="20" fill="#3a4458"/>`).join('')}<rect x="0" y="92" width="1400" height="3" fill="#3a4458"/></g>
+  <g fill="url(#gGreyD)" stroke="var(--scene-ink)" stroke-width=".6">${Array.from({ length: 36 }, (_, i) => `<rect x="${i * 40 + 3}" y="110" width="9" height="4"/><path d="M${i * 40 + 6} 94v15" stroke="var(--scene-metal)"/>`).join('')}</g>
   <g>${[[560, 232], [880, 260], [1330, 240]].map(([x, y]) => `<rect x="${x - 40}" y="${y - 36}" width="80" height="36" fill="#141a26" stroke="#2a3346"/><rect x="${x - 34}" y="${y - 30}" width="68" height="24" fill="#0c1019"/><g fill="#3ad0ff" opacity=".8"><rect x="${x - 30}" y="${y - 26}" width="24" height="3"/><rect x="${x - 30}" y="${y - 20}" width="40" height="3"/><rect x="${x - 30}" y="${y - 14}" width="16" height="3"/></g>`).join('')}</g>
   <rect x="0" y="400" width="1400" height="120" fill="url(#gFloor)"/>
+  <rect x="0" y="407" width="1400" height="113" fill="url(#pDiamond)" opacity=".08"/>
+  <g fill="none" stroke="var(--scene-light)" stroke-width=".8" opacity=".16">${[[426, 478, 28], [471, 504, 39], [542, 513, 29], [793, 510, 45], [927, 490, 35], [951, 452, 20], [449, 448, 19], [857, 426, 24]].map(([x, y, w]) => `<path d="M${x} ${y}l${w} -3 M${x + 5} ${y + 3}l${w / 2} -2"/>`).join('')}</g>
   <g stroke="#243044" stroke-width="1.2">${Array.from({ length: 15 }, (_, i) => `<line x1="${i * 100}" y1="520" x2="${700 + (i * 100 - 700) * .35}" y2="400"/>`).join('')}<line x1="0" y1="430" x2="1400" y2="430"/><line x1="0" y1="470" x2="1400" y2="470"/></g>
   <g>${Array.from({ length: 70 }, (_, i) => `<rect x="${i * 20}" y="400" width="10" height="7" fill="${i % 2 ? '#c9a227' : '#111826'}"/>`).join('')}</g>
 
@@ -415,22 +520,32 @@ scene.innerHTML = DEFS + `
   <g><rect x="500" y="62" width="96" height="8" fill="#3a4458"/><rect x="588" y="70" width="14" height="10" fill="#2a3346"/><rect x="590" y="80" width="10" height="3" fill="#ffe9b0"/><polygon points="588,83 602,83 660,200 560,200" fill="url(#gCone)"/></g>
   <g><rect x="804" y="62" width="96" height="8" fill="#3a4458"/><rect x="798" y="70" width="14" height="10" fill="#2a3346"/><rect x="800" y="80" width="10" height="3" fill="#ffe9b0"/><polygon points="798,83 812,83 840,200 740,200" fill="url(#gCone)"/></g>
   <g><rect x="500" y="200" width="44" height="5" fill="#3a4458"/><rect x="500" y="184" width="2" height="16" fill="#3a4458"/><rect x="542" y="184" width="2" height="16" fill="#3a4458"/><rect x="500" y="184" width="44" height="2" fill="#3a4458"/><rect x="856" y="300" width="44" height="5" fill="#3a4458"/><rect x="856" y="284" width="2" height="16" fill="#3a4458"/><rect x="898" y="284" width="2" height="16" fill="#3a4458"/><rect x="856" y="284" width="44" height="2" fill="#3a4458"/></g>
+  <g fill="url(#gGrey)" stroke="var(--scene-ink)" stroke-width=".7">${[[501, 200], [543, 200], [857, 300], [899, 300]].map(([x, y]) => `<rect x="${x - 4}" y="${y - 2}" width="8" height="4"/><circle cx="${x - 2}" cy="${y}" r=".6"/><circle cx="${x + 2}" cy="${y}" r=".6"/>`).join('')}</g>
   <g>${Array.from({ length: 7 }, (_, i) => `<rect x="452" y="${100 + i * 44}" width="14" height="3" fill="#3a4458"/>`).join('')}<rect x="452" y="96" width="2" height="300" fill="#3a4458"/><rect x="464" y="96" width="2" height="300" fill="#3a4458"/></g>
   <g><path d="M1040 440 C 1000 452, 980 468, 950 474" stroke="#0d1119" stroke-width="5" fill="none"/><path d="M1040 444 C 1004 456, 986 470, 956 476" stroke="#2a3346" stroke-width="2" fill="none"/><path d="M420 470 C 380 462, 340 468, 300 476" stroke="#0d1119" stroke-width="4" fill="none"/></g>
   <g><rect x="990" y="432" width="56" height="30" rx="2" fill="#2a3346" stroke="#161c2a"/><rect x="994" y="437" width="48" height="9" fill="#1c2334"/><rect x="994" y="449" width="48" height="9" fill="#1c2334"/><rect x="1032" y="440" width="6" height="3" fill="#c9a227"/><rect x="1032" y="452" width="6" height="3" fill="#c9a227"/><circle cx="998" cy="466" r="4" fill="#0f131c"/><circle cx="1038" cy="466" r="4" fill="#0f131c"/><rect x="990" y="424" width="56" height="8" fill="#1c2334"/></g>
   <g><rect x="1348" y="374" width="10" height="26" rx="2" fill="#c0392b"/><rect x="1350" y="368" width="6" height="6" fill="#0f131c"/><path d="M1352 372 q -8 4 -6 14" stroke="#0f131c" stroke-width="2" fill="none"/></g>
   <g fill="#c9a227" opacity=".7">${[400, 414, 428].map(x => `<polygon points="${x},440 ${x + 8},440 ${x + 20},460 ${x + 12},460"/>`).join('')}${[960, 974, 988].map(x => `<polygon points="${x},440 ${x + 8},440 ${x + 20},460 ${x + 12},460"/>`).join('')}</g>
   <text x="700" y="508" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="22" fill="#2a3448" letter-spacing="8">BAY-02</text>
-  <g data-rack transform="translate(1040,150)"><rect x="0" y="0" width="300" height="250" fill="#141a26" stroke="#2a3346" stroke-width="3"/>${[0, 1, 2].map(r => `<rect x="6" y="${78 + r * 78}" width="288" height="6" fill="#2a3346"/>`).join('')}<text x="12" y="266" font-family="ui-monospace,Consolas,monospace" font-size="16" fill="#3a4a66" letter-spacing="3">PARTS</text><g data-rack-items></g></g>
-  <g data-board transform="translate(92,150)"><rect x="0" y="0" width="330" height="180" rx="4" fill="#070a10" stroke="#2a3346" stroke-width="3"/><g transform="translate(18,14) scale(.22)" data-sil></g><text x="120" y="52" font-family="ui-monospace,Consolas,monospace" font-size="18" fill="#6a7aa0" letter-spacing="3">ASSEMBLY</text><text x="120" y="110" font-family="ui-monospace,Consolas,monospace" font-size="56" font-weight="800" fill="#34d7ff" data-pct>58%</text><text x="120" y="142" font-family="ui-monospace,Consolas,monospace" font-size="18" fill="#34d7ff" data-status>STANDBY</text><text x="120" y="166" font-family="ui-monospace,Consolas,monospace" font-size="14" fill="#6a7aa0" data-count></text></g>
+  ${rackSvg()}
+  ${consoleSvg()}
   <ellipse cx="700" cy="474" rx="250" ry="38" fill="#1f2738" stroke="#3a4458" stroke-width="3"/><ellipse cx="700" cy="468" rx="240" ry="32" fill="#141a26"/>
+  <ellipse cx="700" cy="468" rx="246" ry="35" fill="none" stroke="url(#pHazard)" stroke-width="6"/>
+  <g fill="none" stroke="var(--scene-metal)" stroke-width=".8" opacity=".6">${[[214, 27], [176, 22], [134, 17]].map(([rx, ry]) => `<ellipse cx="700" cy="468" rx="${rx}" ry="${ry}"/>`).join('')}</g>
+  <path d="M468 464a232 31 0 0 1 464 0" fill="none" stroke="var(--scene-light)" stroke-width="1" opacity=".25"/>
   <g data-ring>${Array.from({ length: 16 }, (_, i) => { const a = i / 16 * Math.PI * 2; return `<rect x="${700 + Math.cos(a) * 236 - 7}" y="${470 + Math.sin(a) * 31 - 2}" width="14" height="4" rx="1" fill="#0b0f18" data-seg/>` }).join('')}</g>
   <g><polygon points="560,470 840,470 872,40 528,40" fill="#4fc3ff" fill-opacity=".045"/>${[80, 140, 200, 260, 320, 380].map(y => `<line x1="${540 + (y - 40) / 430 * 20}" y1="${y}" x2="${860 - (y - 40) / 430 * 20}" y2="${y}" stroke="#4fc3ff" stroke-opacity=".07"/>`).join('')}<circle cx="560" cy="467" r="3" fill="#5be3ff" filter="url(#fglow)"/><circle cx="840" cy="467" r="3" fill="#5be3ff" filter="url(#fglow)"/></g>
   <g transform="translate(${MX},${MY}) scale(${MS})" data-mechwrap>${mechSvg('main')}<path class="seam" data-seam d="" style="display:none"/><line class="scan" data-scan x1="0" x2="0" y1="0" y2="0" style="display:none"/></g>
   <rect class="wash" width="1400" height="520"/>
   <g data-sparks></g>
   <g class="drone" data-drone transform="translate(1000,120)"><ellipse cx="0" cy="12" rx="26" ry="5" fill="#000" opacity=".25"/><rect x="-16" y="-8" width="32" height="14" rx="4" fill="url(#gGrey)" stroke="#0e121c"/><rect x="-30" y="-4" width="14" height="3" fill="#3a4152"/><rect x="16" y="-4" width="14" height="3" fill="#3a4152"/><ellipse class="rotor" cx="-30" cy="-6" rx="12" ry="2" fill="#9aa3b8" opacity=".8"/><ellipse class="rotor" cx="30" cy="-6" rx="12" ry="2" fill="#9aa3b8" opacity=".8"/><rect x="-3" y="6" width="6" height="12" fill="#e2b54c"/><circle cx="0" cy="0" r="3" fill="#5be3ff" filter="url(#fglow)"/><g data-arc style="display:none"><circle cx="0" cy="20" r="6" fill="#fff" filter="url(#fglow)"/></g></g>
-  <g class="drone" data-drone2 transform="translate(1200,90)"><ellipse cx="0" cy="12" rx="22" ry="4" fill="#000" opacity=".25"/><rect x="-14" y="-7" width="28" height="12" rx="4" fill="url(#gGrey)" stroke="#0e121c"/><rect x="-26" y="-4" width="12" height="3" fill="#3a4152"/><rect x="14" y="-4" width="12" height="3" fill="#3a4152"/><ellipse class="rotor" cx="-26" cy="-6" rx="10" ry="2" fill="#9aa3b8" opacity=".8"/><ellipse class="rotor" cx="26" cy="-6" rx="10" ry="2" fill="#9aa3b8" opacity=".8"/><rect x="-4" y="5" width="8" height="10" fill="#ffb020"/><circle cx="0" cy="0" r="3" fill="#ffb020" filter="url(#fglow)"/><g data-beam style="display:none"><polygon points="-3,14 3,14 26,64 -26,64" fill="#ffb020" fill-opacity=".18"/></g></g>`
+  <g class="drone" data-drone2 transform="translate(1200,90)"><ellipse cx="0" cy="12" rx="22" ry="4" fill="#000" opacity=".25"/><rect x="-14" y="-7" width="28" height="12" rx="4" fill="url(#gGrey)" stroke="#0e121c"/><rect x="-26" y="-4" width="12" height="3" fill="#3a4152"/><rect x="14" y="-4" width="12" height="3" fill="#3a4152"/><ellipse class="rotor" cx="-26" cy="-6" rx="10" ry="2" fill="#9aa3b8" opacity=".8"/><ellipse class="rotor" cx="26" cy="-6" rx="10" ry="2" fill="#9aa3b8" opacity=".8"/><rect x="-4" y="5" width="8" height="10" fill="#ffb020"/><circle cx="0" cy="0" r="3" fill="#ffb020" filter="url(#fglow)"/><g data-beam style="display:none"><polygon points="-3,14 3,14 26,64 -26,64" fill="#ffb020" fill-opacity=".18"/></g></g>
+  <rect class="scene-grain" width="1400" height="520" filter="url(#fSceneGrain)"/>`
+
+// 从现有色站取色，场景细节不另造调色板。
+Object.entries({ ink: '#gDark stop[offset="1"]', metal: '#gGrey stop', light: '#gVisor stop', paper: '#gFlame stop', warm: '#gCone stop' }).forEach(([name, selector]) => scene.style.setProperty('--scene-' + name, $(selector, scene).getAttribute('stop-color')))
+scene.style.setProperty('--console-cyan', screenPaint.done)
+scene.style.setProperty('--console-on', screenPaint.powered)
 
 const partEls = Object.fromEntries($$('[data-mechwrap] .part', scene).map(el => [el.dataset.part, el]))
 const S = { st: Object.fromEntries(ORDER.map((n, i) => [n, i < 17 ? 'done' : 'off'])), target: null, seam: 0, tag: null, alarm: 0, full: false, auto: true, busy: false, timers: [] }
@@ -438,29 +553,68 @@ const after = (ms, fn) => S.timers.push({ at: performance.now() + ms, fn })
 const mechEl = $('[data-mechwrap] .mech', scene), seamEl = $('[data-seam]', scene), scanEl = $('[data-scan]', scene), drone = $('[data-drone]', scene), arc = $('[data-arc]', scene), sparks = $('[data-sparks]', scene)
 const droneTo = { x: 1000, y: 120 }, dronePos = { x: 1000, y: 120 }
 const drone2 = $('[data-drone2]', scene), beam = $('[data-beam]', scene), drone2To = { x: 1200, y: 90 }, drone2Pos = { x: 1200, y: 90 }
+const motionPreference = matchMedia('(prefers-reduced-motion: reduce)')
+const boardEl = $('[data-board]', scene), eventEl = $('[data-events]', scene), eventRows = []
+let lastScreenState = '', lastRackState = '', lastClockSecond = -1, lastWeldEvent = ''
+$('[data-sil]', scene).innerHTML = silhouetteSvg(S.st)
+const screenParts = Object.fromEntries($$('[data-screen-part]', scene).map(el => [el.dataset.screenPart, el]))
+const progressParts = Object.fromEntries($$('[data-progress-part]', scene).map(el => [el.dataset.progressPart, el]))
+function arrangeEvents() {
+  eventRows.forEach((row, i) => { const slot = i - Math.max(0, eventRows.length - 3); row.style.transform = `translateY(${slot * 14}px)`; row.style.opacity = slot < 0 ? '0' : String(.55 + slot * .2) })
+}
+function pushEvent(action, name, detail = '') {
+  const partName = name ? name.replace(/([a-z])([A-Z])/g, '$1-$2').replace(/-([LR])$/, (_, side) => '|' + side).split('|').reverse().join('-').toUpperCase() : ''
+  const row = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+  row.setAttribute('class', 'console-event'); row.textContent = [action.padEnd(7), partName, detail].filter(Boolean).join(' ')
+  row.setAttribute('xml:space', 'preserve'); row.style.transform = 'translateY(42px)'; row.style.opacity = '0'
+  eventEl.appendChild(row); eventRows.push(row)
+  if (eventRows.length > 4) eventRows.shift().remove()
+  if (motionPreference.matches) arrangeEvents()
+  else requestAnimationFrame(() => requestAnimationFrame(arrangeEvents))
+}
+pushEvent('STANDBY')
 function centroid(name) { const pts = byName[name].main; const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length; return { x: MX + cx * MS, y: MY + cy * MS } }
-function render() {
+function render(now = performance.now()) {
   for (const n of ORDER) partEls[n].setAttribute('class', clsFor(n, S.st[n]) + (S.fresh === n ? ' fresh' : ''))
   scene.classList.toggle('alarm', !!S.alarm)
   mechEl.classList.toggle('powered', S.full)
   const done = ORDER.filter(n => S.st[n] === 'done').length, pct = Math.round(done / ORDER.length * 100)
-  $('[data-sil]', scene).innerHTML = silhouetteSvg(S.st)
+  const screenState = ORDER.map(n => S.st[n]).join(',')
+  if (screenState !== lastScreenState) {
+    lastScreenState = screenState
+    ORDER.forEach(n => { screenParts[n].setAttribute('class', 'screen-part ' + S.st[n]); screenParts[n].setAttribute('fill', screenPaint[S.st[n]]); progressParts[n].setAttribute('class', 'progress-segment ' + S.st[n]); progressParts[n].setAttribute('fill', screenPaint[S.st[n]]) })
+  }
   $('[data-pct]', scene).textContent = pct + '%'
   const status = S.full ? 'POWER ON' : S.alarm ? 'JAMMED' : S.tag ? 'INSPECT?' : S.target ? 'WELDING ' + NAME_CN[S.target] : 'STANDBY'
-  const sEl = $('[data-status]', scene); sEl.textContent = status; sEl.setAttribute('fill', S.full ? '#8affc1' : S.alarm ? '#ff4d5a' : S.tag ? '#ffb020' : '#34d7ff')
+  const statusColor = S.full ? screenPaint.powered : S.alarm ? '#ff4d5a' : S.tag ? '#ffb020' : '#34d7ff'
+  const sEl = $('[data-status]', scene); sEl.textContent = status; sEl.setAttribute('fill', statusColor)
+  $('[data-status-led]', scene).setAttribute('fill', statusColor)
+  $('[data-scope]', scene).setAttribute('stroke', S.full ? statusColor : screenPaint.done)
+  boardEl.classList.toggle('powered', S.full)
+  if (Math.floor(now / 1000) !== lastClockSecond) {
+    lastClockSecond = Math.floor(now / 1000)
+    // 墙上时钟只负责展示，不参与装配状态或计时器判定。
+    const clock = new Date(); $('[data-clock]', scene).textContent = [clock.getHours(), clock.getMinutes(), clock.getSeconds()].map(v => String(v).padStart(2, '0')).join(':')
+  }
   $('[data-count]', scene).textContent = `PARTS ${done}/${ORDER.length}`
   $$('[data-seg]', scene).forEach((r, i) => r.setAttribute('fill', i < Math.round(pct / 100 * 16) ? '#34d7ff' : '#0b0f18'))
-  const rack = $('[data-rack-items]', scene); rack.innerHTML = ORDER.filter(n => S.st[n] === 'off').slice(0, 12).map((n, i) => { const pts = byName[n].main; const x0 = Math.min(...pts.map(p => p[0])), y0 = Math.min(...pts.map(p => p[1])), w = Math.max(...pts.map(p => p[0])) - x0, h = Math.max(...pts.map(p => p[1])) - y0; const s = Math.min(60 / w, 60 / h, .9); return `<g transform="translate(${16 + (i % 4) * 72},${12 + Math.floor(i / 4) * 78}) scale(${s})"><polygon points="${P(pts.map(([x, y]) => [x - x0, y - y0]))}" fill="url(#gBlueD)" stroke="#0e121c" stroke-width="2"/></g>` }).join('')
-  if (S.target && (S.st[S.target] === 'build' || S.st[S.target] === 'pend')) { const p = byName[S.target]; seamEl.setAttribute('d', seamD(p)); seamEl.style.display = ''; const len = seamEl.getTotalLength(); seamEl.setAttribute('stroke-dasharray', `${len * S.seam / 100} ${len}`); const bb = partEls[S.target].getBBox(); scanEl.style.display = ''; scanEl.style.stroke = S.st[S.target] === 'pend' ? '#ffb020' : ''; const y = bb.y + bb.height * ((performance.now() / 1400) % 1); scanEl.setAttribute('x1', bb.x - 6); scanEl.setAttribute('x2', bb.x + bb.width + 6); scanEl.setAttribute('y1', y); scanEl.setAttribute('y2', y) } else { seamEl.style.display = 'none'; scanEl.style.display = 'none' }
+  const stocked = ORDER.filter(n => S.st[n] === 'off'), rackState = stocked.join(',')
+  if (rackState !== lastRackState) {
+    lastRackState = rackState; $('[data-rack-items]', scene).innerHTML = rackItemsSvg(stocked)
+    $('[data-rack-overflow]', scene).setAttribute('visibility', stocked.length > 12 ? 'visible' : 'hidden')
+    $('[data-rack-extra]', scene).textContent = stocked.length > 12 ? '+' + (stocked.length - 12) : ''
+  }
+  if (S.target && (S.st[S.target] === 'build' || S.st[S.target] === 'pend')) { const p = byName[S.target]; seamEl.setAttribute('d', seamD(p)); seamEl.style.display = ''; const len = seamEl.getTotalLength(); seamEl.setAttribute('stroke-dasharray', `${len * S.seam / 100} ${len}`); const bb = bounds(p.main); scanEl.style.display = ''; scanEl.style.stroke = S.st[S.target] === 'pend' ? '#ffb020' : ''; const y = bb.y + bb.height * (motionPreference.matches ? .5 : (now / 1400) % 1); scanEl.setAttribute('x1', bb.x - 6); scanEl.setAttribute('x2', bb.x + bb.width + 6); scanEl.setAttribute('y1', y); scanEl.setAttribute('y2', y) } else { seamEl.style.display = 'none'; scanEl.style.display = 'none' }
+  if (S.welding && S.target) { const milestone = Math.floor(S.seam / 10) * 10, key = S.target + ':' + milestone; if (key !== lastWeldEvent) { lastWeldEvent = key; pushEvent('WELD', S.target, milestone + '%') } }
   stat.textContent = `部件 ${done}/${ORDER.length} · ${status}${S.target ? ' · 焊缝 ' + S.seam + '%' : ''}`
 }
 function act(a) {
-  if (a === 'claim' && !S.target) { const n = ORDER.find(k => S.st[k] === 'off'); if (!n) return; S.busy = true; S.target = n; S.seam = 0; Object.assign(droneTo, { x: 1090, y: 200 }); after(900, () => { const c = centroid(n); Object.assign(droneTo, { x: c.x + 46, y: c.y - 40 }); after(1100, () => { S.st[n] = 'build'; S.welding = true; S.busy = false }) }); return }
-  if (a === 'pend' && S.target && S.st[S.target] === 'build') { S.st[S.target] = 'pend'; S.tag = S.target; S.welding = false; droneTo.x += 40; return }
-  if (a === 'go' && S.tag) { S.st[S.tag] = 'build'; S.tag = null; S.welding = true; droneTo.x -= 40; return }
-  if (a === 'block' && S.target) { const prev = S.st[S.target]; S.st[S.target] = 'block'; S.alarm = 1; S.welding = false; droneTo.x += 80; after(2600, () => { S.alarm = 0; if (S.st[S.target] === 'block') { S.st[S.target] = prev === 'block' ? 'build' : prev; S.welding = S.st[S.target] === 'build'; droneTo.x -= 80 } }); return }
-  if (a === 'done' && S.target) { const n = S.target; S.st[n] = 'done'; S.fresh = n; after(700, () => { if (S.fresh === n) S.fresh = null }); S.target = null; S.tag = null; S.welding = false; Object.assign(droneTo, { x: 1000, y: 120 }); S.busy = false; if (ORDER.every(k => S.st[k] === 'done')) S.full = true; return }
-  if (a === 'full') { ORDER.forEach(k => { S.st[k] = 'done' }); S.target = null; S.tag = null; S.welding = false; S.full = true; Object.assign(droneTo, { x: 1000, y: 120 }); return }
+  if (a === 'claim' && !S.target) { const n = ORDER.find(k => S.st[k] === 'off'); if (!n) return; S.busy = true; S.target = n; S.seam = 0; pushEvent('CLAIM', n); Object.assign(droneTo, { x: 1090, y: 200 }); after(900, () => { const c = centroid(n); Object.assign(droneTo, { x: c.x + 46, y: c.y - 40 }); after(1100, () => { S.st[n] = 'build'; S.welding = true; S.busy = false }) }); return }
+  if (a === 'pend' && S.target && S.st[S.target] === 'build') { S.st[S.target] = 'pend'; S.tag = S.target; S.welding = false; droneTo.x += 40; pushEvent('INSPECT', S.target); return }
+  if (a === 'go' && S.tag) { pushEvent('RESUME', S.tag); S.st[S.tag] = 'build'; S.tag = null; S.welding = true; droneTo.x -= 40; return }
+  if (a === 'block' && S.target) { const prev = S.st[S.target]; S.st[S.target] = 'block'; S.alarm = 1; S.welding = false; droneTo.x += 80; pushEvent('JAMMED', S.target); after(2600, () => { S.alarm = 0; if (S.st[S.target] === 'block') { S.st[S.target] = prev === 'block' ? 'build' : prev; S.welding = S.st[S.target] === 'build'; droneTo.x -= 80; pushEvent('CLEAR', S.target) } }); return }
+  if (a === 'done' && S.target) { const n = S.target; S.st[n] = 'done'; S.fresh = n; pushEvent('DONE', n); after(700, () => { if (S.fresh === n) S.fresh = null }); S.target = null; S.tag = null; S.welding = false; Object.assign(droneTo, { x: 1000, y: 120 }); S.busy = false; if (ORDER.every(k => S.st[k] === 'done')) { S.full = true; pushEvent('POWER ON') } return }
+  if (a === 'full') { ORDER.forEach(k => { S.st[k] = 'done' }); S.target = null; S.tag = null; S.welding = false; S.full = true; Object.assign(droneTo, { x: 1000, y: 120 }); pushEvent('POWER ON'); return }
 }
 function auto(now) {
   if (S.full) { if (!S.resetAt) S.resetAt = now + 9000; if (now >= S.resetAt) { S.resetAt = 0; S.full = false; ORDER.forEach((n, i) => { S.st[n] = i < 17 ? 'done' : 'off' }) } return }
@@ -473,23 +627,33 @@ function auto(now) {
 }
 $$('[data-sim] [data-act]').forEach(b => b.addEventListener('click', () => { if (b.dataset.act === 'auto') { S.auto = !S.auto; b.textContent = S.auto ? '自动演' : '手动'; return } S.auto = false; $('[data-sim] [data-act="auto"]').textContent = '手动'; act(b.dataset.act) }))
 let last = 0, lastSeam = 0, sparkList = []
+motionPreference.addEventListener('change', () => {
+  if (motionPreference.matches) {
+    sparkList = []; sparks.innerHTML = ''; arc.style.display = 'none'; arrangeEvents()
+    Object.assign(dronePos, droneTo); Object.assign(drone2Pos, drone2To)
+    drone.setAttribute('transform', `translate(${dronePos.x},${dronePos.y})`); drone2.setAttribute('transform', `translate(${drone2Pos.x},${drone2Pos.y})`)
+  }
+  render()
+})
 function frame(now) {
   requestAnimationFrame(frame); if (now - last < 1000 / 30) return; last = now
   S.timers = S.timers.filter(t => { if (now >= t.at) { t.fn(); return false } return true })
   if (S.auto && !S.busy) auto(now)
   if (S.welding && S.target && now - lastSeam > 110) { lastSeam = now; S.seam = Math.min(100, S.seam + 1) }
-  dronePos.x += (droneTo.x - dronePos.x) * .06; dronePos.y += (droneTo.y - dronePos.y) * .06 + Math.sin(now / 350) * .4
+  if (motionPreference.matches) Object.assign(dronePos, droneTo)
+  else { dronePos.x += (droneTo.x - dronePos.x) * .06; dronePos.y += (droneTo.y - dronePos.y) * .06 + Math.sin(now / 350) * .4 }
   drone.setAttribute('transform', `translate(${dronePos.x.toFixed(1)},${dronePos.y.toFixed(1)})`)
   if (S.tag) { const c = centroid(S.tag); drone2To.x = c.x - 40; drone2To.y = c.y - 56 } else { drone2To.x = 1200; drone2To.y = 90 }
-  drone2Pos.x += (drone2To.x - drone2Pos.x) * .05; drone2Pos.y += (drone2To.y - drone2Pos.y) * .05 + Math.cos(now / 420) * .4
+  if (motionPreference.matches) Object.assign(drone2Pos, drone2To)
+  else { drone2Pos.x += (drone2To.x - drone2Pos.x) * .05; drone2Pos.y += (drone2To.y - drone2Pos.y) * .05 + Math.cos(now / 420) * .4 }
   drone2.setAttribute('transform', `translate(${drone2Pos.x.toFixed(1)},${drone2Pos.y.toFixed(1)})`)
   beam.style.display = S.tag && Math.abs(drone2Pos.x - drone2To.x) < 8 ? '' : 'none'
   const welding = S.welding && S.target && S.st[S.target] === 'build' && Math.abs(dronePos.x - droneTo.x) < 6
-  arc.style.display = welding && (now / 60 | 0) % 2 ? '' : 'none'
-  if (welding) { const pt = seamEl.getPointAtLength(seamEl.getTotalLength() * S.seam / 100); const sx = MX + pt.x * MS, sy = MY + pt.y * MS; for (let i = 0; i < 3; i++) sparkList.push({ x: sx, y: sy, vx: (Math.random() - .5) * 6, vy: -Math.random() * 5, life: 1 }); arc.setAttribute('transform', `translate(${(sx - dronePos.x).toFixed(1)},${(sy - dronePos.y - 20).toFixed(1)})`) }
+  arc.style.display = !motionPreference.matches && welding && (now / 60 | 0) % 2 ? '' : 'none'
+  if (welding && !motionPreference.matches) { const pt = seamEl.getPointAtLength(seamEl.getTotalLength() * S.seam / 100); const sx = MX + pt.x * MS, sy = MY + pt.y * MS; for (let i = 0; i < 3; i++) sparkList.push({ x: sx, y: sy, vx: (Math.random() - .5) * 6, vy: -Math.random() * 5, life: 1 }); arc.setAttribute('transform', `translate(${(sx - dronePos.x).toFixed(1)},${(sy - dronePos.y - 20).toFixed(1)})`) }
   sparkList = sparkList.filter(s => s.life > 0); sparkList.forEach(s => { s.life -= .06; s.vy += .35; s.x += s.vx; s.y += s.vy })
   sparks.innerHTML = sparkList.map(s => `<line x1="${s.x}" y1="${s.y}" x2="${s.x - s.vx}" y2="${s.y - s.vy}" stroke="${s.life > .5 ? '#fff6d0' : '#ffb347'}" stroke-width="1.6" opacity="${s.life}"/>`).join('')
-  render()
+  render(now)
 }
 render(); requestAnimationFrame(frame)
 
