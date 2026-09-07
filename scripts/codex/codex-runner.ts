@@ -64,7 +64,7 @@ export const resolveCodexBin = (): string => {
   if (newest) return newest.path
   throw new Error(
     '[codex-runner] 找不到 codex 可执行文件。装了但不在 PATH 时,用环境变量指过去:\n' +
-      '  CODEX_BIN="C:/Users/<你>/AppData/Local/OpenAI/Codex/bin/<哈希>/codex.exe"',
+      '  CODEX_BIN="%LOCALAPPDATA%/OpenAI/Codex/bin/<哈希>/codex.exe"',
   )
 }
 

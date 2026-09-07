@@ -18,7 +18,7 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 也有短命令：`npm run codex:dispatch -- --task <工单>` / `codex:status` / `codex:collect -- <slug>`。
 **派单器命令一律在主工位（仓库根）跑**，在 `.codex/worktrees/<slug>` 里跑会找错工单目录。
 
-## 2. 本仓库与 stock-rogue 那份的差别
+## 2. 本仓库与 来源仓 那份的差别
 
 | 差别 | 本仓库 |
 |---|---|
@@ -38,18 +38,18 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 
 ## 4. 工单怎么写
 
-字段口径与 stock-rogue 完全一致（`taskId` 填看板卡号、`slug` 小写连字符、`goal` 大白话、`allowedPaths` 施工面、`forbiddenPaths` 禁区、`nonGoals` 反阉割边界、`acceptance` 只能点第 2 节的作业名、`expectArtifacts` 完工必在的文件、`sandbox` 只许 read-only / workspace-write、改代码的单一律 `worktree: true`）。
+字段口径与 来源仓 完全一致（`taskId` 填看板卡号、`slug` 小写连字符、`goal` 大白话、`allowedPaths` 施工面、`forbiddenPaths` 禁区、`nonGoals` 反阉割边界、`acceptance` 只能点第 2 节的作业名、`expectArtifacts` 完工必在的文件、`sandbox` 只许 read-only / workspace-write、改代码的单一律 `worktree: true`）。
 
 **契约要写它"应该知道"但不知道的事**（§17.5）：性能约束、可测性要求、已知坑、还有本仓库的这几条——
 看板界面所有可配置项的样式写法（`data-*` 属性映射 + 内联 CSS 变量覆盖）、`applySpectrum` 那套"删掉内联变量即回落默认"的机制、`Icon` 组件用法、`StatusTile` 的动效降级三规则（`utils/iconMotion.ts`）。
 
 ## 5. 判决与落地
 
-`accepted / blocked / rejected / crashed` 四种，含义同 stock-rogue 第 2 节。收单后固定走 §17.11：自审 diff（有没有悄悄降级设计）→ 精确 add → commit（说明写卡号 + 工单 slug + 验收结果）→ 合最新主干 → 在合并结果上重跑验收 → push / PR / 四闸门 → 看板 `done` + `note`（写明「施工方=Codex(工单 slug)」）→ `end` 删工作区。
+`accepted / blocked / rejected / crashed` 四种，含义同 来源仓 第 2 节。收单后固定走 §17.11：自审 diff（有没有悄悄降级设计）→ 精确 add → commit（说明写卡号 + 工单 slug + 验收结果）→ 合最新主干 → 在合并结果上重跑验收 → push / PR / 四闸门 → 看板 `done` + `note`（写明「施工方=Codex(工单 slug)」）→ `end` 删工作区。
 
-## 6. 已知坑（本仓库专属，其余见 stock-rogue 那份第 5 节）
+## 6. 已知坑（本仓库专属，其余见 来源仓 那份第 5 节）
 
 1. 根目录原本没有 `node_modules`，第一次用前要在仓库根 `npm install --no-audit --no-fund` 把 `tsx` 装上；否则 `npx tsx` 会临时下载、慢且不稳。
 2. 隔离工作区里 `web/node_modules` 是联接，Codex 的沙箱写不进去 → `vue-tsc` / `vite` 它自己跑不动，指令里已明写"不要自己跑验收"。
 3. `CLAUDE.md` 在本仓库是 gitignore 的（含本机绝对路径），worktree 里没有；所以指令只指路 `AGENTS.md`。
-4. 派单器自己的单测（stock-rogue 有 40 条 vitest）**没有随同移植**——本仓库用 `node --test`，移植测试是另一张卡；这次的验收是一单只读探活单真派真收。
+4. 派单器自己的单测（来源仓 有 40 条 vitest）**没有随同移植**——本仓库用 `node --test`，移植测试是另一张卡；这次的验收是一单只读探活单真派真收。

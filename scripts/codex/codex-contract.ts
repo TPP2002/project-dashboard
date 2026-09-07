@@ -21,7 +21,7 @@ export const ACCEPTANCE_KINDS: Record<
   string,
   { needsTarget: boolean; argv: ((target?: string) => string[]) | null; desc: string }
 > = {
-  // 看板仓库的作业菜单(与 stock-rogue 那份的差别:单测是 node --test 的 .cjs,前端在 web/ 子目录)。
+  // 看板仓库的作业菜单(与 来源仓 那份的差别:单测是 node --test 的 .cjs,前端在 web/ 子目录)。
   'test:targeted': {
     needsTarget: true,
     argv: (target) => ['node', '--test', target as string],
