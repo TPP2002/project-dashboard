@@ -1,6 +1,7 @@
 'use strict';
 
 const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
+const { SETTLED_STATUSES } = require('../core/taskSignal.cjs');
 
 /**
  * 可并行任务清单 —— 回答一个具体问题:**现在这些卡里,哪几张可以同时派给不同对话去做?**
@@ -21,8 +22,8 @@ const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 
 /** 可以被派出去的状态。「待拍板」不在内——那得先拍板。 */
 const DISPATCHABLE = new Set(['未开工', '已拍板']);
-/** 视为"已经完成、不再阻塞下游"的状态。 */
-const SETTLED = new Set(['已完工']);
+/** 视为"不再阻塞下游"的状态。作废也算:那件事不做了,等它的卡再等下去就是永远等不到。 */
+const SETTLED = new Set(SETTLED_STATUSES);
 
 /** 卡号前缀:取第一段(CLUSTER-DISPATCH-XXX → CLUSTER)。只用于没填文件范围时的兜底分组。 */
 function idPrefix(id) {
