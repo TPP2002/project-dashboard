@@ -4,7 +4,7 @@
 // 状态联合 = core STATUS 顺序（运行时值由 @core/boardSchema.cjs 提供，见 api/schema.ts）
 export type Status =
   | '未开工' | '待开工' | '待拍板' | '已拍板' | '施工中'
-  | '可复工' | '收官' | '已完工' | '暂缓' | '压轴'
+  | '可复工' | '收官' | '已完工' | '暂缓' | '压轴' | '已作废'
 
 export interface Decision {
   id: string
@@ -78,6 +78,18 @@ export interface Task {
   unparkReason?: string
   /** 解除暂缓的日期(YYYY-MM-DD) */
   unparkedAt?: string
+  /** 放弃认领的理由(CLI unclaim --reason 写入):这卡为什么退回来、没人接了 */
+  unclaimReason?: string
+  /** 放弃认领的日期(YYYY-MM-DD) */
+  unclaimedAt?: string
+  /** 作废的理由(CLI cancel --reason 写入):这活为什么不做了 */
+  cancelReason?: string
+  /** 作废的日期(YYYY-MM-DD) */
+  cancelledAt?: string
+  /** 重开的理由(CLI reopen --reason 写入):结了案的卡为什么又要做 */
+  reopenReason?: string
+  /** 重开的日期(YYYY-MM-DD) */
+  reopenedAt?: string
   forbiddenZones?: string[]
   fileScope?: string[]
   docs?: DocRef[]

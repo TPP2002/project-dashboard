@@ -23,7 +23,7 @@
  * (同 boardSchema / generatedArtifacts 的做法),CLI / server 直接 require。
  */
 
-/** 结案:这张卡不再需要任何人做任何事。('已作废' 尚未进 core STATUS 枚举,先认着,免得将来加了又漏一处) */
+/** 结案:这张卡不再需要任何人做任何事。(两个都在 core STATUS 枚举里;'已作废' 由 CLI cancel 写入) */
 const SETTLED_STATUSES = ['已完工', '已作废'];
 /** 搁置:负责人自己按的暂停键。 */
 const PARKED_STATUS = '暂缓';

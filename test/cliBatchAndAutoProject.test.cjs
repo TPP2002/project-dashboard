@@ -281,7 +281,7 @@ test('CLI 入口:不吃 --project 的命令(claim-check 等)不做反查,省掉�
 
 // ---------------- ⑤ set 提示 ----------------
 
-test('set:字段有专门命令就提示(只提示不拦),没有就不吵;不存在的命令不会被指出来', (t) => {
+test('set:字段有专门命令就提示(只提示不拦),没有就不吵;提示里的命令必须真的存在', (t) => {
   const env = setup(t);
   cmds.add({ _: ['T-S'], title: 'x', ...env.P });
 
@@ -290,8 +290,14 @@ test('set:字段有专门命令就提示(只提示不拦),没有就不吵;不存
   assert.match(hit.err, /status 有专门命令/);
   assert.match(hit.err, /claim <id> --branch/);
   assert.match(hit.err, /done <id> --pr/);
-  // AUD-CLI-LIFECYCLE-CMDS 还没落地时,不许指一条不存在的命令
-  assert.doesNotMatch(hit.err, /\bcancel <id>|\breopen <id>|\bunclaim <id>/);
+  // 本条要守的是【不许指一条不存在的命令】。表里写死了 edit/cancel/reopen/unclaim,
+  // 它们随 AUD-CLI-LIFECYCLE-CMDS 落地才存在——所以不钉"有哪几条",钉"凡是提示里出现的都真的有"。
+  const named = [...hit.err.matchAll(/^ {4}([a-z-]+) </gm)].map((m) => m[1]);
+  assert.ok(named.length >= 4, `提示里应列出多条命令,实际: ${named.join(',')}`);
+  for (const c of named) {
+    assert.equal(typeof cmds[c === 'mark-landed' ? 'markLanded' : c], 'function', `提示指了一条不存在的命令: ${c}`);
+  }
+  assert.ok(named.includes('cancel'), '生命周期命令一落地,提示该自动带上它们(这张表不用改)');
   assert.equal(readBoard(env).tasks[0].status, '施工中', 'set 只提示,值照写');
 
   const quiet = runCli(['set', 'T-S', '--field', 'docs', '--value', '["docs/x.md"]', '--project', 't', '--registry', env.reg]);

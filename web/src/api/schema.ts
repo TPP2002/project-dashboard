@@ -64,3 +64,8 @@ export function statusMeta(s: string): StatusMeta {
 
 // 完工类状态（用于进度派生：done 计数）
 export const DONE_STATUSES = new Set(['已完工'])
+
+// 作废类状态：进度派生时【从分母里剔掉】。作废不是「没做完」，是「不做了」——
+// 留在分母里，作废得越多完成度看着越低，负责人会以为活越干越回去。
+// 口径与 core/boardSchema.cjs 的 VOID_STATUSES 同源，test/lifecycleFieldsSurfaced 盯着两边不许分叉。
+export const VOID_STATUSES = new Set(['已作废'])

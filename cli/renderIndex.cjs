@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { readBoard } = require('./store.cjs');
-const { emojiFor } = require('../core/boardSchema.cjs');
+const { emojiFor, VOID_STATUSES } = require('../core/boardSchema.cjs');
 const { atomicWriteFileSync } = require('../core/atomicWrite.cjs');
 
 const BEGIN = '<!--dashboard:status:begin';
@@ -20,7 +20,10 @@ function resolveProj(flags) {
 
 function buildStatusMarkdown(board) {
   const byStatus = {}; for (const t of (board.tasks || [])) byStatus[t.status] = (byStatus[t.status] || 0) + 1;
-  const total = (board.tasks || []).length, done = byStatus['已完工'] || 0;
+  // 分母剔掉作废卡,跟 CLI list / 网页 / server 摘要同一口径(审计 §4-C1)——
+  // 同一个项目在三个地方显示三个完成度,比显示错一个更让人没法判断。
+  const total = (board.tasks || []).filter((t) => !VOID_STATUSES.includes(t.status)).length;
+  const done = byStatus['已完工'] || 0;
   const head = `> 自动生成 · 勿手改（dashboard render-index 从 board.json 生成）· ${total} 任务 · 已完工 ${done} · 进度 ${total ? Math.round((done / total) * 100) : 0}%`;
   const rows = (board.tasks || []).map((t) => {
     const br = (t.gitBranch || []).join(',') || '-';
