@@ -1,6 +1,6 @@
-import type { DayNight } from '../../types'
+import { mixDaylight } from '../../paletteTransition'
 
-/** v10 night materials; W4 can extend the daylight surface colours here. */
+/** 夜景保留 v10 原色；白天只组合既有色站，不影响项目徽带。 */
 const night: Record<string, string> = {
   'ink': '#0e121c',
   'black': '#000',
@@ -18,6 +18,8 @@ const night: Record<string, string> = {
   'deep': '#0a0d16',
   'horizon': '#3a4152',
   'ocean': '#173a6e',
+  'sky-mid': 'var(--launch-ocean)',
+  'sea-deep': 'var(--launch-deep)',
   'floor': '#20252f',
   'glass': '#0b0f18',
   'scene-light': 'var(--launch-light)',
@@ -57,10 +59,18 @@ const night: Record<string, string> = {
   'gRgb-stop-2': '#8b7bf7',
   'gRgb-stop-3': '#c96bd8',
 }
-const day: Record<string, string> = { deep: '#94b8d6', ocean: '#548eb1', horizon: '#dae1d7' }
+export const day: Record<string, string> = {
+  deep: 'color-mix(in srgb, var(--wf-moon-blue) 72%, var(--wf-paper))',
+  'sky-mid': 'var(--wf-ice-edge)', horizon: 'var(--wf-warm)',
+  ocean: `color-mix(in srgb, ${night.ocean} 56%, var(--wf-ice-edge))`,
+  'sea-deep': `color-mix(in srgb, ${night.ocean} 78%, var(--wf-moon-blue))`,
+  floor: 'var(--wf-cloud-shade)',
+  glass: 'color-mix(in srgb, var(--wf-ice-shade) 35%, var(--wf-metal-dark))',
+  'gFloor-stop-0': 'var(--wf-cloud-mid)', 'gFloor-stop-1': 'var(--wf-metal-mid)',
+  'gWall-stop-0': 'var(--wf-cloud-body)', 'gWall-stop-1': 'var(--wf-cloud-shade)',
+}
 
-export function applyPalette(root: SVGGElement, value: DayNight) {
-  const colors = value === 'day' ? { ...night, ...day } : night
-  for (const [key, color] of Object.entries(colors)) root.style.setProperty('--launch-' + key, color)
-  root.style.setProperty('--launch-lamp-opacity', value === 'day' ? '.24' : '1')
+export function applyPalette(root: SVGGElement, daylight: number) {
+  for (const [key, color] of Object.entries(night)) root.style.setProperty('--launch-' + key, mixDaylight(color, day[key] ?? color, daylight))
+  root.style.setProperty('--launch-lamp-opacity', String(1 - daylight))
 }

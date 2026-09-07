@@ -1,4 +1,4 @@
-import type { SceneEvent, SceneState, SceneTask } from '../../types'
+import type { SceneEvent, SceneState, SceneTask, SoundCue } from '../../types'
 import { clamp, smooth } from '../../fx/svg'
 import { DOCK_MS, FLIGHT_MS, ROLLOUT_MS, SMOKE_MS } from './layout'
 
@@ -28,13 +28,16 @@ export interface LaunchFrame {
 }
 
 /** 快照是业务真相；这里只保存展示时间，绝不把事件计数写回 SceneState。 */
-export function createSequence(initial: SceneState) {
+export function createSequence(initial: SceneState, sound?: (cue: SoundCue) => void) {
   let state = initial, time = 0, fuel = selected(initial)?.percent ?? 0, reduced = false
-  let transfer: Motion | null = null, waitingTransfer: Motion | null = null, flight: Motion | null = null
+  let transfer: Motion | null = null, waitingTransfer: Motion | null = null
+  // 单发射台的进行中队列最多一枚；setState 不能从中删除火箭。
+  const flights: Motion[] = []
   let smokeAt: number | null = null, fullAt: number | null = null, nominalAt: number | null = null
   let go: { taskId: string; at: number } | null = null, requested: SceneTask | null = null, parkedId = ''
   let weatherAt = 4000, rainAt = 0, launchId = 0, lastSecond = -Infinity
   let truckSafe = true
+  let pendingComplete = false, liftoffSound = false
   const seen = new Set<string>()
   let previousTask: SceneTask | null = selected(initial)
   function selected(value: SceneState): SceneTask | null {
@@ -50,8 +53,9 @@ export function createSequence(initial: SceneState) {
     return 'READY'
   }
   function settle() {
-    transfer = waitingTransfer = flight = null
+    transfer = waitingTransfer = null; flights.length = 0
     requested = null; smokeAt = null; fullAt = null; nominalAt = null
+    pendingComplete = false
     fuel = mainTask()?.percent ?? 0
   }
   function setState(next: SceneState) {
@@ -64,17 +68,20 @@ export function createSequence(initial: SceneState) {
     state = next
     if (!state.blocked.some(task => task.id === parkedId)) parkedId = ''
     if (go && (![...state.active, ...state.done].some(task => task.id === go!.taskId) || state.pending.length || state.blocked.length)) go = null
-    if (transfer && (!state.active.some(task => task.id === transfer!.task.id) || state.pending.length || state.blocked.length)) transfer = null
+    if (transfer && !state.active.some(task => task.id === transfer!.task.id)) transfer = null
     if (waitingTransfer && !state.active.some(task => task.id === waitingTransfer!.task.id)) waitingTransfer = null
-    if (flight && !state.done.some(task => task.id === flight!.task.id)) { flight = null; smokeAt = null }
-    if (requested && !state.done.some(task => task.id === requested!.id)) requested = null
     if (state.blocked.length && !wasBlocked) rainAt = time
-    if (!state.complete) fullAt = null
-    if (!flight && !transfer && (before?.id !== mainTask()?.id || reduced)) fuel = mainTask()?.percent ?? 0
+    if (!state.complete) { fullAt = null; pendingComplete = false }
+    if (!flights.length && !transfer && (before?.id !== mainTask()?.id || reduced)) fuel = mainTask()?.percent ?? 0
   }
   function launch(task: SceneTask) {
-    flight = { task, at: time }; smokeAt = time; transfer = null; requested = null; go = null
+    flights.push({ task, at: time }); smokeAt = time; transfer = null; requested = null; go = null
     launchId++; parkedId = ''; nominalAt = null
+    liftoffSound = false; sound?.('ignition')
+  }
+  function complete() {
+    if (!pendingComplete || !state.complete || flights.length || requested) return
+    pendingComplete = false; fullAt = time; sound?.('complete')
   }
   function handleEvent(event: SceneEvent, animate: boolean) {
     if (event.projectId !== state.projectId) return
@@ -85,16 +92,16 @@ export function createSequence(initial: SceneState) {
     const moving = animate && !reduced
     const task = [...state.active, ...state.pending, ...state.blocked, ...state.done, ...state.queued].find(task => task.id === event.taskId)
       ?? (previousTask?.id === event.taskId ? previousTask : null)
-    if (event.kind === 'complete') { if (state.complete && moving) fullAt = time; return }
+    if (event.kind === 'complete') { if (state.complete && moving) { pendingComplete = true; complete() }; return }
     if (!task) return
     if (event.kind === 'done') {
       const stamp = Date.parse(event.ts), second = Math.floor((Number.isFinite(stamp) ? stamp : time) / 1000)
-      const suppressed = !moving || second === lastSecond || Boolean(flight)
+      const suppressed = !moving || second === lastSecond || Boolean(flights.length || requested)
       lastSecond = second
       if (!suppressed) {
         if (!truckSafe || go?.taskId === task.id && time - go.at < 10000) requested = task
         else launch(task)
-      } else if (!moving && flight?.task.id === task.id) { flight = null; smokeAt = null }
+      }
       return
     }
     if (event.kind === 'park') {
@@ -104,13 +111,13 @@ export function createSequence(initial: SceneState) {
     }
     if (event.kind === 'claim') {
       parkedId = ''
-      if (moving && state.active[0]?.id === task.id && !flight) { transfer = { task, at: time }; fuel = 0; go = null }
+      if (moving && state.active[0]?.id === task.id && !flights.length) { transfer = { task, at: time }; fuel = 0; go = null }
       else if (moving && state.active[1]?.id === task.id) waitingTransfer = { task, at: time }
     }
-    if (event.kind === 'block') { weatherAt = time + 400; rainAt = time; go = null; transfer = null; requested = null }
+    if (event.kind === 'block') { weatherAt = time + 400; rainAt = time; go = null; transfer = null; requested = null; if (moving) sound?.('alarm') }
     if (task.id !== mainTask()?.id) return
-    if (event.kind === 'go') { go = { taskId: task.id, at: moving ? time : Infinity }; weatherAt = time + 4000 }
-    if (event.kind === 'hold') { weatherAt = time + 400; go = null; transfer = null; requested = null }
+    if (event.kind === 'go') { go = { taskId: task.id, at: moving ? time : Infinity }; weatherAt = time + 4000; if (moving) sound?.('stamp') }
+    if (event.kind === 'hold') { weatherAt = time + 400; go = null; transfer = null; requested = null; if (moving) sound?.('hold') }
     // 显示目标直接来自 snapshot，progress 不制造第二份可被旧事件覆盖的进度。
     if (!moving) fuel = mainTask()?.percent ?? 0
   }
@@ -120,13 +127,16 @@ export function createSequence(initial: SceneState) {
     if (transfer && time - transfer.at >= ROLLOUT_MS + DOCK_MS) transfer = null
     if (waitingTransfer && time - waitingTransfer.at >= ROLLOUT_MS) waitingTransfer = null
     if (requested && truckSafe && (!go || time - go.at >= 10000)) launch(requested)
+    const flight = flights[0]
+    if (flight && !liftoffSound && time - flight.at >= 400) { liftoffSound = true; sound?.('liftoff') }
     if (flight && time - flight.at >= FLIGHT_MS) {
-      flight = null; fuel = 0; nominalAt = time
+      flights.shift(); fuel = mainTask()?.percent ?? 0; nominalAt = time
       const next = state.active[0]
       // 并行任务已经在履带路上等候，接班沿剩余路段走，不能跳回厂房门口。
-      if (next && !state.complete && !state.pending.length && !state.blocked.length) transfer = { task: next, at: time, from: .22 }
+      if (next && next.id !== flight.task.id && !state.complete && !state.pending.length && !state.blocked.length) transfer = { task: next, at: time, from: .22 }
     }
-    if (!transfer && !flight) {
+    complete()
+    if (!transfer && !flights.length) {
       const target = mainTask()?.percent ?? 0
       fuel += (target - fuel) * (1 - Math.exp(-dt / 350))
       if (Math.abs(target - fuel) < .05) fuel = target
@@ -134,6 +144,7 @@ export function createSequence(initial: SceneState) {
     if (smokeAt !== null && time - smokeAt >= SMOKE_MS) smokeAt = null
   }
   function frame(): LaunchFrame {
+    const flight = flights[0]
     const travelAge = transfer ? time - transfer.at : 0
     const flightAge = flight ? time - flight.at : null
     const dockAge = transfer && travelAge >= ROLLOUT_MS ? travelAge - ROLLOUT_MS : null

@@ -86,7 +86,7 @@ export function createBoard(root: SVGGElement) {
       transform: powered ? 'translate(0,-118.95) scale(1,1.65)' : 'scale(1)' })
     const blink = reduced ? 1 : .725 + .275 * Math.cos(elapsed / (mode === 'block' ? 700 : 1200) * Math.PI * 2)
     setAttrs(rec, { opacity: blink })
-    if (flashing && ['build', 'pend', 'block'].includes(mode)) {
+    if (flashing && ['build', 'pend'].includes(mode)) {
       setAttrs(screen.get(flashing)!, { opacity: blink })
       setAttrs(bars.get(flashing)!, { opacity: blink })
     }
@@ -100,4 +100,3 @@ export function createBoard(root: SVGGElement) {
   }
   return { update, handleEvent, tick }
 }
-

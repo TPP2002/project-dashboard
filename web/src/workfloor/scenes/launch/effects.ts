@@ -1,6 +1,6 @@
 import { flame, smoke, vent, frost, rain, fireworks } from '../../fx'
 import { attributes, clamp, svg } from '../../fx/svg'
-import type { DayNight, Detail } from '../../types'
+import type { Detail } from '../../types'
 import { MOUNT_TOP, NOZZLE_Y, PAD_X, ROCKET_Y, SMOKE_MS } from './layout'
 import type { Site } from './site'
 import type { LaunchFrame } from './sequence'
@@ -28,8 +28,9 @@ export function createEffects(site: Site) {
     if (enabled || shown.has(name)) run()
     if (enabled) shown.add(name); else shown.delete(name)
   }
-  function update(dt: number, frame: LaunchFrame, detail: Detail, reducedMotion: boolean, dayNight: DayNight) {
+  function update(dt: number, frame: LaunchFrame, detail: Detail, reducedMotion: boolean, daylight: number) {
     const common = { detail, reducedMotion }, burning = frame.flightAge !== null && !reducedMotion
+    attributes(fireHost, { opacity: 1 - .32 * daylight })
     const vapor = frame.pad && frame.fuel > 0 && !reducedMotion && (frame.flightAge === null || frame.flightAge < 1000)
     transition('vent', vapor, () => vents.forEach(effect => effect.update(dt, { ...common, enabled: vapor, particleLimit: 12,
       density: clamp(frame.fuel/100) * (frame.flightAge === null ? 1 : clamp(1-frame.flightAge/1000)) })))
@@ -38,14 +39,14 @@ export function createEffects(site: Site) {
       attributes(group, { transform: `translate(${[-8,0,8][i]},${NOZZLE_Y-(i===1?0:1)}) scale(${.3*thin},${i===1?.7:.62})` })
       effect.update(dt, { ...common, enabled: burning, intensity: clamp((frame.flightAge ?? 0)/160), length: .6+.5*clamp(frame.altitude/380), groundLight: false,
         onLight: i === 1 ? light => {
-          const warm = light*clamp(1-frame.altitude/260)
+          const warm = light*clamp(1-frame.altitude/260) * (1 - .65 * daylight)
           attributes(warmGround, { opacity: warm*.5 }); attributes(warmSurfaces, { opacity: warm*.3 })
         } : undefined })
     }))
     const smoky = frame.smokeAge !== null && frame.smokeAge < SMOKE_MS && !reducedMotion
     transition('smoke', smoky, () => clouds.update(dt, { ...common, enabled: smoky, burstAge: frame.smokeAge ?? 0, clearAfter: SMOKE_MS,
       exits: [{ x: PAD_X-24, y: 428, side: -1 }, { x: PAD_X+150, y: 434, side: 1 }],
-      fireLight: burning ? clamp(1-frame.altitude/120) : 0, moonLight: dayNight === 'night' ? .7 : .3 }))
+      fireLight: burning ? clamp(1-frame.altitude/120) * (1 - .6 * daylight) : 0, moonLight: .7 * (1 - daylight), daylight }))
     const shedding = smoky && (frame.smokeAge ?? 0) < 2600
     transition('frost', shedding, () => shards.update(dt, { ...common, enabled: shedding, floor: MOUNT_TOP-ROCKET_Y-141, burstId: frame.launchId, repeat: false }))
     const raining = frame.phase === 'SCRUB' && !reducedMotion

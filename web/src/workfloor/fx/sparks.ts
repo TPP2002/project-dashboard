@@ -2,7 +2,12 @@
 import { defsFor } from './defs'
 import { advance, attributes, noise, quantity, smooth, svg, type FxHandle, type FxParams } from './svg'
 
-export interface SparksParams extends FxParams { intensity?: number }
+export interface SparksParams extends FxParams {
+  intensity?: number
+  /** 焊点局部坐标中的地面；碰地后只反弹一次。 */
+  floor?: number
+  onLight?: (intensity: number) => void
+}
 
 export function create(host: SVGGElement, initial: SparksParams): FxHandle<SparksParams> {
   const defs = defsFor(host)
@@ -20,18 +25,27 @@ export function create(host: SVGGElement, initial: SparksParams): FxHandle<Spark
     time = advance(time, dt, p)
     const count = quantity(48, p.detail)
     attributes(root, { opacity: p.enabled === false ? 0 : p.intensity ?? 1 })
+    const floor = Math.max(0, p.floor ?? 65), gravity = 850
     particles.forEach((particle, i) => {
-      const age = ((time / 1000 + i / count * .9) % .9)
-      const t = Math.max(0, age - .045)
-      const x = particle.vx * age, y = particle.vy * age + 130 * age * age
-      const tx = particle.vx * t, ty = particle.vy * t + 130 * t * t
-      const opacity = smooth(age / .04) * (1 - smooth(age / .9))
+      const impactAt = (-particle.vy + Math.sqrt(particle.vy ** 2 + 2 * gravity * floor)) / gravity
+      const rebound = (particle.vy + gravity * impactAt) * .28
+      const life = impactAt + 2 * rebound / gravity + .22
+      const age = (time / 1000 + i / count * life) % life
+      const position = (t: number) => {
+        const after = Math.max(0, t - impactAt)
+        return { x: particle.vx * (1 - Math.exp(-t * .45)) / .45,
+          y: t <= impactAt ? particle.vy * t + gravity * t * t / 2
+            : Math.min(floor, floor - rebound * after + gravity * after * after / 2) }
+      }
+      const { x, y } = position(age), { x: tx, y: ty } = position(Math.max(0, age - .035))
+      const opacity = smooth(age / .04) * (1 - smooth((age - impactAt * .8) / (life - impactAt * .8)))
       attributes(particle.tail, { x1: tx, y1: ty, x2: x, y2: y, opacity, visibility: i < count ? 'visible' : 'hidden' })
       attributes(particle.head, { x1: x * .7 + tx * .3, y1: y * .7 + ty * .3, x2: x, y2: y, opacity, visibility: i < count ? 'visible' : 'hidden' })
     })
     const light = p.reducedMotion ? .8 : .75 + .2 * Math.sin(time / 37)
     attributes(halo, { opacity: light })
-    attributes(pool, { opacity: .4 * light })
+    attributes(pool, { cy: floor, opacity: .4 * light })
+    p.onLight?.(p.enabled === false ? 0 : light * (p.intensity ?? 1))
   }
   update(0, initial)
   return { update, destroy() { root.remove() } }

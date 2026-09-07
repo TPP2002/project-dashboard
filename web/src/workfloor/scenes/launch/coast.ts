@@ -6,15 +6,17 @@ export function skySeaSvg() {
     <g data-stars fill="var(--launch-light)">${[[32,44],[144,68],[247,36],[341,84],[456,42],[532,124],[611,65],[705,36],[754,138],[866,89],[975,46],[1074,132],[1264,40],[1360,130],[1321,95]].map(([x,y],i)=>`<circle class="star" cx="${x}" cy="${y}" r="${[.7,1.1,1.6][i%3]}"/>`).join('')}</g>
     <circle data-moon-halo cx="1180" cy="80" r="88" fill="url(#gMoonHalo)"/>
     <g id="moon-source"><circle cx="1180" cy="80" r="20" fill="var(--launch-ice)"/><path d="M1185 62a20 20 0 0 1 10 32 20 20 0 0 0-1-25Z" fill="var(--launch-metal)" opacity=".18"/><g fill="var(--launch-metal)" opacity=".13"><circle cx="1172" cy="76" r="4"/><circle cx="1184" cy="89" r="3"/><circle cx="1188" cy="72" r="2"/></g></g>
-    <g fill="var(--launch-light)" opacity=".085" filter="url(#fsoft)"><path d="M328 108l42-11 19 4 42-5 45 12-53 5-40-4-23 4Z"/><path d="M727 156l43-9 34 3 58-8 40 11-44 7-64-4-30 5Z"/><path d="M1047 160l25-7 39 3 43-4 53 12-61 5-27-6-45 4Z"/></g>
+    <g id="sun-source" data-sun opacity="0"><circle cx="1180" cy="80" r="86" fill="url(#gSunHalo)"/><circle cx="1180" cy="80" r="20" fill="var(--launch-warm)"/></g>
+    <g data-fair-clouds fill="var(--launch-paper)" opacity=".085" filter="url(#fsoft)"><path d="M328 108l42-11 19 4 42-5 45 12-53 5-40-4-23 4Z"/><path d="M727 156l43-9 34 3 58-8 40 11-44 7-64-4-30 5Z"/><path d="M1047 160l25-7 39 3 43-4 53 12-61 5-27-6-45 4Z"/></g>
     <g clip-path="url(#clipSea)"><rect x="988" y="330" width="412" height="190" fill="url(#gSea)"/>
       <g data-reflections opacity=".4" filter="url(#fReflection)">
         <use href="#moon-source" transform="translate(0,442) scale(1,-.45)"/>
+        <use href="#sun-source" transform="translate(0,442) scale(1,-.45)"/>
         <use href="#pad-light-source" transform="matrix(1 0 -.85 -.55 348.5 635.5)"/>
         <use href="#lighthouse-light-source" transform="translate(0,575) scale(1,-.64)"/>
         <use href="#firework-source" transform="translate(0,530) scale(1,-.45)"/>
       </g>
-      <g fill="var(--launch-light)">${repeat(29,i=>{const y=345+i*6,w=7+i*.9+(i%4)*7;return `<path d="M${1180-w/2+(i%3-1)*5} ${y}h${w}l-3 1.1h${-w+4}z" opacity="${.09+(i%5)*.025}"/>`})}</g>
+      <g data-sea-glints fill="var(--launch-light)">${repeat(29,i=>{const y=345+i*6,w=7+i*.9+(i%4)*7;return `<path d="M${1180-w/2+(i%3-1)*5} ${y}h${w}l-3 1.1h${-w+4}z" opacity="${.09+(i%5)*.025}"/>`})}</g>
       <g fill="none" stroke-width="1">
         <path class="wave" d="M980 361q22-3 44 0t44 0t44 0t44 0t44 0t44 0t44 0t44 0t44 0t44 0 M1000 394q30-3 60 0t60 0t60 0t60 0t60 0t60 0t60 0" stroke="var(--launch-light)" opacity=".18"/>
         <path class="wave two" d="M985 425q24-4 48 0t48 0t48 0t48 0t48 0t48 0t48 0t48 0t48 0 M1010 460q28-3 56 0t56 0t56 0t56 0t56 0t56 0t56 0" stroke="var(--launch-project)" opacity=".33"/>
@@ -27,7 +29,7 @@ export function skySeaSvg() {
 export function lighthouseSvg() {
   return `<g>
     ${repeat(27,i=>cabinet(1080+i*12,350,12,14,i%2?'gGrey':'gGreyD','gConcrete'))}
-    ${[1120,1192,1262,1370].map(x=>`<g>${cabinet(x-3,350,8,3)}${rect(x,330,2,18,'gGrey')}<path d="M${x-3} 330h9" stroke="var(--launch-metal)" stroke-width="2"/><circle cx="${x+1}" cy="330" r="1.6" fill="var(--launch-warm)" class="glow"/><ellipse cx="${x+3}" cy="351" rx="11" ry="2" fill="var(--launch-warm)" opacity=".08"/></g>`).join('')}
+    ${[1120,1192,1262,1370].map(x=>`<g>${cabinet(x-3,350,8,3)}${rect(x,330,2,18,'gGrey')}<path d="M${x-3} 330h9" stroke="var(--launch-metal)" stroke-width="2"/><g data-night-light><circle cx="${x+1}" cy="330" r="1.6" fill="var(--launch-warm)" class="glow"/><ellipse cx="${x+3}" cy="351" rx="11" ry="2" fill="var(--launch-warm)" opacity=".08"/></g></g>`).join('')}
     <g id="lighthouse-light-source"><g data-lighthouse-beam></g></g>
     <g>${cabinet(1303,347,35,5,'gConcrete')}
       ${pg([[1311,284],[1329,284],[1335,347],[1305,347]],'gRocket','main')}
@@ -35,7 +37,7 @@ export function lighthouseSvg() {
       ${hi([[1324,286],[1327,286],[1332,345],[1328,345]])}${sh([[1311,285],[1316,285],[1313,347],[1305,347]])}
       ${rect(1316,332,8,15,'gDark')}${ln([[1317,333],[1317,345]],'edge')}${rect(1317,293,5,8,'gVisor')}
       ${cabinet(1305,282,30,5)}<rect x="1310" y="263" width="20" height="19" fill="url(#gVisor)" fill-opacity=".28" class="pl"/>
-      <circle cx="1320" cy="270" r="3.5" fill="var(--launch-warm)" class="glow"/>
+      <circle data-night-light cx="1320" cy="270" r="3.5" fill="var(--launch-warm)" class="glow"/>
       <path d="M1310 264v18M1315 264v18M1320 264v18M1325 264v18M1330 264v18M1303 277v7h34v-7" fill="none" stroke="var(--launch-metal)" stroke-width="1.4"/>
       ${pg([[1305,262],[1320,250],[1335,262]],'gRed','main')}${hi([[1320,250],[1334,261],[1329,261],[1318,253]])}${rect(1319,245,2,6,'gGrey')}
     </g>
@@ -59,5 +61,5 @@ export function groundSvg() {
 }
 
 export function roadLightsSvg() {
-  return [358,448,538,628,718,808].map((x,i)=>{const y=426+i*3;return `<g><ellipse cx="${x+14}" cy="${y+5}" rx="29" ry="6" fill="var(--launch-warm)" opacity=".065"/>${cabinet(x-4,y,9,4,'gGreyD')}${rect(x,y-31,2,31,'gGrey')}<path d="M${x} ${y-31}l5-3h8" fill="none" stroke="var(--launch-metal)" stroke-width="2"/>${rect(x+5,y-36,11,3,'gGreyD')}<rect x="${x+7}" y="${y-33}" width="7" height="1.5" fill="var(--launch-warm)"/><path d="M${x+6} ${y-32}h9l16 37h-36Z" fill="url(#gCone)"/>${riv(x+1,y+2)}</g>`}).join('')
+  return [358,448,538,628,718,808].map((x,i)=>{const y=426+i*3;return `<g>${cabinet(x-4,y,9,4,'gGreyD')}${rect(x,y-31,2,31,'gGrey')}<path d="M${x} ${y-31}l5-3h8" fill="none" stroke="var(--launch-metal)" stroke-width="2"/>${rect(x+5,y-36,11,3,'gGreyD')}<g data-night-light><ellipse cx="${x+14}" cy="${y+5}" rx="29" ry="6" fill="var(--launch-warm)" opacity=".065"/><rect x="${x+7}" y="${y-33}" width="7" height="1.5" fill="var(--launch-warm)"/><path d="M${x+6} ${y-32}h9l16 37h-36Z" fill="url(#gCone)"/></g>${riv(x+1,y+2)}</g>`}).join('')
 }

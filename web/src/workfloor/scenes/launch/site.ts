@@ -1,6 +1,7 @@
 import { ensureDefs } from '../../fx'
 import { svg, attributes, noise } from '../../fx/svg'
-import type { DayNight, Detail } from '../../types'
+import type { Detail } from '../../types'
+import { mixDaylight } from '../../paletteTransition'
 import { materials } from './materials'
 import { skySeaSvg, lighthouseSvg, groundSvg, roadLightsSvg } from './coast'
 import { vabSvg, tanksSvg, commandSvg } from './buildings'
@@ -39,6 +40,7 @@ export function createSite(host: SVGSVGElement) {
     'circle[fill="var(--launch-warm)"]': 'filter:url(#fglow)',
     'rect[fill="var(--launch-warm)"]': 'filter:url(#fglow)',
     '.frost': 'opacity:var(--launch-frost,0)', '.frost-ring': 'opacity:var(--launch-frost,0)',
+    '[data-night-light]': 'opacity:var(--launch-lamp-opacity,1)',
     '.scene-grain': 'opacity:.035;pointer-events:none;mix-blend-mode:overlay',
     '[fill="url(#pPegboard)"]': 'opacity:.08', '[fill="url(#pDiamond)"]': 'opacity:.08',
     '[fill="url(#pHazard)"]': 'opacity:.08', '[stroke="url(#pHazard)"]': 'opacity:.08',
@@ -73,24 +75,31 @@ export function createSite(host: SVGSVGElement) {
   const waves = all('.wave'), stars = all('.star'), beacons = all('.aviation, .buoy-light')
   const windows = all('.windows rect'), flags = all('.flag-cloth'), foam = get('.foam'), rgb = get('.rgb'), dish = get('.dish-turn')
   const moon = get(`#${id('moon-source')}`), halo = get('[data-moon-halo]'), reflections = get('[data-reflections]')
-  let dayNight: DayNight = 'night'
-  function setDayNight(value: DayNight) {
-    dayNight = value; applyPalette(root, value)
-    attributes(moon, { opacity: value === 'night' ? 1 : 0 }); attributes(halo, { opacity: value === 'night' ? 1 : 0 })
+  const sun = get('[data-sun]'), clouds = get('[data-fair-clouds]'), glints = get('[data-sea-glints]')
+  const glintPieces = Array.from(glints.children).map(node => ({ node: node as SVGElement, opacity: Number(node.getAttribute('opacity')) }))
+  const bayLamps = all('[data-bay-lamp]')
+  let daylight = 0
+  function paintDaylight(value: number) {
+    daylight = value; applyPalette(root, value)
+    attributes(moon, { opacity: 1 - value }); attributes(halo, { opacity: 1 - value })
+    attributes(sun, { opacity: value }); attributes(clouds, { opacity: .085 + .62 * value })
+    attributes(glints, { fill: mixDaylight('var(--launch-light)', 'var(--launch-paper)', value) })
+    glintPieces.forEach(piece => attributes(piece.node, { opacity: piece.opacity * (1 + 1.8 * value) }))
+    bayLamps.forEach(lamp => attributes(lamp, { opacity: .4 - value * .22 }))
   }
   function ambient(elapsed: number, reduced: boolean, phase: string) {
-    const t = reduced ? 0 : elapsed, night = dayNight === 'night'
+    const t = reduced ? 0 : elapsed, night = 1 - daylight
     waves.forEach((node, i) => attributes(node, { transform: `translate(${Math.sin(t / [19000,25000,32000][i] + i) * 26},0)` }))
-    stars.forEach((node, i) => attributes(node, { opacity: night ? .28 + .5 * (reduced ? noise(i, 9) : .5 + .5 * Math.sin(t / (4100+i*231) + i)) : 0,
+    stars.forEach((node, i) => attributes(node, { opacity: night * (.28 + .5 * (reduced ? noise(i, 9) : .5 + .5 * Math.sin(t / (4100+i*231) + i))),
       filter: i % 5 === 0 ? defs.url('glow') : 'none' }))
-    beacons.forEach((node, i) => attributes(node, { opacity: (night ? 1 : .35) * (reduced ? .6 : .35+.65*Math.max(0,Math.sin(t/600+i*2))) }))
-    windows.forEach((node, i) => attributes(node, { fill: phase === 'HOLD' || phase === 'SCRUB' ? 'var(--launch-signal)' : `var(--launch-${i%2?'blue':'cyan'})`,
-      opacity: (night ? 1 : .4) * (reduced ? .75 : .6+.3*Math.sin(t/2200+i*1.7)) }))
+    beacons.forEach((node, i) => attributes(node, { opacity: (1 - .65 * daylight) * (reduced ? .6 : .35+.65*Math.max(0,Math.sin(t/600+i*2))) }))
+    windows.forEach((node, i) => attributes(node, { fill: mixDaylight(phase === 'HOLD' || phase === 'SCRUB' ? 'var(--launch-signal)' : `var(--launch-${i%2?'blue':'cyan'})`, 'var(--launch-glass)', daylight),
+      opacity: daylight + night * (reduced ? .75 : .6+.3*Math.sin(t/2200+i*1.7)) }))
     flags.forEach((node, i) => attributes(node, { transform: reduced ? '' : `translate(${i?352:40},0) skewY(${Math.sin(t/460+i)*3}) scale(${.95+.05*Math.sin(t/530+i)},1) translate(${i?-352:-40},0)` }))
     attributes(foam, { transform: `translate(${Math.sin(t/4300)*1.5},${-Math.sin(t/3300)})`, opacity: .25+.07*Math.sin(t/3200) })
-    attributes(rgb, { 'stroke-dashoffset': reduced ? 0 : -t/35, opacity: night ? .9 : .3 })
+    attributes(rgb, { 'stroke-dashoffset': reduced ? 0 : -t/35, opacity: .9 - .6 * daylight })
     attributes(dish, { transform: `rotate(${Math.sin(t/14000)*9},646,257)` })
   }
   function setDetail(value: Detail) { attributes(reflections, { filter: value === 'ultra' ? defs.url('water') : 'none' }) }
-  return { root, id, defs, get, all, stockSlots, localSeaClip, setDayNight, ambient, setDetail, destroy: () => root.remove() }
+  return { root, id, defs, get, all, stockSlots, localSeaClip, paintDaylight, ambient, setDetail, destroy: () => root.remove() }
 }

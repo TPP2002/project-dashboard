@@ -3,8 +3,9 @@ import { attributes, svg } from '../../fx/svg'
 import { ensureDefs } from '../../fx'
 import { palette } from './palette'
 import { createExhibits } from './exhibits'
+import { createReplay } from './replay'
 
-/** W1 的两个世界共用测试台；W2/W3 只需替换各自 factory，不接触桥接与容器。 */
+/** 独立调试入口：特效展位和真实世界复现共用宿主循环，不写真实任务。 */
 export function benchFactory(placeholder: string): SceneFactory {
   return (host, options) => {
     const defs = ensureDefs(host)
@@ -21,6 +22,7 @@ export function benchFactory(placeholder: string): SceneFactory {
     logTitle.textContent = 'LIVE EVENTS'
     const rows = Array.from({ length: 5 }, (_, i) => svg(root, 'text', { x: 980, y: 119 + i * 16, fill: palette.text, 'font-size': 11 }))
     const exhibits = createExhibits(root, { detail: options.detail, reducedMotion: options.reducedMotion })
+    const replay = createReplay(host, root, options)
     let state = options.state, reduced = options.reducedMotion, detail = options.detail
     let fingerprint = '', lastAction = 'STANDBY'
     const events: string[] = []
@@ -45,19 +47,19 @@ export function benchFactory(placeholder: string): SceneFactory {
       status.textContent = state.complete ? 'MISSION COMPLETE' : lastAction
     }
     function setHeight(height: 'standard' | 'compact') {
-      host.setAttribute('viewBox', height === 'compact' ? '0 80 1400 360' : '0 0 1400 520')
+      replay.setHeight(height)
     }
     setState(state)
     setHeight(options.height)
-    attributes(root, { 'data-day-night': options.dayNight, 'data-sound-linked': String(options.sound.linked) })
+    attributes(root, { 'data-day-night': options.dayNight, 'data-sound-linked': String(Boolean(options.sound)) })
     return {
       setState, handleEvent, setHeight,
-      tick(dt, elapsed) { exhibits.update(dt, elapsed, { detail, reducedMotion: reduced }) },
-      setDayNight(value) { attributes(root, { 'data-day-night': value }) },
-      setDetail(value) { detail = value },
-      setReducedMotion(value) { reduced = value },
-      setSound(value) { attributes(root, { 'data-sound-linked': String(value.linked) }) },
-      destroy() { exhibits.destroy(); root.remove() },
+      tick(dt, elapsed) { if (replay.active) replay.tick(dt); else exhibits.update(dt, elapsed, { detail, reducedMotion: reduced }) },
+      setDayNight(value) { attributes(root, { 'data-day-night': value }); replay.setDayNight(value) },
+      setDetail(value) { detail = value; replay.setDetail(value) },
+      setReducedMotion(value) { reduced = value; replay.setReducedMotion(value) },
+      setSound(value) { attributes(root, { 'data-sound-linked': String(Boolean(value)) }); replay.setSound(value) },
+      destroy() { replay.destroy(); exhibits.destroy(); root.remove() },
     }
   }
 }

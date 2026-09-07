@@ -6,9 +6,10 @@ import { appearance } from '@/utils/appearance'
 import { onBoardEvent } from '@/utils/boardEvents'
 import { theme } from '@/utils/theme'
 import { readStops, spectrumRevision } from '@/utils/spectrum'
-import { createWorkfloor, type WorkfloorHandle, type WorkfloorOptions } from '@/workfloor'
+import { createWorkfloor, type SoundCue, type SoundPlayer, type WorkfloorHandle, type WorkfloorOptions } from '@/workfloor'
 import { deriveSceneState, mapBoardEvent } from '@/workfloor/bridge'
-import { loadCollapsed, resolveDayNight, saveCollapsed } from '@/workfloor/presentation'
+import { loadCollapsed, saveCollapsed } from '@/workfloor/presentation'
+import { resolveDayNight } from '@/workfloor/daynight'
 import Icon from './Icon.vue'
 
 const props = defineProps<{ board: Board; projectId: string }>()
@@ -22,7 +23,21 @@ const systemDark = ref(dark.matches)
 const enabled = computed(() => Boolean(props.projectId) && appearance.workfloor.world !== 'off')
 const state = computed(() => deriveSceneState(props.board, props.projectId))
 const worldName = computed(() => appearance.workfloor.world === 'mech' ? '机甲装配' : '发射场')
-const action = ref('测试台已就绪')
+const action = ref('施工现场已就绪')
+// glob 无匹配时生成空映射，构建不解析一个尚未存在的模块。
+const soundModules = import.meta.glob<SoundPlayer>('../utils/sound.ts')
+let disposed = false
+async function playCue(cue: SoundCue) {
+  if (disposed || !appearance.workfloor.soundLink || !appearance.sound) return
+  const load = soundModules['../utils/sound.ts']
+  if (!load) return
+  const projectId = props.projectId, world = appearance.workfloor.world
+  try {
+    const player = await load()
+    if (!disposed && projectId === props.projectId && world === appearance.workfloor.world
+      && appearance.workfloor.soundLink && appearance.sound) await player.playSound(cue)
+  } catch (_) { /* 可选声音加载或播放失败时保持静默，画面和看板继续工作。 */ }
+}
 const summary = computed(() => `${worldName.value} · ${state.value.queued.length} 项排队 · ${state.value.active.length} 项施工 · ${state.value.pending.length} 项待拍板 · ${state.value.blocked.length} 项暂缓 · ${state.value.done.length}/${state.value.total} 项完工 · ${state.value.percent}%`)
 const aria = computed(() => `${props.board.project.name}，${summary.value}，${action.value}`)
 const color = computed(() => {
@@ -39,8 +54,7 @@ const options = computed<WorkfloorOptions>(() => ({
   state: state.value, world: appearance.workfloor.world === 'mech' ? 'mech' : 'launch',
   dayNight: resolveDayNight(appearance.workfloor.dayNight, theme.value === 'system' ? (systemDark.value ? 'dark' : 'light') : theme.value, hour.value),
   detail: appearance.workfloor.detail, height: appearance.workfloor.height, collapsed: collapsed.value,
-  sound: { linked: appearance.workfloor.soundLink, enabled: appearance.sound, volume: appearance.volume,
-    quietStart: appearance.quietStart, quietEnd: appearance.quietEnd },
+  sound: appearance.workfloor.soundLink && appearance.sound ? cue => { void playCue(cue) } : undefined,
   onError(reason) { error.value = true; action.value = '场景加载失败'; console.error('施工现场加载失败', reason) },
 }))
 let handle: WorkfloorHandle | null = null
@@ -59,10 +73,17 @@ watch(host, value => {
   }
 }, { flush: 'post' })
 watch(options, next => { if (enabled.value) handle?.update(next) }, { flush: 'sync' })
-watch(() => [props.projectId, appearance.workfloor.world], () => { action.value = '测试台已就绪'; error.value = false })
+watch(() => [props.projectId, appearance.workfloor.world], () => { action.value = '施工现场已就绪'; error.value = false })
+watch(() => appearance.workfloor.dayNight, mode => {
+  window.clearInterval(clockTimer)
+  clockTimer = undefined
+  if (mode === 'clock') {
+    clockChanged()
+    clockTimer = window.setInterval(clockChanged, 60000)
+  }
+}, { immediate: true })
 onMounted(() => {
   dark.addEventListener('change', themeChanged)
-  clockTimer = window.setInterval(clockChanged, 60000)
   document.addEventListener('visibilitychange', clockChanged)
   unsubscribe = onBoardEvent(event => {
     if (!enabled.value || event.projectId !== props.projectId || !handle) return
@@ -72,13 +93,16 @@ onMounted(() => {
     const snapshot = deriveSceneState(current, props.projectId)
     const mapped = mapBoardEvent(event, props.projectId, snapshot)
     if (!mapped) return
+    // 完工先保留旧工位的动画对象；其它事件先取得其新分组与进度。
+    if (mapped.kind === 'done') handle.handleEvent(mapped)
     handle.update({ ...options.value, state: snapshot })
-    handle.handleEvent(mapped)
+    if (mapped.kind !== 'done') handle.handleEvent(mapped)
     const labels = { claim: '认领任务', progress: '更新进度', hold: '等待拍板', go: '已拍板继续施工', block: '任务阻塞', park: '任务暂缓', done: '任务完工', complete: '项目全部完工' }
     action.value = `${labels[mapped.kind]}${mapped.kind === 'progress' ? ` ${mapped.percent}%` : ''}`
   })
 })
 onBeforeUnmount(() => {
+  disposed = true
   unsubscribe?.()
   handle?.destroy()
   window.clearInterval(clockTimer)

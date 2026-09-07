@@ -4,6 +4,7 @@ import { ORDER, byName, clsFor, seamD } from './geometry'
 import { breathe, headAngle, partCenter, posePoint, scenePoint, seamRoute, type Cue } from './pose'
 import { ease, required, setAttrs, svg } from './dom'
 import { screenPaint, v9 } from './palette'
+import { createWeldLight } from './weldLight'
 
 /** 管机体状态与工位动作；路径弧长只在建立时计算，所有画面节点固定复用。 */
 export function createMachine(root: SVGGElement) {
@@ -15,12 +16,15 @@ export function createMachine(root: SVGGElement) {
   const seam = required<SVGPathElement>(root, '[data-seam]')
   const seams = [seam, svg(required<SVGGElement>(root, '[data-mechwrap]'), 'path', { class: 'seam', 'data-seam-ring': 1 })]
   const scan = required<SVGLineElement>(root, '[data-scan]')
-  const flash = svg(hover, 'path', { fill: v9.cfff, opacity: 0, 'pointer-events': 'none' })
+  // 独立的白闪节点不属于装甲状态池；刷新只改装甲，不能回收尚未结束的动画。
+  const finishing = new Map<string, { cue: Cue; node: SVGPathElement }>()
+  let alarmRemaining = 0
   const core = required<SVGCircleElement>(root, '[data-part="chest"] .glow')
   const wash = required<SVGRectElement>(root, '.wash')
   const beacons = [...root.querySelectorAll<SVGCircleElement>('.beacon')]
   const ring = [...root.querySelectorAll<SVGRectElement>('[data-seg]')]
   const rgb = required<SVGLineElement>(root, '.rgb')
+  const weldLight = createWeldLight(root)
   const tag = svg(root, 'g', { 'data-inspection-tag': '', opacity: 0, 'pointer-events': 'none' })
   svg(tag, 'path', { d: 'M0 0L20-20', fill: 'none', stroke: 'var(--scene-metal)', 'stroke-width': 1 })
   const paper = svg(tag, 'g', { transform: 'translate(16,-42) rotate(8)' })
@@ -41,7 +45,7 @@ export function createMachine(root: SVGGElement) {
     scan.style.display = hasSeam ? '' : 'none'
     ring.forEach((node, i) => setAttrs(node, { fill: i < Math.round(assembly.installed / 29 * 16) ? screenPaint.done : v9.c0b0f18 }))
   }
-  function tick(assembly: Assembly, percent: number, elapsed: number, reduced: boolean, height: Height, cue: Cue | null) {
+  function tick(assembly: Assembly, percent: number, elapsed: number, reduced: boolean, height: Height, cue: Cue | null, dt = 0) {
     const dy = breathe(elapsed, reduced), angle = headAngle(elapsed, reduced)
     const pose = (name: string) => name === 'head' ? `rotate(${angle},200,112)` : `translate(0,${dy})`
     setAttrs(body, { transform: `translate(0,${dy})` })
@@ -51,12 +55,14 @@ export function createMachine(root: SVGGElement) {
     setAttrs(hover, { transform: `translate(0,${lift})` })
     setAttrs(core, { opacity: powered && !reduced ? .85 + .15 * Math.cos(elapsed / 1600 * Math.PI * 2) : 1 })
     setAttrs(rgb, { 'stroke-dashoffset': reduced ? 0 : -(elapsed / 9000 * 400) % 400 })
-    const alarm = assembly.mode === 'block'
+    alarmRemaining = reduced ? 0 : Math.max(0, alarmRemaining - dt)
+    const alarm = alarmRemaining > 0
     const blink = reduced ? 1 : .725 + .275 * Math.cos(elapsed / (alarm ? 700 : 1200) * Math.PI * 2)
-    if (assembly.target) setAttrs(parts.get(assembly.target)!, { opacity: ['pend', 'block'].includes(assembly.mode) ? blink : 1 })
+    if (assembly.target) setAttrs(parts.get(assembly.target)!, { opacity: assembly.mode === 'pend' ? blink : 1 })
     setAttrs(wash, { opacity: alarm ? reduced ? .1 : .07 + .03 * blink : 0 })
-    beacons.forEach((node, i) => setAttrs(node, { opacity: alarm ? reduced ? 1 : .7 + .3 * Math.cos(elapsed / 450 * Math.PI * 2 + i * .12) : .35 }))
+    beacons.forEach((node, i) => setAttrs(node, { opacity: alarm ? .7 + .3 * Math.cos(elapsed / 450 * Math.PI * 2 + i * .12) : 0 }))
     let weldingPoint: { x: number; y: number } | null = null
+    weldLight.aim(assembly, assembly.target && !reduced ? routes.get(assembly.target)!.at(percent) : null)
     if (assembly.target) {
       const target = assembly.target
       const route = routes.get(target)!, bb = route.bounds
@@ -71,9 +77,11 @@ export function createMachine(root: SVGGElement) {
         stroke: assembly.mode === 'pend' ? screenPaint.pend : v9.c7ff0ff, transform: pose(target) })
       weldingPoint = scenePoint(posePoint(route.at(percent), assembly.target, elapsed, reduced), height)
     }
-    const fresh = cue?.kind === 'done' && cue.part && !reduced && cue.age < 700
-    setAttrs(flash, { d: fresh ? seamD(byName[cue.part!]) : '', opacity: fresh ? .9 * (1 - ease(cue.age / 700)) : 0,
-      transform: fresh ? pose(cue.part!) : 'translate(0,0)' })
+    for (const [id, animation] of finishing) {
+      animation.cue.age += dt
+      if (reduced || animation.cue.age >= 700) { animation.node.remove(); finishing.delete(id); continue }
+      setAttrs(animation.node, { opacity: .9 * (1 - ease(animation.cue.age / 700)), transform: pose(animation.cue.part!) })
+    }
     const stamping = cue?.kind === 'go' && cue.part && cue.age < 700 && !reduced
     const inspecting = assembly.mode === 'pend' && assembly.target
     if (inspecting || stamping) {
@@ -85,5 +93,14 @@ export function createMachine(root: SVGGElement) {
     } else setAttrs(tag, { opacity: 0 })
     return weldingPoint
   }
-  return { setAssembly, tick }
+  return { setAssembly, tick,
+    illuminate: weldLight.illuminate,
+    alarm() { alarmRemaining = 2600 },
+    queueDone(cue: Cue) {
+      if (!cue.part || finishing.has(cue.taskId)) return
+      const node = svg(hover, 'path', { d: seamD(byName[cue.part]), fill: v9.cfff,
+        'data-done-animation': cue.taskId, 'pointer-events': 'none' })
+      finishing.set(cue.taskId, { cue, node })
+    },
+  }
 }

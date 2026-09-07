@@ -34,7 +34,7 @@ export function ensureDefs(host: SVGSVGElement): FxDefs {
   gradient('cloud-cool', [[0, 'moon', .9], [1, 'moon-blue', 0]], true)
   gradient('vapor', [[0, 'paper', .95], [.5, 'ice', .55], [1, 'ice-edge', 0]], true, { cx: .45, cy: .4, r: .6 })
   gradient('vapor-shade', [[0, 'ice-shade', .7], [1, 'ice-shade', 0]], true)
-  gradient('beam', [[0, 'warm', .75], [.35, 'lamp', .32], [1, 'fire-gold', 0]])
+  gradient('beam', [[0, 'warm', .55], [.35, 'lamp', .32], [1, 'fire-gold', 0]])
   gradient('beam-wide', [[0, 'lamp', .22], [1, 'lamp', 0]])
   gradient('lamp', [[0, 'paper'], [.3, 'lamp'], [.65, 'fire-gold', .5], [1, 'fire-gold', 0]], true)
   gradient('flash', [[0, 'paper'], [.2, 'ice', .8], [.55, 'moon-blue', .3], [1, 'moon-blue', 0]], true)

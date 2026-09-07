@@ -1,4 +1,6 @@
-/** v9 定稿色值；键名对应原色，便于逐项核对，没有重新调色。 */
+import { mixDaylight } from '../../paletteTransition'
+
+/** v9 定稿色值；白天只覆盖机库环境，控制台与装甲保留原色。 */
 export const v9 = {
   c000: '#000',
   c070a10: '#070a10',
@@ -83,11 +85,25 @@ export const scenePaint = {
   paper: v9.cffffff, warm: v9.cffe9b0, project: 'var(--wf-project)',
 } as const
 
-/** W4 接手完整白天色板；本单只提高墙面和背景天光，机甲色值保持定稿。 */
-export const wallPaint = {
-  night: [v9.c101521, v9.c1b2232],
-  day: ['#a6b8cc', '#d5e0e9'],
+export const daylightPaint = {
+  wallTop: 'var(--wf-cloud-mid)', wallBottom: 'var(--wf-cloud-body)',
+  floorTop: 'var(--wf-metal-mid)', floorBottom: 'var(--wf-cloud-shade)',
+  doorway: 'var(--wf-warm)', sky: 'var(--wf-ice-shade)',
 } as const
+
+export function applyPalette(root: SVGGElement, daylight: number) {
+  const surfaces = {
+    'wall-top': [v9.c101521, daylightPaint.wallTop], 'wall-bottom': [v9.c1b2232, daylightPaint.wallBottom],
+    'floor-top': [v9.c1c2334, daylightPaint.floorTop], 'floor-bottom': [v9.c0b0e16, daylightPaint.floorBottom],
+  }
+  for (const [key, [night, day]] of Object.entries(surfaces)) root.style.setProperty(`--mech-${key}`, mixDaylight(night, day, daylight))
+  root.style.setProperty('--mech-doorway', daylightPaint.doorway)
+  root.style.setProperty('--mech-day-sky', daylightPaint.sky)
+  root.style.setProperty('--mech-daylight', String(daylight))
+  root.style.setProperty('--mech-lamps', String(1 - daylight))
+  root.style.setProperty('--mech-hologram', String(1 - daylight * .65))
+  root.style.setProperty('--mech-ghost', String(.14 - daylight * .065))
+}
 
 export const DEFS = `<defs>
   <linearGradient id="gBlue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8ec0ff"/><stop offset=".45" stop-color="#3b7bd6"/><stop offset="1" stop-color="#1c4a8f"/></linearGradient>
@@ -100,11 +116,12 @@ export const DEFS = `<defs>
   <linearGradient id="gRed" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8a8a"/><stop offset="1" stop-color="#a51f1f"/></linearGradient>
   <linearGradient id="gVisor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d9fbff"/><stop offset="1" stop-color="#2cb8ff"/></linearGradient>
   <linearGradient id="gFlame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#8fe9ff"/><stop offset="1" stop-color="#2a7bff" stop-opacity="0"/></linearGradient>
-  <linearGradient id="gWall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#101521"/><stop offset="1" stop-color="#1b2232"/></linearGradient>
-  <linearGradient id="gFloor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2334"/><stop offset="1" stop-color="#0b0e16"/></linearGradient>
+  <linearGradient id="gWall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--mech-wall-top)"/><stop offset="1" stop-color="var(--mech-wall-bottom)"/></linearGradient>
+  <linearGradient id="gFloor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--mech-floor-top)"/><stop offset="1" stop-color="var(--mech-floor-bottom)"/></linearGradient>
+  <linearGradient id="gDayDoor" x2="0" y2="1"><stop stop-color="var(--mech-doorway)"/><stop offset="1" stop-color="var(--mech-day-sky)"/></linearGradient>
+  <linearGradient id="gDayFloor" x2="0" y2="1"><stop stop-color="var(--mech-doorway)" stop-opacity=".6"/><stop offset="1" stop-color="var(--mech-doorway)" stop-opacity="0"/></linearGradient>
   <linearGradient id="gCone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9b0" stop-opacity=".22"/><stop offset="1" stop-color="#ffe9b0" stop-opacity="0"/></linearGradient>
   <linearGradient id="gRgb" x1="0" x2="1"><stop offset="0" stop-color="#4ad9c4"/><stop offset=".33" stop-color="#4a9eff"/><stop offset=".66" stop-color="#8b7bf7"/><stop offset="1" stop-color="#c96bd8"/></linearGradient>
   <filter id="fglow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   <filter id="fsoft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
 </defs>`
-

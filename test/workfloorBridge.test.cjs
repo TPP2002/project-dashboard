@@ -95,3 +95,72 @@ test('事件映射表全覆盖，总线进度读当前状态，异项目事件�
   assert.equal(out.direct.percent, 100)
   assert.equal(out.absent.percent, 0)
 })
+
+test('机甲大屏按通电、待拍板、施工、阻塞、待机排列且选中对应任务', () => {
+  const inputs = [board([task('D', '已完工')]),
+    board([task('A', '施工中'), task('P', '待拍板'), task('B', '暂缓')]),
+    board([task('A', '施工中'), task('B', '暂缓')]), board([task('B', '暂缓')]), board([])]
+  const out = runTs(`
+    const { projectAssembly, actionLabel } = await import('./web/src/workfloor/scenes/mech/assembly.ts');
+    console.log(JSON.stringify(${JSON.stringify(inputs)}.map(b=>{
+      const assembly=projectAssembly(deriveSceneState(b,'p'));
+      return {mode:assembly.mode,task:assembly.task?.id??null,label:actionLabel(assembly)};
+    })));
+  `)
+  assert.deepEqual(out.map(value => value.mode), ['powered', 'pend', 'build', 'block', 'ready'])
+  assert.deepEqual(out.map(value => value.task), [null, 'P', 'A', 'B', null])
+  assert.equal(out[0].label, 'POWER ON')
+  assert.equal(out[1].label, 'INSPECT?')
+  assert.match(out[2].label, /^WELDING [A-Z]+$/)
+  assert.equal(out[3].label, 'JAMMED')
+  assert.equal(out[4].label, 'STANDBY')
+})
+
+test('转运与夹合期间维持 ROLLOUT，其他暂缓卡的刷新不取消转运', () => {
+  const initial = board([task('A', '施工中', { percent: 62 }), task('B', '暂缓')])
+  const out = runTs(`
+    const { createSequence } = await import('./web/src/workfloor/scenes/launch/sequence.ts');
+    const state=deriveSceneState(${JSON.stringify(initial)},'p'), seq=createSequence(state);
+    seq.handleEvent({kind:'claim',projectId:'p',taskId:'A',ts:'2026-09-08T09:00:00Z'},true);
+    seq.setState({...state}); const first=seq.frame().phase;
+    for(let i=0;i<58;i++) seq.tick(100); seq.tick(99); const before=seq.frame().phase;
+    seq.tick(1); const after=seq.frame().phase;
+    const clean=createSequence({...state,blocked:[]}); clean.handleEvent({kind:'claim',projectId:'p',taskId:'A',ts:'2026-09-08T09:00:01Z'},true);
+    for(let i=0;i<59;i++) clean.tick(100);
+    console.log(JSON.stringify({first,before,after,clean:clean.frame().phase}));
+  `)
+  assert.deepEqual(out, { first: 'ROLLOUT', before: 'ROLLOUT', after: 'SCRUB', clean: 'FUEL' })
+})
+
+test('起飞队列保留旧快照和同秒后续完工，结束后才通报全部完成，烟四秒后清空', () => {
+  const initial = board([task('A', '施工中', { percent: 96 }), task('B', '施工中', { percent: 30 })])
+  const out = runTs(`
+    const { createSequence } = await import('./web/src/workfloor/scenes/launch/sequence.ts');
+    const initial=deriveSceneState(${JSON.stringify(initial)},'p'), cues=[], seq=createSequence(initial,cue=>cues.push(cue));
+    const event={kind:'done',projectId:'p',taskId:'A',ts:'2026-09-08T09:00:00Z'};
+    const firstFrame=seq.frame(); seq.handleEvent(event,true); seq.setState({...initial});
+    seq.tick(100); const stale=seq.frame();
+    const done={...initial,active:[],done:initial.active.map(task=>({...task,status:'已完工'})),percent:100,complete:true};
+    seq.setState(done); seq.handleEvent({...event,taskId:'B'},false);
+    seq.handleEvent({...event,kind:'complete',taskId:''},true); const running=seq.frame();
+    for(let i=0;i<33;i++) seq.tick(100); const finished=seq.frame();
+    for(let i=0;i<40;i++) seq.tick(100);
+    const refresh=createSequence(done).frame();
+    console.log(JSON.stringify({firstFrame,stale,running,finished,cleared:seq.frame().smokeAge,refresh,cues}));
+  `)
+  assert.equal(out.firstFrame.flightAge, null)
+  assert.equal(out.firstFrame.phase, 'FUEL')
+  assert.equal(out.stale.flightAge, 100)
+  assert.equal(out.running.phase, 'LIFTOFF')
+  assert.equal(out.running.task.id, 'A')
+  assert.equal(out.running.launchId, 1)
+  assert.equal(out.running.completeAge, null)
+  assert.equal(out.running.state.done.length, 2)
+  assert.equal(out.finished.phase, 'COMPLETE')
+  assert.equal(out.finished.flightAge, null)
+  assert.equal(out.finished.completeAge, 0)
+  assert.equal(out.cleared, null)
+  assert.equal(out.refresh.flightAge, null)
+  assert.equal(out.refresh.completeAge, null)
+  assert.deepEqual(out.cues, ['ignition', 'liftoff', 'complete'])
+})

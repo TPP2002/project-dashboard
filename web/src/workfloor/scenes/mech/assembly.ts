@@ -18,9 +18,10 @@ export function projectAssembly(state: SceneState, parkedTask: string | null = n
     ? Math.max(0, Math.min(ORDER.length, Math.round(state.done.length / state.total * ORDER.length))) : 0
   const parked = state.blocked.find(task => task.id === parkedTask)
   const blocked = state.blocked.find(task => task.id !== parkedTask)
-  const mode: AssemblyMode = state.complete ? 'powered' : blocked ? 'block'
-    : parked ? 'park' : state.pending.length ? 'pend' : state.active.length ? 'build' : 'ready'
-  const task = mode === 'park' ? parked : state.active[0] ?? state.pending[0] ?? state.blocked[0]
+  const mode: AssemblyMode = state.complete ? 'powered' : state.pending.length ? 'pend'
+    : state.active.length ? 'build' : blocked ? 'block' : parked ? 'park' : 'ready'
+  const task = mode === 'pend' ? state.pending[0] : mode === 'build' ? state.active[0]
+    : mode === 'park' ? parked : mode === 'block' ? blocked : undefined
   const target = installed < ORDER.length && mode !== 'ready' && mode !== 'powered' ? ORDER[installed] : null
   const parts: Record<string, PartState> = {}
   ORDER.forEach((name, index) => {
@@ -37,7 +38,7 @@ export function actionLabel(assembly: Assembly) {
     case 'block': return 'JAMMED'
     case 'park': return 'PAUSED'
     case 'pend': return 'INSPECT?'
-    case 'build': return `WELDING ${Math.round(assembly.progress)}%`
+    case 'build': return `WELDING ${assembly.target?.toUpperCase() ?? ''}`.trimEnd()
     default: return 'STANDBY'
   }
 }

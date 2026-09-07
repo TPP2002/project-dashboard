@@ -5,7 +5,7 @@ export function sceneStyles(prefix: string) {
   return `<style>
 .wf-mech { font-family:ui-monospace,Consolas,monospace; }
 .wf-mech .mech .part { --fo:1;--so:1;--dash:none;--ol:${v9.c0e121c}; }
-.wf-mech .mech .part.off { --fo:.14;--so:.75;--ol:${v9.c3d6f96}; }
+.wf-mech .mech .part.off { --fo:var(--mech-ghost,.14);--so:.75;--ol:${v9.c3d6f96}; }
 .wf-mech .mech .part.off .pl { fill:${v9.c4fc3ff}; }
 .wf-mech .mech .part.build { --fo:.45;--ol:${v9.c4fc3ff}; }
 .wf-mech .mech .part.pend { --fo:.45;--ol:${v9.cffb020}; }
@@ -30,8 +30,9 @@ export function sceneStyles(prefix: string) {
 .wf-mech .mech.powered .eline { opacity:.85; }
 .wf-mech .scan { fill:none;stroke-width:2;filter:url(#fglow);opacity:.9; }
 .wf-mech .seam { fill:none;stroke:${v9.cffe27a};stroke-width:2.2;stroke-linecap:round;filter:url(#fglow);vector-effect:non-scaling-stroke; }
-.wf-mech .beacon { opacity:.35; }
-.wf-mech .wash { fill:${v9.cff2d3d};opacity:0;pointer-events:none; }
+.wf-mech [data-hologram] { opacity:var(--mech-hologram,1); }
+.wf-mech [data-ceiling-beam], .wf-mech [data-gantry-beam] { opacity:var(--mech-lamps,1); }
+.wf-mech .wash { fill:${v9.cff2d3d};pointer-events:none; }
 .wf-mech .console { font-family:ui-monospace,Consolas,monospace;font-size:11px; }
 .wf-mech .console .caption { font-size:9px;letter-spacing:.06em; }
 .wf-mech .console .title { font-size:12px;letter-spacing:.03em; }

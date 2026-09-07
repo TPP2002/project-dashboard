@@ -41,14 +41,10 @@ export type SceneEvent = EventIdentity & (
   | { kind: 'progress'; percent: number }
 )
 
-/** 音效只传配置；W1 不播放，也不创建音频上下文。 */
-export interface SoundSettings {
-  linked: boolean
-  enabled: boolean
-  volume: number
-  quietStart: string
-  quietEnd: string
-}
+export type SoundCue = 'weld' | 'stamp' | 'alarm' | 'done' | 'ignition' | 'liftoff' | 'complete' | 'hold'
+
+/** 由可选声音模块实现；音量、静音时段和音频上下文均归该模块。 */
+export interface SoundPlayer { playSound(cue: SoundCue): void | Promise<void> }
 
 export interface SceneOptions {
   state: SceneState
@@ -56,7 +52,7 @@ export interface SceneOptions {
   detail: Detail
   height: Height
   reducedMotion: boolean
-  sound: SoundSettings
+  sound?: (cue: SoundCue) => void
 }
 
 export interface SceneHandle {
@@ -70,7 +66,7 @@ export interface SceneHandle {
   setDetail(value: Detail): void
   setHeight(value: Height): void
   setReducedMotion(value: boolean): void
-  setSound(value: SoundSettings): void
+  setSound(value: SceneOptions['sound']): void
   destroy(): void
 }
 

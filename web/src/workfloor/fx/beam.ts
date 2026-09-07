@@ -4,6 +4,8 @@ import { advance, attributes, svg, type FxHandle, type FxParams } from './svg'
 
 export interface BeamParams extends FxParams {
   length?: number
+  innerHalfAngle?: number
+  outerHalfAngle?: number
   angle?: number
   sweep?: number
   /** 场景提供可受光区域；光线碰到实体前须通过 length 截断。 */
@@ -51,8 +53,10 @@ export function create(host: SVGGElement, initial: BeamParams): FxHandle<BeamPar
     attributes(root, { opacity: p.enabled === false ? 0 : p.intensity ?? 1 })
     attributes(air, { 'clip-path': p.beamClip ? `url(#${p.beamClip})` : 'none' })
     attributes(rotor, { transform: `rotate(${angle})`, opacity: .25 + .75 * Math.max(0, facing) })
-    attributes(outer, { d: `M0 0L${length} ${-length * .22}V${length * .22}Z` })
-    attributes(inner, { d: `M0 0L${length} ${-length * .1}V${length * .1}Z` })
+    const outerWidth = length * Math.tan((p.outerHalfAngle ?? 12.4) * Math.PI / 180)
+    const innerWidth = length * Math.tan((p.innerHalfAngle ?? 5.7) * Math.PI / 180)
+    attributes(outer, { d: `M0 0L${length} ${-outerWidth}V${outerWidth}Z` })
+    attributes(inner, { d: `M0 0L${length} ${-innerWidth}V${innerWidth}Z` })
     attributes(lamp, { opacity: .8 + .2 * Math.max(0, facing) })
     attributes(hit, { 'clip-path': p.surfaceClip ? `url(#${p.surfaceClip})` : 'none' })
     attributes(pool, { cx: p.surfacePoint?.x ?? Math.cos(radians) * length, cy: p.surfacePoint?.y ?? Math.sin(radians) * length,

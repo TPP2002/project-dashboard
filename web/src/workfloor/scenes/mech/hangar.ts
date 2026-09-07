@@ -2,12 +2,12 @@ import { mechSvg } from './geometry'
 import { v9 } from './palette'
 import { rackSvg } from './rack'
 import { consoleSvg } from './board'
-import { DEFS, scenePaint, wallPaint } from './palette'
+import { DEFS, scenePaint, applyPalette } from './palette'
 import { SCENE_DEFS } from './materials'
 import { sceneStyles } from './styles'
 import { namespaced, required, setAttrs, svg } from './dom'
 import { rigTransform } from './pose'
-import type { DayNight, Height } from '../../types'
+import type { Height } from '../../types'
 
 export function hangarSvg() { return `
   <rect width="1400" height="520" fill="url(#gWall)"/>
@@ -29,8 +29,10 @@ export function hangarSvg() { return `
   <g><rect x="0" y="112" width="1400" height="6" fill="${v9.c3a4458}"/><rect x="0" y="118" width="1400" height="3" fill="${v9.c161c2a}"/>${Array.from({ length: 36 }, (_, i) => `<rect x="${i * 40 + 6}" y="92" width="3" height="20" fill="${v9.c3a4458}"/>`).join('')}<rect x="0" y="92" width="1400" height="3" fill="${v9.c3a4458}"/></g>
   <g fill="url(#gGreyD)" stroke="var(--scene-ink)" stroke-width=".6">${Array.from({ length: 36 }, (_, i) => `<rect x="${i * 40 + 3}" y="110" width="9" height="4"/><path d="M${i * 40 + 6} 94v15" stroke="var(--scene-metal)"/>`).join('')}</g>
   <g>${[[560, 232], [880, 260], [1330, 240]].map(([x, y]) => `<rect x="${x - 40}" y="${y - 36}" width="80" height="36" fill="${v9.c141a26}" stroke="${v9.c2a3346}"/><rect x="${x - 34}" y="${y - 30}" width="68" height="24" fill="${v9.c0c1019}"/><g fill="${v9.c3ad0ff}" opacity=".8"><rect x="${x - 30}" y="${y - 26}" width="24" height="3"/><rect x="${x - 30}" y="${y - 20}" width="40" height="3"/><rect x="${x - 30}" y="${y - 14}" width="16" height="3"/></g>`).join('')}</g>
+  <g data-day-door opacity="var(--mech-daylight)"><path d="M516 400V74H886V400" fill="url(#gDayDoor)" stroke="var(--scene-metal)" stroke-width="5"/><path d="M524 400V82H878V400" fill="none" stroke="var(--scene-light)" stroke-width="2"/><path d="M526 76H876" stroke="var(--scene-ink)" stroke-width="8"/></g>
   <rect x="0" y="400" width="1400" height="120" fill="url(#gFloor)"/>
   <rect x="0" y="407" width="1400" height="113" fill="url(#pDiamond)" opacity=".08"/>
+  <path d="M520 400H882L1060 520H348Z" fill="url(#gDayFloor)" opacity="var(--mech-daylight)"/>
   <g fill="none" stroke="var(--scene-light)" stroke-width=".8" opacity=".16">${[[426, 478, 28], [471, 504, 39], [542, 513, 29], [793, 510, 45], [927, 490, 35], [951, 452, 20], [449, 448, 19], [857, 426, 24]].map(([x, y, w]) => `<path d="M${x} ${y}l${w} -3 M${x + 5} ${y + 3}l${w / 2} -2"/>`).join('')}</g>
   <g stroke="${v9.c243044}" stroke-width="1.2">${Array.from({ length: 15 }, (_, i) => `<line x1="${i * 100}" y1="520" x2="${700 + (i * 100 - 700) * .35}" y2="400"/>`).join('')}<line x1="0" y1="430" x2="1400" y2="430"/><line x1="0" y1="470" x2="1400" y2="470"/></g>
   <g>${Array.from({ length: 70 }, (_, i) => `<rect x="${i * 20}" y="400" width="10" height="7" fill="${i % 2 ? v9.cc9a227 : v9.c111826}"/>`).join('')}</g>
@@ -53,7 +55,7 @@ export function hangarSvg() { return `
   <g fill="none" stroke="var(--scene-metal)" stroke-width=".8" opacity=".6">${[[214, 27], [176, 22], [134, 17]].map(([rx, ry]) => `<ellipse cx="700" cy="468" rx="${rx}" ry="${ry}"/>`).join('')}</g>
   <path d="M468 464a232 31 0 0 1 464 0" fill="none" stroke="var(--scene-light)" stroke-width="1" opacity=".25"/>
   <g data-ring>${Array.from({ length: 16 }, (_, i) => { const a = i / 16 * Math.PI * 2; return `<rect x="${700 + Math.cos(a) * 236 - 7}" y="${470 + Math.sin(a) * 31 - 2}" width="14" height="4" rx="1" fill="${v9.c0b0f18}" data-seg/>` }).join('')}</g>
-  <g><polygon points="560,470 840,470 872,40 528,40" fill="${v9.c4fc3ff}" fill-opacity=".045"/>${[80, 140, 200, 260, 320, 380].map(y => `<line x1="${540 + (y - 40) / 430 * 20}" y1="${y}" x2="${860 - (y - 40) / 430 * 20}" y2="${y}" stroke="${v9.c4fc3ff}" stroke-opacity=".07"/>`).join('')}<circle cx="560" cy="467" r="3" fill="${v9.c5be3ff}" filter="url(#fglow)"/><circle cx="840" cy="467" r="3" fill="${v9.c5be3ff}" filter="url(#fglow)"/></g>
+  <g data-hologram><polygon points="560,470 840,470 872,40 528,40" fill="${v9.c4fc3ff}" fill-opacity=".045"/>${[80, 140, 200, 260, 320, 380].map(y => `<line x1="${540 + (y - 40) / 430 * 20}" y1="${y}" x2="${860 - (y - 40) / 430 * 20}" y2="${y}" stroke="${v9.c4fc3ff}" stroke-opacity=".07"/>`).join('')}<circle cx="560" cy="467" r="3" fill="${v9.c5be3ff}" filter="url(#fglow)"/><circle cx="840" cy="467" r="3" fill="${v9.c5be3ff}" filter="url(#fglow)"/></g>
   <g data-assembly><g transform="translate(564,34) scale(.68)" data-mechwrap><g data-hover><g data-thrusters></g>${mechSvg('main')}</g><path class="seam" data-seam d="" style="display:none"/><line class="scan" data-scan x1="0" x2="0" y1="0" y2="0" style="display:none"/></g>
   </g></g><rect class="wash" width="1400" height="520"/>
   <g data-sparks></g>
@@ -69,7 +71,6 @@ export function createHangar(host: SVGSVGElement, prefix: string) {
   root.style.setProperty('--console-cyan', v9.c34d7ff)
   root.style.setProperty('--console-on', v9.c8affc1)
   const rig = required<SVGGElement>(root, '[data-rig]')
-  const wall = [...root.querySelectorAll<SVGStopElement>(`[id="${prefix}gWall"] stop`)]
   const emitters = [...root.querySelectorAll<SVGElement>('[data-lamp-emission]')]
   const flameHost = required<SVGGElement>(root, '[data-thrusters]')
   // 原稿的三角喷焰轮廓保留在几何声明中；实际喷口只挂 fx/flame。
@@ -80,10 +81,9 @@ export function createHangar(host: SVGSVGElement, prefix: string) {
   required<SVGGElement>(root, '[data-mech]').setAttribute('shape-rendering', 'geometricPrecision')
   return {
     root,
-    setDayNight(value: DayNight) {
-      setAttrs(root, { 'data-day-night': value })
-      wall.forEach((stop, i) => setAttrs(stop, { 'stop-color': wallPaint[value][i] }))
-      emitters.forEach(node => setAttrs(node, { opacity: value === 'night' ? 1 : .12 }))
+    paintDaylight(daylight: number) {
+      applyPalette(root, daylight)
+      emitters.forEach(node => setAttrs(node, { opacity: 1 - daylight }))
     },
     setHeight(value: Height) {
       setAttrs(host, { viewBox: value === 'compact' ? '0 80 1400 360' : '0 0 1400 520' })

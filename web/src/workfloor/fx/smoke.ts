@@ -5,6 +5,7 @@ import { advance, attributes, clamp, noise, quantity, smooth, svg, type FxHandle
 export interface SmokeParams extends FxParams {
   fireLight?: number
   moonLight?: number
+  daylight?: number
   /** 单次喷发的相对毫秒；缺省仍为原来的循环演示。 */
   burstAge?: number
   clearAfter?: number
@@ -28,7 +29,7 @@ export function create(host: SVGGElement, initial: SmokeParams): FxHandle<SmokeP
     }
     const warm = svg(node, 'ellipse', { cx: -6, cy: 11, rx: 26, ry: 14, fill: defs.url('cloud-warm') })
     const cool = svg(node, 'ellipse', { cx: 3, cy: -16, rx: 22, ry: 11, fill: defs.url('cloud-cool') })
-    return { node, layers: [shade, light, warm, cool], warm, cool }
+    return { node, body, shade, layers: [shade, light, warm, cool], warm, cool }
   })
   let time = 0
   function update(dt: number, p: SmokeParams) {
@@ -56,6 +57,9 @@ export function create(host: SVGGElement, initial: SmokeParams): FxHandle<SmokeP
       const opacity = age === null ? smooth(t / .08) * (1 - smooth((t - .55) / .45)) * .28
         : smooth(age / 120) * (1 - smooth((age - 2500) / (life - 2500))) * clamp(((p.clearAfter ?? 7400) - p.burstAge!) / 1300) * .72
       attributes(particle.node, { visibility: 'visible', opacity, transform: `translate(${x},${y}) scale(${scale}) rotate(${Math.sin(t * 5 + i) * 9})` })
+      const daylight = clamp(p.daylight ?? 0)
+      attributes(particle.body, { fill: `color-mix(in srgb, var(--wf-paper) ${daylight * 88}%, var(--wf-cloud-mid))`, opacity: .55 + daylight * .35 })
+      attributes(particle.shade, { opacity: 1 - daylight * .6 })
       particle.layers.forEach(layer => attributes(layer, { filter: defs.filter('cloud', p.detail) }))
       attributes(particle.warm, { opacity: (p.fireLight ?? .8) * (1 - t) })
       attributes(particle.cool, { opacity: p.moonLight ?? .7 })
