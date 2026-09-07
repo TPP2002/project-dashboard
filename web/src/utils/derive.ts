@@ -1,7 +1,7 @@
 // 读时派生（R9a）：所有统计 / 分组 / 聚合都是纯函数，现算不落盘。
 // store getter 与视图共用，board.json 永不持久化任何派生字段。
 import type { Board, Task, Activity, Decision } from '@/types'
-import { STATUS_ORDER, DONE_STATUSES } from '@/api/schema'
+import { STATUS_ORDER, DONE_STATUSES, VOID_STATUSES } from '@/api/schema'
 
 export type StatusCounts = Record<string, number>
 
@@ -17,9 +17,14 @@ export interface Progress {
   percent: number
 }
 
+/** 两种进度口径共用的分母：作废卡不算数（它不是没做完，是不做了）。 */
+function countedTasks(board: Board | null | undefined): Task[] {
+  return (board?.tasks ?? []).filter((t) => !VOID_STATUSES.has(t.status))
+}
+
 /** 进度口径①：完工任务占比 */
 export function progress(board: Board | null | undefined): Progress {
-  const tasks = board?.tasks ?? []
+  const tasks = countedTasks(board)
   const total = tasks.length
   const done = tasks.filter((t) => DONE_STATUSES.has(t.status)).length
   return { total, done, percent: total ? Math.round((done / total) * 100) : 0 }
@@ -27,7 +32,7 @@ export function progress(board: Board | null | undefined): Progress {
 
 /** 进度口径②：各任务 percent 的平均（更细腻，进度环用） */
 export function avgPercent(board: Board | null | undefined): number {
-  const tasks = board?.tasks ?? []
+  const tasks = countedTasks(board)
   if (!tasks.length) return 0
   return Math.round(tasks.reduce((s, t) => s + (t.percent || 0), 0) / tasks.length)
 }

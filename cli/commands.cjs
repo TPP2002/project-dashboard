@@ -1,14 +1,16 @@
 'use strict';
 /**
  * commands.cjs —— CLI 语义命令（board 唯一写者）。每个命令收 flags，走 store.mutate 改字段。
- * 状态机：claim 只能从 未开工/待开工/可复工/待拍板/已拍板 → 施工中（防倒退）。
+ * 状态机：claim 只能从 未开工/待开工/可复工/待拍板/已拍板 → 施工中（防倒退）；
+ * 往回走的三个动作各有各的语义，不许互相顶替：unclaim = 我不做了但活还在（施工中 → 待开工/可复工）、
+ * cancel = 这活不做了（任意 → 已作废）、reopen = 结了案又要重来（已完工/已作废 → 待开工）。
  */
 const fs = require('node:fs');
 const path = require('node:path');
 const { mutate, readBoard, findTask, unionBy, unionShas } = require('./store.cjs');
 const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
-const { emptyBoard, STATUS, emojiFor } = require('../core/boardSchema.cjs');
+const { emptyBoard, STATUS, VOID_STATUSES, emojiFor } = require('../core/boardSchema.cjs');
 const { normalizeReal } = require('../core/safePath.cjs');
 const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
@@ -42,10 +44,25 @@ function getRegistryPath(flags) { return flags.registry ? path.resolve(flags.reg
 function resolveProj(flags) { return resolveProject(need(flags.project, '--project <id>'), { registryPath: getRegistryPath(flags) }); }
 function okTask(board, id) { return { ok: true, task: (board.tasks || []).find((x) => x.id === id) }; }
 function act(type, author, text, taskId) { return { ts: nowIso(), author: author || 'cli', type, text, taskId: taskId || null }; }
+/** 摘要：超过 n 个字就截断加省略号（卡片上的「下一步」只有一行，塞不下整段问题）。 */
+function summarize(s, n) { const x = String(s || '').trim(); return x.length > n ? x.slice(0, n) + '…' : x; }
+/** 已拍板、但还没标「代码落地」的决策 —— done 与 mark-landed --all 的共同目标。 */
+function isDecidedNotLanded(d) { return !!d && d.answer !== null && d.answer !== undefined && !d.landed; }
+function landDecision(d, commit) { d.landed = true; d.landedAt = today(); if (commit) d.landedCommit = String(commit); }
+/** 当前 git 分支（不在仓库里 / 处于游离 HEAD 时返回空串）。unclaim 不给 --branch 时用它猜。 */
+function currentBranch() {
+  try {
+    const b = require('node:child_process').execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return b === 'HEAD' ? '' : b;
+  } catch (_) { return ''; }
+}
 function setPath(obj, dotted, val) { const p = dotted.split('.'); let o = obj; for (let i = 0; i < p.length - 1; i++) { o[p[i]] = o[p[i]] || {}; o = o[p[i]]; } o[p[p.length - 1]] = val; }
 function deriveStats(b) {
   const byStatus = {}; for (const t of (b.tasks || [])) byStatus[t.status] = (byStatus[t.status] || 0) + 1;
-  const total = (b.tasks || []).length; const done = byStatus['已完工'] || 0;
+  // 作废卡进状态分布、但【不进完成度的分母】：它不是「没做完」，是「不做了」。
+  // 留在分母里的后果是作废得越多、进度看着越低 —— 负责人会以为活越干越回去（审计 §4-C1）。
+  const total = (b.tasks || []).filter((t) => !VOID_STATUSES.includes(t.status)).length;
+  const done = byStatus['已完工'] || 0;
   return { byStatus, total, done, progress: total ? Math.round((done / total) * 100) : 0 };
 }
 function statsLine(s) { return `进度 ${s.progress}%（${s.done}/${s.total} 完工）· ` + Object.entries(s.byStatus).map(([k, v]) => `${k}${v}`).join(' '); }
@@ -118,7 +135,10 @@ function claim(flags) {
   const ALLOWED = ['未开工', '待开工', '可复工', '待拍板', '已拍板', '施工中'];
   const board = mutate(proj, (b) => {
     const t = findTask(b, id);
-    if (!ALLOWED.includes(t.status)) throw new Error(`claim 非法迁移：${t.status} → 施工中（只能从 ${ALLOWED.join('/')}）`);
+    if (!ALLOWED.includes(t.status)) {
+      throw new Error(`claim 非法迁移：${t.status} → 施工中（只能从 ${ALLOWED.join('/')}）` +
+        `。已完工 / 已作废的卡要接着做，先 reopen ${id} --reason "<为什么重开>"`);
+    }
     t.status = '施工中';
     t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = today();
     t.lastProgressAt = nowIso(); // 认领即盖戳,施工中卡片一开始就能显示"更新于 X 前"
@@ -129,6 +149,36 @@ function claim(flags) {
   return okTask(board, id);
 }
 
+// 终态 = 这张卡的一生已经结账。要再动它，只有 reopen 一条路。
+const TERMINAL_STATUSES = ['已完工', '已作废'];
+
+// ---------- unclaim（放弃认领 → 退回可派状态） ----------
+// 病根：CLI 只有往前走的命令。对话一中断、任务一转手，卡就永远挂着「施工中」——
+// 看板上显示有人在干、实际没人；别人以为被占了不敢接，负责人也看不出这活其实停了（审计 §4-A5）。
+// 退回哪个状态照 claim 之前的原样来：暂缓解除过的卡回「可复工」，其余回「待开工」。
+// 进度不清零 —— 「做到 60% 没人接」比「回到 0」更接近事实，下一个接手的人靠它判断还剩多少。
+function unclaim(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'unclaim <taskId> --reason <理由> [--branch <b>...]');
+  const reason = String(need(flags.reason, '--reason <理由>'));
+  const branches = asArray(flags.branch).filter((x) => x !== true).map(String);
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, id);
+    if (t.status !== '施工中') throw new Error(`unclaim 非法迁移：${t.status} → 待开工（只能从 施工中）`);
+    // 退回哪一档看这张卡「这一轮是不是解冻来的」：解除暂缓留下的 unparkReason 还挂着，就说明是，
+    // 回「可复工」；一律退成「待开工」会把它跟从没开工过的卡混为一谈。
+    // （park / cancel / reopen 都会抹掉 unparkReason，所以它只在当前这一轮有效，不会串味。）
+    t.status = t.unparkReason ? '可复工' : '待开工';
+    // 分支给了就摘给的那几条；没给就摘当前 git 分支（在自己工位上跑时最省事）。
+    // 一条都没摘也不报错：别人代为释放一张卡时，本来就未必知道对方用的哪个分支。
+    const drop = branches.length ? branches : [currentBranch()].filter(Boolean);
+    if (drop.length) t.gitBranch = (t.gitBranch || []).filter((x) => !drop.includes(String(x)));
+    t.unclaimReason = reason; t.unclaimedAt = today();
+    t.lastProgressAt = nowIso();
+  }, act('unclaim', flags.author, `放弃认领 ${id}：${reason}`, id));
+  return okTask(board, id);
+}
+
 // ---------- progress（里程碑回写） ----------
 function progress(flags) {
   const proj = resolveProj(flags);
@@ -136,6 +186,11 @@ function progress(flags) {
   const pct = flags.percent !== undefined ? parseInt(flags.percent, 10) : undefined;
   const board = mutate(proj, (b) => {
     const t = findTask(b, id);
+    // 终态卡不许再报进度：结了案的卡还在动进度，看板上就分不清它到底完没完（审计 §4-A7）。
+    // 「收官」不在此列 —— 那是正在收尾，本来就该继续报。
+    if (TERMINAL_STATUSES.includes(t.status)) {
+      throw new Error(`${id} 已经是「${t.status}」，不能再报进度；要接着做先 reopen ${id} --reason "<为什么重开>"`);
+    }
     if (pct !== undefined) { if (isNaN(pct) || pct < 0 || pct > 100) throw new Error('--percent 应为 0-100'); t.percent = pct; }
     if (flags.next !== undefined) t.nextMilestone = String(flags.next);
     if (flags.tests) { const [tot, pass, mff] = String(flags.tests).split('/').map(Number); t.tests = { total: tot || 0, passing: pass || 0, mustFailFirst: mff || 0 }; }
@@ -296,6 +351,9 @@ function pending(flags) {
       decidedAt: null,
     });
     if (['未开工', '待开工'].includes(t.status)) t.status = '待拍板';
+    // 施工中的卡不拽回「待拍板」（它确实还在施工），但也不能一点挂起的痕迹都没有：
+    // 卡片上的「下一步」改成「等拍板：…」，负责人扫一眼就知道这张卡在等他（审计 §4-A7）。
+    else if (t.status === '施工中') t.nextMilestone = '等拍板：' + summarize(payload.question, 40);
   }, act('pending', flags.author, `待拍板 ${id}：${payload.question}`, id));
   return okTask(board, id);
 }
@@ -325,20 +383,33 @@ function decide(flags) {
 }
 
 // ---------- mark-landed（拍板已代码落地，从"待落地队列"消失）----------
+// --all：本卡「已拍板但没标落地」的一次标完。逐条标是纪律活，靠人记必失守——实测待落地
+// 671 条里 506 条挂在已完工卡上，队列被淹掉就等于没有队列（审计 §4-A6）。
 function markLanded(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'mark-landed <taskId> --did <dN> [--commit <sha>]');
-  const did = need(flags.did, '--did <dN>');
+  const id = need(flags._[0], 'mark-landed <taskId> (--did <dN> | --all) [--commit <sha>]');
+  const all = flags.all === true || flags.all === 'true';
+  const did = all ? undefined : need(flags.did, '--did <dN>（或用 --all 一次标完本卡所有已拍板未落地的）');
+  const commit = (flags.commit !== undefined && flags.commit !== true) ? String(asArray(flags.commit)[0]) : undefined;
+  const landed = [];
   const board = mutate(proj, (b) => {
     const t = findTask(b, id);
-    const d = (t.decisions || []).find((x) => x.id === did);
-    if (!d) throw new Error(`decision ${did} 不存在`);
-    if (d.answer === null || d.answer === undefined) throw new Error(`decision ${did} 还没拍板,不能标已落地`);
-    d.landed = true;
-    d.landedAt = today();
-    if (flags.commit) d.landedCommit = String(flags.commit);
-  }, act('note', flags.author || 'cli', `拍板 ${id}·${did} 已代码落地`, id));
-  return okTask(board, id);
+    landed.length = 0; // mutate 可能重试，别把上一轮的结果累加进来
+    if (all) {
+      const targets = (t.decisions || []).filter(isDecidedNotLanded);
+      if (!targets.length) throw new Error(`${id} 没有「已拍板但未标落地」的决策，--all 无事可做`);
+      for (const d of targets) { landDecision(d, commit); landed.push(d.id); }
+    } else {
+      const d = (t.decisions || []).find((x) => x.id === did);
+      if (!d) throw new Error(`decision ${did} 不存在`);
+      if (d.answer === null || d.answer === undefined) throw new Error(`decision ${did} 还没拍板,不能标已落地`);
+      landDecision(d, commit); landed.push(d.id);
+    }
+  }, act('note', flags.author || 'cli', all ? `拍板 ${id} 已代码落地（全部未落地项）` : `拍板 ${id}·${did} 已代码落地`, id));
+  const res = okTask(board, id);
+  res.landed = landed;
+  if (all) res.text = `✔ mark-landed ${id} → 标了 ${landed.length} 条：${landed.join(', ')}`;
+  return res;
 }
 
 // ---------- park / block ----------
@@ -388,13 +459,79 @@ function done(flags) {
   const id = need(flags._[0], 'done <taskId> [--pr <n>...] [--commit <sha>...] [--collect]');
   const prs = asArray(flags.pr).map(Number).filter((n) => !isNaN(n));
   const commits = asArray(flags.commit).map(String);
+  const collect = flags.collect === true || flags.collect === 'true';
+  const landed = [];
   const board = mutate(proj, (b) => {
     const t = findTask(b, id);
-    t.status = flags.collect ? '收官' : '已完工';
-    t.dates = t.dates || {}; t.dates.done = today(); t.percent = 100;
+    landed.length = 0; // mutate 可能重试
+    t.status = collect ? '收官' : '已完工';
+    t.dates = t.dates || {};
+    // 收官 ≠ 完工。给「收官」也写完工日期 + 100%，等于让一张还在收尾的卡在统计和每日成果里
+    // 冒充成果，完工日那栏也从此对不上账（审计 §4-A7）。进度照旧由 progress 报。
+    if (!collect) { t.dates.done = today(); t.percent = 100; }
     if (prs.length) t.prNumbers = unionBy([...(t.prNumbers || []), ...prs], String);
     if (commits.length) t.commitShas = unionShas([...(t.commitShas || []), ...commits]);
-  }, act('done', flags.author, `${flags.collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
+    // 卡都完工了，本卡那些「已拍板却没人标落地」的决策，落地的就是这次施工。逐条标是纪律活、
+    // 必失守（审计 §4-A6），这里顺手结掉；已经标过的不碰，免得覆盖掉更准的那个提交号。
+    if (!collect) {
+      for (const d of (t.decisions || []).filter(isDecidedNotLanded)) { landDecision(d, commits[0]); landed.push(d.id); }
+    }
+  }, act('done', flags.author, `${collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
+  const res = okTask(board, id);
+  res.landed = landed;
+  if (landed.length) {
+    res.text = `✔ done ${id} → ${res.task.status}
+  ↳ 顺带把 ${landed.length} 条拍板标成已落地：${landed.join(', ')}`;
+  }
+  return res;
+}
+
+// ---------- cancel（作废：这活不做了） ----------
+// 十个状态里原本没有「取消」：方案被否、需求撤了、重复建卡，都只能让卡一直挂着假装还要做，
+// 或者被人拿 done 当垃圾桶用（于是完工数里混着一堆根本没干的活，审计 §4-C1）。
+// 任意状态都能作废 —— 一件事什么时候被叫停，不由它当前干到哪儿决定。
+function cancel(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'cancel <taskId> --reason <理由>');
+  const reason = String(need(flags.reason, '--reason <理由>'));
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, id);
+    t.status = '已作废';
+    t.cancelReason = reason; t.cancelledAt = today();
+    // 作废是终局，之前那些「为什么停着 / 为什么放手 / 下一步干嘛」的说法全过期了，一起抹掉，
+    // 免得 show 出来两套说法并存、读的人分不清哪条是当下的（同 park/unpark 的道理）。
+    delete t.blockReason; delete t.parkedNote; delete t.unparkReason; delete t.unparkedAt;
+    delete t.unclaimReason; delete t.unclaimedAt; delete t.nextMilestone;
+    t.lastProgressAt = nowIso();
+  }, act('cancel', flags.author, `作废 ${id}：${reason}`, id));
+  return okTask(board, id);
+}
+
+// ---------- reopen（重开：结了案又要重来） ----------
+// 验收没过要返工、当初作废的活又要做了 —— 此前只能裸 set 改状态、绕过全部校验，
+// 而且改完 percent 还是 100、完工日期还挂着，这张卡在「每日成果」里会被重复数一次。
+// 活动流一条不删：完过工、作过废都是它一生的一部分，抹掉就查不出返工历史了。
+function reopen(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'reopen <taskId> --reason <理由>');
+  const reason = String(need(flags.reason, '--reason <理由>'));
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, id);
+    if (!TERMINAL_STATUSES.includes(t.status)) {
+      throw new Error(`reopen 非法迁移：${t.status} → 待开工（只能从 ${TERMINAL_STATUSES.join('/')}）`);
+    }
+    t.status = '待开工';
+    t.percent = 0;
+    t.dates = t.dates || {}; t.dates.done = null;
+    // 上一轮的说法全清掉（同 cancel）：作废理由、放弃认领理由，以及「这卡是解冻来的」那条
+    // 解除依据 —— 重开之后是全新一轮，unclaim 不该再把它退回「可复工」。
+    // PR / 提交 / 拍板记录全留 —— 重开不是重建。
+    delete t.cancelReason; delete t.cancelledAt;
+    delete t.unclaimReason; delete t.unclaimedAt;
+    delete t.unparkReason; delete t.unparkedAt;
+    t.reopenReason = reason; t.reopenedAt = today();
+    t.lastProgressAt = nowIso();
+  }, act('reopen', flags.author, `重开 ${id}：${reason}`, id));
   return okTask(board, id);
 }
 
@@ -417,6 +554,56 @@ function note(flags) {
   // 卡号打错时由 boardSchema 的引用完整性校验在写前拦下（锁内校验，坏数据绝不落盘）。
   mutate(proj, () => {}, act('note', flags.author, text, taskId));
   return { ok: true, taskId, text: `✔ note${taskId ? ` → ${taskId}` : ' → （项目级留言，未挂任何卡）'}` };
+}
+
+// ---------- edit（改卡面：标题 / 人话标题 / 说明 / 档位 / 波次） ----------
+// 此前改这几样只能裸 set：`set P01 --field title --value ...` 绕过一切校验，
+// 字段名打错就往卡上挂一个谁也不认识的属性，写进去了也没人发现（审计 §4-A5）。
+// edit 只认这五个字段、逐个校验、留一条看得懂的痕；set 留着做真正的兜底。
+function edit(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'edit <taskId> [--title <技术说明>] [--plain-title <人话标题>] [--desc <一句话>] [--model <建议档位>] [--wave <n>]');
+  // flag 后面漏写值时 parseFlags 记成 true —— 那是手误，不是「要清空」，当场拒掉。
+  const raw = (key) => {
+    const v = flags[key];
+    if (v === undefined) return undefined;
+    if (v === true) throw new Error(`--${key} 后面漏写值了`);
+    return String(Array.isArray(v) ? v[v.length - 1] : v);
+  };
+  const title = raw('title');
+  const plainTitle = raw('plain-title');
+  const desc = raw('desc');           // 允许空串：说明写错了要能删掉
+  const model = raw('model');
+  const wave = raw('wave');
+  if (![title, plainTitle, desc, model, wave].some((v) => v !== undefined)) {
+    throw new Error('edit 至少给一个要改的字段：--title / --plain-title / --desc / --model / --wave');
+  }
+  if (title !== undefined && !title.trim()) throw new Error('--title 不能是空的（技术说明是模型读卡的唯一入口）');
+  if (plainTitle !== undefined && !plainTitle.trim()) throw new Error('--plain-title 不能是空的（负责人只看得懂这一层）');
+  if (model !== undefined) {
+    if (!model.trim()) throw new Error('--model 不能是空的');
+    if (model.trim().length > 40) throw new Error('--model 建议档位太长(≤40 字符,如 "sonnet·低" / "opus·中")');
+  }
+  let waveNum;
+  if (wave !== undefined) {
+    waveNum = parseInt(wave, 10);
+    if (!Number.isInteger(waveNum) || waveNum < 0 || String(waveNum) !== wave.trim()) throw new Error('--wave 应为 ≥0 的整数');
+  }
+  const changed = [];
+  if (title !== undefined) changed.push('技术说明');
+  if (plainTitle !== undefined) changed.push('人话标题');
+  if (desc !== undefined) changed.push('一句话说明');
+  if (model !== undefined) changed.push('建议档位');
+  if (wave !== undefined) changed.push('波次');
+  const board = mutate(proj, (b) => {
+    const t = findTask(b, id);
+    if (title !== undefined) t.title = title.trim();
+    if (plainTitle !== undefined) t.plainTitle = plainTitle.trim();
+    if (desc !== undefined) t.description = desc;
+    if (model !== undefined) t.modelHint = model.trim();
+    if (wave !== undefined) t.wave = waveNum;
+  }, act('note', flags.author, `edit ${id}：改了 ${changed.join('、')}`, id));
+  return okTask(board, id);
 }
 
 // ---------- set（通用兜底赋值） ----------
@@ -481,4 +668,7 @@ function cost(flags) {
   return okTask(board, id);
 }
 
-module.exports = { register, add, claim, progress, syncProgress, pending, decide, markLanded, park, unpark, block, done, note, set, list, show, cost, deriveStats };
+module.exports = {
+  register, add, claim, unclaim, progress, syncProgress, pending, decide, markLanded,
+  park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
+};

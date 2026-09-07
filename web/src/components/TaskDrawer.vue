@@ -190,15 +190,18 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <!-- 依赖 / 阻塞 -->
-            <section v-if="task.deps && (hasArr(task.deps.dependsOn) || hasArr(task.deps.blockedBy) || hasArr(task.deps.relatedTasks)) || task.blockReason || task.parkedNote || task.unparkReason" class="sec block">
-              <div class="sec-t">依赖 / 阻塞</div>
+            <!-- 依赖 / 状态说明：卡为什么停着、为什么退回来、为什么不做了、为什么又要做，都摆在这一段 -->
+            <section v-if="task.deps && (hasArr(task.deps.dependsOn) || hasArr(task.deps.blockedBy) || hasArr(task.deps.relatedTasks)) || task.blockReason || task.parkedNote || task.unparkReason || task.unclaimReason || task.cancelReason || task.reopenReason" class="sec block">
+              <div class="sec-t">依赖 / 状态说明</div>
               <div class="kv" v-if="hasArr(task.deps?.dependsOn)"><span>依赖</span><b>{{ task.deps!.dependsOn!.join(', ') }}</b></div>
               <div class="kv" v-if="hasArr(task.deps?.blockedBy)"><span>被阻塞</span><b class="warn">{{ task.deps!.blockedBy!.join(', ') }}</b></div>
               <div class="kv" v-if="hasArr(task.deps?.relatedTasks)"><span>关联</span><b>{{ task.deps!.relatedTasks!.join(', ') }}</b></div>
               <div class="note" v-if="task.blockReason"><Icon name="alertTri" :size="16" />{{ task.blockReason }}</div>
               <div class="note" v-if="task.parkedNote"><Icon name="parkingNote" :size="16" />{{ task.parkedNote }}</div>
               <div class="note ok" v-if="task.unparkReason"><Icon name="rotateCcw" :size="16" />{{ task.unparkReason }}<span v-if="task.unparkedAt" class="note-when mono">{{ task.unparkedAt }}</span></div>
+              <div class="note" v-if="task.unclaimReason"><Icon name="hand" :size="16" />放弃认领：{{ task.unclaimReason }}<span v-if="task.unclaimedAt" class="note-when mono">{{ task.unclaimedAt }}</span></div>
+              <div class="note" v-if="task.cancelReason"><Icon name="x" :size="16" />作废：{{ task.cancelReason }}<span v-if="task.cancelledAt" class="note-when mono">{{ task.cancelledAt }}</span></div>
+              <div class="note ok" v-if="task.reopenReason"><Icon name="refresh" :size="16" />重开：{{ task.reopenReason }}<span v-if="task.reopenedAt" class="note-when mono">{{ task.reopenedAt }}</span></div>
             </section>
 
             <!-- 决策（含内联拍板） -->
