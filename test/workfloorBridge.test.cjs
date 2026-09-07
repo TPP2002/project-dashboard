@@ -1,0 +1,97 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const { spawnSync } = require('node:child_process')
+const { resolve } = require('node:path')
+const { pathToFileURL } = require('node:url')
+const { STATUS } = require('../core/boardSchema.cjs')
+
+const ROOT = resolve(__dirname, '..')
+// 只补 Vite 的模块解析，不替换被测 bridge、derive 或 schema 的实现。
+const schemaUrl = 'data:text/javascript,' + encodeURIComponent('export const STATUS = ' + JSON.stringify(STATUS))
+const loaderUrl = 'data:text/javascript,' + encodeURIComponent(`
+  export async function resolve(specifier, context, nextResolve) {
+    if (specifier === 'virtual:board-schema') return { url: ${JSON.stringify(schemaUrl)}, shortCircuit: true }
+    return nextResolve(specifier, context)
+  }
+`)
+
+function runTs(code) {
+  const setup = `
+    import { register } from 'node:module';
+    register(${JSON.stringify(loaderUrl)}, ${JSON.stringify(pathToFileURL(ROOT + '/').href)});
+    const { deriveSceneState, mapBoardEvent } = await import('./web/src/workfloor/bridge.ts');
+    const { progress } = await import('./web/src/utils/derive.ts');
+  `
+  const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', setup + code], {
+    cwd: ROOT, encoding: 'utf8',
+    env: { ...process.env, TSX_TSCONFIG_PATH: resolve(ROOT, 'web/tsconfig.json') },
+  })
+  assert.equal(result.status, 0, '桥接子进程失败:\n' + result.stderr)
+  return JSON.parse(result.stdout.trim())
+}
+
+const board = tasks => ({ schemaVersion: '1', project: { id: 'p', name: '项目' }, tasks })
+const task = (id, status, extra = {}) => ({ id, title: id, status, ...extra })
+
+test('十一种状态全部归组，压轴置底，收官至少九成，作废剔除', () => {
+  const input = board([
+    task('Q2', '未开工', { wave: 2 }), task('Q1', '待开工', { wave: 1 }),
+    task('Q3', '可复工', { wave: 2 }), task('Z', '压轴', { wave: -1 }),
+    task('A2', '施工中', { dates: { claimed: '2026-09-08T10:00:00Z' } }),
+    task('A1', '已拍板', { dates: { claimed: '2026-09-08T09:00:00Z' } }),
+    task('A3', '收官', { percent: 20 }), task('P', '待拍板'), task('B', '暂缓'),
+    task('D', '已完工'), task('V', '已作废'),
+  ])
+  assert.deepEqual([...new Set(input.tasks.map(t => t.status))].sort(), [...STATUS].sort())
+  const out = runTs(`const b=${JSON.stringify(input)}; const before=JSON.stringify(b);
+    const state=deriveSceneState(b,'p'); console.log(JSON.stringify({state,progress:progress(b),unchanged:before===JSON.stringify(b)}));`)
+  assert.deepEqual(out.state.queued.map(t => t.id), ['Q1', 'Q2', 'Q3', 'Z'])
+  assert.deepEqual(out.state.active.map(t => t.id), ['A1', 'A2', 'A3'])
+  assert.deepEqual(out.state.pending.map(t => t.id), ['P'])
+  assert.deepEqual(out.state.blocked.map(t => t.id), ['B'])
+  assert.deepEqual(out.state.done.map(t => t.id), ['D'])
+  assert.equal(out.state.active[2].percent, 90)
+  assert.deepEqual(out.state.queued.map(t => t.order), [0, 1, 2, 3])
+  assert.equal(out.state.total, 10)
+  assert.equal(out.state.percent, 10)
+  assert.equal(out.state.complete, false)
+  assert.equal(out.state.percent, out.progress.percent)
+  assert.equal(out.unchanged, true)
+})
+
+test('进度夹到整数边界，缺省与脏值归零，收官保留高于九成的值', () => {
+  const out = runTs(`const values=[undefined,-8,128,32.7,NaN,Infinity,'60'];
+    const tasks=values.map((percent,i)=>({id:String(i),title:'卡',status:'施工中',percent}));
+    tasks.push({id:'wrap',title:'收官',status:'收官',percent:96});
+    console.log(JSON.stringify(deriveSceneState({project:{name:'项目'},tasks},'p').active.map(t=>t.percent)));`)
+  assert.deepEqual(out, [0, 0, 100, 33, 0, 0, 0, 96])
+})
+
+test('完工按日期再按编号排序；空、全作废不触发完成，全部完工才完成', () => {
+  const boards = [null, board([]), board([task('V', '已作废')]),
+    board([task('D2', '已完工', { dates: { done: '2026-09-08' } }),
+      task('D1', '已完工', { dates: { done: '2026-09-07' } }), task('V', '已作废')])]
+  const out = runTs(`console.log(JSON.stringify(${JSON.stringify(boards)}.map(b=>deriveSceneState(b,'p'))));`)
+  assert.deepEqual(out.map(s => s.complete), [false, false, false, true])
+  assert.deepEqual(out.map(s => s.percent), [0, 0, 0, 100])
+  assert.deepEqual(out[3].done.map(t => t.id), ['D1', 'D2'])
+})
+
+test('事件映射表全覆盖，总线进度读当前状态，异项目事件丢弃', () => {
+  const out = runTs(`
+    const state=deriveSceneState(${JSON.stringify(board([task('T', '施工中', { percent: 62 })]))},'p');
+    const event={projectId:'p',taskId:'T',ts:'2026-09-08T09:00:00Z'};
+    const kinds=['claim','progress','pending','decide','block','park','done','note'];
+    console.log(JSON.stringify({mapped:kinds.map(kind=>mapBoardEvent({...event,kind},'p',state)),
+      other:mapBoardEvent({...event,kind:'done',projectId:'other'},'p',state),
+      direct:mapBoardEvent({...event,kind:'progress',percent:125}),
+      absent:mapBoardEvent({...event,kind:'progress'})}));`)
+  assert.deepEqual(out.mapped.map(e => e?.kind ?? null), ['claim', 'progress', 'hold', 'go', 'block', 'park', 'done', null])
+  assert.equal(out.mapped[1].percent, 62)
+  assert.equal(out.mapped[0].taskId, 'T')
+  assert.equal(out.mapped[0].projectId, 'p')
+  assert.equal(out.mapped[0].ts, '2026-09-08T09:00:00Z')
+  assert.equal(out.other, null)
+  assert.equal(out.direct.percent, 100)
+  assert.equal(out.absent.percent, 0)
+})

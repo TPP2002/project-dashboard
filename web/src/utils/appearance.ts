@@ -1,5 +1,6 @@
 // 外观中心的本机设置。后续效果只读存档；本模块此阶段只落地灯条、密度和字号。
 import { reactive } from 'vue'
+import type { WorkfloorSettings } from '../workfloor/types'
 
 export const SPEEDS = [
   { value: 1.55, label: '慢' }, { value: 1, label: '中（默认）' }, { value: 0.62, label: '快' },
@@ -53,6 +54,7 @@ export interface AppearanceConfig {
   quietStart: string
   quietEnd: string
   wireEvents: Record<(typeof WIRE_EVENTS)[number]['id'], boolean>
+  workfloor: WorkfloorSettings
 }
 
 const CONFIG_KEY = 'board-appearance-config'
@@ -67,6 +69,7 @@ export function defaultAppearance(): AppearanceConfig {
     projectColors: Object.create(null), projectIcons: Object.create(null),
     sound: false, volume: 35, quietStart: '22:30', quietEnd: '08:30',
     wireEvents: { done: true, pending: true, block: true },
+    workfloor: { world: 'launch', dayNight: 'theme', detail: 'ultra', height: 'standard', soundLink: true },
   }
 }
 
@@ -101,6 +104,7 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
   const raw = record(value)
   const defaults = defaultAppearance()
   const events = record(raw.wireEvents)
+  const workfloor = record(raw.workfloor)
   return {
     version: 1,
     speed: oneOf(raw.speed, SPEEDS.map(item => item.value), defaults.speed),
@@ -126,6 +130,13 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
       done: bool(events.done, defaults.wireEvents.done),
       pending: bool(events.pending, defaults.wireEvents.pending),
       block: bool(events.block, defaults.wireEvents.block),
+    },
+    workfloor: {
+      world: oneOf(workfloor.world, ['off', 'launch', 'mech'] as const, defaults.workfloor.world),
+      dayNight: oneOf(workfloor.dayNight, ['theme', 'night', 'clock'] as const, defaults.workfloor.dayNight),
+      detail: oneOf(workfloor.detail, ['standard', 'ultra'] as const, defaults.workfloor.detail),
+      height: oneOf(workfloor.height, ['standard', 'compact'] as const, defaults.workfloor.height),
+      soundLink: bool(workfloor.soundLink, defaults.workfloor.soundLink),
     },
   }
 }

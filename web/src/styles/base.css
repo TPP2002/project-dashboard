@@ -55,6 +55,20 @@
   --project-blue: #4a9eff; --project-green: #3ddc97; --project-amber: #f0b429;
   --project-pink: #e8619d; --project-purple: #a86fd8; --project-gray: #8e8e89;
 
+  /* 施工现场夜景与特效色站；测试台和可复用特效只引用变量，不另藏字面量。 */
+  --wf-sky: #070b16; --wf-sky-mid: #101a2e; --wf-horizon: #2a3142;
+  --wf-stage: #0b0f18; --wf-floor: #161c28; --wf-line: #344057;
+  --wf-text: #c9d1dd; --wf-muted: #8c9bb6; --wf-ink: #0e121c;
+  --wf-paper: #ffffff; --wf-warm: #fff6d6; --wf-lamp: #ffe9a8;
+  --wf-fire-red: #ff6a1a; --wf-fire-orange: #ff8a3c; --wf-fire-gold: #ffd977; --wf-fire-warm: #ffc07a;
+  --wf-cloud-light: #f4f6fa; --wf-cloud-body: #c9d1dd; --wf-cloud-mid: #aab3c3;
+  --wf-cloud-shade: #6d778f; --wf-cloud-dark: #454d66; --wf-cloud-deep: #2e3448;
+  --wf-moon: #bcd3ff; --wf-moon-blue: #8fb0ff;
+  --wf-ice: #e6f0ff; --wf-ice-edge: #cfe0ff; --wf-ice-shade: #9db8ea;
+  --wf-metal: #c9d0da; --wf-metal-light: #e8ecf2; --wf-metal-mid: #6c7484;
+  --wf-metal-dark: #3a4150; --wf-rubber: #171c27;
+  --wf-project: var(--project-blue);
+
   --sp-k: 1;
   --sp-base: calc(3.4s * var(--sp-k));
   --gl-k: 1; --gl-op: 1;
