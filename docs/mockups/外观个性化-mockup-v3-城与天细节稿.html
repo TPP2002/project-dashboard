@@ -839,7 +839,8 @@ function fireworks(el) {
     if (alive) requestAnimationFrame(frame); else ctx.clearRect(0, 0, box.width, box.height)
   })(performance.now())
 }
-function strike(el) { el.classList.remove('struck'); void el.offsetWidth; el.classList.add('struck') }
+// 闪电只闪这一次：类名到点就摘掉，否则之后任何一次重画（完工、拍板）都会把整片天再闪一遍——那就是负责人看到的「黄色闪烁」。
+function strike(el) { el.classList.remove('struck'); void el.offsetWidth; el.classList.add('struck'); setTimeout(() => el.classList.remove('struck'), 900) }
 
 /** 天气 / 楼的模拟动作；返回是否真的改了什么。 */
 function skyAct(el, st, act, opts) {
