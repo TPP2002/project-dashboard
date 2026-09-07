@@ -151,4 +151,4 @@ function assertValid(board) {
   if (!ok) throw new Error(`board.json 校验失败（${errors.length} 处）：\n  ` + errors.join('\n  '));
 }
 
-module.exports = { SCHEMA_VERSION, STATUS, STATUS_EMOJI, emojiFor, emptyBoard, validate, assertValid };
+module.exports = { SCHEMA_VERSION, STATUS, STATUS_EMOJI, TASKID, emojiFor, emptyBoard, validate, assertValid };
