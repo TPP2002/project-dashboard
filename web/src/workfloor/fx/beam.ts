@@ -10,16 +10,31 @@ export interface BeamParams extends FxParams {
   surfaceClip?: string
   /** 接收光的竖直表面位置（相对于灯）；扫到该面即截断，避免穿透。 */
   surfaceX?: number
+  /** 可选水平受光面与亮斑；坐标相对灯室，裁切区域也使用此局部坐标。 */
+  surfaceY?: number
+  surfacePoint?: { x: number; y: number }
+  surfaceRadius?: { x: number; y: number }
+  intensity?: number
+  facing?: number
+  /** 裁掉实体背后的光锥，避免体积光透过塔身或箭体。 */
+  beamClip?: string
+  /** 可选的第二受光面；池的个数在创建时固定，之后只改位置与亮度。 */
+  surfaces?: readonly { clip: string; x: number; y: number; rx: number; ry: number; opacity: number }[]
 }
 
 export function create(host: SVGGElement, initial: BeamParams): FxHandle<BeamParams> {
   const defs = defsFor(host)
   const root = svg(host, 'g', { 'data-fx': 'beam' })
-  const rotor = svg(root, 'g')
+  const air = svg(root, 'g')
+  const rotor = svg(air, 'g')
   const outer = svg(rotor, 'path', { fill: defs.url('beam-wide'), filter: defs.url('blur9') })
   const inner = svg(rotor, 'path', { fill: defs.url('beam'), filter: defs.url('blur2') })
   const hit = svg(root, 'g')
   const pool = svg(hit, 'ellipse', { rx: 25, ry: 7, fill: defs.url('lamp'), filter: defs.url('blur4') })
+  const surfaces = (initial.surfaces ?? []).map(() => {
+    const clip = svg(root, 'g')
+    return { clip, pool: svg(clip, 'ellipse', { fill: defs.url('lamp'), filter: defs.url('blur2') }) }
+  })
   const lamp = svg(root, 'g')
   svg(lamp, 'circle', { r: 26, fill: defs.url('lamp'), opacity: .55, filter: defs.url('blur9') })
   svg(lamp, 'circle', { r: 12, fill: defs.url('lamp'), opacity: .9, filter: defs.url('blur2') })
@@ -29,15 +44,24 @@ export function create(host: SVGGElement, initial: BeamParams): FxHandle<BeamPar
     time = advance(time, dt, p)
     const angle = (p.angle ?? 28) + Math.sin(time / 1432) * (p.sweep ?? 15)
     const radians = angle * Math.PI / 180
-    const distance = p.surfaceX !== undefined && Math.cos(radians) > 0 ? p.surfaceX / Math.cos(radians) : Infinity
-    const length = Math.min(p.length ?? 120, distance)
-    attributes(root, { opacity: p.enabled === false ? 0 : 1 })
-    attributes(rotor, { transform: `rotate(${angle})`, opacity: .25 + .75 * Math.max(0, Math.cos(radians)) })
+    const distance = p.surfaceX !== undefined && (p.facing === undefined ? Math.cos(radians) > 0 : p.surfaceX / Math.cos(radians) > 0) ? p.surfaceX / Math.cos(radians) : Infinity
+    const vertical = p.surfaceY !== undefined && p.surfaceY / Math.sin(radians) > 0 ? p.surfaceY / Math.sin(radians) : Infinity
+    const length = Math.min(p.length ?? 120, distance, vertical)
+    const facing = Math.cos(radians - (p.facing ?? 0) * Math.PI / 180)
+    attributes(root, { opacity: p.enabled === false ? 0 : p.intensity ?? 1 })
+    attributes(air, { 'clip-path': p.beamClip ? `url(#${p.beamClip})` : 'none' })
+    attributes(rotor, { transform: `rotate(${angle})`, opacity: .25 + .75 * Math.max(0, facing) })
     attributes(outer, { d: `M0 0L${length} ${-length * .22}V${length * .22}Z` })
     attributes(inner, { d: `M0 0L${length} ${-length * .1}V${length * .1}Z` })
-    attributes(lamp, { opacity: .8 + .2 * Math.max(0, Math.cos(radians)) })
+    attributes(lamp, { opacity: .8 + .2 * Math.max(0, facing) })
     attributes(hit, { 'clip-path': p.surfaceClip ? `url(#${p.surfaceClip})` : 'none' })
-    attributes(pool, { cx: Math.cos(radians) * length, cy: Math.sin(radians) * length, opacity: .45 + .2 * Math.max(0, Math.sin(radians)) })
+    attributes(pool, { cx: p.surfacePoint?.x ?? Math.cos(radians) * length, cy: p.surfacePoint?.y ?? Math.sin(radians) * length,
+      rx: p.surfaceRadius?.x ?? 25, ry: p.surfaceRadius?.y ?? 7, opacity: .45 + .2 * Math.max(0, Math.sin(radians)) })
+    surfaces.forEach((nodes, i) => {
+      const surface = p.surfaces?.[i]
+      attributes(nodes.clip, { opacity: surface?.opacity ?? 0, 'clip-path': surface ? `url(#${surface.clip})` : 'none' })
+      if (surface) attributes(nodes.pool, { cx: surface.x, cy: surface.y, rx: surface.rx, ry: surface.ry })
+    })
   }
   update(0, initial)
   return { update, destroy() { root.remove() } }

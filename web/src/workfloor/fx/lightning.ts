@@ -7,6 +7,9 @@ export interface LightningParams extends FxParams {
   length?: number
   silhouetteClip?: string
   onLight?: (intensity: number) => void
+  surfaceBounds?: { x: number; y: number; width: number; height: number }
+  /** 可选事件相对时间；未传时沿用实例的周期时钟。 */
+  age?: number
 }
 
 export function create(host: SVGGElement, initial: LightningParams): FxHandle<LightningParams> {
@@ -24,7 +27,8 @@ export function create(host: SVGGElement, initial: LightningParams): FxHandle<Li
   let time = 0, lastKey = ''
   function update(dt: number, p: LightningParams) {
     time = advance(time, dt, p)
-    const period = Math.max(1000, p.period ?? 6000), age = time % period, cycle = Math.floor(time / period)
+    const clock = p.age ?? time
+    const period = Math.max(1000, p.period ?? 6000), age = clock % period, cycle = Math.floor(clock / period)
     const length = p.length ?? 140, key = `${cycle}:${age >= 140}:${length}`
     if (key !== lastKey) {
       lastKey = key
@@ -39,6 +43,7 @@ export function create(host: SVGGElement, initial: LightningParams): FxHandle<Li
     attributes(flash, { cy: length, opacity: pulse * .8 })
     attributes(after, { cy: length, opacity: p.reducedMotion ? .2 : .4 * clamp(1 - age / 1500) })
     attributes(face, { opacity: p.silhouetteClip ? pulse * .32 : 0, 'clip-path': p.silhouetteClip ? `url(#${p.silhouetteClip})` : 'none' })
+    attributes(face, p.surfaceBounds ?? { x: -65, y: 0, width: 130, height: 180 })
     p.onLight?.(p.enabled === false ? 0 : pulse)
   }
   update(0, initial)

@@ -1,7 +1,7 @@
 /** v10 碎霜（Q7）：不规则双面碎片、重力与阻力、自转、落地只弹一次，然后渐隐。 */
 import { attributes, noise, quantity, smooth, svg, type FxHandle, type FxParams } from './svg'
 
-export interface FrostParams extends FxParams { floor?: number }
+export interface FrostParams extends FxParams { floor?: number; burstId?: number; repeat?: boolean }
 
 export function create(host: SVGGElement, initial: FrostParams): FxHandle<FrostParams> {
   const root = svg(host, 'g', { 'data-fx': 'frost' })
@@ -21,13 +21,18 @@ export function create(host: SVGGElement, initial: FrostParams): FxHandle<FrostP
     Object.assign(piece, { x: (noise(i, 81) - .5) * 20, y: noise(i, 82) * 36,
       vx: (noise(i, 83) - .5) * 50, vy: -noise(i, 84) * 40, age: 0, bounced: false, landed: false })
   }
+  let lastBurst = initial.burstId
   function update(dt: number, p: FrostParams) {
+    if (p.burstId !== lastBurst) {
+      lastBurst = p.burstId
+      pieces.forEach((piece, i) => { reset(piece, i); piece.age = -i * .025; piece.angle = noise(i, 85) * 360 })
+    }
     const delta = p.reducedMotion || p.enabled === false ? 0 : Math.max(0, Math.min(dt, 100)) / 1000
     const count = quantity(32, p.detail), floor = p.floor ?? 135
     attributes(root, { opacity: p.enabled === false ? 0 : 1 })
     pieces.forEach((piece, i) => {
       piece.age += delta
-      if (piece.age > 3.1) reset(piece, i)
+      if (piece.age > 3.1 && p.repeat !== false) reset(piece, i)
       if (piece.age >= 0 && !piece.landed) {
         piece.vx *= Math.exp(-delta * 1.2)
         piece.vy = piece.vy * Math.exp(-delta * .6) + 160 * delta

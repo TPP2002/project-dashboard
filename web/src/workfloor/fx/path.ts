@@ -6,6 +6,15 @@ export interface PathParams extends FxParams {
   path: SVGPathElement
   kind?: 'crawler' | 'fuel'
   duration?: number
+  /** 可选的单程位置，0~1；未传时仍按原来的往返时钟运行。 */
+  progress?: number
+  offsetY?: number
+  reverse?: boolean
+  /** 只在创建时接管指定的矢量车体，销毁时随特效移除。 */
+  vehicle?: SVGGElement
+  onPose?: (pose: { x: number; y: number; angle: number; distance: number }) => void
+  returnHome?: boolean
+  cycle?: string | number
 }
 
 export function create(host: SVGGElement, initial: PathParams): FxHandle<PathParams> {
@@ -36,27 +45,46 @@ export function create(host: SVGGElement, initial: PathParams): FxHandle<PathPar
   svg(vehicle, 'circle', { cx: 31, cy: -12, r: 8, fill: defs.url('lamp') })
   svg(vehicle, 'rect', { x: 30, y: -14, width: 2, height: 4, fill: 'var(--wf-warm)' })
   const beacon = svg(vehicle, 'circle', { cx: 22, cy: -28, r: 5, fill: defs.url('lamp') })
-  let time = 0, route = initial.path, length = route.getTotalLength()
+  if (initial.vehicle) { attributes(vehicle, { visibility: 'hidden' }); heading.appendChild(initial.vehicle) }
+  const customWheels = initial.vehicle?.querySelectorAll<SVGElement>('[data-wheel]')
+  const customTreads = initial.vehicle?.querySelectorAll<SVGElement>('.tread')
+  const customBrake = initial.vehicle?.querySelector<SVGElement>('[data-brake]')
+  const customBeacon = initial.vehicle?.querySelector<SVGElement>('[data-beacon]')
+  let time = 0, route = initial.path, length = route.getTotalLength(), lastDistance = 0, cycleKey = initial.cycle
   function update(dt: number, p: PathParams) {
     time = advance(time, dt, p)
     if (route !== p.path) { route = p.path; length = route.getTotalLength(); time = 0 }
+    if (p.cycle !== cycleKey) { cycleKey = p.cycle; time = 0; lastDistance = 0 }
     const duration = Math.max(1000, p.duration ?? 5500), leg = duration + 900
     const cycle = time % (leg * 2), back = cycle >= leg, phase = cycle % leg
-    const travel = smooth(Math.min(phase / duration, 1)), distance = (back ? 1 - travel : travel) * length
+    const travel = smooth(Math.min(phase / duration, 1))
+    let distance = (p.progress === undefined ? (back ? 1 - travel : travel) : clamp(p.progress)) * length
+    if (p.returnHome && p.progress === undefined) distance = Math.max(0, lastDistance - (p.reducedMotion ? 0 : Math.max(0, Math.min(dt, 100))) * .16)
+    if (p.returnHome && distance === 0) time = 0
+    lastDistance = distance
     const point = route.getPointAtLength(distance)
     const before = route.getPointAtLength(clamp(distance - 1, 0, length)), after = route.getPointAtLength(clamp(distance + 1, 0, length))
     const angle = Math.atan2(after.y - before.y, after.x - before.x) * 180 / Math.PI
     const turn = phase > duration ? smooth((phase - duration) / 900) : 0
     const scale = (back ? -1 : 1) * Math.cos(turn * Math.PI)
     attributes(root, { opacity: p.enabled === false ? 0 : 1 })
-    attributes(position, { transform: `translate(${point.x},${point.y})` })
+    attributes(position, { transform: `translate(${point.x},${point.y + (p.offsetY ?? 0)})` })
     attributes(heading, { transform: `rotate(${angle})` })
     attributes(vehicle, { transform: `scale(${scale},1)` })
+    if (initial.vehicle) {
+      const facing = p.returnHome ? -1 : p.progress === undefined ? scale : p.reverse ? -1 : 1
+      attributes(initial.vehicle, { transform: `scale(${facing},1)` })
+    }
     attributes(tank, { visibility: p.kind === 'crawler' ? 'hidden' : 'visible' })
     attributes(crawler, { visibility: p.kind === 'crawler' ? 'visible' : 'hidden' })
     attributes(brake, { opacity: phase > duration ? 1 : .2 })
     attributes(beacon, { opacity: p.reducedMotion ? .7 : .45 + .45 * Math.max(0, Math.sin(time / 180)) })
     wheels.forEach(wheel => attributes(wheel, { transform: `rotate(${distance * 8})` }))
+    customWheels?.forEach(wheel => attributes(wheel, { transform: `rotate(${distance * 8})` }))
+    customTreads?.forEach(tread => attributes(tread, { 'stroke-dashoffset': -distance % 12 }))
+    if (customBrake) attributes(customBrake, { opacity: phase > duration || distance === 0 ? 1 : .2 })
+    if (customBeacon) attributes(customBeacon, { opacity: p.reducedMotion ? .6 : .35 + .65 * Math.max(0, Math.sin(time / 110)) })
+    p.onPose?.({ x: point.x, y: point.y + (p.offsetY ?? 0), angle, distance })
   }
   update(0, initial)
   return { update, destroy() { root.remove() } }

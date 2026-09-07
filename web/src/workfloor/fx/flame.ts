@@ -6,6 +6,8 @@ export interface FlameParams extends FxParams {
   intensity?: number
   length?: number
   onLight?: (intensity: number) => void
+  /** 起飞中的光池由场景固定在台面，不能跟随箭体飞走。 */
+  groundLight?: boolean
 }
 
 export function create(host: SVGGElement, initial: FlameParams): FxHandle<FlameParams> {
@@ -26,7 +28,7 @@ export function create(host: SVGGElement, initial: FlameParams): FxHandle<FlameP
     const light = intensity * (.84 + .16 * flicker)
     attributes(root, { opacity: intensity })
     attributes(plume, { filter: defs.filter('fire', p.detail), transform: `scale(${flicker},${(p.length ?? 1) * (1 + (p.reducedMotion ? 0 : .08 * Math.sin(time * .046)))})` })
-    attributes(pool, { opacity: light * .75 })
+    attributes(pool, { opacity: p.groundLight === false ? 0 : light * .75 })
     attributes(glow, { opacity: light * .65 })
     diamonds.forEach((node, i) => attributes(node, { opacity: p.reducedMotion ? .85 : .6 + .3 * Math.sin(time / 50 + i) }))
     p.onLight?.(light)

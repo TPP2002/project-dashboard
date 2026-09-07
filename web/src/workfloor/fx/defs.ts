@@ -41,7 +41,21 @@ export function ensureDefs(host: SVGSVGElement): FxDefs {
   gradient('metal', [[0, 'metal-dark'], [.18, 'metal-light'], [.55, 'metal'], [.85, 'metal-mid'], [1, 'metal-dark']])
   gradient('glass', [[0, 'metal-dark'], [.4, 'project'], [.48, 'ice'], [.55, 'metal-dark'], [1, 'moon-blue']])
   gradient('sky', [[0, 'sky'], [.7, 'sky-mid'], [1, 'horizon']], false, { x2: 0, y2: 1 })
-  for (const [name, radius] of [['soft', .8], ['blur2', 2], ['blur4', 4], ['blur9', 9], ['blur16', 16]] as const) {
+  // 新名称仅供场景选择；原有滤镜与渐变的默认画法保持不变。
+  gradient('rain-tail', [[0, 'ice', 0], [1, 'ice', .7]], false, { x2: 0, y2: 1 })
+  for (const color of ['project', 'paper', 'fire-gold']) {
+    gradient(`comet-${color}`, [[0, color, 0], [1, color]])
+    gradient(`comet-${color}-reverse`, [[0, color, 0], [1, color]], false, { x1: 1, x2: 0 })
+  }
+  const glow = svg(root, 'filter', { id: id('glow'), x: '-70%', y: '-70%', width: '240%', height: '240%' })
+  svg(glow, 'feGaussianBlur', { stdDeviation: 2.2, result: 'bloom' })
+  const merge = svg(glow, 'feMerge')
+  svg(merge, 'feMergeNode', { in: 'bloom' })
+  svg(merge, 'feMergeNode', { in: 'SourceGraphic' })
+  const water = svg(root, 'filter', { id: id('water'), x: '-10%', y: '-10%', width: '120%', height: '120%' })
+  svg(water, 'feTurbulence', { type: 'fractalNoise', baseFrequency: '.012 .15', numOctaves: 1, seed: 31, result: 'water' })
+  svg(water, 'feDisplacementMap', { in: 'SourceGraphic', in2: 'water', scale: 8, xChannelSelector: 'R', yChannelSelector: 'G' })
+  for (const [name, radius] of [['soft', .8], ['blur2', 2], ['blur4', 4], ['blur6', 6], ['blur9', 9], ['blur16', 16]] as const) {
     const filter = svg(root, 'filter', { id: id(name), x: '-60%', y: '-60%', width: '220%', height: '220%' })
     svg(filter, 'feGaussianBlur', { stdDeviation: radius })
   }
