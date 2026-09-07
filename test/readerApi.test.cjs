@@ -10,6 +10,7 @@
  *   · 清单里写 ../ 越界路径的报告 → 403(白名单根)
  */
 const { test, before, after } = require('node:test');
+const freePort = require('../scripts/free-port.cjs');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -72,7 +73,7 @@ before(async () => {
   fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: { trepo: { name: '测试仓', mainRepo: repo, board: boardPath } } }), 'utf8');
   cmds.register({ id: 'trepo', name: '测试仓', root: repo, registry: reg });
   cmds.add({ _: ['T-1'], project: 'trepo', title: '测试卡', model: 'sonnet·低', registry: reg });
-  const srv = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_HOME: dataRoot, DASHBOARD_PORT: String(20000 + Math.floor(Math.random() * 40000)) });
+  const srv = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_HOME: dataRoot, DASHBOARD_PORT: String(await freePort()) });
   SRV = { ...srv, dir, reg, repo, dataRoot };
 });
 after(async () => { if (SRV) { await stopServer(SRV.child); clean(SRV.dir); clean(SRV.dataRoot); } });

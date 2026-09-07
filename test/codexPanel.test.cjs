@@ -1,6 +1,7 @@
 'use strict';
 
 const { test, before, after } = require('node:test');
+const freePort = require('../scripts/free-port.cjs');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -167,7 +168,8 @@ test('工单目录存在但内部文件全缺时详情使用空值而不报错',
   });
 });
 
-function startServer(registry, sessionsRoot) {
+async function startServer(registry, sessionsRoot) {
+  const port = await freePort();
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SERVER], {
       cwd: DASH_ROOT,
@@ -177,7 +179,7 @@ function startServer(registry, sessionsRoot) {
         DASHBOARD_NO_OPEN: '1',
         DASHBOARD_REGISTRY: registry,
         DASHBOARD_CODEX_SESSIONS: sessionsRoot,
-        DASHBOARD_PORT: String(30000 + Math.floor(Math.random() * 20000)),
+        DASHBOARD_PORT: String(port),
       },
     });
     let stdout = '';

@@ -33,7 +33,7 @@ const POLL_MS = 500; // server 内部 clamp 下限即 500，与之对齐
 let SRV = null; // 共享 server 句柄：{ child, base, port, dir, reg }
 
 const realTmp = (prefix) => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
-const randomPort = () => 20000 + Math.floor(Math.random() * 40000);
+const freePort = require('../scripts/free-port.cjs');
 const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
 
 /** spawn 真实 server 进程；从 stdout 抓「http://127.0.0.1:PORT/」拿实际端口（端口占用会自增，故不假设端口）。 */
@@ -138,7 +138,7 @@ before(async () => {
   const dir = realTmp('srv-');
   const reg = path.join(dir, 'registry.json');
   fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
-  const s = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_PORT: String(randomPort()) });
+  const s = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_PORT: String(await freePort()) });
   SRV = { ...s, dir, reg };
 });
 
