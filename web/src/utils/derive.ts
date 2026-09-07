@@ -156,17 +156,6 @@ export function activityOfTask(board: Board | null | undefined, taskId: string):
     .sort((x, y) => (y.ts || '').localeCompare(x.ts || ''))
 }
 
-/** 风险任务：暂缓 / 有阻塞 / 有待拍板（风险面板用） */
-export function riskTasks(board: Board | null | undefined): Task[] {
-  return (board?.tasks ?? []).filter(
-    (t) =>
-      t.status === '暂缓' ||
-      (t.deps?.blockedBy?.length ?? 0) > 0 ||
-      !!t.blockReason ||
-      (t.decisions ?? []).some((d) => d.answer === null || d.answer === undefined),
-  )
-}
-
 // ==================== 每日成果（Daily Output） ====================
 // 完工日口径：卡当前状态 ∈ DONE_STATUSES 才计入；完工日优先取该卡活动流里最后一条
 // type='done' 事件的精确时间戳（转【本地时区】日期），无 done 事件时兜底 dates.done。
