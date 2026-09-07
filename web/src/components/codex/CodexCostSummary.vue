@@ -97,17 +97,43 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
       </div>
     </div>
 
-    <div class="card quota-card">
-      <div class="quota-head">
-        <div>
-          <strong>Codex 额度</strong>
-          <span>上一次活动时的快照</span>
+    <div class="wide-pair">
+      <div class="card quota-card">
+        <div class="quota-head">
+          <div>
+            <strong>Codex 额度</strong>
+            <span>上一次活动时的快照</span>
+          </div>
+          <span class="quota-value">{{ quota.usedPercent == null ? '数据不足' : quota.usedPercent + '%' }}</span>
         </div>
-        <span class="quota-value">{{ quota.usedPercent == null ? '数据不足' : quota.usedPercent + '%' }}</span>
+        <div class="glow-rail quota-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="quota.usedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
+          <i :style="{ width: quotaPercent + '%' }" />
+        </div>
       </div>
-      <div class="glow-rail quota-rail" role="progressbar" aria-label="Codex 额度已用" :aria-valuenow="quota.usedPercent ?? undefined" aria-valuemin="0" aria-valuemax="100">
-        <i :style="{ width: quotaPercent + '%' }" />
-      </div>
+
+      <section class="project-section">
+        <div class="section-head">
+          <div>
+            <h2>Codex 消耗按项目</h2>
+            <p>最多列出前 5 个项目，其余合并为“其它”。</p>
+          </div>
+          <span class="badge n">{{ codex.byProject.length }} 个项目</span>
+        </div>
+        <div v-if="!projectRows.length" class="empty card">
+          <span class="ic"><Icon name="chart" :size="36" /></span>
+          期间没有可归属的 Codex 会话<br>
+          <span class="empty-help">会话带有可识别的工作目录后，就能在这里比较各项目消耗。</span>
+        </div>
+        <div v-else class="project-bars">
+          <div v-for="row in projectRows" :key="row.project" class="project-row">
+            <span class="project-name" :title="row.project">{{ row.project }}</span>
+            <div class="project-track" aria-hidden="true">
+              <i :style="{ width: (row.tokens / maxProjectTokens) * 100 + '%' }" />
+            </div>
+            <span class="project-value">{{ fmt(row.tokens) }}</span>
+          </div>
+        </div>
+      </section>
     </div>
 
     <p class="fine">
@@ -115,29 +141,6 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
     </p>
     <p class="fine">Codex 按 session_meta 的 cwd 归项目；同日会话取尾部累计 token，跨日会话流式读取 token_count 并按累计值增量拆到各自然日，扫描时不会把整份 JSONL 装进内存。</p>
 
-    <section class="project-section">
-      <div class="section-head">
-        <div>
-          <h2>Codex 消耗按项目</h2>
-          <p>最多列出前 5 个项目，其余合并为“其它”。</p>
-        </div>
-        <span class="badge n">{{ codex.byProject.length }} 个项目</span>
-      </div>
-      <div v-if="!projectRows.length" class="empty card">
-        <span class="ic"><Icon name="chart" :size="36" /></span>
-        期间没有可归属的 Codex 会话<br>
-        <span class="empty-help">会话带有可识别的工作目录后，就能在这里比较各项目消耗。</span>
-      </div>
-      <div v-else class="project-bars">
-        <div v-for="row in projectRows" :key="row.project" class="project-row">
-          <span class="project-name" :title="row.project">{{ row.project }}</span>
-          <div class="project-track" aria-hidden="true">
-            <i :style="{ width: (row.tokens / maxProjectTokens) * 100 + '%' }" />
-          </div>
-          <span class="project-value">{{ fmt(row.tokens) }}</span>
-        </div>
-      </div>
-    </section>
   </section>
 </template>
 
@@ -161,7 +164,9 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
 .quota-head div > span { color: var(--text-2); font-size: var(--fs-sm); }
 .quota-value { flex: none; font-family: var(--mono); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
 .fine { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; }
-.project-section { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s5); }
+/* 额度条与「按项目消耗」并排，每列不窄于 520；窄屏自动落回上下堆叠。 */
+.wide-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); align-items: start; gap: var(--s3); }
+.project-section { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); }
 .project-bars { display: flex; flex-direction: column; gap: var(--s2); }
 .project-row { display: grid; grid-template-columns: minmax(110px, 180px) minmax(120px, 1fr) minmax(76px, auto); align-items: center; gap: var(--s3); font-size: var(--fs-base); }
 .project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

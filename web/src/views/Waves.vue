@@ -26,12 +26,17 @@ function prog(tasks: Task[]) {
 </script>
 
 <template>
-  <div>
-    <div class="head">
-      <h2><Icon name="layers" class="head-ic" :size="20" />波次视图</h2>
-      <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
-      <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
-    </div>
+  <div class="page">
+    <header class="page-head">
+      <div>
+        <h1><Icon name="layers" class="head-ic" :size="20" />波次视图</h1>
+        <p>按批次看进度：每一波做完多少、还剩谁没动。</p>
+      </div>
+      <div class="head-actions">
+        <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
+        <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
+      </div>
+    </header>
 
     <div v-if="!waves.length" class="empty card"><div class="big"><Icon name="layers" :size="36" /></div><div>暂无任务。</div></div>
 
@@ -62,8 +67,13 @@ function prog(tasks: Task[]) {
 </template>
 
 <style scoped>
-.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
-.waves { display: flex; flex-direction: column; gap: var(--s3); max-width: 900px; }
+.page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
+.page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
+.head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
+/* 波次卡自动分栏：每列不窄于 620，宽屏塞得下几列就是几列（1920 两列 / 2560 三列）。
+   align-items: start 让高矮不一的波次卡各自保持自然高度，不被同行最高的那张撑开。 */
+.waves { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(620px, 100%), 1fr)); align-items: start; gap: var(--s3); }
 .wave { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4); }
 .w-head { display: flex; align-items: center; gap: var(--s3); }
 .w-title { font-size: var(--fs-md); font-weight: 600; }
@@ -73,4 +83,9 @@ function prog(tasks: Task[]) {
 .wt .tid { color: var(--text-2); font-weight: 600; }
 .wt .tt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wt .pc { color: var(--text-2); font-size: var(--fs-sm); }
+
+@media (max-width: 760px) {
+  .page-head { flex-direction: column; }
+  .head-actions { justify-content: flex-start; }
+}
 </style>
