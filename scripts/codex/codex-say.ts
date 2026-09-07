@@ -70,8 +70,50 @@ export const buildResumeArgs = (threadId: string, message: string, sandbox: stri
   'sandbox_mode="' + sandbox + '"',
 ]
 
+export interface SayArgs {
+  slug: string | null
+  message: string | null
+  messageFile: string | null
+  sandbox: string | null
+  error: string | null
+}
+
+/**
+ * 解析 say 的参数：位置参数 = slug、消息；选项 --sandbox / --message-file 放哪都行。
+ * Windows 下 `npx tsx` 经 cmd 垫片转发，argv 在第一个换行处被截断，多行消息一律走 --message-file。
+ */
+export const parseSayArgs = (args: string[]): SayArgs => {
+  const out: SayArgs = { slug: null, message: null, messageFile: null, sandbox: null, error: null }
+  const positionals: string[] = []
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i]
+    if (a === '--sandbox' || a === '--message-file') {
+      const v = args[i + 1]
+      if (v === undefined || v.startsWith('--')) { out.error = a + ' 后面要跟值'; return out }
+      if (a === '--sandbox') out.sandbox = v
+      else out.messageFile = v
+      i += 1
+      continue
+    }
+    if (a.startsWith('--')) { out.error = '不认识的选项 ' + a; return out }
+    positionals.push(a)
+  }
+  out.slug = positionals[0] ?? null
+  out.message = positionals[1] ?? null
+  if (!out.slug) out.error = '缺 slug'
+  else if (!out.message && !out.messageFile) out.error = '缺消息：直接写一句，或用 --message-file 指一个文本文件（多行消息只能走文件）'
+  else if (out.message && out.messageFile) out.error = '消息和 --message-file 只能给一个'
+  return out
+}
+
+/** 消息正文：文件优先（多行、含引号都不怕）；去掉 CR，首尾空白剪掉。 */
+export const readSayMessage = (args: SayArgs): string => {
+  const raw = args.messageFile ? readFileSync(args.messageFile, 'utf8') : (args.message ?? '')
+  return raw.replace(/\r/g, '').trim()
+}
+
 /** 续聊要回到这单原来的工作目录：--worktree 派出去的单在隔离工作区里干活，若在主工位里 resume，Codex 沙箱会把工作区当「项目外目录」拒写。 */
-const cwdFromMeta = (metaPath: string): string | null => {
+export const cwdFromMeta = (metaPath: string): string | null => {
   if (!existsSync(metaPath)) return null
   try {
     const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { cwd?: unknown }

@@ -59,7 +59,7 @@ import {
 } from './codex-runner'
 import { judge, parseSelfReport, type Judgement, type MachineAcceptance } from './codex-verdict'
 import { openWatchPane, probeHerdr } from './codex-herdr'
-import { sayToJob } from './codex-say'
+import { parseSayArgs, readSayMessage, sayToJob } from './codex-say'
 
 const argv = process.argv.slice(2)
 const command = argv[0] ?? 'help'
@@ -93,7 +93,8 @@ const HELP = `Codex 派单器 —— 把活派给 Codex,收回可验收的判决
   status [slug]                    看工单跑到哪
   collect <slug> [--no-rerun]      收结论(默认自己重跑验收断言)
   logs <slug> [--lines N]          看原始过程日志尾部
-  say <slug> <消息> [--sandbox 模式] 对已有会话补发消息并拿回话(默认 read-only)
+  say <slug> [<消息>] [--message-file 路径] [--sandbox 模式]
+                                   对已有会话补发消息并拿回话(默认 read-only;消息写成单行,多行走 --message-file;在这单自己的工作区里跑)
   watch <slug>                     在 herdr 窗格里跟这一单的事件流(herdr 是可选件)
   herdr                            探一下 herdr 装没装、服务起没起
   end <slug>                       收工:删掉 --worktree 开出来的独立工作区
@@ -243,13 +244,18 @@ switch (command) {
   }
 
   case 'say': {
-    const slug = positional(1)
-    const message = argv[2]
-    if (!slug || message === undefined || message.startsWith('--')) {
-      die('用法:say <slug> <消息> [--sandbox <模式>]')
+    const parsed = parseSayArgs(argv.slice(1))
+    if (parsed.error || !parsed.slug) {
+      die('用法:say <slug> [<消息>] [--message-file <路径>] [--sandbox <模式>]\n' + (parsed.error ?? ''))
     }
-    const sandbox = flag('sandbox')
-    const result = sayToJob(slug, message, sandbox ? { sandbox } : undefined)
+    let message: string
+    try {
+      message = readSayMessage(parsed)
+    } catch (err) {
+      die('读不到消息文件:' + (err as Error).message)
+    }
+    const slug = parsed.slug
+    const result = sayToJob(slug, message, parsed.sandbox ? { sandbox: parsed.sandbox } : undefined)
     if (!result.ok) {
       process.stderr.write('✖ 续聊失败 ' + slug + ':' + (result.error ?? '未知错误') + '\n')
       process.exit(1)

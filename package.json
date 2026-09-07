@@ -13,7 +13,8 @@
     "start": "node server/server.cjs",
     "codex:dispatch": "tsx scripts/codex/codex-dispatch.ts dispatch",
     "codex:status": "tsx scripts/codex/codex-dispatch.ts status",
-    "codex:collect": "tsx scripts/codex/codex-dispatch.ts collect"
+    "codex:collect": "tsx scripts/codex/codex-dispatch.ts collect",
+    "codex:say": "tsx scripts/codex/codex-dispatch.ts say"
   },
   "devDependencies": {
     "tsx": "^4.19.0"

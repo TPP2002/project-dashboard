@@ -11,7 +11,7 @@ npx tsx scripts/codex/codex-dispatch.ts template --slug my-task > .codex/jobs/my
 npx tsx scripts/codex/codex-dispatch.ts dispatch --task .codex/jobs/my-task.json   # 派单，立刻返回
 npx tsx scripts/codex/codex-dispatch.ts status                      # 看谁在跑、谁待收
 npx tsx scripts/codex/codex-dispatch.ts collect my-task             # 收结论：派单器自己重跑验收后才出判决
-npx tsx scripts/codex/codex-dispatch.ts say my-task "补一句"        # 续聊（默认只读；要它改代码加 --sandbox workspace-write）
+npx tsx scripts/codex/codex-dispatch.ts say my-task "补一句" --sandbox workspace-write   # 续聊（默认只读；要它改代码加 --sandbox workspace-write；多行消息用 --message-file 文件）
 npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：摘依赖链接、删隔离工作区
 ```
 
@@ -53,3 +53,4 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 2. 隔离工作区里 `web/node_modules` 是联接，Codex 的沙箱写不进去 → `vue-tsc` / `vite` 它自己跑不动，指令里已明写"不要自己跑验收"。
 3. `CLAUDE.md` 在本仓库是 gitignore 的（含本机绝对路径），worktree 里没有；所以指令只指路 `AGENTS.md`。
 4. 派单器自己的单测（来源仓 有 40 条 vitest）**没有随同移植**——本仓库用 `node --test`，移植测试是另一张卡；这次的验收是一单只读探活单真派真收。
+5. **续聊（say）的两个坑**：①消息里不能带换行——Windows 下 `npx` 的 cmd 垫片会把参数在第一个换行处截断，多行消息一律写进文件用 `--message-file`；②续聊在**这单自己的工作区**里跑（`meta.json` 的 cwd），`--worktree` 派出去的单才能在续聊里改文件，在主工位里 resume 会被 Codex 沙箱以「项目外目录」拒写（2026-09-08 已修）。
