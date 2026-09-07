@@ -35,7 +35,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { atomicWriteFileSync, atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
-const { CODE_ROOT, isGitCheckout, resolveHookCliRoot } = require('../core/runtimeRoot.cjs');
+const { CODE_ROOT, isGitCheckout, resolveHookCliRoot, displayCliCommand } = require('../core/runtimeRoot.cjs');
 const { detectTrunk } = require('./release.cjs');
 
 // hook 里焊的 CLI 入口绝对路径（正斜杠：shell 里免被反斜杠转义 / MSYS 误翻译；原生 node 认正斜杠）。
@@ -377,6 +377,10 @@ function installCcSettings(codeRepo, id, registryFwd) {
 // （等价于"最后装的项目赢"，不比迁移前更差；迁移后各项目各自安好）。
 function installClaudeMd(codeRepo, projId, projName) {
   const cmdPath = path.join(codeRepo, 'CLAUDE.md');
+  // 锚段是【写给人和 AI 看的正文】,不是 hook 脚本,所以用可读性最好的那个写法:
+  // 副本里有短别名垫片就用短名(AUD-CLI-BATCH-AND-AUTOPROJECT ④/审计 A11),没有就回落 node 长写法。
+  // hook 脚本本身仍焊 `node ${q(CLI)} …`(见 ensureCli),两者不能混——脚本要的是确定性,不是短。
+  const CLI_CMD = displayCliCommand();
   const BEGIN = `<!-- dashboard-protocol:${projId} begin -->`;
   const END = `<!-- dashboard-protocol:${projId} end -->`;
   const LEGACY_BEGIN = '<!-- dashboard-protocol: begin -->';
@@ -415,10 +419,10 @@ function installClaudeMd(codeRepo, projId, projName) {
 **具体步骤**(动代码之前跑):
 \`\`\`bash
 # 若任务还不在看板 → 先 add(用你自己编的 id 或用户给的 id)
-node ${q(CLI)} add <任务id> --project ${projId} --title "<一句话标题>"
+${CLI_CMD} add <任务id> --project ${projId} --title "<一句话标题>"
 
 # claim(必做)——本次施工的正式认领凭据
-node ${q(CLI)} claim <任务id> --project ${projId} --branch <本次分支名>
+${CLI_CMD} claim <任务id> --project ${projId} --branch <本次分支名>
 \`\`\`
 
 > **\`--project\` 填这张卡实际所属的项目,不一定是 \`${projId}\`。** 一个仓库里完全可能干别的项目的卡;

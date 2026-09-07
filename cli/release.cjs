@@ -30,7 +30,7 @@ const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const {
   CODE_ROOT, STAMP_NAME, RUNTIME_PATHS, WEB_SOURCE_PATHS, WEB_BUILD_DEPS_PATHS, WEB_DIST_REL,
-  isGitCheckout, releaseHome, readStamp,
+  CLI_SHIMS, shimExt, isGitCheckout, releaseHome, readStamp,
 } = require('../core/runtimeRoot.cjs');
 const { atomicWriteJsonSync, sleepMs } = require('../core/atomicWrite.cjs');
 
@@ -155,6 +155,51 @@ function buildWebDist({ source, sha, outRoot }) {
     try { fs.unlinkSync(link); } catch { /* 没建出来 / 已摘 */ }
     try { rmrf(tmp); } catch { /* 删不掉就留给系统清临时目录 */ }
   }
+}
+
+/**
+ * 在副本根写 CLI 短别名垫片(AUD-CLI-BATCH-AND-AUTOPROJECT ④,审计 A11)。
+ *
+ * 治的病:每条看板命令行都以 `node "<副本>/cli/index.cjs"` 开头,~90 字符里有 55 个是纯样板,
+ * 而这句话出现在每份 CLAUDE.md 锚段、每条派单指令、每次 inbox 输出里。有了垫片,
+ * core/runtimeRoot.displayCliCommand 会自动改用短名,那些文本一起变短,不用各自改。
+ *
+ * 为什么是"垫片文件"而不是 npm bin / PATH:副本【没有 .git 也没有 node_modules】,
+ * 是 release 直接铺出来的一棵树(见头注);往用户 PATH 里塞东西又是另一件要负责人点头的事。
+ * 两个字节的文件放在副本根,谁都能拿绝对路径直接跑,零安装、零副作用。
+ *
+ * 两个名字内容一样:board 是正名,kb 更短。
+ * .cmd 给 Windows(cmd / PowerShell / Git Bash 都能直接跑),.sh 给其余平台(带可执行位)。
+ * 两种都写:一份副本可能被跨平台共享的目录(网络盘/同步盘)引用,少写一个就等于那边用不了。
+ * @param {string} root 副本根(发布中是 <dest>.new)
+ * @returns {string[]} 写出来的文件名
+ */
+function writeCliShims(root) {
+  const cmd = [
+    '@echo off',
+    'rem 看板 CLI 短别名 —— 由 `cli release` 生成,勿手改(改了下次发布会被覆盖)。',
+    'rem 等价于: node "<本目录>\\cli\\index.cjs" <参数...>',
+    'node "%~dp0cli\\index.cjs" %*',
+    '',
+  ].join('\r\n');
+  const sh = [
+    '#!/bin/sh',
+    '# 看板 CLI 短别名 —— 由 `cli release` 生成,勿手改(改了下次发布会被覆盖)。',
+    '# 等价于: node "<本目录>/cli/index.cjs" "$@"',
+    'exec node "$(dirname "$0")/cli/index.cjs" "$@"',
+    '',
+  ].join('\n');
+  const written = [];
+  for (const name of CLI_SHIMS) {
+    fs.writeFileSync(path.join(root, name + '.cmd'), cmd);
+    written.push(name + '.cmd');
+    const shPath = path.join(root, name + '.sh');
+    fs.writeFileSync(shPath, sh);
+    // 可执行位:Windows 上 chmod 是空操作,不必分平台;失败也不该拖垮整单发布。
+    try { fs.chmodSync(shPath, 0o755); } catch { /* 文件系统不支持权限位就算了 */ }
+    written.push(name + '.sh');
+  }
+  return written;
 }
 
 /** 目录换名,Windows 上被占就重试(hook 进程加载中 / 资源管理器窗口等)。 */
@@ -298,9 +343,12 @@ function release(flags = {}, deps = {}) {
     }
   }
 
+  // 短别名垫片(A11):跟印章一样是"生成物"、不来自 git 树,所以在导出之后单独写
+  const shims = writeCliShims(newDir);
+
   const stamp = {
     commit: sha, ref, trunk, source, releasedAt: new Date().toISOString(),
-    paths: RUNTIME_PATHS, files: files.length, node: process.version, web,
+    paths: RUNTIME_PATHS, files: files.length, node: process.version, web, shims,
   };
   atomicWriteJsonSync(path.join(newDir, STAMP_NAME), stamp);
 
@@ -321,9 +369,10 @@ function release(flags = {}, deps = {}) {
     `✔ 发布副本已更新 → ${dest}\n` +
     `  来源 ${ref} = ${sha.slice(0, 12)}(${files.length} 个运行期文件:${RUNTIME_PATHS.join(' ')})\n` +
     webLine +
+    `  短别名垫片:${shims.join(' ')} —— 命令行可写 ${fwd(path.join(dest, CLI_SHIMS[0] + shimExt()))} <命令>,代替 node <长路径>\n` +
     '  各仓 hook 与看板服务跑的都是这份;主工位切分支 / 未提交改动从此影响不到它们。\n' +
     '  注意:已在跑的服务不会自己换新,下次双击启动器时会自动重起(SERVER-RUNS-ON-LIVE-CHECKOUT d2=A)。';
   return { ok: true, dest, stamp, text };
 }
 
-module.exports = { release, releaseStatus, serviceStatus, detectTrunk, buildWebDist };
+module.exports = { release, releaseStatus, serviceStatus, detectTrunk, buildWebDist, writeCliShims };

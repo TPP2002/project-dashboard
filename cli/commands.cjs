@@ -7,10 +7,10 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { mutate, readBoard, findTask, unionBy, unionShas } = require('./store.cjs');
-const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
+const { mutate, readBoard, readBoardOrNull, findTask, unionBy, unionShas } = require('./store.cjs');
+const { resolveProject, readRegistry, detectProjectIds, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
-const { emptyBoard, STATUS, VOID_STATUSES, emojiFor } = require('../core/boardSchema.cjs');
+const { emptyBoard, STATUS, TASKID, VOID_STATUSES, emojiFor } = require('../core/boardSchema.cjs');
 const { normalizeReal } = require('../core/safePath.cjs');
 const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
@@ -41,7 +41,7 @@ function warnGeneratedScopes(scopes) {
     '  建卡指引:fileScope 只填这张卡真正要动的手写文件。\n');
 }
 function getRegistryPath(flags) { return flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH; }
-function resolveProj(flags) { return resolveProject(need(flags.project, '--project <id>'), { registryPath: getRegistryPath(flags) }); }
+function resolveProj(flags) { return resolveProject(need(flags.project, '--project <id>（在项目仓里跑可省略，CLI 入口会自动认；见 cli/index.cjs autoFillProject）'), { registryPath: getRegistryPath(flags) }); }
 function okTask(board, id) { return { ok: true, task: (board.tasks || []).find((x) => x.id === id) }; }
 function act(type, author, text, taskId) { return { ts: nowIso(), author: author || 'cli', type, text, taskId: taskId || null }; }
 /** 摘要：超过 n 个字就截断加省略号（卡片上的「下一步」只有一行，塞不下整段问题）。 */
@@ -89,8 +89,10 @@ function register(flags) {
 
 // ---------- add（新建 task） ----------
 function add(flags) {
+  // 一份清单建一批（--json-file / --json）走批量分支：一次加锁一次写盘、全有或全无
+  if (isBatchAdd(flags)) return addBatch(flags);
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'add <taskId> --title <标题> --plain-title <人话标题> [--status <状态>] [--wave <n>] [--desc <一句话>] [--model <建议档位>] [--scope <glob>...]');
+  const id = need(flags._[0], 'add <taskId> --title <标题> --plain-title <人话标题> [--status <状态>] [--wave <n>] [--desc <一句话>] [--model <建议档位>] [--scope <glob>...]\n      批量: add --json-file <清单.json>  或  add --json < 清单.json');
   const title = need(flags.title, '--title <标题>');
   const status = flags.status || '未开工';
   if (!STATUS.includes(status)) throw new Error(`--status 非法，允许: ${STATUS.join('/')}`);
@@ -123,6 +125,196 @@ function add(flags) {
   }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}${plainTitle ? '（人话标题 ' + plainTitle + '）' : ''}`, id));
   warnGeneratedScopes(scopes);
   return okTask(board, id);
+}
+
+// ---------- 批量建卡（AUD-CLI-BATCH-AND-AUTOPROJECT ①）----------
+/**
+ * 这次 add 是不是【批量】：给了 --json-file，或给了 --json 且没写卡号。
+ *
+ * 为什么拿"没写卡号"当判据：单卡 add 的卡号是位置参数、必给；而 `--json` 在本 CLI 里还兼着
+ * 全局"输出 JSON"开关（见 cli/index.cjs 尾部）。若只看 --json，`add T1 … --json` 这种老写法
+ * 会被当成批量、把卡号静默丢掉——一个纯输出格式的开关不该把建卡语义整个换掉。
+ * cli/index.cjs 的两道单卡机器闸（--model / --plain-title）也照这个判据放行，两处必须同一口径，
+ * 所以判据只写这一份、由入口 require 过去用。
+ */
+function isBatchAdd(flags) {
+  if (typeof flags['json-file'] === 'string' && flags['json-file'].trim()) return true;
+  return flags.json === true && !((flags._ || []).length);
+}
+
+/**
+ * 读一块 JSON 输入：--json-file <路径> 优先，否则 --json 从 stdin。
+ * BOM 必须剥：Windows PowerShell 的 `>` / `Out-File` / `Set-Content -Encoding utf8` 默认写 UTF-8 BOM，
+ * 而 JSON.parse 见 BOM 直接抛 "Unexpected token"——本来 --json-file 就是为了绕开 PowerShell 的
+ * heredoc 之苦（审计 A8），再被 BOM 绊一跤就白加了。
+ */
+function readJsonInput(flags, what) {
+  const strip = (t) => (t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t);
+  const file = flags['json-file'];
+  if (file === true) throw new Error('--json-file 后面漏写路径了。用法: --json-file <路径>');
+  if (file !== undefined) {
+    const abs = path.resolve(String(file));
+    let raw;
+    try { raw = fs.readFileSync(abs, 'utf8'); }
+    catch (e) { throw new Error(`--json-file 读不到 ${abs}：${e.message}`); }
+    if (!raw.trim()) throw new Error(`--json-file ${abs} 是空文件`);
+    try { return JSON.parse(strip(raw)); }
+    catch (e) { throw new Error(`--json-file ${abs} 解析失败：${e.message}`); }
+  }
+  const raw = readStdinSync();
+  if (!raw.trim()) {
+    throw new Error(`--json 需从 stdin 读${what}，但 stdin 为空。\n  （PowerShell 下 heredoc 不好使，改用 --json-file <路径> 更省事）`);
+  }
+  try { return JSON.parse(strip(raw)); }
+  catch (e) { throw new Error(`--json stdin 解析失败：${e.message}`); }
+}
+
+// 批量清单每项认得的字段。多一个不认识的就当场拒——批量最怕"写错键名被静默吞掉"：
+// 20 张卡里有一张 plaintitle 拼错，回读才发现人话标题是空的，正是 CLI-ADD-NO-PLAINTITLE-FILESCOPE 那个坑。
+const BATCH_ITEM_KEYS = ['id', 'plainTitle', 'title', 'model', 'scope', 'deps', 'wave', 'desc', 'status'];
+const DEP_KEYS = ['dependsOn', 'blockedBy', 'relatedTasks'];
+
+function batchReject(errs) {
+  return new Error(
+    `批量建卡整批拒绝（${errs.length} 处问题，一张都没建）:\n  - ` + errs.join('\n  - ') +
+    '\n\n每项的字段：' + BATCH_ITEM_KEYS.join(' / ') +
+    '\n  id/title/plainTitle/model 必给（后两个就是单卡 add 的 --plain-title / --model 机器闸，逐项照查）;' +
+    '\n  scope=数组(会改哪些文件), deps={dependsOn,blockedBy,relatedTasks}, wave 默认 0, status 默认 未开工。',
+  );
+}
+
+/**
+ * 批量建卡：一份清单 → 一次加锁、一次写盘。
+ *
+ * 治的病（审计 A8）：规划会话一次要建 10~20 张卡 = 起 10~20 个 node 进程、把整份 board.json
+ * 解析 10~20 遍、抢 10~20 次锁；中途任何一张被机器闸拒收，前面的已经落盘了、剩下的没建，
+ * 板停在一个谁也说不清的半截状态。
+ *
+ * 所以口径是【全有或全无】：先把全部问题一次性收齐报出来（不是遇到第一个就退），
+ * 全对了才进锁写一次。校验分两段——形状类（字段齐不齐、类型对不对）在锁外做；
+ * 跟板有关的（卡号是不是已存在、依赖指向的卡在不在）先只读查一遍，好把错误跟形状问题一起报全，
+ * 再在锁内重查一遍兜并发（两次之间可能有别的对话刚建了同号的卡）。
+ */
+function addBatch(flags) {
+  const proj = resolveProj(flags);
+  const payload = readJsonInput(flags, '任务清单数组');
+  const items = Array.isArray(payload)
+    ? payload
+    : (payload && Array.isArray(payload.tasks) ? payload.tasks : null);
+  if (!items) throw new Error('批量建卡的 JSON 应是【数组】(或 {"tasks":[…]})，每项一张卡');
+  if (!items.length) throw new Error('批量建卡清单是空数组，没什么可建的');
+
+  const errs = [];
+  const drafts = [];
+  const seen = new Map(); // id → 第几项（查批内重号）
+  const str = (v) => (typeof v === 'string' ? v.trim() : '');
+
+  items.forEach((item, i) => {
+    const at = `第 ${i + 1} 项`;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) { errs.push(`${at}: 应为对象`); return; }
+    const id = str(item.id);
+    const at2 = id ? `${at}(${id})` : at;
+    for (const k of Object.keys(item)) {
+      if (!BATCH_ITEM_KEYS.includes(k)) errs.push(`${at2}: 不认识的字段「${k}」——是不是拼错了？认得的只有 ${BATCH_ITEM_KEYS.join('/')}`);
+    }
+    if (!id) errs.push(`${at2}: 缺 id`);
+    else if (!TASKID.test(id)) errs.push(`${at2}: 非法卡号「${id}」——只能大写字母/数字/连字号，且首字符不是连字号`);
+    else if (seen.has(id)) errs.push(`${at2}: 卡号跟第 ${seen.get(id) + 1} 项重了`);
+    else seen.set(id, i);
+
+    const title = str(item.title);
+    if (!title) errs.push(`${at2}: 缺 title（给模型看的技术说明）`);
+    const plainTitle = str(item.plainTitle);
+    if (!plainTitle) errs.push(`${at2}: 缺 plainTitle（给负责人看的一句人话，20~35 字，禁文件名/函数名/编号；= 单卡 add 的 --plain-title 机器闸）`);
+    const model = str(item.model);
+    if (!model) errs.push(`${at2}: 缺 model（建议档位，= 单卡 add 的 --model 机器闸；照抄 "sonnet·低"/"opus·中"/"fable·高"/"负责人本人办"）`);
+    else if (model.length > 40) errs.push(`${at2}: model 太长（${model.length}>40 字符）`);
+
+    const status = item.status === undefined ? '未开工' : item.status;
+    if (!STATUS.includes(status)) errs.push(`${at2}: status 非法「${status}」，允许: ${STATUS.join('/')}`);
+
+    let wave = 0;
+    if (item.wave !== undefined) {
+      wave = typeof item.wave === 'number' ? item.wave : parseInt(item.wave, 10);
+      if (!Number.isInteger(wave) || wave < 0) errs.push(`${at2}: wave 应为 ≥0 的整数（新冒出来的卡一律留 0，别继承父卡的波次）`);
+    }
+
+    let scope = [];
+    if (item.scope !== undefined) {
+      if (!Array.isArray(item.scope)) errs.push(`${at2}: scope 应为数组（这张卡会改哪些文件，glob；拿不准就给 []，别瞎猜）`);
+      else if (item.scope.some((x) => !str(x))) errs.push(`${at2}: scope 里有空项或非字符串`);
+      else scope = item.scope.map((x) => x.trim());
+    }
+
+    const deps = { dependsOn: [], blockedBy: [], relatedTasks: [] };
+    if (item.deps !== undefined) {
+      if (!item.deps || typeof item.deps !== 'object' || Array.isArray(item.deps)) {
+        errs.push(`${at2}: deps 应为对象 {dependsOn:[],blockedBy:[],relatedTasks:[]}`);
+      } else {
+        for (const k of Object.keys(item.deps)) {
+          if (!DEP_KEYS.includes(k)) errs.push(`${at2}: deps 里不认识的字段「${k}」——只有 ${DEP_KEYS.join('/')}`);
+        }
+        for (const rel of DEP_KEYS) {
+          const v = item.deps[rel];
+          if (v === undefined) continue;
+          if (!Array.isArray(v)) { errs.push(`${at2}: deps.${rel} 应为数组`); continue; }
+          if (v.some((x) => !str(x))) { errs.push(`${at2}: deps.${rel} 里有空项或非字符串`); continue; }
+          deps[rel] = v.map((x) => x.trim());
+        }
+      }
+    }
+
+    if (item.desc !== undefined && typeof item.desc !== 'string') errs.push(`${at2}: desc 应为字符串`);
+
+    drafts.push({ id, title, plainTitle, model, status, wave, scope, deps, desc: item.desc || '' });
+  });
+
+  // 跟板有关的校验：先只读查一遍，好把错误跟上面的形状问题一起报全（锁内还会再查一次兜并发）
+  const existingIds = new Set((((readBoardOrNull(proj.board) || {}).tasks) || []).map((t) => t.id));
+  const batchIds = new Set(drafts.map((d) => d.id).filter(Boolean));
+  for (const d of drafts) {
+    if (!d.id) continue;
+    if (existingIds.has(d.id)) errs.push(`第 ${seen.get(d.id) + 1} 项(${d.id}): 卡号已在板上，换个号或删掉这项`);
+    for (const rel of DEP_KEYS) {
+      for (const ref of d.deps[rel]) {
+        if (!existingIds.has(ref) && !batchIds.has(ref)) errs.push(`${d.id}.deps.${rel}: 指向不存在的卡「${ref}」（板上没有、这批里也没有）`);
+      }
+    }
+  }
+  if (errs.length) throw batchReject(errs);
+
+  const board = mutate(proj, (b) => {
+    b.tasks = b.tasks || [];
+    b.activity = b.activity || [];
+    // 锁内重查：从只读那一遍到现在，别的对话可能刚建了同号的卡
+    const now = new Set(b.tasks.map((t) => t.id));
+    const clash = drafts.map((d) => d.id).filter((id) => now.has(id));
+    if (clash.length) throw new Error(`批量建卡整批拒绝：抢锁期间这些卡号被别的对话建走了：${clash.join('、')}`);
+    for (const d of drafts) {
+      const t = {
+        id: d.id, title: d.title, description: d.desc, status: d.status,
+        percent: d.status === '已完工' ? 100 : 0,
+        wave: d.wave,
+        dates: { design: today(), start: null, done: null },
+        gitBranch: [], worktree: [], prNumbers: [], commitShas: [], decisions: [],
+        deps: d.deps, docs: [],
+      };
+      t.modelHint = d.model;
+      t.plainTitle = d.plainTitle;
+      if (d.scope.length) t.fileScope = d.scope;
+      b.tasks.push(t);
+      // 每张卡各留一条流水，跟单卡 add 一模一样 —— 批量不该让某张卡在活动流里查无此人
+      b.activity.push(act('note', flags.author, `新建任务 ${d.id}：${d.title}（建议档位 ${d.model}）（人话标题 ${d.plainTitle}）`, d.id));
+    }
+  }, act('note', flags.author, `批量建卡 ${drafts.length} 张：${drafts.map((d) => d.id).join('、')}`, null));
+
+  warnGeneratedScopes(drafts.flatMap((d) => d.scope));
+  const ids = drafts.map((d) => d.id);
+  return {
+    ok: true, count: ids.length, ids,
+    tasks: (board.tasks || []).filter((t) => batchIds.has(t.id)),
+    text: `✔ 批量建卡 ${ids.length} 张（一次加锁一次写盘）：${ids.join('、')}`,
+  };
 }
 
 // ---------- claim（认领 → 施工中） ----------
@@ -208,25 +400,12 @@ function progress(flags) {
  */
 /**
  * 按当前工作目录的 git 仓,反查它属于哪个已注册看板项目(返回 id 或 null)。
- * 关键:worktree 的 --git-common-dir 指向【主仓】的 .git,故 worktree 与主仓都能认到同一项目。
- * 用于全局钩子——不带 --project 时自动定位。
+ * 正本已挪到 core/resolveProject.detectProjectIds(那里连 codeRepo 一起比,并返回【全部】命中);
+ * 这里保留"取第一个、认不出就 null"的宽松口径,只给 syncProgress 用 ——
+ * 它挂在钩子上每次待办更新都跑,歧义时报错刷屏比猜错更糟,共仓歧义的治理归 AUD-HOOKS-DEDUP-COST。
  */
 function detectProjectId(registryPath) {
-  const cp = require('node:child_process');
-  let mainRoot = '';
-  try {
-    const commonDir = cp.execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
-    const abs = path.isAbsolute(commonDir) ? commonDir : path.resolve(process.cwd(), commonDir);
-    mainRoot = path.dirname(abs); // 去掉尾部 .git → 主仓根
-  } catch (_) { return null; }
-  const norm = (p) => { try { return normalizeReal(p); } catch (_) { return path.resolve(p); } };
-  const target = norm(mainRoot);
-  let reg;
-  try { reg = readRegistry(registryPath); } catch (_) { return null; }
-  for (const [id, entry] of Object.entries((reg && reg.projects) || {})) {
-    if (entry && entry.mainRepo && norm(entry.mainRepo) === target) return id;
-  }
-  return null;
+  return detectProjectIds({ registryPath })[0] || null;
 }
 
 function syncProgress(flags) {
@@ -262,9 +441,11 @@ function syncProgress(flags) {
 
 // ---------- pending（登记待拍板问题） ----------
 // pending 必须给全三件套（skill §6.2/§6.3 硬规则）——缺就报错，绝不允许"术语墙裸奔"。
-// 两种输入模式：
-//   ① --json：从 stdin 读整块 JSON（推荐给对话用，便于结构化）
-//   ② 命令行 flag：--q --opt --opt --rec --background --reason --pros-<option>=<text> [--strict]
+// 三种输入模式：
+//   ① --json-file <路径>：从文件读整块 JSON（首选。Windows PowerShell 下 heredoc 不好使，
+//      而这块 JSON 有三件套、动辄几百字，命令行拼不出来——审计 A8）
+//   ② --json：从 stdin 读整块 JSON（POSIX shell 下的等价写法）
+//   ③ 命令行 flag：--q --opt --opt --rec --background --reason --pros-<option>=<text> [--strict]
 // strict=true 时禁用 allowCustom，默认开放自定义答案。
 function readStdinSync() {
   try { return require('node:fs').readFileSync(0, 'utf8'); }
@@ -298,13 +479,11 @@ function validatePendingPayload(p) {
 
 function pending(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'pending <taskId> --json <<< "{...}"  或  --q --opt --opt --rec --background --reason --pros-<opt>=<text>');
+  const id = need(flags._[0], 'pending <taskId> --json-file <路径>  或  --json < 文件  或  --q --opt --opt --rec --background --reason --pros-<opt>=<text>');
   // 组装 payload
   let payload;
-  if (flags.json) {
-    const raw = readStdinSync();
-    if (!raw.trim()) throw new Error('--json 需从 stdin 读 JSON，但 stdin 为空');
-    try { payload = JSON.parse(raw); } catch (e) { throw new Error('--json stdin 解析失败：' + e.message); }
+  if (flags.json || flags['json-file'] !== undefined) {
+    payload = readJsonInput(flags, '待拍板 JSON');
   } else {
     const options = asArray(flags.opt);
     const optionPros = {};
@@ -324,7 +503,7 @@ function pending(flags) {
   // 硬校验
   const errs = validatePendingPayload(payload);
   if (errs.length) {
-    throw new Error('登记待拍板不合格（skill §6.2 硬规则，缺字段/太短就不许提交）:\n  - ' + errs.join('\n  - ') + '\n\n模板 JSON（存成 pending.json 后 `... pending <id> --json < pending.json`）:\n' + JSON.stringify({
+    throw new Error('登记待拍板不合格（skill §6.2 硬规则，缺字段/太短就不许提交）:\n  - ' + errs.join('\n  - ') + '\n\n模板 JSON（存成 pending.json 后 `... pending <id> --json-file pending.json`）:\n' + JSON.stringify({
       question: '一句大白话问题',
       options: ['选项A', '选项B'],
       recommended: '选项A',
@@ -607,6 +786,65 @@ function edit(flags) {
 }
 
 // ---------- set（通用兜底赋值） ----------
+/**
+ * 有专门命令的字段 → 该走哪条命令（AUD-CLI-BATCH-AND-AUTOPROJECT ⑤，审计 A5「只能裸 set」）。
+ *
+ * set 是【通用兜底赋值】：JSON.parse 一下就整个覆盖过去，不走状态机白名单、不合并数组、
+ * 活动流里只留一条 `note`。用它改 status，看板上看到的是"有人 note 了一句"，而不是"认领/完工"；
+ * 用它改 gitBranch，会把别的对话刚 union 进来的分支整个抹掉。所以这里只提示、不拦截：
+ * 照旧把值写进去（有些字段确实只能靠它），但把正路当场指出来，免得下次还走这条。
+ *
+ * fn 是这条命令在本模块的导出名（多数与命令名同名，mark-landed 例外）。运行时只列
+ * 【本模块真有】的命令 —— 生命周期命令（unclaim/cancel/reopen/edit，AUD-CLI-LIFECYCLE-CMDS）
+ * 落地那天，这张表不用改就会自动把它们提示出来；没落地时也不会指一条不存在的命令。
+ */
+const FIELD_COMMANDS = {
+  status: [
+    { cmd: 'claim', use: 'claim <id> --branch <分支>（→ 施工中，走迁移白名单）' },
+    { cmd: 'park', use: 'park <id> --reason <理由>（→ 暂缓）' },
+    { cmd: 'unpark', use: 'unpark <id> --reason <解除依据>（暂缓 → 可复工）' },
+    { cmd: 'block', use: 'block <id> --by <卡号>… --reason <理由>（登记被谁挡）' },
+    { cmd: 'done', use: 'done <id> --pr <n> --commit <sha>（→ 已完工，顺带记 PR/提交）' },
+    { cmd: 'unclaim', use: 'unclaim <id> --reason <理由>（施工中 → 待开工）' },
+    { cmd: 'cancel', use: 'cancel <id> --reason <理由>（→ 已作废）' },
+    { cmd: 'reopen', use: 'reopen <id> --reason <理由>（终态 → 待开工）' },
+  ],
+  percent: [{ cmd: 'progress', use: 'progress <id> --percent <n>（顺带盖"更新于"时间戳）' }],
+  nextMilestone: [{ cmd: 'progress', use: 'progress <id> --next "<下一步>"' }],
+  lastProgressAt: [{ cmd: 'progress', use: 'progress <id> --percent <n>（这个戳由 progress/claim 自动盖）' }],
+  tests: [{ cmd: 'progress', use: 'progress <id> --tests <总数/通过/必败>' }],
+  typecheck: [{ cmd: 'progress', use: 'progress <id> --typecheck true' }],
+  gitBranch: [{ cmd: 'claim', use: 'claim <id> --branch <分支>（union 合并；set 是整个覆盖，会抹掉别人刚记的分支）' }],
+  fileScope: [
+    { cmd: 'claim', use: 'claim <id> --scope <glob>…（union 合并）' },
+    { cmd: 'add', use: 'add … --scope <glob>…（建卡时就登记）' },
+  ],
+  prNumbers: [{ cmd: 'done', use: 'done <id> --pr <n>' }],
+  commitShas: [{ cmd: 'done', use: 'done <id> --commit <sha>（长短哈希会归并成同一个提交）' }],
+  decisions: [
+    { cmd: 'pending', use: 'pending <id> --json-file <路径>（三件套硬校验，裸 set 绕过去 = 术语墙裸奔）' },
+    { cmd: 'decide', use: 'decide <id> --did <dN> --answer <答案>' },
+    { cmd: 'mark-landed', fn: 'markLanded', use: 'mark-landed <id> --did <dN> --commit <sha>' },
+  ],
+  blockReason: [
+    { cmd: 'block', use: 'block <id> --by <卡号>… --reason <理由>' },
+    { cmd: 'park', use: 'park <id> --reason <理由>' },
+  ],
+  parkedNote: [{ cmd: 'park', use: 'park <id> --reason <理由> --note <遗留>' }],
+  cost: [{ cmd: 'cost', use: 'cost <id> --agents "<模型:个数,…>" [--tokens <n>]' }],
+  title: [{ cmd: 'edit', use: 'edit <id> --title "<技术说明>"' }],
+  plainTitle: [{ cmd: 'edit', use: 'edit <id> --plain-title "<人话标题>"' }],
+  description: [{ cmd: 'edit', use: 'edit <id> --desc "<一句话>"' }],
+  modelHint: [{ cmd: 'edit', use: 'edit <id> --model "<建议档位>"' }],
+  wave: [{ cmd: 'edit', use: 'edit <id> --wave <n>' }],
+};
+
+/** 这个字段有没有专门命令：先按整条点路径找，再退回第一段（deps.blockedBy → deps）。 */
+function dedicatedCommandsFor(field) {
+  const hit = FIELD_COMMANDS[field] || FIELD_COMMANDS[String(field).split('.')[0]] || [];
+  return hit.filter((c) => typeof module.exports[c.fn || c.cmd] === 'function');
+}
+
 function set(flags) {
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'set <taskId> --field <点路径> --value <json>');
@@ -615,6 +853,14 @@ function set(flags) {
   let val; try { val = JSON.parse(raw); } catch { val = raw; }
   const board = mutate(proj, (b) => { setPath(findTask(b, id), field, val); },
     act('note', flags.author, `set ${id}.${field}=${raw}`, id));
+  const better = dedicatedCommandsFor(field);
+  if (better.length) {
+    process.stderr.write(
+      `⚠ ${field} 有专门命令，set 只是通用兜底赋值：它不走状态机白名单、不合并数组，` +
+      '活动流里只记一条 note —— 看板上看不出你到底干了什么。\n' +
+      better.map((c) => `    ${c.use}\n`).join('') +
+      '  这次已按你说的写进去了；下次优先用上面的命令。\n');
+  }
   return okTask(board, id);
 }
 
@@ -669,6 +915,6 @@ function cost(flags) {
 }
 
 module.exports = {
-  register, add, claim, unclaim, progress, syncProgress, pending, decide, markLanded,
+  register, add, addBatch, isBatchAdd, claim, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
 };
