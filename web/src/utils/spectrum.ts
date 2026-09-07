@@ -9,7 +9,7 @@
 //   · 状态谱（TILE_SPECS）——状态瓦片边框的五档语义色。默认各走自己的语义谱（状态语言优先于装饰）。
 import { reactive, ref } from 'vue'
 
-export type PresetId = 'cool' | 'warm' | 'full' | 'duo'
+export type PresetId = 'cool' | 'warm' | 'full' | 'duo' | 'aurora' | 'sunset' | 'cyber' | 'mono'
 export type PartId = 'bar' | 'ring' | 'top' | 'edge' | 'quota'
 /** 状态瓦片的五档语义谱，与 api/schema 的 StatusTone 一一对应。 */
 export type TileSpecId = 'info' | 'warn' | 'ok' | 'bad' | 'n'
@@ -34,6 +34,10 @@ export const PRESETS: ReadonlyArray<{ id: PresetId; label: string }> = [
   { id: 'warm', label: '暖谱' },
   { id: 'full', label: '全光谱' },
   { id: 'duo', label: '双色' },
+  { id: 'aurora', label: '极光' },
+  { id: 'sunset', label: '落日' },
+  { id: 'cyber', label: '赛博' },
+  { id: 'mono', label: '单色' },
 ]
 
 /** defaultIsGlobal = 这个部位「不设置」时本来就跟随全站；false 的部位要额外给一个「跟随全站」选项。 */
@@ -242,6 +246,14 @@ export function applySpectrum(persistNow = true) {
 
 export function setGlobal(choice: SpectrumChoice) {
   spectrum.global = choice
+  applySpectrum()
+}
+
+/** 清除全站自定义、分部位覆盖和状态谱覆盖，并同步新旧存储键。 */
+export function resetSpectrum() {
+  spectrum.global = { kind: 'preset', preset: 'cool' }
+  spectrum.parts = {}
+  spectrum.tiles = {}
   applySpectrum()
 }
 

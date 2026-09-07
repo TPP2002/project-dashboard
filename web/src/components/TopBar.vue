@@ -3,60 +3,29 @@ import { defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ConnDot from './ConnDot.vue'
 import Icon from './Icon.vue'
-// 图标动效三档（关 / 微 / 活泼）也归外观面板管，和灯条配色并排。
+import { setTheme, theme, THEMES } from '@/utils/theme'
 import IconMotionSettings from './IconMotionSettings.vue'
-// 灯条配色（全站 + 分部位）整块搬进 SpectrumSettings，它 import 时会自动还原上次的配色。
 import SpectrumSettings from './SpectrumSettings.vue'
-
-type ThemeChoice = 'light' | 'dark' | 'system'
-
-const THEME_KEY = 'board-theme'
-const THEMES: ReadonlyArray<{ value: ThemeChoice; label: string }> = [
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' },
-  { value: 'system', label: '跟随系统' },
-]
-
-function readStorage(key: string): string | null {
-  try { return localStorage.getItem(key) }
-  catch (_) { return null }
-}
-
-function writeStorage(key: string, value: string) {
-  try { localStorage.setItem(key, value) }
-  catch (_) { /* 禁用站点存储时仍可在当前页面切换。 */ }
-}
-
-function readTheme(): ThemeChoice {
-  const value = readStorage(THEME_KEY)
-  return value === 'light' || value === 'dark' || value === 'system' ? value : 'system'
-}
-
-function applyTheme(value: ThemeChoice, persist = true) {
-  const root = document.documentElement
-  if (value === 'system') root.removeAttribute('data-theme')
-  else root.setAttribute('data-theme', value)
-  if (persist) writeStorage(THEME_KEY, value)
-}
-
-// 模块一加载就先还原主题，再由 Vue 挂载界面，避免首屏使用错误主题。
-if (typeof document !== 'undefined') applyTheme(readTheme())
+import AppearanceDensity from './AppearanceDensity.vue'
+import AppearanceCenter from './AppearanceCenter.vue'
 
 export default defineComponent({
-  components: { ConnDot, Icon, IconMotionSettings, SpectrumSettings },
+  components: { ConnDot, Icon, IconMotionSettings, SpectrumSettings, AppearanceDensity, AppearanceCenter },
   setup() {
     const store = useBoardStore()
     const appearanceOpen = ref(false)
+    const centerOpen = ref(false)
     const appearanceRoot = ref<HTMLElement | null>(null)
-    const theme = ref<ThemeChoice>(readTheme())
 
     function onProject(event: Event) {
       store.selectProject((event.target as HTMLSelectElement).value)
     }
 
-    function chooseTheme(value: ThemeChoice) {
-      theme.value = value
-      applyTheme(value)
+    function openCenter() {
+      appearanceOpen.value = false
+      // 关闭下拉后把回焦点留在持久存在的入口上。
+      appearanceRoot.value?.querySelector<HTMLButtonElement>('.appearance-trigger')?.focus()
+      centerOpen.value = true
     }
 
     function onDocumentPointerDown(event: PointerEvent) {
@@ -77,8 +46,8 @@ export default defineComponent({
     })
 
     return {
-      store, appearanceOpen, appearanceRoot, theme, themes: THEMES,
-      onProject, chooseTheme,
+      store, appearanceOpen, appearanceRoot, centerOpen, theme, themes: THEMES,
+      onProject, chooseTheme: setTheme, openCenter,
     }
   },
 })
@@ -122,8 +91,15 @@ export default defineComponent({
             >{{ option.label }}</button>
           </div>
         </div>
-        <SpectrumSettings />
-        <IconMotionSettings />
+        <SpectrumSettings compact />
+        <IconMotionSettings compact />
+        <AppearanceDensity compact />
+        <div class="appearance-group all-settings">
+          <button class="btn quiet all-settings-trigger" type="button" @click="openCenter">
+            <span><Icon name="settings" :size="14" />全部外观设置</span>
+            <Icon name="chevron" :size="14" :rotate="270" />
+          </button>
+        </div>
       </section>
     </div>
 
@@ -138,6 +114,7 @@ export default defineComponent({
       <Icon name="bell" :size="20" />
       <span v-if="store.pendingCount" class="badge warn dot">{{ store.pendingCount }}</span>
     </router-link>
+    <AppearanceCenter :open="centerOpen" :projects="store.projectList" @close="centerOpen = false" />
   </header>
 </template>
 
@@ -180,6 +157,9 @@ export default defineComponent({
   box-shadow: var(--shadow);
 }
 .theme-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s1); }
+.all-settings { border-top: 1px solid var(--line); padding-top: var(--s3); }
+.all-settings-trigger { width: 100%; justify-content: space-between; }
+.all-settings-trigger > span { display: inline-flex; align-items: center; gap: var(--s2); }
 .bell {
   position: relative;
   display: inline-flex;

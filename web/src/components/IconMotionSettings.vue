@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 import { MOTION_MODES, effectiveMotion, iconMotion, reducedMotion, setIconMotion } from '@/utils/iconMotion'
 
+withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 // 系统开了「减少动效」时按钮仍显示用户自己选的档，但下面明说此刻被强制静止了，免得以为设置坏了。
 const forcedOff = computed(() => reducedMotion.value && iconMotion.value !== 'off')
 const crowded = computed(() => !reducedMotion.value && iconMotion.value === 'lively' && effectiveMotion.value === 'calm')
@@ -10,7 +11,7 @@ const crowded = computed(() => !reducedMotion.value && iconMotion.value === 'liv
 
 <template>
   <div class="appearance-group">
-    <div class="appearance-label">图标动效</div>
+    <component :is="compact ? 'div' : 'h3'" :class="compact ? 'appearance-label' : 'ac-h'">{{ compact ? '动效' : '图标动效' }}</component>
     <div class="motion-options">
       <button
         v-for="mode in MOTION_MODES"
@@ -22,7 +23,7 @@ const crowded = computed(() => !reducedMotion.value && iconMotion.value === 'liv
         @click="setIconMotion(mode.id)"
       >{{ mode.label }}</button>
     </div>
-    <p class="motion-hint">关：全部静止 · 微：只有待拍板 / 施工中 / 暂缓 循环 · 活泼：全部循环（默认）。</p>
+    <p v-if="!compact" class="motion-hint">关：全部静止 · 微：只有待拍板 / 施工中 / 暂缓 循环 · 活泼：全部循环（默认）。</p>
     <p v-if="forcedOff" class="motion-hint warned">系统开了「减少动效」，现在一律静止；关掉系统那个开关，这里的选择才会生效。</p>
     <p v-else-if="crowded" class="motion-hint warned">这一屏的状态瓦片太多，已临时降到「微」，滚动到瓦片少的地方会自动恢复。</p>
   </div>
