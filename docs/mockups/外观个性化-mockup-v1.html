@@ -1,0 +1,1413 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 外观个性化 mockup v1（AUD-FUN-PERSONALIZATION）</title>
+<style>
+/* ============================================================
+   令牌层：照抄 web/src/styles/base.css，另加本稿新增的个性化变量。
+   新增变量一律带注释标出「本稿新增」，施工时按这份落进 base.css。
+   ============================================================ */
+:root{
+  --bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;
+  --line:#e4e4e2;--line-strong:#d2d2cf;
+  --text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;
+  --ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;
+  --bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;
+  --n:#8e8e89;--n-bg:#eeeeed;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+  --r-sm:4px;--r:6px;--r-lg:8px;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+  --cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+
+  /* —— 本稿新增①：密度倍率。舒适=1，紧凑=.75。所有间距由基数乘它得出 —— */
+  --dens:1;
+  --s1:calc(4px * var(--dens));--s2:calc(8px * var(--dens));--s3:calc(12px * var(--dens));
+  --s4:calc(16px * var(--dens));--s5:calc(24px * var(--dens));--s6:calc(32px * var(--dens));
+  --s7:calc(48px * var(--dens));
+
+  /* —— 本稿新增②：基础字号 13~16px，其余字号按同一比例缩放，排版比例不走样 —— */
+  --fs:14px;
+  --fs-xs:calc(var(--fs) * .786);--fs-sm:calc(var(--fs) * .893);--fs-base:var(--fs);
+  --fs-md:calc(var(--fs) * 1.071);--fs-lg:calc(var(--fs) * 1.286);
+  --fs-xl:calc(var(--fs) * 1.571);--fs-2xl:calc(var(--fs) * 2);
+
+  /* —— 现有四套光谱 —— */
+  --spec-cool:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4;
+  --spec-warm:#f0b429,#f5825b,#e8619d,#a86fd8,#f0b429;
+  --spec-full:#ff5f6d,#ffc371,#7ee8a2,#4a9eff,#a86fd8,#ff5f6d;
+  --spec-duo:#4ad9c4,#6d8cff,#4ad9c4;
+  /* —— 本稿新增③：四套新预设 —— */
+  --spec-aurora:#3ddc97,#22d3ee,#6d8cff,#a86fd8,#3ddc97;      /* 极光：绿→青→靛→紫 */
+  --spec-sunset:#ff8a5b,#ffb26b,#ff5f8d,#a05ac0,#ff8a5b;      /* 落日：橘→粉→紫 */
+  --spec-cyber:#00e5ff,#ff2fb9,#7b46ff,#00e5ff;               /* 赛博：青→洋红→紫 */
+  /* 单色：不写死颜色，直接引用主题的文字/描边色，深浅两套自动各走各的 */
+  --spec-mono:var(--text-3),var(--line-strong),var(--text-3);
+
+  /* —— 语义谱（状态瓦片五档） —— */
+  --spec-info:#4a9eff,#4ad9c4,#6d8cff,#4a9eff;
+  --spec-warn:#f0b429,#f5825b,#f6d365,#f0b429;
+  --spec-ok:#6fbf82,#2c7a45,#a8e6b9,#6fbf82;
+  --spec-bad:#e0736a,#8a2f27,#f2a59d,#e0736a;
+  --spec-n:#c9c9c6,#8e8e89,#e4e4e2,#c9c9c6;
+
+  --spec-active:var(--spec-cool);
+  --spec-bar:var(--spec-active);--spec-ring:var(--spec-active);--spec-top:var(--spec-active);
+  --spec-edge:var(--spec-info);--spec-quota:var(--spec-active);
+
+  /* —— 本稿新增④：灯条速度倍率。慢=1.55 中=1 快=.62；乘在每条动画的时长上，
+        所以状态谱那四档（急 2.4s / 常 3.4s / 慢 5s / 余烬 6.4s）的相对快慢关系原样保持 —— */
+  --sp-k:1;
+  --sp-base:calc(3.4s * var(--sp-k));
+  --sp-fast:calc(2.4s * var(--sp-k));
+  --sp-slow:calc(5s * var(--sp-k));
+  --sp-ember:calc(6.4s * var(--sp-k));
+  /* —— 本稿新增⑤：灯条强度。细=.65 标准=1 粗=1.5，乘在厚度上，并微调亮度 —— */
+  --gl-k:1;
+  --gl-top:calc(2px * var(--gl-k));      /* 卡片顶边 */
+  --gl-rail:calc(6px * var(--gl-k));     /* 进度条轨道 */
+  --gl-edge:calc(2px * var(--gl-k));     /* 施工中竖条 */
+  --gl-op:1;                             /* 细档略压暗，粗档略提亮 */
+
+  /* —— 本稿新增⑦：每项目主题色。默认取自 registry，本地可覆盖 —— */
+  --proj:var(--text-2);
+}
+[data-theme="dark"]{
+  --bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;
+  --line:#242426;--line-strong:#343437;
+  --text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;
+  --ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;
+  --bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;
+  --n:#8e8e8e;--n-bg:#232326;--shadow:none;
+  --spec-ok:#6fbf82,#3f9a5c,#a8e6b9,#6fbf82;
+  --spec-bad:#e0736a,#a63d33,#f2a59d,#e0736a;
+  --spec-n:#4a4a4e,#6a6a6f,#343437,#4a4a4e;
+  /* 深色下极光/落日提亮一档，赛博压一档（深底上霓虹本来就够刺眼） */
+  --spec-aurora:#4ee6a8,#3ce0f5,#8aa0ff,#c08ce8,#4ee6a8;
+  --spec-sunset:#ff9d72,#ffc285,#ff77a0,#b46fd0,#ff9d72;
+  --spec-cyber:#00c8e0,#e02aa2,#6b3ce0,#00c8e0;
+}
+[data-spectrum="warm"]{--spec-active:var(--spec-warm)}
+[data-spectrum="full"]{--spec-active:var(--spec-full)}
+[data-spectrum="duo"]{--spec-active:var(--spec-duo)}
+[data-spectrum="aurora"]{--spec-active:var(--spec-aurora)}
+[data-spectrum="sunset"]{--spec-active:var(--spec-sunset)}
+[data-spectrum="cyber"]{--spec-active:var(--spec-cyber)}
+[data-spectrum="mono"]{--spec-active:var(--spec-mono)}
+
+/* ============================================================
+   稿纸外壳（不属于产品界面，只是这份 mockup 自己的排版）
+   ============================================================ */
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600}
+.doc{max-width:1500px;margin:0 auto;padding:32px 24px 96px}
+.doc-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.doc-head h1{font-size:28px;letter-spacing:-.02em;color:#1a1a19}
+.doc-head p{margin:8px 0 0;color:#5c5c58;max-width:1000px;font-size:15px}
+.doc-head .meta{margin-top:6px;color:#8e8e89;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.modes{display:inline-flex;border:1px solid #d2d2cf;border-radius:6px;overflow:hidden;background:#fff;position:sticky;top:12px;z-index:9;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.modes button{border:0;border-right:1px solid #e4e4e2;background:#fff;color:#5c5c58;padding:7px 15px;font:inherit;font-size:13px;cursor:pointer}
+.modes button:last-child{border-right:0}
+.modes button.on{background:#1a1a19;color:#fff}
+.sec{margin-top:44px}
+.sec>h2{font-size:22px;color:#1a1a19;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:ui-monospace,Consolas,monospace;font-size:15px;margin-right:8px}
+.sec>p{margin:8px 0 16px;color:#5c5c58;max-width:1040px}
+.sec>p code,.note code{background:#fff;border:1px solid #e4e4e2;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.sub{margin-top:26px}
+.sub>h3{font-size:17px;color:#1a1a19}
+.sub>p{margin:6px 0 14px;color:#5c5c58;max-width:1040px;font-size:14.5px}
+.note{margin:12px 0 0;padding:10px 14px;border-left:3px solid #d2d2cf;background:#f3f3f1;color:#5c5c58;font-size:13.5px;border-radius:0 6px 6px 0}
+.note b{color:#1a1a19}
+.note.ask{border-left-color:#9a6b12;background:#fdf3e0}
+.note.ask b{color:#9a6b12}
+.note.no{border-left-color:#b3382f;background:#fdecea}
+.note.no b{color:#b3382f}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.trio{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:1080px){.pair,.trio{grid-template-columns:1fr}}
+.pane{position:relative;padding:20px;border:1px solid var(--line-strong);border-radius:10px;background:var(--bg);color:var(--text);font-size:var(--fs-base);line-height:1.65}
+.pane::before{content:attr(data-label);position:absolute;top:9px;right:13px;color:var(--text-3);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.pane.dark{--bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;--line:#242426;--line-strong:#343437;--text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;--ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;--bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;--n:#8e8e8e;--n-bg:#232326;--shadow:none;--spec-ok:#6fbf82,#3f9a5c,#a8e6b9,#6fbf82;--spec-bad:#e0736a,#a63d33,#f2a59d,#e0736a;--spec-n:#4a4a4e,#6a6a6f,#343437,#4a4a4e;--spec-aurora:#4ee6a8,#3ce0f5,#8aa0ff,#c08ce8,#4ee6a8;--spec-sunset:#ff9d72,#ffc285,#ff77a0,#b46fd0,#ff9d72;--spec-cyber:#00c8e0,#e02aa2,#6b3ce0,#00c8e0}
+table.spec{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e4e2;border-radius:6px;overflow:hidden;font-size:14px}
+table.spec th,table.spec td{padding:9px 12px;border-bottom:1px solid #eeeeed;text-align:left;vertical-align:top}
+table.spec th{background:#f6f6f5;color:#5c5c58;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td.k{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:#1a1a19;white-space:nowrap}
+table.spec td.d{color:#2c7a45;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;white-space:nowrap}
+
+/* ============================================================
+   产品组件（照抄 base.css 的写法，只把写死的尺寸换成新增变量）
+   ============================================================ */
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;overflow:visible}
+.ic.s14{width:14px;height:14px}.ic.s16{width:16px;height:16px}.ic.s20{width:20px;height:20px}.ic.s24{width:24px;height:24px}
+.ic .tint{fill:currentColor;stroke:none;opacity:.18}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);padding:var(--s2) var(--s3);border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface-2);color:var(--text);cursor:pointer;font:inherit;font-size:var(--fs-base);transition:background .14s ease,border-color .14s ease,color .14s ease}
+.btn:hover{background:var(--surface-3)}
+.btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--text-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--text)}
+.btn-sm{padding:var(--s1) var(--s2);font-size:var(--fs-sm)}
+.badge{display:inline-block;padding:var(--s1) var(--s2);border:1px solid transparent;border-radius:var(--r-sm);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.6;white-space:nowrap}
+.badge.n{background:var(--surface-3);color:var(--text-2)}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.info{background:var(--info-bg);color:var(--info)}
+.mono{font-family:var(--mono)}
+.muted{color:var(--text-2)}
+.dim{color:var(--text-3)}
+.stack{display:grid;gap:var(--s2)}
+
+/* 流光：厚度与时长改读新增变量 */
+.glow{background-image:linear-gradient(90deg,var(--spec-top));background-size:200% 100%;animation:slide var(--sp-base) linear infinite;opacity:var(--gl-op)}
+.glow-top{height:var(--gl-top);border-radius:calc(var(--gl-top) / 2)}
+.glow-rail,.progress{height:var(--gl-rail);overflow:hidden;border-radius:calc(var(--gl-rail) / 2);background-color:var(--surface-3)}
+.glow-rail>i,.progress>i{display:block;height:100%;border-radius:inherit;background-image:linear-gradient(90deg,var(--spec-bar));background-size:200% 100%;animation:slide var(--sp-base) linear infinite;opacity:var(--gl-op)}
+.glow-edge{position:absolute;inset:0 auto 0 0;width:var(--gl-edge);background-image:linear-gradient(180deg,var(--spec-edge));background-size:100% 200%;animation:slideY var(--sp-base) linear infinite;opacity:var(--gl-op)}
+/* 本稿新增⑥：施工中竖条「呼吸」模式——不平移色带，只让整条明暗起伏 */
+[data-edge="breathe"] .glow-edge{background-image:linear-gradient(180deg,var(--spec-edge));background-size:100% 100%;animation:breathe calc(var(--sp-base) * 1.15) ease-in-out infinite}
+@keyframes slide{to{background-position:-200% 0}}
+@keyframes slideY{to{background-position:0 -200%}}
+@keyframes breathe{0%,100%{opacity:calc(var(--gl-op) * .26)}50%{opacity:var(--gl-op)}}
+
+/* 任务卡 */
+.tcard{position:relative;overflow:hidden;padding:var(--s3) var(--s4);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.tcard+.tcard{margin-top:var(--s2)}
+.tcard .tid{color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs)}
+.tcard .ttl{margin:var(--s1) 0 var(--s2);color:var(--text);font-size:var(--fs-base);line-height:1.45}
+.tcard .foot{display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2);color:var(--text-3);font-size:var(--fs-xs);font-family:var(--mono)}
+.tcard.building{padding-left:calc(var(--s4) + var(--gl-edge))}
+
+/* 状态瓦片 */
+.tile{display:inline-grid;place-items:center;width:20px;height:20px;padding:1.5px;border-radius:6px;background:var(--line);vertical-align:-.25em;flex:none}
+.tile>i{display:grid;place-items:center;width:100%;height:100%;border-radius:4.5px;background:var(--tone-bg,var(--surface))}
+.tile svg{width:14px;height:14px;fill:none;stroke:var(--tone,var(--text-2));stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.tile.spec{background-image:linear-gradient(90deg,var(--tone-spec,var(--spec-active)));background-size:200% 100%;animation:slide var(--sp-base) linear infinite}
+.tile.spec.sp-fast{animation-duration:var(--sp-fast)}
+.tile.spec.sp-slow{animation-duration:var(--sp-slow)}
+.tile.spec.sp-ember{animation-duration:var(--sp-ember)}
+.tone-info{--tone:var(--info);--tone-bg:var(--info-bg);--tone-spec:var(--spec-info)}
+.tone-warn{--tone:var(--warn);--tone-bg:var(--warn-bg);--tone-spec:var(--spec-warn)}
+.tone-ok{--tone:var(--ok);--tone-bg:var(--ok-bg);--tone-spec:var(--spec-ok)}
+.tone-bad{--tone:var(--bad);--tone-bg:var(--bad-bg);--tone-spec:var(--spec-bad)}
+.tone-n{--tone:var(--n);--tone-bg:var(--n-bg);--tone-spec:var(--spec-n)}
+
+/* 外观面板骨架 */
+.ap-group+.ap-group{margin-top:var(--s4)}
+.ap-label{margin-bottom:var(--s2);color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.12em;text-transform:uppercase}
+.ap-choice{padding:var(--s1) var(--s2);border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--text-2);cursor:pointer;font:inherit;font-size:var(--fs-sm);transition:background .14s ease,border-color .14s ease,color .14s ease}
+.ap-choice:hover,.ap-choice[aria-pressed="true"]{background:var(--surface-3);border-color:var(--line-strong);color:var(--text)}
+.ap-row2{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--s1)}
+.ap-row3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s1)}
+.ap-row4{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s1)}
+.ap-hint{margin:var(--s2) 0 0;color:var(--text-3);font-size:var(--fs-xs);line-height:1.5}
+.ap-line{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:var(--s2) 0}
+.ap-line+.ap-line{border-top:1px solid var(--line)}
+.ap-line .t{min-width:0}
+.ap-line .t b{display:block;color:var(--text);font-size:var(--fs-base);font-weight:500}
+.ap-line .t span{color:var(--text-3);font-size:var(--fs-xs);line-height:1.5}
+.swatch{width:44px;height:14px;padding:0;border:1px solid var(--line);border-radius:3px;cursor:pointer;background-size:200% 100%;animation:slide var(--sp-base) linear infinite}
+.swatch[aria-pressed="true"]{border-color:var(--text);box-shadow:0 0 0 1px var(--text)}
+.sw-cool{background-image:linear-gradient(90deg,var(--spec-cool))}
+.sw-warm{background-image:linear-gradient(90deg,var(--spec-warm))}
+.sw-full{background-image:linear-gradient(90deg,var(--spec-full))}
+.sw-duo{background-image:linear-gradient(90deg,var(--spec-duo))}
+.sw-aurora{background-image:linear-gradient(90deg,var(--spec-aurora))}
+.sw-sunset{background-image:linear-gradient(90deg,var(--spec-sunset))}
+.sw-cyber{background-image:linear-gradient(90deg,var(--spec-cyber))}
+.sw-mono{background-image:linear-gradient(90deg,var(--spec-mono))}
+.sw-grid{display:grid;grid-template-columns:repeat(4,44px);gap:var(--s2) var(--s3)}
+.sw-cell{display:grid;gap:3px;justify-items:start}
+.sw-cell span{color:var(--text-3);font-size:var(--fs-xs);font-family:var(--mono)}
+
+/* 开关 */
+.sw{position:relative;display:inline-flex;align-items:center;gap:var(--s2);cursor:pointer;font-size:var(--fs-sm);color:var(--text-2)}
+.sw input{position:absolute;opacity:0;width:0;height:0}
+.sw .track{width:34px;height:19px;border-radius:10px;background:var(--surface-3);border:1px solid var(--line-strong);transition:background .16s ease,border-color .16s ease;flex:none}
+.sw .track::after{content:"";display:block;width:13px;height:13px;margin:2px;border-radius:50%;background:var(--text-3);transition:transform .16s ease,background .16s ease}
+.sw input:checked+.track{background:var(--info-bg);border-color:var(--info)}
+.sw input:checked+.track::after{transform:translateX(15px);background:var(--info)}
+.sw input:focus-visible+.track{outline:2px solid var(--info);outline-offset:1px}
+
+/* 滑杆 */
+.range-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:var(--s3)}
+input[type=range]{width:100%;accent-color:var(--info)}
+.range-v{color:var(--text-2);font-family:var(--mono);font-size:var(--fs-sm);min-width:60px;text-align:right}
+.tm{padding:var(--s1) var(--s2);border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--text);font:inherit;font-size:var(--fs-sm);font-family:var(--mono)}
+.code{margin:var(--s2) 0 0;padding:var(--s3);overflow-x:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);color:var(--text-2);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.7;white-space:pre}
+
+/* 外观中心：左分类 + 右内容 */
+.ac{display:grid;grid-template-columns:172px 1fr;gap:0;min-height:520px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--shadow)}
+.ac-nav{display:flex;flex-direction:column;gap:2px;padding:var(--s3);background:var(--surface-2);border-right:1px solid var(--line)}
+.ac-title{margin-bottom:var(--s2);color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.12em;text-transform:uppercase}
+.ac-tab{padding:var(--s2) var(--s3);border:1px solid transparent;border-radius:var(--r);background:transparent;color:var(--text-2);cursor:pointer;font:inherit;font-size:var(--fs-base);text-align:left;transition:background .14s ease,color .14s ease}
+.ac-tab:hover{background:var(--surface-3);color:var(--text)}
+.ac-tab.on{background:var(--surface);border-color:var(--line);color:var(--text);font-weight:500}
+.ac-foot{margin-top:auto;padding-top:var(--s3)}
+.ac-body{padding:var(--s5);overflow-y:auto;max-height:640px}
+.ac-page{display:none}
+.ac-page.on{display:block;animation:acin .18s ease}
+@keyframes acin{from{opacity:0;transform:translateY(4px)}}
+.ac-h{margin:0 0 var(--s2);color:var(--text);font-size:var(--fs-md);font-weight:600}
+.ac-h:not(:first-child){margin-top:var(--s5);padding-top:var(--s4);border-top:1px solid var(--line)}
+.ac-p{margin:0 0 var(--s3);color:var(--text-2);font-size:var(--fs-sm);line-height:1.6;max-width:60ch}
+.ac-live{margin-top:var(--s5);padding:var(--s4);background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:var(--r)}
+.ac-live-h{margin-bottom:var(--s3);color:var(--text-3);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.12em;text-transform:uppercase}
+@media (max-width:760px){.ac{grid-template-columns:1fr}.ac-nav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.ac-title,.ac-foot{width:100%}}
+
+/* 项目颜色 */
+.proj-list{display:grid;gap:var(--s2);margin-top:var(--s3)}
+.proj-row{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s3);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);border-left:3px solid var(--proj)}
+.proj-chip{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:color-mix(in srgb,var(--proj) 18%,transparent);flex:none}
+.proj-dot{width:11px;height:11px;border-radius:3px;background:var(--proj)}
+.proj-t{flex:1;min-width:0;display:grid}
+.proj-t b{color:var(--text);font-size:var(--fs-base);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj-t span{font-size:var(--fs-xs)}
+.proj-sw{display:flex;gap:var(--s1);flex:none}
+.proj-c{width:16px;height:16px;padding:0;border:1px solid var(--line-strong);border-radius:4px;cursor:pointer}
+.proj-c[aria-pressed="true"]{box-shadow:0 0 0 2px var(--surface-2),0 0 0 3px var(--text)}
+
+/* 彩带画布：铺满卡片，不吃点击 */
+.conf-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.party-demo{display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap}
+.party-demo .tcard{flex:1;min-width:260px}
+
+/* 连击火焰 */
+.streak{display:inline-flex;align-items:center;gap:var(--s1);color:var(--text);font-family:var(--mono);font-size:var(--fs-xl);font-variant-numeric:tabular-nums}
+.streak .fi{color:var(--warn)}
+.streak.lit .fi{animation:flicker 1.9s ease-in-out infinite;transform-origin:50% 85%}
+@keyframes flicker{0%,100%{transform:scale(1) rotate(0);opacity:.92}28%{transform:scale(1.14) rotate(-3deg);opacity:1}52%{transform:scale(.97) rotate(2deg);opacity:.86}74%{transform:scale(1.08) rotate(-1deg);opacity:1}}
+
+/* 连击日历示意 */
+.days{display:flex;gap:6px;flex-wrap:wrap;margin-top:var(--s3)}
+.day{display:grid;gap:4px;justify-items:center;min-width:34px}
+.day i{display:block;width:26px;height:26px;border-radius:var(--r-sm);background:var(--surface-3);border:1px solid var(--line)}
+.day.hit i{background:var(--ok);border-color:var(--ok)}
+.day.gap i{background:var(--warn-bg);border-color:var(--warn);border-style:dashed}
+.day span{color:var(--text-3);font-family:var(--mono);font-size:10px}
+.legend{display:flex;gap:var(--s4);margin-top:var(--s3);flex-wrap:wrap;color:var(--text-3);font-size:var(--fs-xs)}
+.legend b{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+
+/* 进度环（项目着色演示） */
+.ring{display:grid;place-items:center;width:56px;height:56px;flex:none}
+.ring svg{transform:rotate(-90deg)}
+.ring .rv{position:absolute;font-family:var(--mono);font-size:var(--fs-sm);color:var(--text)}
+.ring-wrap{position:relative;display:grid;place-items:center}
+.pcard{display:flex;align-items:center;gap:var(--s3);padding:var(--s3);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);border-left:3px solid var(--proj)}
+.pcard .pt{flex:1;min-width:0}
+.pcard .pt b{display:block;color:var(--text);font-size:var(--fs-base);font-weight:500}
+.pcard .pt span{color:var(--text-3);font-size:var(--fs-xs);font-family:var(--mono)}
+
+/* 深色预览块里要把「选中的那套预设」重新解析一遍：--spec-active 若在 :root 上解析，
+   拿到的永远是浅色版的色站。这条只是 mockup 里深浅并排才需要，产品里由 data-theme 一次决定。 */
+.pane.dark{--spec-mono:var(--text-3),var(--line-strong),var(--text-3)}
+[data-spectrum="cool"] .pane.dark{--spec-active:var(--spec-cool)}
+[data-spectrum="warm"] .pane.dark{--spec-active:var(--spec-warm)}
+[data-spectrum="full"] .pane.dark{--spec-active:var(--spec-full)}
+[data-spectrum="duo"] .pane.dark{--spec-active:var(--spec-duo)}
+[data-spectrum="aurora"] .pane.dark{--spec-active:var(--spec-aurora)}
+[data-spectrum="sunset"] .pane.dark{--spec-active:var(--spec-sunset)}
+[data-spectrum="cyber"] .pane.dark{--spec-active:var(--spec-cyber)}
+[data-spectrum="mono"] .pane.dark{--spec-active:var(--spec-mono)}
+
+/* 灯带示意 */
+.strip{height:18px;border-radius:9px;background:var(--tone,var(--ok));box-shadow:0 0 18px 2px color-mix(in srgb,var(--tone,var(--ok)) 55%,transparent);animation:strip-breathe 3.6s ease-in-out infinite}
+.strip.warn{--tone:#f0961e;animation-duration:3.2s}
+.strip.ok{--tone:#50c878;animation-duration:5s}
+.strip.bad{--tone:#e0463c;animation-duration:1.5s}
+@keyframes strip-breathe{0%,100%{opacity:.42}50%{opacity:1}}
+</style>
+</head>
+<body>
+<!-- 图标精灵：全部照抄 web/src/icons/paths.ts（本稿不新增任何图标，也不用 emoji） -->
+<svg style="display:none" aria-hidden="true">
+<symbol id="i-settings" viewBox="0 0 24 24"><circle class="tint" cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle class="tint" cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path class="tint" d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></symbol>
+<symbol id="i-flame" viewBox="0 0 24 24"><path class="tint" d="M12 21.5c4 0 6.5-2.6 6.5-6.3 0-2.7-1.6-4.9-3.1-6.3-.4 1.7-1.3 2.7-2.5 3.2.1-2.9-1.4-5.7-4.2-7.6.5 2.7-.8 4.6-2.2 6.4C5.4 12.4 5.5 14 5.5 15.2c0 3.7 2.5 6.3 6.5 6.3z"/><path d="M12 21.5c4 0 6.5-2.6 6.5-6.3 0-2.7-1.6-4.9-3.1-6.3-.4 1.7-1.3 2.7-2.5 3.2.1-2.9-1.4-5.7-4.2-7.6.5 2.7-.8 4.6-2.2 6.4C5.4 12.4 5.5 14 5.5 15.2c0 3.7 2.5 6.3 6.5 6.3z"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path class="tint" d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="M4.5 3.5v3M3 5h3M19.5 16.5v3M18 18h3"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path class="tint" d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+<symbol id="i-checks" viewBox="0 0 24 24"><path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path class="tint" d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9z"/><path d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9"/><path d="M10.3 20.5a1.9 1.9 0 0 0 3.4 0"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+<symbol id="i-kanban" viewBox="0 0 24 24"><rect class="tint" x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="9.25" y="4" width="5.5" height="11" rx="1.2"/><rect x="15.5" y="4" width="5.5" height="7" rx="1.2"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect class="tint" x="3" y="10" width="18" height="11" rx="1.5"/><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path class="tint" d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m3 12.4 9 4.8 9-4.8"/><path d="m3 17 9 4.8 9-4.8"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle class="tint" cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-cpu" viewBox="0 0 24 24"><rect class="tint" x="6" y="6" width="12" height="12" rx="2"/><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+<symbol id="i-network" viewBox="0 0 24 24"><circle class="tint" cx="18" cy="5" r="2.6"/><circle class="tint" cx="6" cy="12" r="2.6"/><circle class="tint" cx="18" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.4 13.3 7.2 4.2M15.6 6.5 8.4 10.7"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path class="tint" d="M3.8 13h2.4v7H3.8zM9.8 5h2.4v15H9.8zM15.8 10h2.4v10h-2.4z"/><path d="M5 20v-7M11 20V5M17 20v-10"/><path d="M3 20h18"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path class="tint" d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></symbol>
+</svg>
+
+<div class="doc">
+
+<div class="doc-head">
+  <div>
+    <h1>看板 · 外观个性化 mockup v1</h1>
+    <p>眼下外观面板只有三样：主题、灯条配色、图标动效。这一稿把它扩成「一个能玩的外观中心」——
+      灯条快慢粗细、完工彩带、连击火焰、每个项目自己的颜色、界面松紧与字号、提示音，
+      再加一条把看板状态推给物理 RGB 灯带的出口。<b>全部默认关或保持现状，不点就跟今天一模一样。</b></p>
+    <p class="meta">任务卡 AUD-FUN-PERSONALIZATION · 分支 feat/aud-fun-personalization · 2026-09-07 ·
+      下面每一处开关都是真的，点了当场看见效果；本页不依赖任何外部库。</p>
+  </div>
+  <div class="modes">
+    <button class="on" data-doc-theme="light" type="button">浅色</button>
+    <button data-doc-theme="dark" type="button">深色</button>
+    <button data-doc-theme="both" type="button">并排看</button>
+  </div>
+</div>
+
+<div class="note"><b>怎么看这份稿子。</b>页面里凡是「深浅并排」的地方，左边是浅色主题、右边是深色主题，两边内容完全一样，
+  只为一次看清两套配色都站得住。顶部那三个按钮可以切成只看一种。动效在这一页是<b>真跑的</b>，
+  所以拿不准「粗档会不会太吵」直接点一下比看截图准。</div>
+
+<section class="sec">
+<h2><span class="no">01</span>先解决一个位置问题：新东西放哪</h2>
+<p>今天的外观设置是顶栏「外观」按钮下拉出来的一张 320px 窄卡，往里再塞六大类就会变成一条要滚三屏的长条。
+  这一稿把它拆成两层——<b>下拉里只留天天要动的四样</b>（主题、配色、动效、松紧），
+  下拉底部一行「全部外观设置」打开一张<b>居中的大面板</b>，玩法多的那些住在大面板里。
+  大面板的样子跟现有的「菜单设置」是同一套（同样居中、同样 640px、同样左边分类右边内容），不引入第三种窗口形态。</p>
+
+<div class="pair">
+  <div class="pane" data-label="今天 · 浅色">
+    <div class="dim mono" style="font-size:11px;margin-bottom:10px">顶栏 → 外观</div>
+    <div style="width:320px;max-width:100%;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)">
+      <div class="ap-group">
+        <div class="ap-label">主题</div>
+        <div class="ap-row3">
+          <button class="ap-choice" type="button">浅色</button>
+          <button class="ap-choice" type="button">深色</button>
+          <button class="ap-choice" type="button" aria-pressed="true">跟随系统</button>
+        </div>
+      </div>
+      <div class="ap-group">
+        <div class="ap-label">灯条配色 · 全站</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="swatch sw-cool" type="button" aria-pressed="true"></button>
+          <button class="swatch sw-warm" type="button"></button>
+          <button class="swatch sw-full" type="button"></button>
+          <button class="swatch sw-duo" type="button"></button>
+          <button class="swatch" type="button" style="background-image:linear-gradient(90deg,var(--spec-active));display:grid;place-items:center;color:var(--text)"><svg class="ic s14"><use href="#i-settings"/></svg></button>
+        </div>
+      </div>
+      <div class="ap-group">
+        <div class="ap-label" style="display:flex;justify-content:space-between">分部位单独配色 <svg class="ic s14"><use href="#i-chevron"/></svg></div>
+        <div class="ap-label" style="display:flex;justify-content:space-between">状态灯条配色 <svg class="ic s14"><use href="#i-chevron"/></svg></div>
+      </div>
+      <div class="ap-group">
+        <div class="ap-label">图标动效</div>
+        <div class="ap-row3">
+          <button class="ap-choice" type="button">关</button>
+          <button class="ap-choice" type="button">微</button>
+          <button class="ap-choice" type="button" aria-pressed="true">活泼</button>
+        </div>
+      </div>
+    </div>
+    <p class="ap-hint" style="max-width:320px">三组设置，一屏放得下。再加六类就放不下了。</p>
+  </div>
+
+  <div class="pane dark" data-label="新版下拉 · 深色">
+    <div class="dim mono" style="font-size:11px;margin-bottom:10px">顶栏 → 外观</div>
+    <div style="width:320px;max-width:100%;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)">
+      <div class="ap-group">
+        <div class="ap-label">主题</div>
+        <div class="ap-row3">
+          <button class="ap-choice" type="button"><svg class="ic s14"><use href="#i-sun"/></svg> 浅</button>
+          <button class="ap-choice" type="button"><svg class="ic s14"><use href="#i-moon"/></svg> 深</button>
+          <button class="ap-choice" type="button" aria-pressed="true">跟随系统</button>
+        </div>
+      </div>
+      <div class="ap-group">
+        <div class="ap-label">灯条配色 · 全站</div>
+        <div class="sw-grid">
+          <div class="sw-cell"><button class="swatch sw-cool" type="button" aria-pressed="true"></button><span>冷</span></div>
+          <div class="sw-cell"><button class="swatch sw-warm" type="button"></button><span>暖</span></div>
+          <div class="sw-cell"><button class="swatch sw-full" type="button"></button><span>全光</span></div>
+          <div class="sw-cell"><button class="swatch sw-duo" type="button"></button><span>双色</span></div>
+          <div class="sw-cell"><button class="swatch sw-aurora" type="button"></button><span>极光</span></div>
+          <div class="sw-cell"><button class="swatch sw-sunset" type="button"></button><span>落日</span></div>
+          <div class="sw-cell"><button class="swatch sw-cyber" type="button"></button><span>赛博</span></div>
+          <div class="sw-cell"><button class="swatch sw-mono" type="button"></button><span>单色</span></div>
+        </div>
+      </div>
+      <div class="ap-group">
+        <div class="ap-label">动效</div>
+        <div class="ap-row3">
+          <button class="ap-choice" type="button">关</button>
+          <button class="ap-choice" type="button">微</button>
+          <button class="ap-choice" type="button" aria-pressed="true">活泼</button>
+        </div>
+      </div>
+      <div class="ap-group">
+        <div class="ap-label">界面松紧</div>
+        <div class="ap-row2">
+          <button class="ap-choice" type="button" aria-pressed="true">舒适</button>
+          <button class="ap-choice" type="button">紧凑</button>
+        </div>
+      </div>
+      <div class="ap-group" style="border-top:1px solid var(--line);padding-top:12px">
+        <button class="btn quiet" style="width:100%;justify-content:space-between" type="button">
+          <span><svg class="ic s14"><use href="#i-settings"/></svg> 全部外观设置</span>
+          <svg class="ic s14" style="transform:rotate(-90deg)"><use href="#i-chevron"/></svg>
+        </button>
+      </div>
+    </div>
+    <p class="ap-hint" style="max-width:320px">还是一屏。配色多了四套、多了松紧，
+      「分部位」「状态灯条」这类一年调一次的搬进大面板。</p>
+  </div>
+</div>
+
+<div class="note"><b>为什么不干脆全塞进大面板。</b>主题和配色是「看一眼心情不对就换」的东西，
+  多一次开窗关窗就懒得换了；而分部位配色、声音、灯带这些设一次能管半年。常用的留在手边，不常用的收起来。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">02</span>外观中心大面板（这一块是真的，随便点）</h2>
+<p>左边七类，右边内容。<b>你在这里点的每一下都会立刻作用到本页后面所有演示</b>——
+  改速度，下面所有灯条一起变快；改松紧，下面的卡片一起收紧。想试哪档就点哪档，不用想象。</p>
+
+<div class="pane" id="panel-pane" data-label="外观中心 · 跟随上方主题">
+<div class="ac">
+  <aside class="ac-nav">
+    <div class="ac-title">外观</div>
+    <button class="ac-tab on" data-tab="color" type="button">主题与配色</button>
+    <button class="ac-tab" data-tab="glow" type="button">灯条与动效</button>
+    <button class="ac-tab" data-tab="party" type="button">完工庆祝</button>
+    <button class="ac-tab" data-tab="proj" type="button">项目颜色</button>
+    <button class="ac-tab" data-tab="dens" type="button">密度与字号</button>
+    <button class="ac-tab" data-tab="sound" type="button">提示音</button>
+    <button class="ac-tab" data-tab="wire" type="button">灯带与推送</button>
+    <div class="ac-foot">
+      <button class="btn btn-sm quiet" id="reset-all" type="button">全部恢复默认</button>
+    </div>
+  </aside>
+
+  <div class="ac-body">
+    <!-- ① 主题与配色 -->
+    <section class="ac-page on" data-page="color">
+      <h3 class="ac-h">主题</h3>
+      <div class="ap-row3" style="max-width:340px">
+        <button class="ap-choice" data-set="theme" data-v="light" type="button">浅色</button>
+        <button class="ap-choice" data-set="theme" data-v="dark" type="button">深色</button>
+        <button class="ap-choice" data-set="theme" data-v="system" aria-pressed="true" type="button">跟随系统</button>
+      </div>
+
+      <h3 class="ac-h">灯条配色 · 全站</h3>
+      <p class="ac-p">前四套是现在就有的，后四套是新增的。鼠标放上去能看到它在真流动。</p>
+      <div class="sw-grid" style="grid-template-columns:repeat(8,44px)">
+        <div class="sw-cell"><button class="swatch sw-cool" data-set="spec" data-v="cool" aria-pressed="true" type="button"></button><span>冷谱</span></div>
+        <div class="sw-cell"><button class="swatch sw-warm" data-set="spec" data-v="warm" type="button"></button><span>暖谱</span></div>
+        <div class="sw-cell"><button class="swatch sw-full" data-set="spec" data-v="full" type="button"></button><span>全光谱</span></div>
+        <div class="sw-cell"><button class="swatch sw-duo" data-set="spec" data-v="duo" type="button"></button><span>双色</span></div>
+        <div class="sw-cell"><button class="swatch sw-aurora" data-set="spec" data-v="aurora" type="button"></button><span>极光</span></div>
+        <div class="sw-cell"><button class="swatch sw-sunset" data-set="spec" data-v="sunset" type="button"></button><span>落日</span></div>
+        <div class="sw-cell"><button class="swatch sw-cyber" data-set="spec" data-v="cyber" type="button"></button><span>赛博</span></div>
+        <div class="sw-cell"><button class="swatch sw-mono" data-set="spec" data-v="mono" type="button"></button><span>单色</span></div>
+      </div>
+      <p class="ap-hint">单色不是一个固定的灰——它直接借用当前主题的文字色与描边色，
+        所以浅色下是浅灰、深色下是深灰，永远跟界面同一个调子。想彻底安静又不想关掉动效，选它。</p>
+
+      <h3 class="ac-h">细调</h3>
+      <div class="ap-line">
+        <div class="t"><b>分部位单独配色</b><span>进度条 / 进度环 / 卡片顶边 / 施工中竖条 / 额度条，各自可以不跟全站</span></div>
+        <button class="btn btn-sm quiet" type="button">展开 <svg class="ic s14"><use href="#i-chevron"/></svg></button>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>状态灯条配色</b><span>状态瓦片那圈光的五档语义色（蓝 / 琥珀 / 绿 / 余烬 / 灰）</span></div>
+        <button class="btn btn-sm quiet" type="button">展开 <svg class="ic s14"><use href="#i-chevron"/></svg></button>
+      </div>
+      <p class="ap-hint">这两块是把今天下拉里已有的功能原样搬进来，内容一行没改。</p>
+    </section>
+
+    <!-- ② 灯条与动效 -->
+    <section class="ac-page" data-page="glow">
+      <h3 class="ac-h">流动速度</h3>
+      <p class="ac-p">一个全局倍率，同时作用在全站流光和状态灯条上。
+        状态灯条内部那四档快慢（急 / 常 / 慢 / 余烬）是状态语言，相对关系不会被打乱——整体一起变快或一起变慢而已。</p>
+      <div class="ap-row3" style="max-width:340px">
+        <button class="ap-choice" data-set="speed" data-v="1.55" type="button">慢</button>
+        <button class="ap-choice" data-set="speed" data-v="1" aria-pressed="true" type="button">中（默认）</button>
+        <button class="ap-choice" data-set="speed" data-v=".62" type="button">快</button>
+      </div>
+
+      <h3 class="ac-h">灯条粗细</h3>
+      <p class="ac-p">卡片顶边、进度条、施工中竖条一起变。细档同时压暗一点，粗档提亮一点，免得粗了就显脏。</p>
+      <div class="ap-row3" style="max-width:340px">
+        <button class="ap-choice" data-set="glow" data-v=".65" type="button">细</button>
+        <button class="ap-choice" data-set="glow" data-v="1" aria-pressed="true" type="button">标准（默认）</button>
+        <button class="ap-choice" data-set="glow" data-v="1.5" type="button">粗</button>
+      </div>
+
+      <h3 class="ac-h">施工中的卡片</h3>
+      <div class="ap-line">
+        <div class="t"><b>左边那条竖光改成「呼吸」</b><span>不再上下流动，而是整条一明一暗地起伏；只影响卡片左侧竖条，状态瓦片不受影响</span></div>
+        <label class="sw"><input type="checkbox" data-set="breathe"><span class="track"></span></label>
+      </div>
+      <p class="ap-hint">流动像「有东西在跑」，呼吸像「有人在里面干活」。两种都不吵，看你喜欢哪种隐喻。</p>
+
+      <h3 class="ac-h">图标动效</h3>
+      <div class="ap-row3" style="max-width:340px">
+        <button class="ap-choice" type="button">关</button>
+        <button class="ap-choice" type="button">微</button>
+        <button class="ap-choice" aria-pressed="true" type="button">活泼</button>
+      </div>
+      <p class="ap-hint">这一档今天就有，只是从下拉搬到了这里，规则一字未改。</p>
+
+      <div class="ac-live">
+        <div class="ac-live-h">当前效果</div>
+        <div class="glow glow-top" style="margin-bottom:14px"></div>
+        <div class="tcard building" style="margin-bottom:10px">
+          <span class="glow-edge"></span>
+          <div class="tid">AUD-FUN-PERSONALIZATION</div>
+          <div class="ttl">外观设置只有主题和灯条配色，再加几样好玩又有用的</div>
+          <div class="progress"><i style="width:62%"></i></div>
+          <div class="foot"><span class="tile spec tone-info"><i><svg viewBox="0 0 24 24"><use href="#i-zap"/></svg></i></span> 施工中 62%</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span class="tile spec sp-fast tone-warn"><i><svg viewBox="0 0 24 24"><use href="#i-bell"/></svg></i></span>
+          <span class="dim" style="font-size:var(--fs-xs)">待拍板（急）</span>
+          <span class="tile spec tone-info"><i><svg viewBox="0 0 24 24"><use href="#i-zap"/></svg></i></span>
+          <span class="dim" style="font-size:var(--fs-xs)">施工中（常）</span>
+          <span class="tile spec sp-slow tone-ok"><i><svg viewBox="0 0 24 24"><use href="#i-check"/></svg></i></span>
+          <span class="dim" style="font-size:var(--fs-xs)">已拍板（慢）</span>
+          <span class="tile spec sp-ember tone-bad"><i><svg viewBox="0 0 24 24"><use href="#i-target"/></svg></i></span>
+          <span class="dim" style="font-size:var(--fs-xs)">暂缓（余烬）</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ 完工庆祝 -->
+    <section class="ac-page" data-page="party">
+      <h3 class="ac-h">完工彩带</h3>
+      <p class="ac-p">某张卡完工的那一刻，卡片上撒 1.2 秒彩带。纯手画（canvas 逐帧绘制），不引任何库，撒完自己收摊。</p>
+      <div class="ap-line">
+        <div class="t"><b>完工时撒彩带</b><span>只在你正看着那张卡的时候撒；后台完工的卡不会补放</span></div>
+        <label class="sw"><input type="checkbox" data-set="confetti"><span class="track"></span></label>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>浓度</b><span>少一点更克制，多一点更过瘾</span></div>
+        <div class="ap-row3" style="width:200px">
+          <button class="ap-choice" data-set="conf-n" data-v="26" type="button">少</button>
+          <button class="ap-choice" data-set="conf-n" data-v="48" aria-pressed="true" type="button">适中</button>
+          <button class="ap-choice" data-set="conf-n" data-v="90" type="button">多</button>
+        </div>
+      </div>
+      <p class="ap-hint">彩带用的就是你选的那套灯条配色——选了极光就撒极光色，选了单色就撒灰白纸屑。</p>
+
+      <h3 class="ac-h">连击火焰</h3>
+      <p class="ac-p">「每日成果」页那个连续产出天数，连到 3 天以上时给它点上火。今天已经有一枚静止的火焰图标，这里让它烧起来。</p>
+      <div class="ap-line">
+        <div class="t"><b>连击 ≥3 天时火焰动起来</b><span>用现有的 flame 图标，不是 emoji；关掉就退回今天那枚静止图标</span></div>
+        <label class="sw"><input type="checkbox" data-set="fire" checked><span class="track"></span></label>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>断连宽限一天</b><span>中间空一天不算断，空两天才归零</span></div>
+        <label class="sw"><input type="checkbox" data-set="grace" checked><span class="track"></span></label>
+      </div>
+      <p class="ap-hint">这条是<b>算法改动，不是装饰</b>：今天的规则是空一天立刻清零，出趟门回来连击就没了。
+        详细对照见下面第 05 节。</p>
+
+      <div class="ac-live">
+        <div class="ac-live-h">试一下</div>
+        <div class="party-demo">
+          <div class="tcard" id="demo-card">
+            <canvas class="conf-canvas" id="demo-conf"></canvas>
+            <div class="tid">AUD-UI-KANBAN-FLOW</div>
+            <div class="ttl">看板看不出谁拖了多久；依赖图成毛线团</div>
+            <div class="foot"><span class="tile tone-ok" style="background:var(--ok)"><i style="background:var(--ok)"><svg viewBox="0 0 24 24" style="stroke:var(--bg)"><use href="#i-checks"/></svg></i></span> 完工 · 刚刚</div>
+          </div>
+          <button class="btn" id="fire-conf" type="button"><svg class="ic s16"><use href="#i-sparkles"/></svg> 放一次彩带</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ④ 项目颜色 -->
+    <section class="ac-page" data-page="proj">
+      <h3 class="ac-h">每个项目一个颜色</h3>
+      <p class="ac-p">同时开着好几个项目时，光看标题分不清哪张卡是哪个项目的。给每个项目一个颜色，
+        项目下拉、卡片左边条、总览进度环都按它着色，扫一眼就知道。</p>
+      <div class="ap-line">
+        <div class="t"><b>按项目着色</b><span>关掉就回到今天：全部统一色</span></div>
+        <label class="sw"><input type="checkbox" data-set="projcolor" checked><span class="track"></span></label>
+      </div>
+
+      <div class="proj-list" id="proj-list">
+        <div class="proj-row" data-proj="dashboard" style="--proj:#4a9eff">
+          <span class="proj-chip"><span class="proj-dot"></span></span>
+          <div class="proj-t"><b>看板（多项目管理工具）</b><span class="mono dim">dashboard</span></div>
+          <div class="proj-sw">
+            <button class="proj-c" data-c="#4a9eff" style="background:#4a9eff" aria-pressed="true" type="button"></button>
+            <button class="proj-c" data-c="#3ddc97" style="background:#3ddc97" type="button"></button>
+            <button class="proj-c" data-c="#f0b429" style="background:#f0b429" type="button"></button>
+            <button class="proj-c" data-c="#e8619d" style="background:#e8619d" type="button"></button>
+            <button class="proj-c" data-c="#a86fd8" style="background:#a86fd8" type="button"></button>
+            <button class="proj-c" data-c="#8e8e89" style="background:#8e8e89" type="button"></button>
+          </div>
+        </div>
+        <div class="proj-row" data-proj="astock" style="--proj:#3ddc97">
+          <span class="proj-chip"><span class="proj-dot"></span></span>
+          <div class="proj-t"><b>A 股模拟器</b><span class="mono dim">astock</span></div>
+          <div class="proj-sw">
+            <button class="proj-c" data-c="#4a9eff" style="background:#4a9eff" type="button"></button>
+            <button class="proj-c" data-c="#3ddc97" style="background:#3ddc97" aria-pressed="true" type="button"></button>
+            <button class="proj-c" data-c="#f0b429" style="background:#f0b429" type="button"></button>
+            <button class="proj-c" data-c="#e8619d" style="background:#e8619d" type="button"></button>
+            <button class="proj-c" data-c="#a86fd8" style="background:#a86fd8" type="button"></button>
+            <button class="proj-c" data-c="#8e8e89" style="background:#8e8e89" type="button"></button>
+          </div>
+        </div>
+        <div class="proj-row" data-proj="notes" style="--proj:#f0b429">
+          <span class="proj-chip"><span class="proj-dot"></span></span>
+          <div class="proj-t"><b>写作与笔记</b><span class="mono dim">notes</span></div>
+          <div class="proj-sw">
+            <button class="proj-c" data-c="#4a9eff" style="background:#4a9eff" type="button"></button>
+            <button class="proj-c" data-c="#3ddc97" style="background:#3ddc97" type="button"></button>
+            <button class="proj-c" data-c="#f0b429" style="background:#f0b429" aria-pressed="true" type="button"></button>
+            <button class="proj-c" data-c="#e8619d" style="background:#e8619d" type="button"></button>
+            <button class="proj-c" data-c="#a86fd8" style="background:#a86fd8" type="button"></button>
+            <button class="proj-c" data-c="#8e8e89" style="background:#8e8e89" type="button"></button>
+          </div>
+        </div>
+      </div>
+      <p class="ap-hint">颜色可以写进 registry.json 跟着项目走（换台机器也一样），也可以只在这台机器上改；
+        本地改过的项目会标一个「本机覆盖」，点一下就还原成 registry 里的。</p>
+
+      <h3 class="ac-h">项目标记</h3>
+      <p class="ac-p">颜色之外再给个形，色盲友好，也让截图里认得出。两种取法：从现有图标里挑一枚，或者直接用项目名首字。</p>
+      <div class="ap-row2" style="max-width:340px">
+        <button class="ap-choice" data-set="projmark" data-v="icon" aria-pressed="true" type="button">用图标</button>
+        <button class="ap-choice" data-set="projmark" data-v="letter" type="button">用首字</button>
+      </div>
+      <p class="ap-hint">图标从看板现有的那套线性图标里挑（看板 / 图表 / 网络 / 日历…），<b>不用 emoji</b>。</p>
+    </section>
+
+    <!-- ⑤ 密度与字号 -->
+    <section class="ac-page" data-page="dens">
+      <h3 class="ac-h">界面松紧</h3>
+      <p class="ac-p">紧凑档把所有间距按 3/4 收一遍，同一屏能多看四五张卡；字号不变，所以不会变得难认。</p>
+      <div class="ap-row2" style="max-width:340px">
+        <button class="ap-choice" data-set="dens" data-v="1" aria-pressed="true" type="button">舒适（默认）</button>
+        <button class="ap-choice" data-set="dens" data-v=".75" type="button">紧凑</button>
+      </div>
+
+      <h3 class="ac-h">基础字号</h3>
+      <p class="ac-p">拖动就改。其余字号（小字、标题、大数字）按同一比例跟着走，排版比例不会走样。</p>
+      <div class="range-row" style="max-width:340px">
+        <input type="range" min="13" max="16" step="1" value="14" data-set="fs">
+        <span class="range-v" id="fs-v">14 px</span>
+      </div>
+      <p class="ap-hint">13 是「一屏塞更多」，16 是「不眯眼」。默认 14，和今天一样。</p>
+
+      <div class="ac-live">
+        <div class="ac-live-h">当前效果</div>
+        <div class="tcard building">
+          <span class="glow-edge"></span>
+          <div class="tid">AUD-PERF-BOARD-API-SLIM</div>
+          <div class="ttl">一改卡就重拉六兆数据，卡多的项目越用越慢</div>
+          <div class="progress"><i style="width:35%"></i></div>
+          <div class="foot"><span class="badge info">施工中</span><span class="badge n">W0</span> 35% · 下一步：分片接口</div>
+        </div>
+        <div class="tcard">
+          <div class="tid">AUD-OSS-READINESS</div>
+          <div class="ttl">要开源了，还没有许可证、英文说明</div>
+          <div class="foot"><span class="badge n">未开工</span> 等排期</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ⑥ 提示音 -->
+    <section class="ac-page" data-page="sound">
+      <h3 class="ac-h">提示音</h3>
+      <p class="ac-p">三件事值得出声：有新的待拍板、有卡完工了、有卡被卡住了。声音是现场合成的（几十行代码画出来的波形），
+        不下载任何音频文件，也就不会有「哪来的一个 mp3」这种问题。</p>
+      <div class="ap-line">
+        <div class="t"><b>开启提示音</b><span>默认关。开了之后下面三样才生效</span></div>
+        <label class="sw"><input type="checkbox" data-set="sound"><span class="track"></span></label>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>有新的待拍板</b><span>清脆的一声「叮」</span></div>
+        <button class="btn btn-sm" data-play="ding" type="button">试听</button>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>有卡完工</b><span>厚一点的一声「咚」</span></div>
+        <button class="btn btn-sm" data-play="dong" type="button">试听</button>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>有卡被卡住</b><span>闷闷的低鸣，提醒但不惊吓</span></div>
+        <button class="btn btn-sm" data-play="low" type="button">试听</button>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>音量</b><span>默认放得很轻，只是一点提示，不是闹钟</span></div>
+        <div class="range-row" style="width:200px">
+          <input type="range" min="0" max="100" step="5" value="35" data-set="vol">
+          <span class="range-v" id="vol-v">35%</span>
+        </div>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>静音时段</b><span>这段时间内一律不响，其它设置不受影响</span></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input class="tm" type="time" value="22:30"><span class="dim">到</span><input class="tm" type="time" value="08:30">
+        </div>
+      </div>
+      <p class="ap-hint">同一件事在一秒内连着发生多次（比如批量完工五张卡），只响一声，不会连珠炮。</p>
+    </section>
+
+    <!-- ⑦ 灯带与推送 -->
+    <section class="ac-page" data-page="wire">
+      <h3 class="ac-h">把看板状态推出去</h3>
+      <p class="ac-p">看板发生三类事（完工 / 有新待拍板 / 有卡阻塞）时，往你指定的地址发一条 JSON。
+        最好玩的用法：接到桌上那条 RGB 灯带上——有活儿等你拍板它就变橙，全绿了它就慢慢呼吸，有卡卡住了它变红。
+        这样不用盯着屏幕也知道看板在说什么。</p>
+      <div class="ap-line">
+        <div class="t"><b>推送地址</b><span>在服务端配（环境变量 <code>DASHBOARD_EVENT_WEBHOOK</code>），界面这里只显示配没配</span></div>
+        <span class="badge n">未配置</span>
+      </div>
+      <div class="ap-line">
+        <div class="t"><b>推哪几类事</b><span>不勾就不推</span></div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <label class="sw"><input type="checkbox" checked><span class="track"></span>完工</label>
+          <label class="sw"><input type="checkbox" checked><span class="track"></span>待拍板</label>
+          <label class="sw"><input type="checkbox" checked><span class="track"></span>阻塞</label>
+        </div>
+      </div>
+      <p class="ap-hint">推送在服务端发出，跟浏览器开没开无关——人不在电脑前，灯照样会变。</p>
+
+      <h3 class="ac-h">发出去的长这样</h3>
+      <pre class="code">POST &lt;你配的地址&gt;
+Content-Type: application/json
+
+{
+  "event":   "done",                       // done | pending | block
+  "project": "dashboard",
+  "task":    "AUD-FUN-PERSONALIZATION",
+  "title":   "外观设置只有主题和灯条配色…",
+  "ts":      "2026-09-07T14:22:31+08:00"
+}</pre>
+      <p class="ap-hint">具体怎么接 Home Assistant 或 WLED 灯带，见随这张卡一起交付的说明文档（第 08 节有节选）。</p>
+    </section>
+  </div>
+</div>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">03</span>完工那一刻</h2>
+<p>看板现在完工是「悄悄地少了一张卡」。这一节给它一点动静：彩带响一下、火焰烧起来。
+  两样都默认关着的那个默认值在第 07 节的总表里，可以先玩这里。</p>
+
+<div class="sub">
+<h3>彩带（点按钮试）</h3>
+<p>彩带用当前灯条配色的颜色，1.2 秒撒完自动消失，落在卡片范围内不会糊到别处。
+  上面第 02 节里改配色，这里撒出来的颜色跟着换。</p>
+<div class="pair">
+  <div class="pane" data-label="浅色">
+    <div class="party-demo">
+      <div class="tcard">
+        <canvas class="conf-canvas"></canvas>
+        <div class="tid">AUD-UI-UNLANDED-DERIVE</div>
+        <div class="ttl">待落地堆了六百多条，多数早就做完了</div>
+        <div class="foot"><span class="tile tone-ok" style="background:var(--ok)"><i style="background:var(--ok)"><svg viewBox="0 0 24 24" style="stroke:var(--bg)"><use href="#i-checks"/></svg></i></span> 完工 · 刚刚 · PR #43</div>
+      </div>
+      <button class="btn" type="button"><svg class="ic s16"><use href="#i-sparkles"/></svg> 放一次</button>
+    </div>
+  </div>
+  <div class="pane dark" data-label="深色">
+    <div class="party-demo">
+      <div class="tcard">
+        <canvas class="conf-canvas"></canvas>
+        <div class="tid">AUD-UI-UNLANDED-DERIVE</div>
+        <div class="ttl">待落地堆了六百多条，多数早就做完了</div>
+        <div class="foot"><span class="tile tone-ok" style="background:var(--ok)"><i style="background:var(--ok)"><svg viewBox="0 0 24 24" style="stroke:var(--bg)"><use href="#i-checks"/></svg></i></span> 完工 · 刚刚 · PR #43</div>
+      </div>
+      <button class="btn" type="button"><svg class="ic s16"><use href="#i-sparkles"/></svg> 放一次</button>
+    </div>
+  </div>
+</div>
+<div class="note"><b>什么时候会撒。</b>后台推来一条「某卡完工」的消息、而你正好开着看板，那张卡就撒一次。
+  一次推来五张完工卡，也只撒最上面那一张，不会同时五处放炮。你不在看板页（比如在读文档）时不会补放——回来看到的还是安静的界面。</div>
+</div>
+
+<div class="sub">
+<h3>连击火焰与「宽限一天」</h3>
+<p>「每日成果」页有个连续产出天数。今天它到 3 天会显示一枚静止的火焰图标；这一稿让火焰真的烧起来，
+  同时把断连规则改宽一天——<b>这条是规则改动，不是装饰</b>。</p>
+<div class="pair">
+  <div class="pane" data-label="浅色 · 每日成果统计卡">
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div class="tcard" style="flex:1;min-width:120px"><div class="streak">3</div><div class="dim" style="font-size:var(--fs-sm);margin-top:4px">今日完工</div></div>
+      <div class="tcard" style="flex:1;min-width:120px"><div class="streak">11</div><div class="dim" style="font-size:var(--fs-sm);margin-top:4px">本周完工</div></div>
+      <div class="tcard" style="flex:1.2;min-width:150px">
+        <div class="streak lit">7 <svg class="ic s16 fi"><use href="#i-flame"/></svg></div>
+        <div class="dim" style="font-size:var(--fs-sm);margin-top:4px">连续产出（天）</div>
+      </div>
+    </div>
+  </div>
+  <div class="pane dark" data-label="深色 · 每日成果统计卡">
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div class="tcard" style="flex:1;min-width:120px"><div class="streak">3</div><div class="dim" style="font-size:var(--fs-sm);margin-top:4px">今日完工</div></div>
+      <div class="tcard" style="flex:1;min-width:120px"><div class="streak">11</div><div class="dim" style="font-size:var(--fs-sm);margin-top:4px">本周完工</div></div>
+      <div class="tcard" style="flex:1.2;min-width:150px">
+        <div class="streak lit">7 <svg class="ic s16 fi"><use href="#i-flame"/></svg></div>
+        <div class="dim" style="font-size:var(--fs-sm);margin-top:4px">连续产出（天）</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p style="margin-top:22px">同一串日子，两套规则算出来不一样：</p>
+<div class="pair">
+  <div class="pane" data-label="今天的规则">
+    <div class="days">
+      <div class="day hit"><i></i><span>1日</span></div>
+      <div class="day hit"><i></i><span>2日</span></div>
+      <div class="day hit"><i></i><span>3日</span></div>
+      <div class="day gap"><i></i><span>4日</span></div>
+      <div class="day hit"><i></i><span>5日</span></div>
+      <div class="day hit"><i></i><span>6日</span></div>
+      <div class="day hit"><i></i><span>今天</span></div>
+    </div>
+    <p style="margin-top:14px;color:var(--text-2);font-size:var(--fs-sm)">
+      连击 = <b class="mono" style="color:var(--text)">3 天</b>。4 日出了趟门没产出，
+      前面攒的三天当场清零，从 5 日重新数起。</p>
+    <p class="ap-hint">看起来像「休息一天就被罚」，实际是在鼓励为了续连去凑一张水卡。</p>
+  </div>
+  <div class="pane" data-label="宽限一天之后">
+    <div class="days">
+      <div class="day hit"><i></i><span>1日</span></div>
+      <div class="day hit"><i></i><span>2日</span></div>
+      <div class="day hit"><i></i><span>3日</span></div>
+      <div class="day gap"><i></i><span>4日</span></div>
+      <div class="day hit"><i></i><span>5日</span></div>
+      <div class="day hit"><i></i><span>6日</span></div>
+      <div class="day hit"><i></i><span>今天</span></div>
+    </div>
+    <p style="margin-top:14px;color:var(--text-2);font-size:var(--fs-sm)">
+      连击 = <b class="mono" style="color:var(--ok)">7 天</b>。中间空一天照样连着数，
+      连着空两天才归零。空掉的那天算在连击长度里。</p>
+    <p class="ap-hint">休息一天不掉链子，但也不奖励——空两天就是真断了。</p>
+  </div>
+</div>
+<div class="legend">
+  <span><b style="background:var(--ok)"></b>有完工</span>
+  <span><b style="background:var(--warn-bg);border:1px dashed var(--warn)"></b>没产出（宽限）</span>
+</div>
+<div class="note ask"><b>要你拍一下：宽限日算不算进连击天数？</b>上面右边那种算法把空掉的 4 日也数进去了（7 天）。
+  另一种是不数它，连着的实际产出天算 6 天。前者读起来顺（1 日到今天就是 7 天），后者更实在（真干活的是 6 天）。
+  我倾向前者：这个数字是给自己看的动力条，不是考勤表。</div>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">04</span>每个项目一个颜色</h2>
+<p>三处着色：顶栏项目下拉、任务卡左边那条、总览页的项目进度环。颜色在第 02 节「项目颜色」里可以现场换，换完这一节跟着变。</p>
+<div class="pair">
+  <div class="pane" data-label="今天 · 全部一个色">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+      <span class="dim mono" style="font-size:11px">顶栏</span>
+      <span class="badge n" style="padding:5px 10px">看板（多项目管理工具） <svg class="ic s14"><use href="#i-chevron"/></svg></span>
+    </div>
+    <div class="tcard" style="border-left:3px solid var(--line-strong)">
+      <div class="tid">dashboard · AUD-HOOKS-DEDUP-COST</div>
+      <div class="ttl">每次更新待办要跑两遍同步</div>
+    </div>
+    <div class="tcard" style="border-left:3px solid var(--line-strong)">
+      <div class="tid">astock · P07-BOT-LONGRUN</div>
+      <div class="ttl">长测跑批的缺片拒收还没做机器闸</div>
+    </div>
+    <div class="tcard" style="border-left:3px solid var(--line-strong)">
+      <div class="tid">notes · N12-EXPORT</div>
+      <div class="ttl">导出 PDF 的目录层级丢了</div>
+    </div>
+    <p class="ap-hint">三个项目的卡长得一模一样，只能读前缀分辨。</p>
+  </div>
+  <div class="pane" data-label="新版 · 按项目着色" id="proj-demo-light">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+      <span class="dim mono" style="font-size:11px">顶栏</span>
+      <span class="badge n proj-tag" data-proj="dashboard" style="padding:5px 10px;display:inline-flex;align-items:center;gap:6px">
+        <span class="proj-dot"></span>看板（多项目管理工具） <svg class="ic s14"><use href="#i-chevron"/></svg></span>
+    </div>
+    <div class="tcard proj-tag" data-proj="dashboard" style="border-left:3px solid var(--proj)">
+      <div class="tid">dashboard · AUD-HOOKS-DEDUP-COST</div>
+      <div class="ttl">每次更新待办要跑两遍同步</div>
+    </div>
+    <div class="tcard proj-tag" data-proj="astock" style="border-left:3px solid var(--proj)">
+      <div class="tid">astock · P07-BOT-LONGRUN</div>
+      <div class="ttl">长测跑批的缺片拒收还没做机器闸</div>
+    </div>
+    <div class="tcard proj-tag" data-proj="notes" style="border-left:3px solid var(--proj)">
+      <div class="tid">notes · N12-EXPORT</div>
+      <div class="ttl">导出 PDF 的目录层级丢了</div>
+    </div>
+    <p class="ap-hint">扫一眼就知道哪张卡属于谁，不用读字。</p>
+  </div>
+</div>
+
+<div class="pair" style="margin-top:16px">
+  <div class="pane" data-label="总览页进度环 · 浅色">
+    <div class="stack">
+      <div class="pcard proj-tag" data-proj="dashboard">
+        <div class="ring-wrap"><div class="ring"><svg width="56" height="56"><circle cx="28" cy="28" r="23" fill="none" stroke="var(--surface-3)" stroke-width="5"/><circle cx="28" cy="28" r="23" fill="none" stroke="var(--proj)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="20.2"/></svg></div><span class="rv">86%</span></div>
+        <div class="pt"><b>看板（多项目管理工具）</b><span>56 / 65 完工 · 9 张未开工</span></div>
+      </div>
+      <div class="pcard proj-tag" data-proj="astock">
+        <div class="ring-wrap"><div class="ring"><svg width="56" height="56"><circle cx="28" cy="28" r="23" fill="none" stroke="var(--surface-3)" stroke-width="5"/><circle cx="28" cy="28" r="23" fill="none" stroke="var(--proj)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="59.2"/></svg></div><span class="rv">59%</span></div>
+        <div class="pt"><b>A 股模拟器</b><span>41 / 69 完工 · 3 张施工中</span></div>
+      </div>
+      <div class="pcard proj-tag" data-proj="notes">
+        <div class="ring-wrap"><div class="ring"><svg width="56" height="56"><circle cx="28" cy="28" r="23" fill="none" stroke="var(--surface-3)" stroke-width="5"/><circle cx="28" cy="28" r="23" fill="none" stroke="var(--proj)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="101.2"/></svg></div><span class="rv">30%</span></div>
+        <div class="pt"><b>写作与笔记</b><span>6 / 20 完工</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="pane dark" data-label="总览页进度环 · 深色">
+    <div class="stack">
+      <div class="pcard proj-tag" data-proj="dashboard">
+        <div class="ring-wrap"><div class="ring"><svg width="56" height="56"><circle cx="28" cy="28" r="23" fill="none" stroke="var(--surface-3)" stroke-width="5"/><circle cx="28" cy="28" r="23" fill="none" stroke="var(--proj)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="20.2"/></svg></div><span class="rv">86%</span></div>
+        <div class="pt"><b>看板（多项目管理工具）</b><span>56 / 65 完工 · 9 张未开工</span></div>
+      </div>
+      <div class="pcard proj-tag" data-proj="astock">
+        <div class="ring-wrap"><div class="ring"><svg width="56" height="56"><circle cx="28" cy="28" r="23" fill="none" stroke="var(--surface-3)" stroke-width="5"/><circle cx="28" cy="28" r="23" fill="none" stroke="var(--proj)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="59.2"/></svg></div><span class="rv">59%</span></div>
+        <div class="pt"><b>A 股模拟器</b><span>41 / 69 完工 · 3 张施工中</span></div>
+      </div>
+      <div class="pcard proj-tag" data-proj="notes">
+        <div class="ring-wrap"><div class="ring"><svg width="56" height="56"><circle cx="28" cy="28" r="23" fill="none" stroke="var(--surface-3)" stroke-width="5"/><circle cx="28" cy="28" r="23" fill="none" stroke="var(--proj)" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="101.2"/></svg></div><span class="rv">30%</span></div>
+        <div class="pt"><b>写作与笔记</b><span>6 / 20 完工</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note"><b>颜色从哪来。</b>优先读 registry.json 里给项目写的 <code>color</code>（跟着项目走，换台机器一样）；
+  没写就按项目 id 算一个固定颜色（同一个 id 永远同一个色，不会今天蓝明天绿）；
+  再不满意就在这台机器上覆盖。三层，越往后越优先。</div>
+<div class="note ask"><b>要你拍一下：进度环也跟着项目色走吗？</b>进度环今天是流光的（跟着灯条配色跑）。
+  改成项目色后它会变成一条不动的实色弧——好处是「谁是谁」更清楚，代价是总览页少了一片流动感。
+  我倾向：<b>环的底色用项目色、流光留给外圈那一薄层</b>，两个都要；如果嫌花，就只让左边条和下拉着色，环不动。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">05</span>松紧与字号</h2>
+<p>左右两块是同样的内容，只差一个密度档。第 02 节里改「松紧」和「字号」，这两块都会跟着变——
+  下面是把两档钉死并排放，好一次看清差多少。</p>
+<div class="pair">
+  <div class="pane" data-label="舒适（默认）" style="--dens:1;--fs:14px">
+    <div class="tcard building"><span class="glow-edge"></span>
+      <div class="tid">AUD-PROTOCOL-SINGLE-SOURCE</div>
+      <div class="ttl">AI 看的规矩有三份且互相打架，收成一份机读正本</div>
+      <div class="progress"><i style="width:20%"></i></div>
+      <div class="foot"><span class="badge info">施工中</span><span class="badge n">W0</span> 20%</div>
+    </div>
+    <div class="tcard"><div class="tid">AUD-UI-HUMAN-TO-AI-CHANNEL</div>
+      <div class="ttl">网页上只能拍板，想给 AI 留句话或喊停一张卡都做不到</div>
+      <div class="foot"><span class="badge n">未开工</span></div>
+    </div>
+    <div class="tcard"><div class="tid">AUD-UI-NOTIFY-FRESHNESS</div>
+      <div class="ttl">新来的拍板要靠我自己发现</div>
+      <div class="foot"><span class="badge n">未开工</span></div>
+    </div>
+    <div class="tcard"><div class="tid">AUD-PERF-BOARD-API-SLIM</div>
+      <div class="ttl">一改卡就重拉六兆数据</div>
+      <div class="foot"><span class="badge n">未开工</span></div>
+    </div>
+  </div>
+  <div class="pane" data-label="紧凑" style="--dens:.75;--fs:14px">
+    <div class="tcard building"><span class="glow-edge"></span>
+      <div class="tid">AUD-PROTOCOL-SINGLE-SOURCE</div>
+      <div class="ttl">AI 看的规矩有三份且互相打架，收成一份机读正本</div>
+      <div class="progress"><i style="width:20%"></i></div>
+      <div class="foot"><span class="badge info">施工中</span><span class="badge n">W0</span> 20%</div>
+    </div>
+    <div class="tcard"><div class="tid">AUD-UI-HUMAN-TO-AI-CHANNEL</div>
+      <div class="ttl">网页上只能拍板，想给 AI 留句话或喊停一张卡都做不到</div>
+      <div class="foot"><span class="badge n">未开工</span></div>
+    </div>
+    <div class="tcard"><div class="tid">AUD-UI-NOTIFY-FRESHNESS</div>
+      <div class="ttl">新来的拍板要靠我自己发现</div>
+      <div class="foot"><span class="badge n">未开工</span></div>
+    </div>
+    <div class="tcard"><div class="tid">AUD-PERF-BOARD-API-SLIM</div>
+      <div class="ttl">一改卡就重拉六兆数据</div>
+      <div class="foot"><span class="badge n">未开工</span></div>
+    </div>
+    <p class="ap-hint">同样四张卡，紧凑档竖着省下大约五分之一的高度；字一样大。</p>
+  </div>
+</div>
+<div class="note"><b>为什么松紧只动间距、不动字号。</b>两个一起缩，界面会「整体变小」，在大屏上反而更难读。
+  分开之后：想一屏多装点就收紧间距，眼睛累了就单独把字调大，互不干扰。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">06</span>让桌上的灯带跟着看板变色</h2>
+<p>这是六样里唯一一样不在浏览器里的：看板服务端在完工 / 有新待拍板 / 有卡阻塞时，往你指定的地址发一条 JSON。
+  接到智能家居上，桌上那条 RGB 灯带就成了看板的外接显示器——<b>橙色 = 有事等你拍板，绿色 = 全清，红色 = 有卡卡住了</b>。
+  人在厨房也知道该不该回来。</p>
+
+<div class="trio">
+  <div class="pane" data-label="橙 · 有待拍板">
+    <div class="strip warn"></div>
+    <p class="ap-hint" style="margin-top:12px">有新的待拍板问题在等你。缓慢呼吸，不刺眼。</p>
+  </div>
+  <div class="pane" data-label="绿 · 全清">
+    <div class="strip ok"></div>
+    <p class="ap-hint" style="margin-top:12px">没有待拍板、没有阻塞。刚完工时亮一下再回到常亮。</p>
+  </div>
+  <div class="pane" data-label="红 · 有阻塞">
+    <div class="strip bad"></div>
+    <p class="ap-hint" style="margin-top:12px">有卡被卡住了。频率明显快一档，跟橙色一眼分得开。</p>
+  </div>
+</div>
+
+<div class="sub">
+<h3>接法一：Home Assistant（有 HA 的话最省事）</h3>
+<p>在 HA 里建一个 webhook 自动化，把看板的推送地址填成它给的地址即可。</p>
+<pre class="code">automation:
+  - alias: 看板状态灯
+    trigger:
+      platform: webhook
+      webhook_id: dashboard-events        # 看板的 DASHBOARD_EVENT_WEBHOOK 指到这个地址
+    action:
+      - service: light.turn_on
+        target: { entity_id: light.desk_strip }
+        data:
+          rgb_color: >-
+            {% if trigger.json.event == 'block' %}[224, 70, 60]
+            {% elif trigger.json.event == 'pending' %}[240, 150, 30]
+            {% else %}[80, 200, 120]{% endif %}
+          brightness: 140</pre>
+</div>
+
+<div class="sub">
+<h3>接法二：WLED 灯带（没有 HA，直接对灯说话）</h3>
+<p>WLED 自带 JSON 接口，中间加一个十来行的小转发脚本，把看板的事件翻译成灯带的颜色。</p>
+<pre class="code"># 收到看板事件 → 直接调灯带（示意，完整脚本随文档交付）
+COLORS = {"done": [80, 200, 120], "pending": [240, 150, 30], "block": [224, 70, 60]}
+
+def on_event(ev):                                   # ev = 看板 POST 过来的那条 JSON
+    requests.post(f"http://{WLED_IP}/json/state", json={
+        "on": True, "bri": 140,
+        "seg": [{"col": [COLORS[ev["event"]]], "fx": 2 if ev["event"] == "block" else 1}],
+    })</pre>
+</div>
+
+<div class="note"><b>不装这些也不影响任何事。</b>不配那个地址，服务端就一条都不发，代码路径整个不走。
+  这一项纯属锦上添花，别为了它去买灯。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">07</span>默认值与「会不会突然变吵」</h2>
+<p>一句话：<b>装上这一版、什么都不点，界面和今天完全一样。</b>下面是逐项的默认值。</p>
+<table class="spec">
+  <tr><th style="width:22%">这一项</th><th style="width:16%">默认</th><th>说明</th></tr>
+  <tr><td class="k">灯条速度</td><td class="d">中</td><td>就是今天的速度，没变</td></tr>
+  <tr><td class="k">灯条粗细</td><td class="d">标准</td><td>就是今天的粗细，没变</td></tr>
+  <tr><td class="k">竖条呼吸</td><td class="d">关</td><td>默认还是流动</td></tr>
+  <tr><td class="k">新增四套配色</td><td class="d">不自动切</td><td>默认仍是冷谱，新预设只是多了四个可选</td></tr>
+  <tr><td class="k">完工彩带</td><td class="d">关</td><td>要自己去开。开了也只在看着那张卡时撒</td></tr>
+  <tr><td class="k">连击火焰动效</td><td class="d">开</td><td>今天已经有静止火焰图标，这里只是让它动；嫌晃可以关</td></tr>
+  <tr><td class="k">连击宽限一天</td><td class="d">开</td><td>唯一一个默认就改了行为的：空一天不再清零。想要旧的严格算法可以关</td></tr>
+  <tr><td class="k">项目着色</td><td class="d">开</td><td>只上色不加动效，也不改布局；关掉回到今天的统一色</td></tr>
+  <tr><td class="k">界面松紧</td><td class="d">舒适</td><td>就是今天的间距</td></tr>
+  <tr><td class="k">基础字号</td><td class="d">14 px</td><td>就是今天的字号</td></tr>
+  <tr><td class="k">提示音</td><td class="d">关（静音）</td><td>不开就一声不响</td></tr>
+  <tr><td class="k">事件推送</td><td class="d">未配置</td><td>服务端没设那个环境变量就完全不走</td></tr>
+</table>
+
+<div class="note"><b>系统开了「减少动效」怎么办。</b>跟今天一样，一律听系统的：彩带不撒、火焰不烧、灯条不流，
+  设置里选的档位保留但不生效，面板上会明说此刻被系统按住了。这条不给覆盖开关——无障碍优先。</div>
+<div class="note"><b>存在哪。</b>全部存在这台机器的浏览器里（localStorage），不上传、不进版本库、不跟着 git 走。
+  唯一例外是项目颜色可以选择写进 registry.json，那是为了换机器时项目色不丢。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">08</span>需要你拍板的几件事</h2>
+<p>其余都按上面的稿子做。这四件我给了倾向，但拿不准你的口味，先问一句再动手。</p>
+<table class="spec">
+  <tr><th style="width:20%">问题</th><th style="width:36%">选项</th><th>我的倾向</th></tr>
+  <tr>
+    <td class="k">面板怎么摆</td>
+    <td>A. 下拉留四样常用 + 大面板装其余（本稿画法）<br>B. 全部塞进现有下拉，做成一长条折叠</td>
+    <td><b>A</b>。B 省一次开窗，但七类内容滚三屏，找一样东西要翻半天</td>
+  </tr>
+  <tr>
+    <td class="k">连击怎么数</td>
+    <td>A. 宽限那天也算进天数（1 日到今天 = 7 天）<br>B. 只数真有产出的天（= 6 天）</td>
+    <td><b>A</b>。这个数是给自己看的动力条，读起来顺比精确更重要</td>
+  </tr>
+  <tr>
+    <td class="k">进度环上不上项目色</td>
+    <td>A. 环变项目色实色弧，流光只留薄薄一层外圈<br>B. 环维持流光不动，只有左边条和下拉着色</td>
+    <td><b>A</b>。总览页正是「一眼分清哪个项目」最要紧的地方；真嫌花随时能退回 B</td>
+  </tr>
+  <tr>
+    <td class="k">彩带默认开还是关</td>
+    <td>A. 默认关，想要自己开（本稿总表写法）<br>B. 默认开，嫌吵再关</td>
+    <td><b>A</b>。但这条我不确定——你要是觉得「装了新版本该有点动静」，改成 B 也就一行的事</td>
+  </tr>
+</table>
+<div class="note"><b>还有一件不用拍但要知会：</b>连击宽限是唯一一个默认就改了旧行为的开关。
+  别的都是「不点就跟今天一样」，只有这个默认让你的连击数字变大。觉得不该动可以改成默认关。</div>
+</section>
+
+<p style="margin-top:48px;color:#8e8e89;font-size:13px;text-align:center">
+  看板 · AUD-FUN-PERSONALIZATION · 外观个性化 mockup v1 · 2026-09-07 ·
+  这份稿子里的每个开关都能点，改动只存在于这一页，不影响真看板。
+</p>
+
+</div><!-- /.doc -->
+
+<script>
+/* ============================================================
+   本页的交互全部只为「让你点着看」，不是产品代码。
+   产品里这些状态会存进 localStorage 并写到 :root 上，机制一样。
+   ============================================================ */
+const root = document.documentElement
+
+/** 同一组按钮里只让一个按下去。 */
+function press(btn, groupSel) {
+  const group = btn.closest(groupSel || '.ap-row2, .ap-row3, .ap-row4, .sw-grid, .proj-sw, .modes')
+  if (!group) return
+  group.querySelectorAll('[aria-pressed]').forEach(b => b.setAttribute('aria-pressed', 'false'))
+  btn.setAttribute('aria-pressed', 'true')
+}
+
+/* ---------- 顶部：整页浅 / 深 / 并排 ---------- */
+document.querySelectorAll('.pane').forEach(p => { p.dataset.origDark = p.classList.contains('dark') ? '1' : '0' })
+document.querySelectorAll('[data-doc-theme]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.modes button').forEach(b => b.classList.remove('on'))
+    btn.classList.add('on')
+    const mode = btn.dataset.docTheme
+    document.querySelectorAll('.pane').forEach(p => {
+      if (p.dataset.locked === '1') return                 // 面板预览块自己管自己
+      const dark = mode === 'dark' ? true : mode === 'light' ? false : p.dataset.origDark === '1'
+      p.classList.toggle('dark', dark)
+    })
+  })
+})
+
+/* ---------- 大面板：左边分类切换 ---------- */
+document.querySelectorAll('.ac-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.ac-tab').forEach(t => t.classList.remove('on'))
+    tab.classList.add('on')
+    document.querySelectorAll('.ac-page').forEach(p => p.classList.toggle('on', p.dataset.page === tab.dataset.tab))
+  })
+})
+
+/* ---------- 各项设置 → 写 CSS 变量 ---------- */
+const panelPane = document.getElementById('panel-pane')
+const GLOW_OPACITY = { '.65': '.82', '1': '1', '1.5': '1' }
+
+document.querySelectorAll('[data-set]').forEach(el => {
+  const kind = el.dataset.set
+
+  if (el.tagName === 'BUTTON') {
+    el.addEventListener('click', () => {
+      press(el)
+      const v = el.dataset.v
+      if (kind === 'theme') {
+        panelPane.dataset.locked = v === 'system' ? '0' : '1'
+        if (v === 'system') panelPane.classList.toggle('dark', panelPane.dataset.origDark === '1')
+        else panelPane.classList.toggle('dark', v === 'dark')
+      }
+      if (kind === 'spec') root.setAttribute('data-spectrum', v)
+      if (kind === 'speed') root.style.setProperty('--sp-k', v)
+      if (kind === 'glow') {
+        root.style.setProperty('--gl-k', v)
+        root.style.setProperty('--gl-op', GLOW_OPACITY[v] || '1')
+      }
+      if (kind === 'dens') root.style.setProperty('--dens', v)
+      if (kind === 'conf-n') confettiCount = Number(v)
+      if (kind === 'projmark') markProjects(v)
+    })
+    return
+  }
+
+  if (el.type === 'checkbox') {
+    el.addEventListener('change', () => {
+      if (kind === 'breathe') root.setAttribute('data-edge', el.checked ? 'breathe' : 'flow')
+      if (kind === 'fire') document.querySelectorAll('.streak').forEach(s => s.classList.toggle('lit', el.checked))
+      if (kind === 'projcolor') document.body.classList.toggle('no-proj-color', !el.checked)
+      if (kind === 'sound') soundOn = el.checked
+      if (kind === 'confetti') confettiOn = el.checked
+    })
+    return
+  }
+
+  if (el.type === 'range') {
+    el.addEventListener('input', () => {
+      if (kind === 'fs') {
+        root.style.setProperty('--fs', el.value + 'px')
+        document.getElementById('fs-v').textContent = el.value + ' px'
+      }
+      if (kind === 'vol') {
+        volume = Number(el.value) / 100
+        document.getElementById('vol-v').textContent = el.value + '%'
+      }
+    })
+  }
+})
+
+/* ---------- 项目颜色 ---------- */
+const projStyle = document.createElement('style')
+document.head.appendChild(projStyle)
+const projColors = { dashboard: '#4a9eff', astock: '#3ddc97', notes: '#f0b429' }
+
+function renderProjColors() {
+  projStyle.textContent = Object.entries(projColors)
+    .map(([id, c]) => `[data-proj="${id}"]{--proj:${c}}`)
+    .join('\n') + '\n.no-proj-color [data-proj]{--proj:var(--line-strong)}'
+}
+renderProjColors()
+
+document.querySelectorAll('.proj-row').forEach(row => {
+  row.querySelectorAll('.proj-c').forEach(btn => {
+    btn.addEventListener('click', () => {
+      press(btn)
+      projColors[row.dataset.proj] = btn.dataset.c
+      row.style.setProperty('--proj', btn.dataset.c)
+      renderProjColors()
+    })
+  })
+})
+
+/** 图标 / 首字两种项目标记的切换（演示用，只换第 02 节那三行的方块内容）。 */
+function markProjects(mode) {
+  const letters = { dashboard: '看', astock: 'A', notes: '笔' }
+  document.querySelectorAll('.proj-row').forEach(row => {
+    const chip = row.querySelector('.proj-chip')
+    if (mode === 'letter') {
+      chip.innerHTML = `<span style="color:var(--proj);font-size:12px;font-weight:600">${letters[row.dataset.proj] || '?'}</span>`
+    } else {
+      chip.innerHTML = '<span class="proj-dot"></span>'
+    }
+  })
+}
+
+/* ---------- 彩带：canvas 逐帧自绘，不引任何库 ---------- */
+let confettiOn = false
+let confettiCount = 48
+
+/** 读当前生效的灯条色站，撒出来的纸屑就跟界面同一套颜色。 */
+function currentColors(el) {
+  const raw = getComputedStyle(el).getPropertyValue('--spec-active')
+  const out = []
+  let depth = 0, cur = ''
+  for (const ch of raw) {
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = '' } else cur += ch
+  }
+  out.push(cur.trim())
+  const list = out.filter(Boolean)
+  return list.length ? list : ['#4a9eff']
+}
+
+function confetti(canvas) {
+  const box = canvas.parentElement
+  const dpr = window.devicePixelRatio || 1
+  const w = box.clientWidth, h = box.clientHeight
+  canvas.width = w * dpr; canvas.height = h * dpr
+  const ctx = canvas.getContext('2d')
+  ctx.scale(dpr, dpr)
+
+  const colors = currentColors(box)
+  const bits = Array.from({ length: confettiCount }, () => ({
+    x: w * (.3 + Math.random() * .4),
+    y: h * .55,
+    vx: (Math.random() - .5) * 7,
+    vy: -3.2 - Math.random() * 5.2,
+    rot: Math.random() * Math.PI,
+    vr: (Math.random() - .5) * .38,
+    w: 4 + Math.random() * 5,
+    h: 2.5 + Math.random() * 4,
+    c: colors[(Math.random() * colors.length) | 0],
+  }))
+
+  const DURATION = 1200
+  const t0 = performance.now()
+  function frame(now) {
+    const t = now - t0
+    if (t > DURATION) { ctx.clearRect(0, 0, w, h); return }
+    ctx.clearRect(0, 0, w, h)
+    ctx.globalAlpha = t > DURATION * .65 ? 1 - (t - DURATION * .65) / (DURATION * .35) : 1
+    for (const b of bits) {
+      b.x += b.vx; b.y += b.vy; b.vy += .34; b.vx *= .992; b.rot += b.vr
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.rot)
+      ctx.fillStyle = b.c
+      ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h)
+      ctx.restore()
+    }
+    requestAnimationFrame(frame)
+  }
+  requestAnimationFrame(frame)
+}
+
+document.querySelectorAll('.party-demo').forEach(box => {
+  const canvas = box.querySelector('canvas')
+  const btn = box.querySelector('button')
+  if (btn && canvas) btn.addEventListener('click', () => confetti(canvas))
+})
+
+/* ---------- 提示音：现场合成，不加载任何音频文件 ---------- */
+let soundOn = false
+let volume = .35
+let audio = null
+
+function tone({ freq, type = 'sine', dur = .3, drop = 0, filter = 0 }) {
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)()
+  const t = audio.currentTime
+  const osc = audio.createOscillator()
+  const gain = audio.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(freq, t)
+  if (drop) osc.frequency.exponentialRampToValueAtTime(freq * drop, t + dur)
+  gain.gain.setValueAtTime(0.0001, t)
+  gain.gain.exponentialRampToValueAtTime(volume, t + .012)
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+  let node = osc
+  if (filter) {
+    const lp = audio.createBiquadFilter()
+    lp.type = 'lowpass'; lp.frequency.value = filter
+    osc.connect(lp); node = lp
+  }
+  node.connect(gain); gain.connect(audio.destination)
+  osc.start(t); osc.stop(t + dur + .05)
+}
+
+const SOUNDS = {
+  ding: () => { tone({ freq: 1180, type: 'triangle', dur: .26 }); setTimeout(() => tone({ freq: 1760, type: 'sine', dur: .18 }), 55) },
+  dong: () => { tone({ freq: 262, type: 'sine', dur: .5, drop: .7, filter: 900 }); setTimeout(() => tone({ freq: 392, type: 'sine', dur: .38, filter: 1200 }), 70) },
+  low: () => tone({ freq: 116, type: 'sine', dur: .55, drop: .78, filter: 420 }),
+}
+document.querySelectorAll('[data-play]').forEach(btn => {
+  btn.addEventListener('click', () => SOUNDS[btn.dataset.play]?.())
+})
+
+/* ---------- 全部恢复默认 ---------- */
+document.getElementById('reset-all').addEventListener('click', () => {
+  root.setAttribute('data-spectrum', 'cool')
+  root.setAttribute('data-edge', 'flow')
+  ;['--sp-k', '--gl-k', '--gl-op', '--dens', '--fs'].forEach(v => root.style.removeProperty(v))
+  document.querySelectorAll('.ac-page input[type=checkbox]').forEach(c => {
+    c.checked = c.dataset.set === 'fire' || c.dataset.set === 'grace' || c.dataset.set === 'projcolor' || !c.dataset.set
+    c.dispatchEvent(new Event('change'))
+  })
+  document.querySelector('[data-set=fs]').value = 14
+  document.querySelector('[data-set=fs]').dispatchEvent(new Event('input'))
+  document.querySelectorAll('.ac-page [aria-pressed]').forEach(b => {
+    const dv = b.dataset.v
+    b.setAttribute('aria-pressed', String(dv === '1' || dv === 'cool' || dv === 'system' || dv === '48' || dv === 'icon'))
+  })
+  markProjects('icon')
+})
+
+/* 初始态：竖条走流动、火焰点着（跟总表里的默认值一致）。 */
+root.setAttribute('data-edge', 'flow')
+root.setAttribute('data-spectrum', 'cool')
+</script>
+</body>
+</html>
