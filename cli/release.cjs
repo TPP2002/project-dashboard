@@ -18,7 +18,30 @@
  *   · 先写 <dest>.new,再目录级换名(旧的挪 .old 后删)。hook 进程加载完不占文件,换名窗口极小;
  *     Windows 换名偶发被占,重试几次。
  *
+ * 【0907 扩容:自举发布】(AD-20260907-RELEASE-SELF-BOOTSTRAP)
+ * 发布这条命令按 AGENTS.md 是【用副本自己的 CLI 跑】的,所以只要改的是发布工具本身,起头的永远是【旧工具】:
+ * 它把新代码铺进副本,但新代码带来的发布行为这一次一次都没作用过——非得再跑一次才出现
+ * (0907 实测:新加的 board/kb 短别名垫片,第一次发布的输出里没有、副本根也没有,第二次才有)。
+ * 这比"忘了跑 release"更隐蔽:跑了、也成功了,却没生效。
+ * 治法:发布前先比对【本次运行的发布工具】与【目标 commit 里的那份】,不一致就自举——
+ *   ① 把目标 commit 的运行期文件铺到暂存目录 <dest>.boot(**全程不碰副本**);
+ *   ② 用暂存目录里的【目标 commit 自带的那份 CLI】去发布真正的副本,--commit 钉死同一个 sha。
+ * 说"目标自带的那份"而不是"新版":`--commit` 回滚时它反而比手头这份更老,而规矩是一样的 ——
+ * 副本长什么样,只能由【副本里那份工具】说了算。
+ * 副本因此从头到尾只被它铺一次;它跑挂了副本连碰都没碰过,旧副本原封不动(与构建失败同一个口径)。
+ * 不递归的两道保险见 release() 里 staleReleaseLogic 那段注释。--no-bootstrap 可关(应急),
+ * 代价是新发布逻辑要等下一次才生效——那一次的输出会明说这件事,不让人以为白改了。
+ *
+ * 【0907 扩容:已经是这一版就不重发】(AD-20260907-LAUNCH-SKIP-REBUILD)
+ * 启动器每次双击都跑一遍 release,而绝大多数双击时 origin/主干 根本没动 —— 重导 50 个运行期文件
+ * 再现场建一次界面,实测 6.2s(其中 vite 5.2s),纯属让人干等。所以发之前先看副本新不新鲜:
+ * 印章的 commit 就是这次要发的 sha、副本还是个能用的副本、要界面时界面真在、且【铺出这份副本的
+ * 发布工具】与本次运行的一致(印章里的 logic 指纹),四条都成立就直接返回"已是最新",不导也不建。
+ * 第四条不能省:文件是新的、发布行为却是旧工具留下的,正是上面那段自举要治的病 ——
+ * 老印章没有 logic 字段一律当不一致,先老实重发一次把它补上。--force 强制重发。
+ *
  * 用法:node cli/index.cjs release [--commit <sha>] [--no-fetch] [--skip-web] [--source <检出>] [--dest <目录>]
+ *                                [--no-bootstrap] [--force]
  *   source 默认 = 当前运行的这份代码所在的检出;dest 默认 = ~/.claude/dashboard-release。
  *   代码根不是 git 检出(安装版 / 发布副本自己)→ 友好跳过。
  *   --skip-web:只发后台(紧急 CLI/hook 修复用),印章会记下来;那份副本起不出网页界面。
@@ -27,12 +50,22 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const {
   CODE_ROOT, STAMP_NAME, RUNTIME_PATHS, WEB_SOURCE_PATHS, WEB_BUILD_DEPS_PATHS, WEB_DIST_REL,
   CLI_SHIMS, shimExt, isGitCheckout, releaseHome, readStamp,
 } = require('../core/runtimeRoot.cjs');
 const { atomicWriteJsonSync, sleepMs } = require('../core/atomicWrite.cjs');
+
+/**
+ * 【发布逻辑文件】——改了它们,同一个 commit 发出来的副本内容就会不一样,所以它们是自举的判据。
+ * 只收"决定产物长什么样"的那几个:release 的流程本身、runtimeRoot 的路径/垫片/印章名、印章的写法。
+ * **故意不含 cli/index.cjs**:它只做路由,却因为别的命令天天在改——收进来等于几乎每次发布都白跑一遍自举。
+ */
+const RELEASE_LOGIC_PATHS = ['cli/release.cjs', 'core/runtimeRoot.cjs', 'core/atomicWrite.cjs'];
+/** 自举标记兼开关:'child' = 我就是自举起来的那一层,不许再生一层;'0' = 这台机器别自举。 */
+const BOOTSTRAP_ENV = 'DASHBOARD_RELEASE_BOOTSTRAP';
 
 function git(repo, args, opts = {}) {
   return execFileSync('git', ['-C', repo, ...args], {
@@ -202,6 +235,120 @@ function writeCliShims(root) {
   return written;
 }
 
+/** 源码指纹:先抹平换行再算,免得 autocrlf 把同一份代码判成两份(判错就是每次发布白跑一遍自举)。 */
+function sourceDigest(text) {
+  // 两头都 trim:git() 的输出是 trim 过的、这边读盘的没有 —— 不对齐就会永远判成不一致,每次发布白跑一趟
+  return crypto.createHash('sha256').update(String(text).replace(/\r\n/g, '\n').trim()).digest('hex');
+}
+
+/**
+ * 【本次运行用的发布工具】与【目标 commit 里的那份】差在哪几个文件。
+ * 空数组 = 这次发布的行为就是新代码的行为,发一次就够。
+ *
+ * 目标 commit 里压根没有 cli/release.cjs(极老的提交 / 回滚到发布工具诞生之前 / 根本不是本仓)
+ * → 没有"新发布逻辑"可言,也铺不出一个能自举的暂存目录,直接当一致处理:不自举、也不提醒。
+ *
+ * @param {string} runningRoot 本次运行的代码根(CODE_ROOT)
+ * @param {string} source 来源检出
+ * @param {string} sha 要发的提交
+ * @returns {string[]} 不一致的仓内相对路径
+ */
+/**
+ * 一个代码根里【整套发布逻辑】的合并指纹。进印章,用来回答"这份副本是哪个版本的发布工具铺的"。
+ * 缺文件也要算进去(用空串占位),否则"少了一个文件"和"那个文件是空的"会撞成同一个指纹。
+ * @param {string} root 代码根
+ */
+function releaseLogicDigest(root) {
+  const parts = RELEASE_LOGIC_PATHS.map((rel) => {
+    let body = '';
+    try { body = fs.readFileSync(path.join(root, ...rel.split('/')), 'utf8'); } catch { /* 缺就当空 */ }
+    return rel + ':' + sourceDigest(body);
+  });
+  return crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 16);
+}
+
+/**
+ * 副本还新鲜吗 —— 新鲜就不用重发(AD-20260907-LAUNCH-SKIP-REBUILD)。四条全中才算新鲜:
+ *   ① 印章记的 commit 就是这次要发的 sha;
+ *   ② 副本还是个能用的副本(cli/index.cjs 与印章记下的垫片都在);
+ *   ③ 这次要界面的话,副本里的界面得真在(--skip-web 发出来的副本没有 dist);
+ *   ④ 铺出这份副本的发布工具与本次运行的是同一版(老印章没有 logic 字段 → 不新鲜,重发一次补上)。
+ * @returns {object|null} 新鲜就回那份印章,否则 null
+ */
+function freshCopy({ dest, sha, logic, wantWeb }) {
+  const stamp = readStamp(dest);
+  if (!stamp || stamp.commit !== sha || stamp.logic !== logic) return null;
+  if (!fs.existsSync(path.join(dest, 'cli', 'index.cjs'))) return null;
+  for (const name of stamp.shims || []) if (!fs.existsSync(path.join(dest, name))) return null;
+  if (wantWeb && !fs.existsSync(path.join(dest, ...WEB_DIST_REL.split('/'), 'index.html'))) return null;
+  return stamp;
+}
+
+function staleReleaseLogic(runningRoot, source, sha) {
+  if (safeGit(source, ['cat-file', '-e', `${sha}:cli/release.cjs`]) === null) return [];
+  const changed = [];
+  for (const rel of RELEASE_LOGIC_PATHS) {
+    let mine = null;
+    try { mine = sourceDigest(fs.readFileSync(path.join(runningRoot, ...rel.split('/')), 'utf8')); }
+    catch { /* 老副本可能压根没这个文件 —— 那就是"不一致",按缺失比 */ }
+    const blob = safeGit(source, ['show', `${sha}:${rel}`]);
+    const theirs = blob === null ? null : sourceDigest(blob);
+    if (mine !== theirs) changed.push(rel);
+  }
+  return changed;
+}
+
+/**
+ * 自举发布:先把目标 commit 的代码铺到【暂存目录】,再用它自己的发布工具去发布真正的副本。
+ *
+ * 为什么要过一遍暂存目录,而不是"先按旧逻辑发一版、再让副本自己重发一次":
+ *   后者会让副本先落成一份【旧逻辑铺的半成品】,中途挂了就停在那份半成品上(界面/垫片可能是缺的),
+ *   而且前端要白建一遍(几十秒)。走暂存目录则是:副本只被新版铺一次,新版挂了副本一下都没碰过。
+ * 为什么钉 --commit + --no-fetch:
+ *   父进程刚 fetch 过、也已经把 sha 定下来了;子进程要是自己再解析一次 origin/主干,
+ *   期间有人推了新提交就会发出另一个 commit —— 同一次发布必须落在同一个 sha 上。
+ *
+ * @param {{source:string, sha:string, refLabel:string, dest:string, files:string[], flags:object, changed:string[]}} a
+ */
+function bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed }) {
+  const stage = dest + '.boot';
+  rmrf(stage);
+  fs.mkdirSync(stage, { recursive: true });
+  try {
+    exportFiles(source, sha, files, stage);
+    const args = [
+      path.join(stage, 'cli', 'index.cjs'), 'release',
+      '--source', source, '--dest', dest, '--commit', sha, '--ref-label', refLabel, '--no-fetch', '--json',
+    ];
+    if (flags['skip-web']) args.push('--skip-web');
+    let stdout;
+    try {
+      stdout = execFileSync(process.execPath, args, {
+        encoding: 'utf8', windowsHide: true, timeout: 20 * 60 * 1000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, [BOOTSTRAP_ENV]: 'child' },
+      });
+    } catch (e) {
+      const detail = String((e && (e.stderr || e.stdout || e.message)) || e).trim().split('\n').slice(-8).join('\n');
+      throw new Error(
+        `目标 commit 自带的发布工具没跑通,整单不发(副本保持原样):\n${detail}\n` +
+        `  变了的发布逻辑:${changed.join(' ')}\n` +
+        '  实在要先发一份应急,加 --no-bootstrap —— 但那一次新逻辑不会生效。');
+    }
+    // 子进程走的是 --json,末行就是结构化结果;真解析不出来也不判错,退回用它的原文
+    let child = null;
+    try { child = JSON.parse(String(stdout).trim().split('\n').pop()); } catch { /* 老版本 CLI 可能没有 --json */ }
+    const note =
+      `\n⟳ 自举:起头的发布工具和目标 commit 里的那份不是同一版(${changed.join(' ')} 有出入),` +
+      '已改用【目标 commit 自带的那份】重跑 —— 上面这份副本就是它一次铺成的。\n' +
+      '  ——不必再手动跑第二次;要关掉加 --no-bootstrap。';
+    const text = (child && child.text ? child.text : String(stdout).trim()) + note;
+    return { ok: true, dest, stamp: (child && child.stamp) || null, bootstrapped: changed, text };
+  } finally {
+    try { rmrf(stage); } catch { /* 删不掉留给下次发布清 */ }
+  }
+}
+
 /** 目录换名,Windows 上被占就重试(hook 进程加载中 / 资源管理器窗口等)。 */
 function renameRetry(from, to, tries = 8) {
   let last;
@@ -315,6 +462,9 @@ function release(flags = {}, deps = {}) {
   const trunk = detectTrunk(source);
   if (!trunk) throw new Error(`探测不到 ${source} 的远程主干(origin/HEAD、origin/main、origin/master 都没有)`);
   const ref = flags.commit && flags.commit !== true ? String(flags.commit) : `origin/${trunk}`;
+  // 自举子进程用 --commit 把 sha 钉死了,来源标签仍报父进程本来要发的那个 ref(印章与文案才读得懂)。
+  // 内部管道参数,不进 help —— 手动传也无害,它只影响显示。
+  const refLabel = flags['ref-label'] && flags['ref-label'] !== true ? String(flags['ref-label']) : ref;
   let sha;
   try { sha = git(source, ['rev-parse', '--verify', `${ref}^{commit}`]); }
   catch { throw new Error(`解析不到 ${ref}`); }
@@ -322,6 +472,33 @@ function release(flags = {}, deps = {}) {
   // 运行期文件清单来自该 commit 的树,不是工作区
   const files = git(source, ['ls-tree', '-r', '--name-only', sha, '--', ...RUNTIME_PATHS]).split('\n').filter(Boolean);
   if (!files.some((f) => f === 'cli/index.cjs')) throw new Error(`${ref} 里没有 cli/index.cjs,不像看板代码,拒绝发布`);
+
+  // 【自举】改的要是发布工具自己,这一次跑的还是旧工具 —— 让新工具自己去铺副本(见头注)。
+  // 不递归的两道保险:
+  //   ① 子进程带 BOOTSTRAP_ENV=child,见了标记就绝不再生一层(硬上限:最多多跑一次);
+  //   ② 就算标记丢了也收敛 —— 子进程的代码根就是刚从这个 sha 导出的那份,和它要发的 commit 同源,
+  //      指纹必然相等,staleReleaseLogic 返回空,压根走不到这里。
+  const changed = staleReleaseLogic(CODE_ROOT, source, sha);
+  const bootMark = process.env[BOOTSTRAP_ENV];
+  if (changed.length && !flags['no-bootstrap'] && bootMark !== 'child' && bootMark !== '0') {
+    return bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed });
+  }
+
+  // 【已是这一版就不重发】启动器每次双击都跑这条命令,而主干多半没动 —— 见头注 0907 那段。
+  // 放在自举闸【之后】:发布工具变了的那次必须真发,轮不到走这条快路径。
+  const logic = releaseLogicDigest(CODE_ROOT);
+  const fresh = flags.force ? null : freshCopy({ dest, sha, logic, wantWeb: !flags['skip-web'] });
+  if (fresh) {
+    const w = fresh.web && !fresh.web.skipped ? `,界面 ${fresh.web.files} 个文件` : '';
+    return {
+      ok: true, dest, stamp: fresh, upToDate: true,
+      text:
+        `✔ 发布副本已经是这一版,本次没重发 → ${dest}\n` +
+        `  ${refLabel} = ${sha.slice(0, 12)} —— 与副本印章同一个提交,发布工具也没变;重导重建纯属白等\n` +
+        `  上次发布于 ${fresh.releasedAt}${w}\n` +
+        '  真要强制重发(怀疑副本被人动过)加 --force。',
+    };
+  }
 
   const newDir = dest + '.new', oldDir = dest + '.old';
   rmrf(newDir); rmrf(oldDir);
@@ -347,8 +524,9 @@ function release(flags = {}, deps = {}) {
   const shims = writeCliShims(newDir);
 
   const stamp = {
-    commit: sha, ref, trunk, source, releasedAt: new Date().toISOString(),
-    paths: RUNTIME_PATHS, files: files.length, node: process.version, web, shims,
+    commit: sha, ref: refLabel, trunk, source, releasedAt: new Date().toISOString(),
+    // 这份副本是哪个版本的发布工具铺的 —— 下次发布靠它判断"能不能跳过"(AD-20260907-LAUNCH-SKIP-REBUILD)
+    paths: RUNTIME_PATHS, files: files.length, node: process.version, web, shims, logic,
   };
   atomicWriteJsonSync(path.join(newDir, STAMP_NAME), stamp);
 
@@ -365,14 +543,24 @@ function release(flags = {}, deps = {}) {
   const webLine = web && web.skipped
     ? `  ⚠ 前端未构建(${web.reason})——这份副本起不出网页界面,只够 CLI/hook 用\n`
     : `  界面已现场构建:${web.files} 个文件,耗时 ${(web.ms / 1000).toFixed(1)}s(与后台同源于 ${sha.slice(0, 12)})\n`;
+  // 走到这里还对不上,只可能是自举被关掉了(或自举完仍不一致)。宁可话难听,也别让人以为已经发完
+  const staleLine = !changed.length ? '' : (bootMark === 'child'
+    ? `\n  ⚠ 自举跑完发布工具仍对不上(${changed.join(' ')})——这不该发生,请手动再跑一次 release 并查这几个文件`
+    : `\n  ⚠ 起头的发布工具和目标 commit 里的那份不是同一版(${changed.join(' ')} 有出入),这一次是用【起头那份】发的,` +
+      '\n    目标 commit 里的发布逻辑本次一点没作用到副本上;' +
+      `\n    再跑一次同样的命令才会作用到副本上(本次自举被关掉了:--no-bootstrap 或 ${BOOTSTRAP_ENV})`);
   const text =
     `✔ 发布副本已更新 → ${dest}\n` +
-    `  来源 ${ref} = ${sha.slice(0, 12)}(${files.length} 个运行期文件:${RUNTIME_PATHS.join(' ')})\n` +
+    `  来源 ${refLabel} = ${sha.slice(0, 12)}(${files.length} 个运行期文件:${RUNTIME_PATHS.join(' ')})\n` +
     webLine +
     `  短别名垫片:${shims.join(' ')} —— 命令行可写 ${fwd(path.join(dest, CLI_SHIMS[0] + shimExt()))} <命令>,代替 node <长路径>\n` +
     '  各仓 hook 与看板服务跑的都是这份;主工位切分支 / 未提交改动从此影响不到它们。\n' +
-    '  注意:已在跑的服务不会自己换新,下次双击启动器时会自动重起(SERVER-RUNS-ON-LIVE-CHECKOUT d2=A)。';
+    '  注意:已在跑的服务不会自己换新,下次双击启动器时会自动重起(SERVER-RUNS-ON-LIVE-CHECKOUT d2=A)。' +
+    staleLine;
   return { ok: true, dest, stamp, text };
 }
 
-module.exports = { release, releaseStatus, serviceStatus, detectTrunk, buildWebDist, writeCliShims };
+module.exports = {
+  release, releaseStatus, serviceStatus, detectTrunk, buildWebDist, writeCliShims,
+  staleReleaseLogic, releaseLogicDigest, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV,
+};

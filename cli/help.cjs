@@ -396,7 +396,7 @@ const COMMANDS = {
   },
   release: {
     summary: '从主干导出一份发布副本（钩子和网页服务跑的都是它）',
-    usage: 'release [--source <检出>] [--dest <目录>] [--commit <sha>] [--no-fetch] [--skip-web] [--print-dest]',
+    usage: 'release [--source <检出>] [--dest <目录>] [--commit <sha>] [--no-fetch] [--skip-web] [--print-dest] [--no-bootstrap] [--force]',
     args: [
       ['--source <路径>', '从哪个检出导出'],
       ['--dest <路径>', '副本落点，默认发布副本目录'],
@@ -404,9 +404,15 @@ const COMMANDS = {
       ['--no-fetch', '不先 fetch'],
       ['--skip-web', '只发后台，不构建界面（这份副本起不出网页）'],
       ['--print-dest', '只打印副本目录就退出'],
+      ['--no-bootstrap', '改了发布工具本身时不自动改用新版重跑（应急用；那一次新逻辑不生效）'],
+      ['--force', '副本已经是这一版也照发一遍（默认会跳过，省掉几秒重建）'],
     ],
     examples: ['release', 'release --skip-web'],
-    notes: ['看板自己的代码合进主干后要跑一次，否则钩子和网页还是旧的。'],
+    notes: [
+      '看板自己的代码合进主干后要跑一次，否则钩子和网页还是旧的。',
+      '改的要是发布工具自己：会自动把新版导出来、由新版铺副本（否则得连跑两次才真生效）。',
+      '副本已经是这一版就直接跳过（启动器每次双击都跑它，白重建一次界面要五六秒）。',
+    ],
   },
   'claim-check': {
     summary: '检查当前分支有没有认领（pre-commit 闸门调它）',
