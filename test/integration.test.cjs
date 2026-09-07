@@ -65,7 +65,9 @@ test('onboard 一键：import 骨架 + 波次补丁一步到位', () => {
   fs.writeFileSync(patch, JSON.stringify({ P07: { wave: 1, 'deps.relatedTasks': ['P08'] }, P08: { wave: 1 } }));
   const { onboard } = require('../cli/onboard.cjs');
   assert.ok(onboard({ ...P, from: idx, patch, 'no-git': true }).text.includes('import'));
-  const t = JSON.parse(cmds.show({ _: ['P07'], ...P }).text);
+  // --full：show 默认已改成精简卡，整卡 JSON 要显式索取（AUD-CLI-BRIEF-AND-HELP，审计 §4-A4）。
+  // 这里要断言的是 wave / deps 落没落盘，口径没变，只是换成了取整卡的那个入口。
+  const t = JSON.parse(cmds.show({ _: ['P07'], full: true, ...P }).text);
   assert.equal(t.wave, 1);
   assert.deepEqual(t.deps.relatedTasks, ['P08']);
   clean(dir);

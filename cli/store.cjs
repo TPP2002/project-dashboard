@@ -9,6 +9,7 @@ const path = require('node:path');
 const { withLock } = require('../core/lock.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { assertValid, emptyBoard } = require('../core/boardSchema.cjs');
+const { diffTask } = require('../core/taskDiff.cjs');
 
 function readBoard(boardPath) {
   return JSON.parse(fs.readFileSync(boardPath, 'utf8'));
@@ -45,6 +46,32 @@ function mutate(proj, mutator, activityEntry) {
     atomicWriteJsonSync(proj.board, board);
     return board;
   });
+}
+
+/**
+ * mutate 的"带变更清单"版本：锁内、mutator 前后各抓一次目标卡的快照，比出 changed[]。
+ * 写命令的 `--json` 靠它只回变更摘要而不是整卡（AUD-CLI-BRIEF-AND-HELP，审计 §4-A4）。
+ * 为什么在锁内比：进程外若有并发写，锁外读到的"改前"根本不是本次动作的起点，changed 会撒谎。
+ * @param {object} proj resolveProject 结果
+ * @param {string} taskId 这次动的是哪张卡（本次新建的卡也传它，改前快照自然是 null）
+ * @param {(board:object)=>void} mutator
+ * @param {object|((board:object)=>(object|null))|null} [activityEntry] 同 mutate
+ * @returns {{board:object, changed:string[]}}
+ */
+function mutateTask(proj, taskId, mutator, activityEntry) {
+  let changed = [];
+  const board = mutate(proj, (b) => {
+    const before = snapshotTask(b, taskId);
+    mutator(b);
+    changed = diffTask(before, snapshotTask(b, taskId));
+  }, activityEntry);
+  return { board, changed };
+}
+
+/** 卡的深拷贝快照；卡不存在返回 null（新建场景）。 */
+function snapshotTask(board, taskId) {
+  const t = (board.tasks || []).find((x) => x.id === taskId);
+  return t ? JSON.parse(JSON.stringify(t)) : null;
 }
 
 /** 找 task，找不到抛错 */
@@ -98,4 +125,4 @@ function unionShas(arr) {
   return kept;
 }
 
-module.exports = { readBoard, readBoardOrNull, mutate, findTask, unionBy, unionShas, sameCommit, hasCommit };
+module.exports = { readBoard, readBoardOrNull, mutate, mutateTask, snapshotTask, findTask, unionBy, unionShas, sameCommit, hasCommit };

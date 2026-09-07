@@ -12,6 +12,7 @@ const { readBoard } = require('./store.cjs');
 const { resolveProject } = require('../core/resolveProject.cjs');
 const { buildTaskDispatchPrompt } = require('./dispatchPrompt.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
+const { humanTitle } = require('../core/taskTitle.cjs');
 
 function need(v, msg) { if (v === undefined || v === true || v === '') throw new Error(msg); return v; }
 
@@ -22,6 +23,25 @@ function getRegistryPath(flags) {
 
 function unlandedOf(task) {
   return (task.decisions || []).filter((d) => d.answer !== null && d.answer !== undefined && !d.landed);
+}
+
+/**
+ * 列表态默认只列这么多张(AUD-CLI-BRIEF-AND-HELP,审计 §4-A4)。
+ * 【为什么要封顶】列表态的用途只是"挑一张接手"。实测某项目待落地 171 张 = 25KB≈14k token,
+ * 一屏根本挑不动,还每次都烧一整轮额度。封顶 + `--all` 兜底,和 `list` 默认藏已完工同一个契约。
+ * 注意:哪些决策算"待落地"是另一张卡的口径(AUD-UI-UNLANDED-DERIVE,还挂着待拍板),这里不碰,
+ * 只管一次给多少行。
+ */
+const DEFAULT_LIST_LIMIT = 30;
+
+function listLimit(flags) {
+  const n = flags.limit !== undefined && flags.limit !== true ? parseInt(flags.limit, 10) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_LIST_LIMIT;
+}
+
+/** 一张卡里"最近一次拍板"的日期;都没有就给空串(排到最后)。 */
+function latestDecidedAt(decisions) {
+  return decisions.reduce((max, d) => (d.decidedAt && d.decidedAt > max ? d.decidedAt : max), '');
 }
 
 function inbox(flags) {
@@ -41,14 +61,27 @@ function inbox(flags) {
     if (!tasks.length) {
       return { ok: true, text: `📭 项目 ${projName}(${id})没有待落地任务——拍板都已落地或还没拍板。` };
     }
+    // 新拍的板排前面:这一屏是"挑一张接手",最近拍的最可能是负责人正等着落地的那张。
+    const ranked = tasks
+      .map((x, i) => ({ ...x, order: i, latest: latestDecidedAt(x.decisions) }))
+      .sort((a, b) => (a.latest === b.latest ? a.order - b.order : (a.latest < b.latest ? 1 : -1)));
+    const shown = flags.all ? ranked : ranked.slice(0, listLimit(flags));
+
     const lines = [
       `📥 项目 ${projName}(${id})待落地任务(共 ${tasks.length} 个):`,
       '',
     ];
-    tasks.forEach((x) => {
-      lines.push(`  · ${x.task.id}  ${x.task.title}  (${x.decisions.length} 条已拍板决策)`);
+    // 列表态只给"挑哪张"要的三样:卡号 + 人话标题 + 待落地条数。
+    // 旧版打 `task.title`(给模型看的技术说明,实测最长 2166 字)——rogue 一次列表 25KB≈14k token,
+    // 而这一步只是让人/AI 挑一张(AUD-CLI-BRIEF-AND-HELP,审计 §4-A4)。挑完 --tid 才给完整任务书。
+    shown.forEach((x) => {
+      lines.push(`  · ${x.task.id}  ${humanTitle(x.task)}  (${x.decisions.length} 条待落地)`);
     });
     lines.push('');
+    if (shown.length < tasks.length) {
+      lines.push(`（新拍的板排前面，只列了 ${shown.length} 个，还有 ${tasks.length - shown.length} 个没列——`
+        + '`--all` 全列，`--limit <n>` 改条数）');
+    }
     lines.push('挑一个接手,运行:');
     lines.push(`  ${displayCliCommand()} inbox --project ${id} --tid <上面某任务id>`);
     return { ok: true, text: lines.join('\n') };
@@ -61,7 +94,7 @@ function inbox(flags) {
     if (!t) throw new Error(`任务 ${tid} 不存在于项目 ${id}`);
     return { ok: true, text: `✅ 任务 ${tid} 没有待落地决策(可能都已落地)。无需接手。` };
   }
-  const prompt = buildTaskDispatchPrompt(id, projName, found.task, found.decisions);
+  const prompt = buildTaskDispatchPrompt(id, projName, found.task, found.decisions, board);
   return { ok: true, text: prompt };
 }
 

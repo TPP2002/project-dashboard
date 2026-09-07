@@ -710,7 +710,7 @@ function handleDispatchTask(req, res) {
     );
     if (!decisions.length) return sendJson(res, 400, { ok: false, error: `任务 ${tid} 没有待落地决策` });
 
-    const prompt = buildTaskDispatchPrompt(pid, proj.name || pid, task, decisions);
+    const prompt = buildTaskDispatchPrompt(pid, proj.name || pid, task, decisions, board);
     const trigger = shortTrigger(pid, tid);
     // preview:同时给【完整任务书】和【短触发指令】,前端用短触发做"复制接单"(可靠兜底)
     if (body.preview === true) return sendJson(res, 200, { ok: true, prompt, trigger, count: decisions.length });
