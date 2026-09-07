@@ -9,7 +9,9 @@
  *   · 目录级换名,连发两次不留 .new/.old 残渣,印章 RELEASE.json 记来源 commit;
  *   · 安装版/发布副本(代码根没有 .git)跑 release 友好跳过;
  *   · hook 的 CLI 根取值规则「永不指进 git 检出」:环境变量 > 自身非检出 > 发布副本 > 拒装;
- *   · 副本根带 board/kb 短别名垫片,displayCliCommand 有垫片就用短名(AUD-CLI-BATCH-AND-AUTOPROJECT ④/审计 A11)。
+ *   · 副本根带 board/kb 短别名垫片,displayCliCommand 有垫片就用短名(AUD-CLI-BATCH-AND-AUTOPROJECT ④/审计 A11);
+ *   · 【自举】改的要是发布工具本身,起头的旧工具不许自己铺副本 —— 要把新版导到暂存目录、由新版一次铺成
+ *     (AD-20260907-RELEASE-SELF-BOOTSTRAP:病是"连跑两次才真生效",跑了也可能没生效,比忘了跑更隐蔽)。
  *
  * 【0906 口径变更】release 默认会现场构建前端(SERVER-RUNS-ON-LIVE-CHECKOUT d1=A)。本文件的临时仓没有前端源码,
  * 关心的也不是界面,所以调用一律显式加 `skip-web`——不是绕过闸门,是这些用例本来就只验后台那半边。
@@ -21,7 +23,8 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const { release, releaseStatus, detectTrunk } = require('../cli/release.cjs');
+const { release, releaseStatus, detectTrunk, staleReleaseLogic, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV } = require('../cli/release.cjs');
+const REPO_ROOT = path.resolve(__dirname, '..');
 const rt = require('../core/runtimeRoot.cjs');
 
 function git(repo, args, opts = {}) {
@@ -52,15 +55,33 @@ function setup() {
   return { dir, seed, origin, work, dest: path.join(dir, 'release') };
 }
 
-/** 从另一个克隆往 origin/master 推一个新提交,返回其 sha。 */
-function pushFromElsewhere(t, rel, content, msg) {
-  const w2 = path.join(t.dir, 'work2-' + Date.now().toString(36));
+/** 从另一个克隆往 origin/master 推一批文件(一个提交),返回其 sha。 */
+function pushFilesFromElsewhere(t, files, msg) {
+  const w2 = path.join(t.dir, 'work2-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6));
   git(t.dir, ['clone', '-q', t.origin, w2]);
   git(w2, ['config', 'user.email', 't@t.t']); git(w2, ['config', 'user.name', 't']); git(w2, ['config', 'commit.gpgsign', 'false']);
-  write(w2, rel, content);
+  for (const [rel, content] of Object.entries(files)) write(w2, rel, content);
   git(w2, ['add', '-A']); git(w2, ['commit', '-q', '-m', msg]); git(w2, ['push', '-q', 'origin', 'master']);
   return git(w2, ['rev-parse', 'HEAD']);
 }
+/** 单文件版(老用例用的就是它)。 */
+function pushFromElsewhere(t, rel, content, msg) { return pushFilesFromElsewhere(t, { [rel]: content }, msg); }
+
+/**
+ * 假的"新版 CLI":不真发布,只把收到的参数和自举标记写进 --dest。
+ * 它就是证据 —— 副本里出现 BY-NEW-TOOL.json,说明【铺副本的是新版工具】,不是起头那个旧的。
+ */
+const FAKE_NEW_CLI = [
+  "const fs = require('node:fs'); const path = require('node:path');",
+  "const args = process.argv.slice(2);",
+  "const get = (k) => { const i = args.indexOf('--' + k); return i < 0 ? null : args[i + 1]; };",
+  "const dest = get('dest');",
+  "fs.mkdirSync(dest, { recursive: true });",
+  "fs.writeFileSync(path.join(dest, 'BY-NEW-TOOL.json'),",
+  "  JSON.stringify({ args, boot: process.env.DASHBOARD_RELEASE_BOOTSTRAP }));",
+  "process.stdout.write(JSON.stringify({ ok: true, dest,",
+  "  stamp: { commit: get('commit'), byNewTool: true }, text: '✔ 新版发布工具把副本铺好了' }));",
+].join('\n') + '\n';
 
 test('detectTrunk:按 origin/HEAD 认主干,不写死 main', () => {
   const t = setup();
@@ -113,6 +134,7 @@ test('release:连发两次不留 .new/.old 残渣;推了新 master 后再发布,
   release({ source: t.work, dest: t.dest, 'skip-web': true });
   assert.ok(!fs.existsSync(t.dest + '.new'), '无 .new 残渣');
   assert.ok(!fs.existsSync(t.dest + '.old'), '无 .old 残渣');
+  assert.ok(!fs.existsSync(t.dest + '.boot'), '无 .boot 残渣');
 
   const sha2 = pushFromElsewhere(t, 'cli/index.cjs', "console.log('cli v2');\n", 'v2');
   const r2 = release({ source: t.work, dest: t.dest, 'skip-web': true });
@@ -224,4 +246,97 @@ test('displayCliCommand:有垫片就用短名,没垫片回落 node 长写法,路
   assert.equal(rt.displayCliCommand({ env: {}, codeRoot: checkout, releaseHome: spaced }),
     `node "${spaced.replace(/\\/g, '/')}/cli/index.cjs"`);
   clean(dir);
+});
+
+// ——— 自举发布(AD-20260907-RELEASE-SELF-BOOTSTRAP)———
+// 病:发布命令是【副本自己的 CLI】跑的,所以改了发布工具本身时,起头的永远是旧工具 ——
+// 它把新代码铺进副本,新代码带来的发布行为却一次都没作用过,得连跑两次才真生效。
+
+test('自举:目标 commit 的发布工具变了 → 旧工具不自己铺副本,改由【新版】一次铺成', () => {
+  const t = setup();
+  // 主干上换了一份发布工具(cli/release.cjs 是判据;cli/index.cjs 换成会留证据的假 CLI)
+  const sha = pushFilesFromElsewhere(t, { 'cli/release.cjs': '// 新版发布工具 v2\n', 'cli/index.cjs': FAKE_NEW_CLI }, 'v2:换发布工具');
+  const out = release({ source: t.work, dest: t.dest, 'skip-web': true });
+
+  // 副本是新版铺的 —— 旧工具连碰都没碰(它自己发的话这里会是 RELEASE.json)
+  assert.ok(fs.existsSync(path.join(t.dest, 'BY-NEW-TOOL.json')), '副本必须由新版发布工具铺出来');
+  assert.ok(!fs.existsSync(path.join(t.dest, 'RELEASE.json')), '旧工具不许抢先把副本铺了');
+  const rec = JSON.parse(read(path.join(t.dest, 'BY-NEW-TOOL.json')));
+  assert.equal(rec.args[0], 'release');
+  assert.equal(rec.boot, 'child', '子进程必须带自举标记 —— 否则可能一层套一层');
+  assert.equal(rec.args[rec.args.indexOf('--commit') + 1], sha, '同一次发布必须钉死在同一个 sha 上');
+  assert.equal(rec.args[rec.args.indexOf('--ref-label') + 1], 'origin/master', '来源标签照传,印章别退化成一串 sha');
+  assert.ok(rec.args.includes('--no-fetch'), '父进程刚 fetch 过,子进程不该再 fetch 一遍');
+  assert.ok(rec.args.includes('--skip-web'), '父进程的 --skip-web 要传下去,不然子进程会去建界面');
+
+  // 种子仓只有 core/x.cjs,runtimeRoot/atomicWrite 本来就不在里头,一并算"对不上"——判据是"有没有差",不是"差几个"
+  assert.ok(out.bootstrapped.includes('cli/release.cjs'), '要报出到底哪个发布逻辑变了,不然人不知道该看哪');
+  assert.match(out.text, /新版发布工具把副本铺好了/, '输出该是新版的原话,不是旧工具编的');
+  assert.match(out.text, /自举/, '得告诉人这次为什么多跑了一趟');
+  assert.ok(!fs.existsSync(t.dest + '.boot'), '暂存目录用完要清掉');
+  clean(t.dir);
+});
+
+test('自举:新版发布工具跑挂 → 整单失败,旧副本原封不动(和构建失败一个口径)', () => {
+  const t = setup();
+  release({ source: t.work, dest: t.dest, 'skip-web': true });   // 先有一份能用的旧副本
+  const stampBefore = read(path.join(t.dest, 'RELEASE.json'));
+
+  pushFilesFromElsewhere(t, { 'cli/release.cjs': '// v2\n', 'cli/index.cjs': "process.stderr.write('新工具炸了'); process.exit(1);\n" }, 'v2:新工具是坏的');
+  assert.throws(() => release({ source: t.work, dest: t.dest, 'skip-web': true }), /新版发布工具没跑通/);
+  assert.equal(read(path.join(t.dest, 'RELEASE.json')), stampBefore, '副本必须原封不动 —— 宁可不发,也不发半拉子');
+  assert.ok(!fs.existsSync(t.dest + '.boot'), '失败了也不许留暂存目录');
+  clean(t.dir);
+});
+
+test('--no-bootstrap:照旧用旧工具发,但结尾明说【新逻辑这次没生效、要再跑一次】', () => {
+  const t = setup();
+  pushFilesFromElsewhere(t, { 'cli/release.cjs': '// 新版发布工具 v2\n' }, 'v2:换发布工具');
+  const out = release({ source: t.work, dest: t.dest, 'skip-web': true, 'no-bootstrap': true });
+  assert.equal(out.ok, true);
+  assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')), '关掉自举就该照旧发');
+  assert.match(out.text, /旧版发布工具/);
+  assert.match(out.text, /再跑一次/, '不提醒的话,人看见 ✔ 就以为发完了 —— 这正是本卡要治的病');
+  clean(t.dir);
+});
+
+test('不递归:进程带了自举标记就绝不再生一层(硬上限=最多多跑一次)', () => {
+  const t = setup();
+  pushFilesFromElsewhere(t, { 'cli/release.cjs': '// v2\n', 'cli/index.cjs': FAKE_NEW_CLI }, 'v2:换发布工具');
+  const saved = process.env[BOOTSTRAP_ENV];
+  process.env[BOOTSTRAP_ENV] = 'child';
+  try {
+    const out = release({ source: t.work, dest: t.dest, 'skip-web': true });
+    assert.ok(!fs.existsSync(path.join(t.dest, 'BY-NEW-TOOL.json')), '带标记时绝不许再起子进程');
+    assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')), '不自举就自己把这一单发完,别撂挑子');
+    assert.match(out.text, /自举跑完发布工具仍对不上/, '这种反常状态要喊出来,不能闷声发完');
+  } finally {
+    if (saved === undefined) delete process.env[BOOTSTRAP_ENV]; else process.env[BOOTSTRAP_ENV] = saved;
+  }
+  clean(t.dir);
+});
+
+test('收敛证据:发布工具与目标 commit 一模一样 → 不自举、一次发完(不会没完没了地重跑)', () => {
+  const t = setup();
+  // 把【本仓真实的发布逻辑文件】推上主干 —— 这就是自举子进程眼里的世界:它跑的和它要发的同源
+  const real = {};
+  for (const rel of RELEASE_LOGIC_PATHS) real[rel] = read(path.join(REPO_ROOT, ...rel.split('/')));
+  const sha = pushFilesFromElsewhere(t, real, '把真实发布工具推上主干');
+
+  assert.deepEqual(staleReleaseLogic(REPO_ROOT, t.work, sha), [], '同一份代码不该被判成两份(判错=每次发布白跑一趟)');
+  const out = release({ source: t.work, dest: t.dest, 'skip-web': true });
+  assert.equal(out.bootstrapped, undefined, '一致就不该自举');
+  assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')));
+  assert.ok(!/自举|旧版发布工具/.test(out.text), '一致时不该说这些话,免得每次发布都刷一遍噪音');
+  clean(t.dir);
+});
+
+test('目标 commit 里没有发布工具(极老提交 / 回滚到它诞生之前)→ 不比、不自举、也不提醒', () => {
+  const t = setup();
+  const sha = git(t.work, ['rev-parse', 'origin/master']);
+  assert.deepEqual(staleReleaseLogic(REPO_ROOT, t.work, sha), []);
+  const out = release({ source: t.work, dest: t.dest, 'skip-web': true });
+  assert.ok(fs.existsSync(path.join(t.dest, 'RELEASE.json')));
+  assert.ok(!/自举|旧版发布工具/.test(out.text));
+  clean(t.dir);
 });
