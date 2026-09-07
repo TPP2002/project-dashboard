@@ -35,6 +35,32 @@ const WEB_BUILD_DEPS_PATHS = ['core'];
 /** 副本里前端产物的落点(相对副本根)。 */
 const WEB_DIST_REL = 'web/dist';
 
+/**
+ * CLI 短别名垫片（AUD-CLI-BATCH-AND-AUTOPROJECT ④,审计 A11）。
+ * 治的病:每条看板命令行都以 `node "<副本>/cli/index.cjs"` 开头,光这一截就 ~90 字符,
+ * 而它出现在每一份 CLAUDE.md 锚段、每一条派单指令、每一次 inbox 输出里。
+ * 垫片由 `cli release` 生成在副本根(见 cli/release.cjs writeCliShims):
+ *   · Windows 用 .cmd —— cmd / PowerShell / Git Bash 都能直接跑它;
+ *   · 其余平台用 .sh(带可执行位)。
+ * board 是正名,kb 是更短的等价别名,内容一模一样。
+ */
+const CLI_SHIMS = ['board', 'kb'];
+function shimExt(platform = process.platform) { return platform === 'win32' ? '.cmd' : '.sh'; }
+
+/**
+ * 副本根里可直接当命令用的短垫片路径;没有就 null。
+ * @param {string} root 副本(或安装目录)根
+ * @param {{platform?:string}} [opts]
+ */
+function findCliShim(root, opts = {}) {
+  const ext = shimExt(opts.platform);
+  for (const name of CLI_SHIMS) {
+    const p = path.join(root, name + ext);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 /** 目录是不是 git 检出:主仓 .git 是目录、worktree 的 .git 是指针文件,两种都算。 */
 function isGitCheckout(dir) {
   try { fs.statSync(path.join(dir, '.git')); return true; } catch { return false; }
@@ -85,9 +111,21 @@ function resolveDisplayCliRoot(opts = {}) {
   return { root: r.root.replace(/\\/g, '/'), why: r.why };
 }
 
-/** 可粘贴的 node 命令；接受同一组路径覆盖，含空白的 CLI 路径必须双引号包裹。 */
+/**
+ * 可粘贴的命令前缀；接受同一组路径覆盖。
+ * 有短垫片就用短的（A11：一条命令省掉 ~35 字符，而它出现在每份协议文本、每条派单指令里）；
+ * 没有垫片则回落 node 长写法。
+ * 【路径带空白时一律不用垫片】：`"…/我 的目录/board.cmd"` 在 PowerShell 里是个字符串不是命令，
+ * 还得记着前面加 `&`；而 `node "…"` 三种 shell 通吃。省字符不值得换一个"某些 shell 里不能直接粘"的命令。
+ */
 function displayCliCommand(opts = {}) {
-  const cli = path.join(resolveDisplayCliRoot(opts).root, 'cli', 'index.cjs').replace(/\\/g, '/');
+  const root = resolveDisplayCliRoot(opts).root;
+  const shim = findCliShim(root, opts);
+  if (shim) {
+    const fwd = shim.replace(/\\/g, '/');
+    if (!/\s/.test(fwd)) return fwd;
+  }
+  const cli = path.join(root, 'cli', 'index.cjs').replace(/\\/g, '/');
   return `node ${/\s/.test(cli) ? `"${cli}"` : cli}`;
 }
 
@@ -105,6 +143,7 @@ function runtimeMode(codeRoot = CODE_ROOT) {
 
 module.exports = {
   CODE_ROOT, STAMP_NAME, RUNTIME_PATHS, WEB_SOURCE_PATHS, WEB_BUILD_DEPS_PATHS, WEB_DIST_REL,
+  CLI_SHIMS, shimExt, findCliShim,
   isGitCheckout, releaseHome, readStamp, resolveHookCliRoot, runtimeMode,
   resolveDisplayCliRoot, displayCliCommand,
 };

@@ -188,7 +188,7 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
     L.push('```bash');
     if (!working) L.push(`${CLI} claim ${t.id}${proj} --branch <你的分支名> --scope "<会改的文件>"`);
     L.push(`${CLI} progress ${t.id}${proj} --percent <n> --next "<下一步>"`);
-    L.push(`${CLI} pending ${t.id}${proj} --json < pending.json   # 中途冒出新的拍板点`);
+    L.push(`${CLI} pending ${t.id}${proj} --json-file pending.json   # 中途冒出新的拍板点`);
     L.push(`${CLI} done ${t.id}${proj} --pr <PR号> --commit <sha>`);
     L.push('```');
   }

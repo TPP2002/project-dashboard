@@ -2,8 +2,8 @@
 'use strict';
 /**
  * index.cjs —— CLI 入口：参数解析 + 惰性命令分发。
- * 用法: node cli/index.cjs <命令> --project <id> [参数]
- * 全局 flag: --project <id>（写命令必填）、--author <身份>、--json、--registry <path>（测试用）。
+ * 用法: node cli/index.cjs <命令> [--project <id>] [参数]
+ * 全局 flag: --project <id>（省略则按 cwd 的 git 仓反查，见下）、--author <身份>、--json、--registry <path>（测试用）。
  *
  * 惰性加载：命令 → [模块, 导出名]，dispatch 时才 require。
  * 好处=并行对话各实现各的命令文件、无需改本入口，文件域彻底隔离、零撞车。
@@ -66,6 +66,39 @@ const REGISTRY = {
   onboard: ['./onboard.cjs', 'onboard'],
   enroll: ['./enroll.cjs', 'enroll'],
 };
+
+/**
+ * 不吃 --project 的命令（AUD-CLI-BATCH-AND-AUTOPROJECT ③ 的例外表）。
+ * 两类：① 压根没有"当前项目"这个概念的（register 用 --id、enroll 用 --id、release 发的是代码副本、
+ * claim-check / hooks-global / hooks-trunk-guard 一次扫全部已注册项目）；
+ * ② sync-progress —— 它自带一套【认不出就静默跳过】的反查（钩子每次待办更新都跑，绝不许因歧义报错刷屏）。
+ * 给这些命令做反查纯属白跑一个 git 子进程，而 claim-check 挂在每次 commit 上，那点开销是要还的（审计 A9）。
+ */
+const NO_AUTO_PROJECT = new Set([
+  'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress',
+]);
+
+/**
+ * --project 可省略：按 cwd 所在的 git 仓反查唯一项目，就地填进 flags（AUD-CLI-BATCH-AND-AUTOPROJECT ③）。
+ * 在【入口填一次】而不是让 resolveProject 自己猜的理由见 core/resolveProject.cjs 头注。
+ *   · 恰好 1 个 → 填上，下游一律当显式传的用；
+ *   · ≥2 个（一个仓同时登记给多个项目）→ 当场停，要人显式写，绝不靠 registry 的插入顺序决胜；
+ *   · 0 个 → 不填，让命令自己报"缺 --project"（那句话已经把用法写清楚了）。
+ */
+function autoFillProject(cmd, flags) {
+  if (NO_AUTO_PROJECT.has(cmd)) return;
+  if (flags.project !== undefined && flags.project !== true) return;
+  const { detectProjectIds } = require('../core/resolveProject.cjs');
+  const registryPath = flags.registry && flags.registry !== true
+    ? require('node:path').resolve(String(flags.registry)) : undefined;
+  const hits = detectProjectIds({ registryPath });
+  if (hits.length === 1) { flags.project = hits[0]; return; }
+  if (hits.length > 1) {
+    console.error(`✖ 省略了 --project，但当前仓库同时登记给 ${hits.length} 个看板项目：${hits.join('、')}\n` +
+      '  （板的家 mainRepo 与代码的家 codeRepo 都算命中）机器猜不出这张卡属于哪个，请显式写 --project <id>。');
+    process.exit(1);
+  }
+}
 
 /**
  * 帮助渲染(AUD-CLI-BRIEF-AND-HELP,审计 §4-A1)。惰性 require:不看帮助的调用不该为它付启动成本。
@@ -131,9 +164,13 @@ function main() {
   if (typeof fn !== 'function') { console.error(`✖ 命令 ${cmd} 尚未实现（${entry[0]} 未导出 ${entry[1]}）`); process.exit(3); }
 
   const flags = parseFlags(rest);
+  autoFillProject(cmd, flags);
+  // 批量建卡(add --json-file / --json)的档位与人话标题闸是【逐项】判的(见 commands.addBatch),
+  // 这里放行,否则整批必被这两道单卡闸拦死——它们查的是命令行 flag,批量清单里根本没有。
+  const batchAdd = cmd === 'add' && require('./commands.cjs').isBatchAdd(flags);
   // ADD-MODEL-GATE(0901 负责人拍板):命令行建卡必须标建议档位——纪律靠自觉必失守,机器闸兜底。
   // 只拦 CLI 入口;内部编程调用 cmds.add(importCmd 历史导入/docsAudit 自动巡检卡/测试)不经此处。
-  if (cmd === 'add' && (flags.model === undefined || flags.model === true || String(flags.model).trim() === '')) {
+  if (cmd === 'add' && !batchAdd && (flags.model === undefined || flags.model === true || String(flags.model).trim() === '')) {
     console.error('✖ 建卡必须带 --model <建议档位>(0901 拍板,机器闸)。按模型路由表(skill §12.2)照抄一个:\n' +
       '  机械执行/清单/一行修 → --model "sonnet·低"\n' +
       '  照单施工/接线/修复   → --model "opus·中"\n' +
@@ -145,7 +182,7 @@ function main() {
   // ADD-PLAINTITLE-GATE(CLI-ADD-NO-PLAINTITLE-FILESCOPE):建卡三件套(skill §11.9)要求
   // plainTitle(负责人看的人话标题)与 title(模型看的技术说明)都要给——纪律靠自觉必失守,
   // --model 闸已证明有效,同样机器闸兜底。只拦 CLI 入口,内部编程调用不经此处。
-  if (cmd === 'add' && (flags['plain-title'] === undefined || flags['plain-title'] === true || String(flags['plain-title']).trim() === '')) {
+  if (cmd === 'add' && !batchAdd && (flags['plain-title'] === undefined || flags['plain-title'] === true || String(flags['plain-title']).trim() === '')) {
     console.error('✖ 建卡必须带 --plain-title <人话标题>(skill §11.9 建卡三件套,机器闸兜底)。\n' +
       '  --title 是给模型看的技术详细说明(照旧不变),--plain-title 是另加给负责人看的一句人话\n' +
       '  (20~35 字,禁文件名/路径/函数名/类名/命令/英文缩写/内部编号)。例:\n' +

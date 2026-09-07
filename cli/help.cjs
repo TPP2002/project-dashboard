@@ -11,7 +11,7 @@
 
 /** 所有命令共有的 flag,不必每条帮助重复一遍。 */
 const GLOBAL_FLAGS = [
-  ['--project <id>', '认哪块板。写命令必填(register/enroll/claim-check/release 等装机命令除外)'],
+  ['--project <id>', '认哪块板。在项目仓里跑可省略(按当前 git 仓自动认;一个仓登记给多个项目时必须显式写)'],
   ['--author <身份>', '这次动作记在谁头上,进活动流。默认 cli / 分支名'],
   ['--json', '机读输出。写命令只回 {ok,id,status,percent,changed[]}'],
   ['--registry <path>', '换一份注册表。测试隔离用,日常不传'],
@@ -84,10 +84,11 @@ const COMMANDS = {
   },
   pending: {
     summary: '登记一个要负责人拍板的问题（必须给全背景/各选项利弊/推荐理由三件套）',
-    usage: 'pending <卡号> --project <id> --json < pending.json\n'
-      + '       pending <卡号> --project <id> --q <问题> --opt <选项>... --rec <推荐> --background <背景> --pros-<选项> <利弊> --reason <推荐理由> [--strict]',
+    usage: 'pending <卡号> --project <id> --json-file <路径>\n'
+      + 'pending <卡号> --project <id> --q <问题> --opt <选项>... --rec <推荐> --background <背景> --pros-<选项> <利弊> --reason <推荐理由> [--strict]',
     args: [
-      ['--json', '从 stdin 读整块 JSON（推荐：字段多，命令行转义容易出错）'],
+      ['--json-file <路径>', '从文件读整块 JSON（首选：字段多，命令行转义容易出错；PowerShell 下 heredoc 也不好使）'],
+      ['--json', '同上，但从 stdin 读'],
       ['--q <问题>', '一句大白话问题'],
       ['--opt <选项>', '候选答案，至少两个，可重复'],
       ['--rec <选项>', '推荐哪一个，必须在 --opt 里'],
@@ -98,7 +99,7 @@ const COMMANDS = {
       ['--strict', '禁止自定义答案（默认允许负责人写自己的答案）'],
     ],
     examples: [
-      'pending FEAT-12 --project myproj --json < pending.json',
+      'pending FEAT-12 --project myproj --json-file pending.json',
       'pending FEAT-12 --project myproj --q "登录失败要不要锁账号?" --opt "锁" --opt "不锁" --rec "锁" --background "..." --pros-锁 "..." --pros-不锁 "..." --reason "..."',
     ],
     notes: [
@@ -213,7 +214,8 @@ const COMMANDS = {
   // ——— 卡的生命周期 ———
   add: {
     summary: '新建一张卡（必须同时给技术说明、人话标题、建议档位）',
-    usage: 'add <卡号> --project <id> --title <技术说明> --plain-title <人话标题> --model <档位> [--scope <glob>...] [--status <状态>] [--wave <n>] [--desc <一句话>]',
+    usage: 'add <卡号> --project <id> --title <技术说明> --plain-title <人话标题> --model <档位> [--scope <glob>...] [--status <状态>] [--wave <n>] [--desc <一句话>]\n'
+      + 'add --project <id> --json-file <清单.json>   # 一份清单建一批',
     args: [
       ['<卡号>', '大写字母/数字/中划线，如 FEAT-12'],
       ['--title <文本>', '给模型看的技术详细说明（必填）'],
@@ -223,11 +225,16 @@ const COMMANDS = {
       ['--status <状态>', '初始状态，默认 未开工'],
       ['--wave <n>', '波次。施工中新冒出来的卡一律留 0，别继承父卡的波次'],
       ['--desc <文本>', '一句话补充说明'],
+      ['--json-file <路径>', '一份清单建一批：数组每项 {id,title,plainTitle,model,scope,deps,wave,desc}'],
     ],
     examples: [
       'add FEAT-12 --project myproj --model "opus·中" --title "登录失败连续 5 次锁定账号 30 分钟…" --plain-title "连续输错密码要能自动锁一会儿，防有人硬猜"',
+      'add --project myproj --json-file cards.json',
     ],
-    notes: ['--model 与 --plain-title 是机器闸：少一个当场拒收，报错里给照抄模板。'],
+    notes: [
+      '--model 与 --plain-title 是机器闸：少一个当场拒收，报错里给照抄模板。',
+      '批量是全有或全无：任一项不合格整批拒收并把全部错误一次列出。',
+    ],
   },
   unclaim: {
     summary: '放弃认领（施工中 → 待开工/可复工，进度不清零）',
