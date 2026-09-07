@@ -19,6 +19,7 @@ import * as derive from '@/utils/derive'
 import { relTime } from '@/utils/format'
 
 import ProgressRing from '@/components/ProgressRing.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Board } from '@/types'
 import type { CodexReport } from '@/types/codex'
 
@@ -255,7 +256,7 @@ function openTask(item: { projectId: string; task: { id: string } }) {
               @click="openTask(item)"
             >
               <span class="badge bad">卡住</span>
-              <span class="g">{{ item.task.title }}</span>
+              <span class="g">{{ humanTitle(item.task) }}</span>
               <span class="rt">{{ item.projectName }}</span>
             </button>
             <button v-if="blockedItems.length > 4" class="btn quiet btn-sm more-button" @click="router.push('/risk')">查看其余 {{ blockedItems.length - 4 }} 项 →</button>

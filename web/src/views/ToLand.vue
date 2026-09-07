@@ -7,6 +7,7 @@ import Icon from '@/components/Icon.vue'
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 import type { UnlandedTask } from '@/utils/derive'
 
 const store = useBoardStore()
@@ -199,7 +200,7 @@ async function markTaskLanded(task: UnlandedTask) {
           <article v-for="task in visibleTasks(pid, group.tasks)" :key="taskKey(task)" class="task-row row">
             <header class="task-top">
               <span class="task-id mono">{{ task.task.id }}</span>
-              <span class="task-title">{{ task.task.title }}</span>
+              <span class="task-title">{{ humanTitle(task.task) }}</span>
               <span class="badge" :class="statusTone(task.task.status)">{{ task.task.status }}</span>
               <span class="badge warn">{{ task.decisions.length }} 条已拍板决策</span>
             </header>

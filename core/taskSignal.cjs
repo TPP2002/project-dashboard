@@ -178,7 +178,7 @@ function occupancy(tasks, field, opts) {
     const values = Array.isArray(task[field]) ? task[field] : [];
     for (const value of values) {
       if (!holders.has(value)) holders.set(value, []);
-      holders.get(value).push({ id: task.id, title: task.title, status: task.status, settled: isSettled(task) });
+      holders.get(value).push({ id: task.id, title: task.title, plainTitle: task.plainTitle, status: task.status, settled: isSettled(task) });
     }
   }
   const rows = [];

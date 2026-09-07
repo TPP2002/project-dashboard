@@ -11,6 +11,7 @@ import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { isGeneratedArtifact } from 'virtual:generated-artifacts'
 import { isSettled, occupancy, type OccupancyRow } from 'virtual:task-signal'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Task } from '@/types'
 
 const store = useBoardStore()
@@ -81,7 +82,7 @@ function open(id: string) { store.openTask(id, pid.value) }
               :class="t.settled ? 'ok' : 'n'"
               type="button"
               @click="open(t.id)"
-              :title="t.settled ? '已完工（历史占用）：' + t.title : t.title"
+              :title="t.settled ? '已完工（历史占用）：' + humanTitle(t) : humanTitle(t)"
             >{{ t.id }}</button>
           </div>
         </div>

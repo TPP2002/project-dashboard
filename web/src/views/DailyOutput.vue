@@ -10,6 +10,7 @@ import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { cssVar, useEchart } from '@/charts/useEcharts'
 import { fmtShort } from '@/utils/format'
+import { humanTitle } from '@/utils/taskTitle'
 import type { Board } from '@/types'
 
 const store = useBoardStore()
@@ -333,7 +334,7 @@ watch([byDay, rangeDays], update)
         >
           <span class="pill proj">{{ r.projectName }}</span>
           <span class="tid mono">{{ r.task.id }}</span>
-          <span class="tt g">{{ r.task.title }}</span>
+          <span class="tt g">{{ humanTitle(r.task) }}</span>
           <span class="spacer" />
           <span v-if="r.ts" class="time mono rt">{{ fmtShort(r.ts).slice(6) }}</span>
           <span v-for="p in r.task.prNumbers || []" :key="p" class="pill">PR #{{ p }}</span>

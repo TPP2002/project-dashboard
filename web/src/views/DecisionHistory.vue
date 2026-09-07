@@ -5,6 +5,7 @@ import Icon from '@/components/Icon.vue'
 import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 
 const store = useBoardStore()
 const search = ref('')
@@ -22,6 +23,7 @@ const items = computed(() => {
   if (s) arr = arr.filter((it) =>
     it.task.id.toLowerCase().includes(s) ||
     it.task.title.toLowerCase().includes(s) ||
+    (it.task.plainTitle || '').toLowerCase().includes(s) ||
     it.decision.question.toLowerCase().includes(s) ||
     (it.decision.answer || '').toLowerCase().includes(s)
   )
@@ -58,7 +60,7 @@ const stats = computed(() => {
         <div class="top">
           <span class="proj pill">{{ it.projectName }}</span>
           <span class="tid mono">{{ it.task.id }}</span>
-          <span class="ttitle">{{ it.task.title }}</span>
+          <span class="ttitle">{{ humanTitle(it.task) }}</span>
           <span class="did mono">#{{ it.decision.id }}</span>
           <span class="date">{{ it.decision.decidedAt || '—' }}</span>
           <span class="badge icon-badge" :class="(it.decision as any).landed ? 'ok' : 'warn'">

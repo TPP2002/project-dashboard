@@ -55,6 +55,7 @@ declare module 'virtual:task-signal' {
   export interface OccupancyHolder {
     id: string
     title: string
+    plainTitle?: string
     status: string
     settled: boolean
   }

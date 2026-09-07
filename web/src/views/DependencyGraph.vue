@@ -6,6 +6,7 @@ import { useBoardStore } from '@/stores/board'
 import { statusTone, DONE_STATUSES } from '@/api/schema'
 import { cssVar, useEchart } from '@/charts/useEcharts'
 import DoneToggle from '@/components/DoneToggle.vue'
+import { humanTitle } from '@/utils/taskTitle'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
@@ -35,7 +36,7 @@ function buildOption() {
   const ids = new Set(tasks.map((t) => t.id))
   const nodes = tasks.map((t) => ({
     name: t.id,
-    value: t.title,
+    value: humanTitle(t),
     symbolSize: 34,
     itemStyle: { color: toneColor(t.status) },
     label: {
