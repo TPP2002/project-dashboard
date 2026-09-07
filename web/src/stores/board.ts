@@ -6,6 +6,7 @@ import type { Board, ProjectSummary, Task } from '@/types'
 import { fetchProjects, fetchBoard, postDecide } from '@/api/client'
 import { BoardStream, type ConnState } from '@/api/sse'
 import * as derive from '@/utils/derive'
+import { emitBoardEvent, type BoardEventKind } from '@/utils/boardEvents'
 
 export const useBoardStore = defineStore('board', () => {
   // ---------- state ----------
@@ -70,7 +71,10 @@ export const useBoardStore = defineStore('board', () => {
     const oldKeys = new Set((oldBoard.activity ?? []).map((a) => `${a.ts}|${a.taskId}|${a.text}`))
     for (const a of newBoard.activity ?? []) {
       const k = `${a.ts}|${a.taskId}|${a.text}`
-      if (!oldKeys.has(k) && a.taskId) markPulse(pid, a.taskId)
+      if (!oldKeys.has(k) && a.taskId) {
+        markPulse(pid, a.taskId)
+        emitBoardEvent({ kind: a.type as BoardEventKind, projectId: pid, taskId: a.taskId, ts: a.ts })
+      }
     }
   }
 

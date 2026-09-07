@@ -1,11 +1,27 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Task } from '@/types'
 import { useBoardStore } from '@/stores/board'
 import { relTime } from '@/utils/format'
+import { registerCardElement, unregisterCardElement } from '@/utils/boardEvents'
 import Icon from './Icon.vue'
 import StatusTile from './StatusTile.vue'
 
 const props = defineProps<{ task: Task; projectId: string }>()
+const root = ref<HTMLElement | null>(null)
+let registeredKey = ''
+function registerRoot() {
+  if (!root.value) return
+  unregisterCardElement(registeredKey, root.value)
+  registeredKey = `${props.projectId}:${props.task.id}`
+  registerCardElement(registeredKey, root.value)
+}
+onMounted(registerRoot)
+// 切换项目时同号任务可能复用组件，登记键须跟随当前项目。
+watch(() => `${props.projectId}:${props.task.id}`, registerRoot)
+onBeforeUnmount(() => {
+  if (root.value) unregisterCardElement(registeredKey, root.value)
+})
 const store = useBoardStore()
 const pending = () => (props.task.decisions ?? []).filter((d) => d.answer == null).length
 const building = () => props.task.status === '施工中'
@@ -20,6 +36,7 @@ const stale = () => {
 
 <template>
   <article
+    ref="root"
     class="tcard card"
     :class="{ pulsing: store.isPulsing(projectId, task.id) }"
     role="button"
