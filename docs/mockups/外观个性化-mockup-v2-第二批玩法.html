@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 第二批玩法 mockup v2（城与天 / 光之河 / 光轨 / 施工现场）</title>
+<style>
+/* ============================================================
+   令牌层：照抄 web/src/styles/base.css + v1 稿新增的个性化变量（速度倍率 / 粗细 / 项目色）
+   ============================================================ */
+:root{
+  --bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;
+  --line:#e4e4e2;--line-strong:#d2d2cf;
+  --text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;
+  --ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;
+  --bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;
+  --n:#8e8e89;--n-bg:#eeeeed;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+  --r-sm:4px;--r:6px;--r-lg:8px;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  --fs-xs:11px;--fs-sm:12.5px;--fs-base:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;--fs-2xl:28px;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+  --cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+  --spec-cool:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4;
+  --spec-warm:#f0b429,#f5825b,#e8619d,#a86fd8,#f0b429;
+  --spec-aurora:#3ddc97,#22d3ee,#6d8cff,#a86fd8,#3ddc97;
+  --spec-sunset:#ff8a5b,#ffb26b,#ff5f8d,#a05ac0,#ff8a5b;
+  --spec-cyber:#00e5ff,#ff2fb9,#7b46ff,#00e5ff;
+  --spec-info:#4a9eff,#4ad9c4,#6d8cff,#4a9eff;
+  --spec-warn:#f0b429,#f5825b,#f6d365,#f0b429;
+  --spec-ok:#6fbf82,#2c7a45,#a8e6b9,#6fbf82;
+  --spec-bad:#e0736a,#8a2f27,#f2a59d,#e0736a;
+  --spec-active:var(--spec-cool);
+  --spec-bar:var(--spec-active);--spec-top:var(--spec-active);--spec-edge:var(--spec-info);
+  --sp-k:1;--sp-base:calc(3.4s * var(--sp-k));
+  --gl-top:2px;--gl-rail:6px;--gl-edge:2px;
+  /* 流光四采样色：给 SVG / 关键帧动画用（它们吃不了「色站列表」这种写法），由 JS 从 --spec-active 拆出来 */
+  --w1:#4ad9c4;--w2:#4a9eff;--w3:#8b7bf7;--w4:#c96bd8;
+  /* 天空（浅色 = 白天） */
+  --sky-1:#dbe7f6;--sky-2:#f4f7fb;--star:transparent;--win-off:#c6d0dd;--win-on:#ffb64a;--bld:#e6ebf2;--bld-line:#c9d3e0;--ground:#d5dde8;
+  --water-1:#dfeaf6;--water-2:#eef4fa;
+}
+[data-theme="dark"],.pane.dark{
+  --bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;
+  --line:#242426;--line-strong:#343437;
+  --text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;
+  --ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;
+  --bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;
+  --n:#8e8e8e;--n-bg:#232326;--shadow:none;
+  --spec-ok:#6fbf82,#3f9a5c,#a8e6b9,#6fbf82;--spec-bad:#e0736a,#a63d33,#f2a59d,#e0736a;
+  --spec-aurora:#4ee6a8,#3ce0f5,#8aa0ff,#c08ce8,#4ee6a8;
+  --sky-1:#070a14;--sky-2:#121a30;--star:#cfd8ff;--win-off:#1a2233;--win-on:#ffcd6b;--bld:#161c2a;--bld-line:#2a3448;--ground:#0c1020;
+  --water-1:#0a1426;--water-2:#0f1d38;
+}
+[data-spectrum="warm"]{--spec-active:var(--spec-warm)}
+[data-spectrum="aurora"]{--spec-active:var(--spec-aurora)}
+[data-spectrum="sunset"]{--spec-active:var(--spec-sunset)}
+[data-spectrum="cyber"]{--spec-active:var(--spec-cyber)}
+[data-spectrum="warm"] .pane.dark{--spec-active:var(--spec-warm)}
+[data-spectrum="aurora"] .pane.dark{--spec-active:var(--spec-aurora)}
+[data-spectrum="sunset"] .pane.dark{--spec-active:var(--spec-sunset)}
+[data-spectrum="cyber"] .pane.dark{--spec-active:var(--spec-cyber)}
+[data-spectrum="cool"] .pane.dark{--spec-active:var(--spec-cool)}
+
+/* ============================================================
+   稿纸外壳
+   ============================================================ */
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600}
+.doc{max-width:1500px;margin:0 auto;padding:32px 24px 96px}
+.doc-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.doc-head h1{font-size:28px;letter-spacing:-.02em;color:#1a1a19}
+.doc-head p{margin:8px 0 0;color:#5c5c58;max-width:1000px;font-size:15px}
+.doc-head .meta{margin-top:6px;color:#8e8e89;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.modes{display:inline-flex;border:1px solid #d2d2cf;border-radius:6px;overflow:hidden;background:#fff;position:sticky;top:12px;z-index:9;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.modes button{border:0;border-right:1px solid #e4e4e2;background:#fff;color:#5c5c58;padding:7px 15px;font:inherit;font-size:13px;cursor:pointer}
+.modes button:last-child{border-right:0}
+.modes button.on{background:#1a1a19;color:#fff}
+.sec{margin-top:44px}
+.sec>h2{font-size:22px;color:#1a1a19;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:ui-monospace,Consolas,monospace;font-size:15px;margin-right:8px}
+.sec>h2 .tag{display:inline-block;margin-left:10px;padding:2px 8px;border-radius:4px;background:#e8f4ec;color:#2c7a45;font-family:ui-monospace,Consolas,monospace;font-size:12px;vertical-align:middle;font-weight:500}
+.sec>h2 .tag.alt{background:#eeeeed;color:#5c5c58}
+.sec>h2 .tag.fb{background:#fdf3e0;color:#9a6b12}
+.sec>p{margin:8px 0 16px;color:#5c5c58;max-width:1040px}
+.sec>p code,.note code{background:#fff;border:1px solid #e4e4e2;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.sub{margin-top:26px}
+.sub>h3{font-size:17px;color:#1a1a19}
+.sub>p{margin:6px 0 14px;color:#5c5c58;max-width:1040px;font-size:14.5px}
+.note{margin:12px 0 0;padding:10px 14px;border-left:3px solid #d2d2cf;background:#f3f3f1;color:#5c5c58;font-size:13.5px;border-radius:0 6px 6px 0}
+.note b{color:#1a1a19}
+.note.ask{border-left-color:#9a6b12;background:#fdf3e0}.note.ask b{color:#9a6b12}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.stackp{display:grid;gap:16px}
+@media (max-width:1080px){.pair{grid-template-columns:1fr}}
+.pane{position:relative;padding:20px;border:1px solid var(--line-strong);border-radius:10px;background:var(--bg);color:var(--text);font-size:var(--fs-base);line-height:1.65}
+.pane::before{content:attr(data-label);position:absolute;top:9px;right:13px;color:var(--text-3);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;z-index:3}
+.pane.tight{padding:0;overflow:hidden}
+.sim{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+table.spec{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e4e2;border-radius:6px;overflow:hidden;font-size:14px}
+table.spec th,table.spec td{padding:9px 12px;border-bottom:1px solid #eeeeed;text-align:left;vertical-align:top}
+table.spec th{background:#f6f6f5;color:#5c5c58;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td.k{font-weight:600;color:#1a1a19;white-space:nowrap}
+
+/* ============================================================
+   产品组件（照抄 base.css 写法）
+   ============================================================ */
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;overflow:visible}
+.ic.s14{width:14px;height:14px}.ic.s16{width:16px;height:16px}.ic.s20{width:20px;height:20px}.ic.s24{width:24px;height:24px}
+.ic .tint{fill:currentColor;stroke:none;opacity:.18}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);padding:var(--s2) var(--s3);border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface-2);color:var(--text);cursor:pointer;font:inherit;font-size:var(--fs-base);transition:background .14s ease,border-color .14s ease,color .14s ease}
+.btn:hover{background:var(--surface-3)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--text-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--text)}
+.btn-sm{padding:var(--s1) var(--s2);font-size:var(--fs-sm)}
+.badge{display:inline-block;padding:var(--s1) var(--s2);border:1px solid transparent;border-radius:var(--r-sm);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.6;white-space:nowrap}
+.badge.n{background:var(--surface-3);color:var(--text-2)}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.info{background:var(--info-bg);color:var(--info)}
+.badge.bad{background:var(--bad-bg);color:var(--bad)}
+.mono{font-family:var(--mono)}.dim{color:var(--text-3)}
+.glow{background-image:linear-gradient(90deg,var(--spec-top));background-size:200% 100%;animation:slide var(--sp-base) linear infinite}
+.glow-top{height:var(--gl-top);border-radius:1px}
+.glow-rail{height:var(--gl-rail);overflow:hidden;border-radius:3px;background-color:var(--surface-3)}
+.glow-rail>i{display:block;height:100%;border-radius:inherit;background-image:linear-gradient(90deg,var(--spec-bar));background-size:200% 100%;animation:slide var(--sp-base) linear infinite}
+.glow-edge{position:absolute;inset:0 auto 0 0;width:var(--gl-edge);background-image:linear-gradient(180deg,var(--spec-edge));background-size:100% 200%;animation:slideY var(--sp-base) linear infinite}
+@keyframes slide{to{background-position:-200% 0}}
+@keyframes slideY{to{background-position:0 -200%}}
+.tile{display:inline-grid;place-items:center;width:16px;height:16px;padding:1px;border-radius:5px;background:var(--line);vertical-align:-.25em;flex:none}
+.tile>i{display:grid;place-items:center;width:100%;height:100%;border-radius:4px;background:var(--tone-bg,var(--surface))}
+.tile svg{width:11px;height:11px;fill:none;stroke:var(--tone,var(--text-2));stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.tile.spec{background-image:linear-gradient(90deg,var(--tone-spec,var(--spec-active)));background-size:200% 100%;animation:slide var(--sp-base) linear infinite}
+.tile.lg{width:20px;height:20px;border-radius:6px;padding:1.5px}.tile.lg>i{border-radius:4.5px}.tile.lg svg{width:14px;height:14px;stroke-width:2.2}
+.tone-info{--tone:var(--info);--tone-bg:var(--info-bg);--tone-spec:var(--spec-info)}
+.tone-warn{--tone:var(--warn);--tone-bg:var(--warn-bg);--tone-spec:var(--spec-warn)}
+.tone-ok{--tone:var(--ok);--tone-bg:var(--ok-bg);--tone-spec:var(--spec-ok)}
+.tone-bad{--tone:var(--bad);--tone-bg:var(--bad-bg);--tone-spec:var(--spec-bad)}
+.tone-n{--tone:var(--n);--tone-bg:var(--n-bg)}
+
+/* ---------- 看板页骨架（照 App.vue / Kanban.vue 缩小版） ---------- */
+.kb{display:grid;grid-template-columns:104px 1fr;grid-template-rows:40px 1fr;height:100%;min-height:520px;background:var(--bg);color:var(--text)}
+.kb-top{grid-column:1/-1;display:flex;align-items:center;gap:var(--s3);padding:0 var(--s3);background:var(--surface);border-bottom:1px solid var(--line);font-size:var(--fs-sm)}
+.kb-top b{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm)}
+.kb-top .sel{padding:2px 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);font-size:var(--fs-xs)}
+.kb-top .sp{flex:1}
+.kb-top .bell{position:relative;color:var(--warn)}
+.kb-top .bell i{position:absolute;top:-7px;right:-9px;padding:0 4px;border-radius:4px;background:var(--warn-bg);color:var(--warn);font-family:var(--mono);font-size:10px;font-style:normal;line-height:1.5}
+.kb-nav{padding:var(--s2);background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.kb-nav span{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:var(--r);color:var(--text-2);font-size:var(--fs-xs)}
+.kb-nav span.on{background:var(--surface-3);color:var(--text)}
+.kb-main{position:relative;display:flex;flex-direction:column;gap:var(--s3);padding:var(--s3);min-width:0;overflow:hidden}
+.kb-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s2)}
+.kb-head h1{font-size:var(--fs-lg);letter-spacing:-.01em}
+.kb-head p{margin:2px 0 0;color:var(--text-3);font-size:var(--fs-xs)}
+.kb-head .pv{font-family:var(--mono);font-size:var(--fs-md)}
+.lanes{display:flex;gap:var(--s2);flex:1;min-height:0;align-items:flex-start}
+.lane{position:relative;flex:1 0 0;display:flex;flex-direction:column;gap:6px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.lane-h{display:flex;align-items:center;justify-content:space-between;padding:2px 4px}
+.lane-h .badge{display:inline-flex;align-items:center;gap:4px;padding-left:3px}
+.tc{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:5px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);cursor:pointer;transition:transform .14s ease,border-color .14s ease}
+.tc:hover{transform:translateY(-1px);border-color:var(--line-strong)}
+.tc .h{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs)}
+.tc .h .tid{color:var(--text-2);font-family:var(--mono);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc .t{font-size:var(--fs-sm);line-height:1.4}
+.tc .pw{display:flex;align-items:center;gap:6px}
+.tc .pw .glow-rail{flex:1;height:4px}
+.tc .pw .pct{color:var(--text-3);font-family:var(--mono);font-size:10px;min-width:26px;text-align:right}
+.tc.building{padding-left:12px}
+
+/* ============================================================
+   ① 城与天：看板页顶部一条会长高的城市，天空按板子的状态变天气
+   ============================================================ */
+.sky{position:relative;height:132px;overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(180deg,var(--sky-1),var(--sky-2));isolation:isolate}
+.sky.tall{height:190px}
+/* 星（只在深色有颜色；浅色 --star 透明 = 自然不见） */
+.stars{position:absolute;inset:0;background-image:
+  radial-gradient(1px 1px at 8% 22%,var(--star) 50%,transparent 60%),radial-gradient(1px 1px at 19% 61%,var(--star) 50%,transparent 60%),
+  radial-gradient(1.5px 1.5px at 27% 14%,var(--star) 50%,transparent 60%),radial-gradient(1px 1px at 36% 44%,var(--star) 50%,transparent 60%),
+  radial-gradient(1px 1px at 47% 9%,var(--star) 50%,transparent 60%),radial-gradient(1.5px 1.5px at 58% 31%,var(--star) 50%,transparent 60%),
+  radial-gradient(1px 1px at 66% 18%,var(--star) 50%,transparent 60%),radial-gradient(1px 1px at 74% 52%,var(--star) 50%,transparent 60%),
+  radial-gradient(1.5px 1.5px at 83% 12%,var(--star) 50%,transparent 60%),radial-gradient(1px 1px at 91% 38%,var(--star) 50%,transparent 60%),
+  radial-gradient(1px 1px at 95% 70%,var(--star) 50%,transparent 60%),radial-gradient(1px 1px at 4% 78%,var(--star) 50%,transparent 60%);
+  animation:twinkle 4.2s ease-in-out infinite;opacity:.9}
+@keyframes twinkle{0%,100%{opacity:.55}50%{opacity:1}}
+/* 极光：全站 RGB 谱做的一条流动光带，只在「没人等我」时出现 */
+.aurora{position:absolute;left:-10%;right:-10%;top:6%;height:46%;background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide calc(var(--sp-base) * 3) linear infinite;filter:blur(18px);opacity:0;transition:opacity 1.2s ease;transform:skewY(-4deg);border-radius:50%}
+.sky.clear .aurora{opacity:.42}
+.pane:not(.dark) .sky.clear .aurora{opacity:.28}
+/* 云：待拍板越多越多、越低。每朵是三个圆 */
+.cloud{position:absolute;top:14px;width:64px;height:20px;opacity:0;transition:opacity .9s ease,transform .9s ease;transform:translateY(-14px);filter:drop-shadow(0 2px 6px rgba(0,0,0,.12))}
+.cloud::before,.cloud::after,.cloud i{content:"";position:absolute;bottom:0;border-radius:50%;background:var(--cloud,#f2f5f9)}
+.cloud::before{left:0;width:34px;height:20px}.cloud::after{right:0;width:38px;height:24px}.cloud i{left:18px;width:34px;height:30px}
+.pane.dark .cloud{--cloud:#2b3550}
+.cloud.on{opacity:.95;transform:translateY(0)}
+.cloud:nth-child(1){left:12%;animation:drift 26s linear infinite}
+.cloud:nth-child(2){left:58%;animation:drift 34s linear infinite;scale:.8}
+.cloud:nth-child(3){left:36%;top:26px;animation:drift 30s linear infinite;scale:.7}
+.cloud:nth-child(4){left:80%;animation:drift 40s linear infinite;scale:.9}
+@keyframes drift{from{margin-left:-20px}to{margin-left:40px}}
+/* 闪电：新来一条待拍板，云里亮一下（琥珀色，不是白色——它是「等你」的颜色） */
+.bolt{position:absolute;top:10px;left:50%;width:100%;height:100%;pointer-events:none;opacity:0;background:radial-gradient(60px 40px at 20% 20%,#f0b42999,transparent 70%)}
+.bolt.hit{animation:boltflash .7s ease-out}
+@keyframes boltflash{0%{opacity:0}12%{opacity:1}22%{opacity:.2}32%{opacity:.9}100%{opacity:0}}
+/* 雨：有卡阻塞就下，细而密，稍微斜 */
+.rain{position:absolute;inset:0;opacity:0;transition:opacity 1s ease;background:repeating-linear-gradient(100deg,transparent 0 11px,color-mix(in srgb,var(--text-2) 45%,transparent) 11px 12px);background-size:120px 100%;mask-image:linear-gradient(180deg,transparent 8%,#000 30%,#000 82%,transparent);animation:rainfall .55s linear infinite}
+.sky.rainy .rain{opacity:.5}
+@keyframes rainfall{to{background-position:-16px 60px}}
+/* 地面与楼 */
+.ground{position:absolute;left:0;right:0;bottom:0;height:10px;background:var(--ground)}
+.city{position:absolute;left:0;right:0;bottom:10px;display:flex;align-items:flex-end;justify-content:center;gap:22px;padding:0 20px}
+.bld{position:relative;display:grid;gap:2px;padding:5px 5px 3px;background:var(--bld);border:1px solid var(--bld-line);border-bottom:0;border-radius:3px 3px 0 0;cursor:pointer;transition:filter .2s ease,transform .2s ease}
+.bld.cur{box-shadow:0 0 0 1px var(--info),0 0 18px -4px var(--info)}
+.bld:not(.cur){filter:saturate(.75) brightness(.92)}
+.bld:hover{transform:translateY(-2px)}
+.win{width:6px;height:6px;border-radius:1px;background:var(--win-off)}
+.win.done{background:var(--win-on);box-shadow:0 0 4px var(--win-on)}
+.pane:not(.dark) .win.done{box-shadow:none}
+.win.build{animation:winflow calc(var(--sp-base) * 1.2) linear infinite;box-shadow:0 0 6px var(--w2)}
+.win.build.d2{animation-delay:-.9s}.win.build.d3{animation-delay:-1.8s}
+@keyframes winflow{0%{background:var(--w1)}25%{background:var(--w2)}50%{background:var(--w3)}75%{background:var(--w4)}100%{background:var(--w1)}}
+.win.pend{background:#f0b429;animation:winblink 1.4s ease-in-out infinite}
+@keyframes winblink{0%,100%{opacity:1}50%{opacity:.25}}
+.win.blocked{background:#e0736a;animation:winblink 2.6s ease-in-out infinite}
+.win.parked{background:#8a2f27;opacity:.7}
+.win.flash{animation:winflash .9s ease-out}
+@keyframes winflash{0%{background:#fff;box-shadow:0 0 14px #fff}100%{background:var(--win-on)}}
+.bld .name{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:2px;color:var(--text-3);font-family:var(--mono);font-size:9px;white-space:nowrap;letter-spacing:.04em}
+/* 屋顶信标 */
+.beacon{position:absolute;top:-5px;right:5px;width:5px;height:5px;border-radius:50%;opacity:0}
+.beacon.warn{background:#f0b429;box-shadow:0 0 6px #f0b429;opacity:1;animation:winblink 1.2s ease-in-out infinite}
+.beacon.bad{background:#e0463c;box-shadow:0 0 6px #e0463c;opacity:1;animation:winblink .7s ease-in-out infinite}
+/* 塔吊：楼上有施工中就立一台，吊臂慢慢摆 */
+.crane{position:absolute;left:-6px;bottom:100%;width:60px;height:34px;pointer-events:none}
+.crane .mast{position:absolute;left:8px;bottom:0;width:2px;height:30px;background:var(--text-3)}
+.crane .jib{position:absolute;left:9px;bottom:28px;width:50px;height:2px;background:var(--text-3);transform-origin:0 50%;animation:jib 7s ease-in-out infinite}
+.crane .jib::after{content:"";position:absolute;right:6px;top:2px;width:1px;height:14px;background:var(--text-3);animation:hook 7s ease-in-out infinite}
+@keyframes jib{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(9deg)}}
+@keyframes hook{0%,100%{height:12px}50%{height:18px}}
+/* 尖顶：100% 才点亮 */
+.spire{position:absolute;left:50%;bottom:100%;width:2px;height:16px;background:var(--win-on);box-shadow:0 0 8px var(--win-on);transform:translateX(-50%);opacity:0;transition:opacity .6s ease}
+.bld.full .spire{opacity:1}
+.fw{position:absolute;inset:0;pointer-events:none;z-index:2}
+/* 天气说明小图例 */
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;color:var(--text-3);font-size:var(--fs-xs)}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+
+/* ============================================================
+   ② 光之河：看板页底部一条活动流，事件变成漂过去的光点
+   ============================================================ */
+.river{position:relative;height:46px;overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:linear-gradient(180deg,var(--water-1),var(--water-2))}
+.river .shine{position:absolute;inset:auto 0 0 0;height:60%;background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide calc(var(--sp-base) * 4) linear infinite;opacity:.16;mask-image:repeating-linear-gradient(180deg,#000 0 1px,transparent 1px 5px)}
+.pane.dark .river .shine{opacity:.22}
+.drop{position:absolute;top:50%;display:inline-flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;border-radius:999px;background:var(--surface);border:1px solid var(--line-strong);color:var(--text-2);font-size:10px;font-family:var(--mono);white-space:nowrap;transform:translateY(-50%);animation:float var(--dur,18s) linear forwards;box-shadow:0 0 10px -2px var(--dc,var(--info))}
+.drop .ic{color:var(--dc,var(--info))}
+.drop:hover{animation-play-state:paused;z-index:2;color:var(--text)}
+.drop.done{--dc:var(--ok)}.drop.pend{--dc:var(--warn)}.drop.block{--dc:var(--bad)}.drop.claim{--dc:var(--info)}
+@keyframes float{from{left:100%}to{left:-40%}}
+.river-q{position:absolute;right:8px;top:6px;color:var(--text-3);font-family:var(--mono);font-size:9px;letter-spacing:.08em}
+
+/* ============================================================
+   ③ 光轨：泳道头之间拉一条霓虹轨，卡换状态时一颗光珠沿轨跑过去
+   ============================================================ */
+.rail-wrap{position:absolute;left:0;right:0;top:34px;height:14px;pointer-events:none;z-index:1}
+.rail-wrap svg{width:100%;height:100%;overflow:visible}
+.rail{fill:none;stroke:url(#railgrad);stroke-width:2;stroke-linecap:round;opacity:.55}
+.rail-dash{fill:none;stroke:var(--w2);stroke-width:2;stroke-dasharray:3 26;stroke-linecap:round;animation:raildash 2.6s linear infinite;opacity:.9}
+@keyframes raildash{to{stroke-dashoffset:-29}}
+.bead{fill:#fff;filter:drop-shadow(0 0 5px var(--w2)) drop-shadow(0 0 10px var(--w3))}
+.lane .st{position:absolute;top:-8px;left:50%;width:8px;height:8px;border-radius:50%;background:var(--surface);border:2px solid var(--w2);transform:translateX(-50%);z-index:2}
+.tc.fly{animation:flycard .8s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes flycard{0%{transform:translate(0,0) scale(1);opacity:1}40%{transform:translate(0,-14px) scale(.96)}100%{transform:translate(var(--fx,220px),-40px) scale(.5);opacity:0}}
+.tc.land{animation:landcard .5s ease-out}
+@keyframes landcard{from{transform:translateY(-10px) scale(.96);opacity:0;box-shadow:0 0 0 6px var(--ok-bg)}}
+
+/* ============================================================
+   ④ 卡片小料：追光 / 盖章
+   ============================================================ */
+.spot{--mx:50%;--my:50%}
+.spot::after{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:radial-gradient(120px 120px at var(--mx) var(--my),var(--w2),transparent 70%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .25s ease;pointer-events:none}
+.spot:hover::after{opacity:1}
+.stamp{position:absolute;right:8px;top:6px;padding:2px 6px;border:2px solid var(--ok);border-radius:4px;color:var(--ok);font-weight:700;font-size:11px;letter-spacing:.2em;transform:rotate(-12deg) scale(2.2);opacity:0;pointer-events:none}
+.stamp.hit{animation:stamp .55s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes stamp{0%{opacity:0;transform:rotate(-12deg) scale(2.2)}60%{opacity:1;transform:rotate(-12deg) scale(.92)}100%{opacity:.9;transform:rotate(-12deg) scale(1)}}
+.ripple{position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:50%;border:2px solid var(--ok);transform:translate(-50%,-50%);opacity:0;pointer-events:none}
+.ripple.hit{animation:ripple .7s ease-out}
+@keyframes ripple{0%{opacity:.9;width:10px;height:10px}100%{opacity:0;width:240px;height:240px}}
+.conf-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+
+/* ============================================================
+   ⑤ 施工现场（兜底）：桌子 / 屏幕 / 举手 / 红灯 / 收桌
+   ============================================================ */
+.site{display:flex;gap:14px;align-items:flex-end;padding:14px 16px 12px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow-x:auto}
+.desk{position:relative;flex:none;width:92px;display:grid;gap:4px;justify-items:center}
+.desk .scr{position:relative;width:54px;height:34px;border-radius:4px;background:var(--surface-3);border:1px solid var(--line-strong);overflow:hidden}
+.desk .scr::after{content:"";position:absolute;inset:3px;border-radius:2px;background:var(--bg)}
+.desk.on .scr::after{background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide var(--sp-base) linear infinite;opacity:.85}
+.desk .top{width:82px;height:6px;border-radius:2px;background:var(--line-strong)}
+.desk .bot{color:var(--info);margin-top:-2px;animation:typing 1.1s steps(2) infinite}
+@keyframes typing{50%{transform:translateY(1px)}}
+.desk .hand{position:absolute;top:-14px;left:50%;transform:translateX(-50%);color:var(--warn);animation:wave 1.3s ease-in-out infinite}
+@keyframes wave{50%{transform:translate(-50%,-6px)}}
+.desk .lamp{position:absolute;top:-2px;right:14px;width:6px;height:6px;border-radius:50%;background:var(--bad);box-shadow:0 0 6px var(--bad);animation:winblink .8s ease-in-out infinite}
+.desk .lamp.ok{background:var(--ok);box-shadow:0 0 6px var(--ok);animation:none}
+.desk .lb{color:var(--text-3);font-family:var(--mono);font-size:9px;white-space:nowrap;max-width:92px;overflow:hidden;text-overflow:ellipsis}
+.desk.leaving{animation:leave 1.2s ease-in forwards}
+@keyframes leave{60%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(10px)}}
+</style>
+</head>
+<body>
+<!-- 图标精灵：全部照抄 web/src/icons/paths.ts，本稿不新增图标、不用 emoji -->
+<svg style="display:none" aria-hidden="true">
+<symbol id="i-kanban" viewBox="0 0 24 24"><rect class="tint" x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="9.25" y="4" width="5.5" height="11" rx="1.2"/><rect x="15.5" y="4" width="5.5" height="7" rx="1.2"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path class="tint" d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path class="tint" d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9z"/><path d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9"/><path d="M10.3 20.5a1.9 1.9 0 0 0 3.4 0"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect class="tint" x="3" y="10" width="18" height="11" rx="1.5"/><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+<symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+<symbol id="i-network" viewBox="0 0 24 24"><circle class="tint" cx="18" cy="5" r="2.6"/><circle class="tint" cx="6" cy="12" r="2.6"/><circle class="tint" cx="18" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.4 13.3 7.2 4.2M15.6 6.5 8.4 10.7"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle class="tint" cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path class="tint" d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+<symbol id="i-checks" viewBox="0 0 24 24"><path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></symbol>
+<symbol id="i-hand" viewBox="0 0 24 24"><path class="tint" d="M6 14V6a2 2 0 0 1 4 0v4a2 2 0 0 1 4 0V6a2 2 0 0 1 4 0v2a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3 16.5a2 2 0 0 1 3-2.6z"/><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3 16.5a2 2 0 0 1 3-2.6L8 16"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect class="tint" x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle class="tint" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24"><path class="tint" d="M17 3.5 20.5 7 8 19.5H4.5V16z"/><path d="M17 3.5 20.5 7 8 19.5H4.5V16z"/><path d="m14.5 6 3.5 3.5"/></symbol>
+<symbol id="i-trending" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path class="tint" d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="M4.5 3.5v3M3 5h3M19.5 16.5v3M18 18h3"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path class="tint" d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m3 12.4 9 4.8 9-4.8"/><path d="m3 17 9 4.8 9-4.8"/></symbol>
+<symbol id="i-flame" viewBox="0 0 24 24"><path class="tint" d="M12 21.5c4 0 6.5-2.6 6.5-6.3 0-2.7-1.6-4.9-3.1-6.3-.4 1.7-1.3 2.7-2.5 3.2.1-2.9-1.4-5.7-4.2-7.6.5 2.7-.8 4.6-2.2 6.4C5.4 12.4 5.5 14 5.5 15.2c0 3.7 2.5 6.3 6.5 6.3z"/><path d="M12 21.5c4 0 6.5-2.6 6.5-6.3 0-2.7-1.6-4.9-3.1-6.3-.4 1.7-1.3 2.7-2.5 3.2.1-2.9-1.4-5.7-4.2-7.6.5 2.7-.8 4.6-2.2 6.4C5.4 12.4 5.5 14 5.5 15.2c0 3.7 2.5 6.3 6.5 6.3z"/></symbol>
+</svg>
+
+<div class="doc">
+
+<div class="doc-head">
+  <div>
+    <h1>看板 · 第二批玩法 mockup v2</h1>
+    <p>要求是三条：<b>全放在看板那一页上</b>，不用切界面；<b>原创</b>，不抄像素办公室；有趣、好看、会动。
+      主推一个叫「<b>城与天</b>」的东西——看板顶上长一座城，天空按板子的状态变天气；配一条「光之河」、一条「光轨」和几样卡片小料。
+      像素办公室那种「工位」画法也画了一版放最后当兜底。每一块都能点，改动只在本页。</p>
+    <p class="meta">任务卡 AUD-FUN-WORKFLOOR（承接 AUD-FUN-PERSONALIZATION）· 2026-09-07 · 全部默认可关、跟随「减少动效」、图标只用看板现有那套、不用 emoji</p>
+  </div>
+  <div class="modes">
+    <button class="on" data-doc-theme="light" type="button">浅色</button>
+    <button data-doc-theme="dark" type="button">深色</button>
+    <button data-doc-theme="both" type="button">并排看</button>
+    <button data-spec-cycle type="button" title="换一套灯条配色，看所有效果跟着变">换配色</button>
+  </div>
+</div>
+
+<section class="sec">
+<h2><span class="no">01</span>先看整体：它们都长在看板页上</h2>
+<p>顶上一条是「城与天」，泳道之间有「光轨」，底下一条是「光之河」，卡片有「追光」。每一样都是独立开关，可以只要其中一两样。
+  两块都是同一页看板，一浅一深。<b>把鼠标划过任务卡、点一点按钮、等几秒看河里漂过来的东西。</b></p>
+<div class="stackp">
+  <div class="pane tight" data-label="看板页 · 浅色" style="height:560px"><div class="kb" data-board="light"></div></div>
+  <div class="pane tight dark" data-label="看板页 · 深色" style="height:560px"><div class="kb" data-board="dark"></div></div>
+</div>
+<div class="note"><b>位置的答案。</b>不另开页面。城与天顶在看板标题下面（把现在那条光溜溜的进度条换掉），光之河贴在泳道底下，光轨贴在泳道头上，追光在卡片上。
+  嫌占地方：城与天可以折成 40 像素高的一条「天际线剪影」，河可以收起。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">02</span>城与天 <span class="tag">主推 · 原创</span></h2>
+<p>一句话：<b>每个项目是一栋楼，每张卡是一扇窗，天空是板子的心情。</b>
+  楼从下往上亮：完工的窗是暖黄的灯，正在施工的窗在跑 RGB 流光，等你拍板的窗琥珀色一闪一闪，卡住的窗红着，没开工的窗黑着——所以一栋楼就是一块缩小的看板，
+  而且它会随着你几个月的产出<b>一层一层亮上去</b>。天空只讲一件事：<b>用不用你</b>。没人等你就是晴夜、有极光（用你选的灯条配色）；
+  有卡等你拍板，云就来了，新来一条会打一道琥珀色的闪；有卡卡住了就下雨；一个项目全部完工，楼顶尖塔亮起来放烟花。</p>
+<div class="pair">
+  <div class="pane" data-label="浅色 · 白天的城">
+    <div class="sky tall" data-sky="light"></div>
+    <div class="sim" data-sim="light">
+      <button class="btn btn-sm" data-act="pend" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 来一条待拍板</button>
+      <button class="btn btn-sm" data-act="decide" type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍掉一条</button>
+      <button class="btn btn-sm" data-act="block" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 一张卡卡住</button>
+      <button class="btn btn-sm" data-act="unblock" type="button">解除阻塞</button>
+      <button class="btn btn-sm" data-act="done" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button>
+      <button class="btn btn-sm" data-act="full" type="button"><svg class="ic s14"><use href="#i-sparkles"/></svg> 全部完工</button>
+      <button class="btn btn-sm quiet" data-act="reset" type="button">恢复</button>
+    </div>
+  </div>
+  <div class="pane dark" data-label="深色 · 夜里的城">
+    <div class="sky tall" data-sky="dark"></div>
+    <div class="sim" data-sim="dark">
+      <button class="btn btn-sm" data-act="pend" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 来一条待拍板</button>
+      <button class="btn btn-sm" data-act="decide" type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍掉一条</button>
+      <button class="btn btn-sm" data-act="block" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 一张卡卡住</button>
+      <button class="btn btn-sm" data-act="unblock" type="button">解除阻塞</button>
+      <button class="btn btn-sm" data-act="done" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button>
+      <button class="btn btn-sm" data-act="full" type="button"><svg class="ic s14"><use href="#i-sparkles"/></svg> 全部完工</button>
+      <button class="btn btn-sm quiet" data-act="reset" type="button">恢复</button>
+    </div>
+  </div>
+</div>
+<div class="legend">
+  <span><b style="background:#ffcd6b"></b>完工的窗</span>
+  <span><b style="background:linear-gradient(90deg,#4ad9c4,#8b7bf7)"></b>施工中（流光）</span>
+  <span><b style="background:#f0b429"></b>待拍板（闪）</span>
+  <span><b style="background:#e0736a"></b>阻塞</span>
+  <span><b style="background:#8a2f27"></b>暂缓</span>
+  <span><b style="background:#1a2233;border:1px solid #444"></b>没开工</span>
+  <span>塔吊 = 楼上有人在施工　·　屋顶小灯 = 有事等你（琥珀）/ 有卡卡住（红）　·　尖塔 = 100%</span>
+</div>
+<table class="spec" style="margin-top:16px">
+  <tr><th style="width:22%">板子上发生什么</th><th>城里 / 天上怎么变</th></tr>
+  <tr><td class="k">有卡在施工中</td><td>那扇窗跑流光；楼顶立塔吊，吊臂慢慢摆。走的是你在外观里选的配色和速度。</td></tr>
+  <tr><td class="k">来了一条待拍板</td><td>云飘过来（越多越厚），当下打一道琥珀色的闪；那扇窗开始一闪一闪；屋顶亮琥珀小灯。</td></tr>
+  <tr><td class="k">你拍掉了</td><td>云散一朵；窗变成暖黄。云全散了极光就回来。</td></tr>
+  <tr><td class="k">有卡阻塞</td><td>下雨；那扇窗红着；屋顶亮红灯。解除就停雨。</td></tr>
+  <tr><td class="k">一张卡完工</td><td>那扇窗白光一闪，落成暖黄，楼长高了一格。</td></tr>
+  <tr><td class="k">项目 100%</td><td>尖塔亮起，楼顶放三轮烟花（只放这一次，记在本机）。</td></tr>
+  <tr><td class="k">点某栋楼</td><td>顶栏切到那个项目。当前项目的楼描一圈蓝边，别的楼略暗。</td></tr>
+</table>
+<div class="note"><b>为什么它比小人有意思。</b>小人在工位上打字，看一分钟就知道它在打字；而这座城是<b>你自己的产出堆出来的</b>——
+  三个月后回头看，楼变高了、亮的窗变多了，这个是小人给不了的。而天空让你不看列表就知道「今天用不用我」——这是这个看板最核心的一句话。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">03</span>光之河 <span class="tag">配菜 · 原创</span></h2>
+<p>活动流今天是另一页上的一列文字。这里把它变成看板页底下一条河：每件事是一颗漂过去的光点——认领是蓝的、完工是绿的、待拍板是琥珀的、阻塞是红的——
+  带着图标和几个字慢慢从右往左漂，<b>鼠标按住它就停下来给你看</b>。忙的时候河里挤满了，闲的时候只有水面上一层你选的配色在晃。</p>
+<div class="pair">
+  <div class="pane" data-label="浅色">
+    <div class="river" data-river="a"><div class="shine"></div><span class="river-q">活动流</span></div>
+    <div class="sim"><button class="btn btn-sm" data-river-spawn="a" type="button"><svg class="ic s14"><use href="#i-activity"/></svg> 来一件事</button></div>
+  </div>
+  <div class="pane dark" data-label="深色">
+    <div class="river" data-river="b"><div class="shine"></div><span class="river-q">活动流</span></div>
+    <div class="sim"><button class="btn btn-sm" data-river-spawn="b" type="button"><svg class="ic s14"><use href="#i-activity"/></svg> 来一件事</button></div>
+  </div>
+</div>
+<div class="note"><b>有用的地方。</b>不用离开看板就能瞥一眼「刚才谁干了什么」；点光点直接开那张卡。河可以收成一条 6 像素的细线只留水光。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">04</span>光轨 <span class="tag alt">备选 · 原创</span></h2>
+<p>看板的泳道是静止的，卡「换了状态」这件事今天是刷新一下就换了位置，眼睛跟不上。光轨在泳道头之间拉一条霓虹轨道，轨道上常年有细碎的光在往「收官」方向流（工作的方向）；
+  <b>一张卡换泳道时，一颗光珠沿轨道从旧泳道跑到新泳道，然后那张卡在新泳道里落下来</b>。看得见「事情在往前走」。</p>
+<div class="pair">
+  <div class="pane" data-label="浅色">
+    <div class="lanes rail-demo" data-rails="a" style="min-height:250px;position:relative;padding-top:12px"></div>
+    <div class="sim">
+      <button class="btn btn-sm" data-rail-act="claim" data-rails="a" type="button"><svg class="ic s14"><use href="#i-hand"/></svg> 认领一张</button>
+      <button class="btn btn-sm" data-rail-act="done" data-rails="a" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button>
+      <button class="btn btn-sm quiet" data-rail-act="reset" data-rails="a" type="button">恢复</button>
+    </div>
+  </div>
+  <div class="pane dark" data-label="深色">
+    <div class="lanes rail-demo" data-rails="b" style="min-height:250px;position:relative;padding-top:12px"></div>
+    <div class="sim">
+      <button class="btn btn-sm" data-rail-act="claim" data-rails="b" type="button"><svg class="ic s14"><use href="#i-hand"/></svg> 认领一张</button>
+      <button class="btn btn-sm" data-rail-act="done" data-rails="b" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button>
+      <button class="btn btn-sm quiet" data-rail-act="reset" data-rails="b" type="button">恢复</button>
+    </div>
+  </div>
+</div>
+<div class="note"><b>为什么是备选。</b>它跟城与天讲的是两件事（一个讲流动、一个讲积累），可以同时要；但如果只挑一样，城与天更耐看。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">05</span>卡片小料 <span class="tag">便宜 · 随便要</span></h2>
+<p>三样不成体系但很提气的小动作，各自半天以内。</p>
+<div class="pair">
+  <div class="pane" data-label="追光 + 盖章 · 浅色">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="tc spot building"><span class="glow-edge"></span><div class="h"><span class="tile spec tone-info"><i><svg viewBox="0 0 24 24"><use href="#i-zap"/></svg></i></span><span class="tid">AUD-PERF-BOARD-API-SLIM</span></div><div class="t">一改卡就重拉六兆数据</div><div class="pw"><div class="glow-rail"><i style="width:35%"></i></div><span class="pct">35%</span></div></div>
+      <div class="tc spot" data-stamp><div class="h"><span class="tile spec tone-warn"><i><svg viewBox="0 0 24 24"><use href="#i-bell"/></svg></i></span><span class="tid">AUD-UI-KANBAN-FLOW</span><span class="badge warn" style="margin-left:auto;padding:0 5px">1</span></div><div class="t">依赖图成毛线团；波次甘特基本是空的</div><span class="stamp">已拍板</span><span class="ripple"></span></div>
+    </div>
+    <div class="sim">
+      <span class="dim" style="font-size:var(--fs-xs);align-self:center">左：鼠标划过卡片，边框上跟着一团光。右：</span>
+      <button class="btn btn-sm" data-stamp-go type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍板（盖章 + 波纹）</button>
+    </div>
+  </div>
+  <div class="pane dark" data-label="追光 + 盖章 · 深色">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="tc spot building"><span class="glow-edge"></span><div class="h"><span class="tile spec tone-info"><i><svg viewBox="0 0 24 24"><use href="#i-zap"/></svg></i></span><span class="tid">AUD-PERF-BOARD-API-SLIM</span></div><div class="t">一改卡就重拉六兆数据</div><div class="pw"><div class="glow-rail"><i style="width:35%"></i></div><span class="pct">35%</span></div></div>
+      <div class="tc spot" data-stamp><div class="h"><span class="tile spec tone-warn"><i><svg viewBox="0 0 24 24"><use href="#i-bell"/></svg></i></span><span class="tid">AUD-UI-KANBAN-FLOW</span><span class="badge warn" style="margin-left:auto;padding:0 5px">1</span></div><div class="t">依赖图成毛线团；波次甘特基本是空的</div><span class="stamp">已拍板</span><span class="ripple"></span></div>
+    </div>
+    <div class="sim">
+      <span class="dim" style="font-size:var(--fs-xs);align-self:center">左：鼠标划过卡片，边框上跟着一团光。右：</span>
+      <button class="btn btn-sm" data-stamp-go type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍板（盖章 + 波纹）</button>
+    </div>
+  </div>
+</div>
+<div class="note"><b>第三样「飞卡」在第 04 节里已经看到了</b>——完工那张卡抬起、缩小、飞走，换泳道时用。三样加起来不到两天。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">06</span>施工现场 <span class="tag fb">兜底 · 你说的那种</span></h2>
+<p>像素办公室那个思路的看板版：施工中的卡各占一张桌子，屏幕上跑流光；有 Codex 在跑的桌子前坐一枚机器人在打字；待拍板的桌子上方举着一只手；卡住的桌子亮红灯；
+  完工那张桌子撒彩带、灯变绿、桌子收走。没画小人走路——那是抄人家的地方，也是最费工、最容易做得廉价的地方。</p>
+<div class="pair">
+  <div class="pane" data-label="浅色">
+    <div class="site" data-site="a"></div>
+    <div class="sim"><button class="btn btn-sm" data-site-done="a" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button><button class="btn btn-sm quiet" data-site-reset="a" type="button">恢复</button></div>
+  </div>
+  <div class="pane dark" data-label="深色">
+    <div class="site" data-site="b"></div>
+    <div class="sim"><button class="btn btn-sm" data-site-done="b" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button><button class="btn btn-sm quiet" data-site-reset="b" type="button">恢复</button></div>
+  </div>
+</div>
+<div class="note"><b>我的看法。</b>它能用，但它跟城与天讲的是同一件事（谁在干活）而信息更少：桌子只有「有 / 没有」，楼里的窗还带着「攒了多少」。
+  真要的话我会做，但不建议两个都要。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">07</span>推荐组合，与要你拍的</h2>
+<table class="spec">
+  <tr><th style="width:20%">组合</th><th>包含</th><th style="width:34%">说明</th></tr>
+  <tr><td class="k">A · 推荐</td><td>城与天 + 光之河 + 追光 + 盖章 + 飞卡</td><td>顶上一座城、底下一条河，卡片有手感。约三到四天。</td></tr>
+  <tr><td class="k">B · 全要</td><td>A + 光轨</td><td>再加泳道之间的轨道。多一天。</td></tr>
+  <tr><td class="k">C · 只要主菜</td><td>城与天</td><td>一天半到两天，最快看到东西。</td></tr>
+  <tr><td class="k">D · 兜底</td><td>施工现场（+ 小料）</td><td>你说的那种。两天。</td></tr>
+</table>
+<div class="note ask"><b>要你拍两下。</b>①选哪个组合（或者划掉某样 / 加回某样）。②城与天的楼要不要全部项目都摆出来——我画的是全摆（点楼切项目），另一种是只摆当前项目一栋大楼，更简洁但少了「一座城」的感觉。</div>
+<div class="note"><b>没画但能顺手带的。</b>「减少动效」打开时：极光停、云不飘、雨停、窗不闪，只剩静态颜色；楼和河都还在，信息一点不少。</div>
+</section>
+
+<p style="margin-top:48px;color:#8e8e89;font-size:13px;text-align:center">看板 · AUD-FUN-WORKFLOOR · 第二批玩法 mockup v2 · 2026-09-07 · 每个按钮都能点，改动只在本页</p>
+</div><!-- /.doc -->
+
+<style>
+/* 窗户尺寸由容器决定：看板页顶上的压缩版用 4px，单独放大看的用 6px */
+.win{width:var(--wp,6px);height:var(--wp,6px)}
+.sky.compact{height:104px;--wp:4px}
+.sky.compact .city{gap:16px}
+.sky.compact .crane{scale:.7;left:-14px;bottom:88%}
+</style>
+
+<script>
+/* ============================================================
+   本页交互只为「让你点着看」。数据是编的，机制跟产品里一样：
+   楼 = 项目、窗 = 卡、天 = 待拍板/阻塞的有无。
+   ============================================================ */
+const root = document.documentElement
+const $ = (sel, el = document) => el.querySelector(sel)
+const $$ = (sel, el = document) => [...el.querySelectorAll(sel)]
+const ico = (name, cls = 'ic s14') => `<svg class="${cls}"><use href="#i-${name}"/></svg>`
+
+/* ---------- 顶部：浅 / 深 / 并排、换配色 ---------- */
+$$('.pane').forEach(p => { p.dataset.origDark = p.classList.contains('dark') ? '1' : '0' })
+$$('[data-doc-theme]').forEach(btn => btn.addEventListener('click', () => {
+  $$('.modes button[data-doc-theme]').forEach(b => b.classList.remove('on'))
+  btn.classList.add('on')
+  const mode = btn.dataset.docTheme
+  $$('.pane').forEach(p => {
+    const dark = mode === 'dark' ? true : mode === 'light' ? false : p.dataset.origDark === '1'
+    p.classList.toggle('dark', dark)
+  })
+}))
+const SPECS = ['cool', 'aurora', 'sunset', 'cyber', 'warm']
+let specIdx = 0
+$('[data-spec-cycle]').addEventListener('click', () => {
+  specIdx = (specIdx + 1) % SPECS.length
+  root.setAttribute('data-spectrum', SPECS[specIdx])
+  sampleSpectrum()
+})
+
+/** 把色站列表拆成四个采样色，给 SVG 与关键帧动画用（它们不认「a, b, c」这种写法）。 */
+function splitStops(raw) {
+  const out = []; let depth = 0, cur = ''
+  for (const ch of raw) {
+    if (ch === '(') depth++; else if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = '' } else cur += ch
+  }
+  out.push(cur.trim()); return out.filter(Boolean)
+}
+function sampleSpectrum() {
+  const stops = splitStops(getComputedStyle(root).getPropertyValue('--spec-active'))
+  const list = stops.length > 1 ? stops.slice(0, -1) : stops
+  for (let i = 0; i < 4; i++) root.style.setProperty(`--w${i + 1}`, list[i % list.length] || '#4a9eff')
+}
+root.setAttribute('data-spectrum', 'cool')
+sampleSpectrum()
+
+/* ---------- 编的数据 ---------- */
+const PROJECTS = [
+  { id: 'dashboard', name: '看板', total: 65, done: 56, build: 1, pend: 2, block: 0, park: 0 },
+  { id: 'astock', name: 'A股模拟器', total: 69, done: 41, build: 3, pend: 1, block: 1, park: 1 },
+  { id: 'notes', name: '写作与笔记', total: 20, done: 6, build: 1, pend: 0, block: 0, park: 0 },
+]
+const CARDS = {
+  '待开工': [['AUD-PROTOCOL-SINGLE-SOURCE', 'AI 看的规矩有三份且互相打架'], ['AUD-HOOKS-DEDUP-COST', '每次更新待办要跑两遍同步']],
+  '施工中': [['AUD-FUN-PERSONALIZATION', '外观设置再加几样好玩又有用的', 62], ['AUD-PERF-BOARD-API-SLIM', '一改卡就重拉六兆数据', 35]],
+  '待拍板': [['AUD-UI-KANBAN-FLOW', '看板看不出谁拖了多久', 0, 1]],
+  '收官': [['AUD-UI-LAYOUT-FULLWIDTH', '宽屏右边一大片空白']],
+}
+const TONE = { '待开工': 'info', '施工中': 'info', '待拍板': 'warn', '收官': 'ok', '已完工': 'ok' }
+const GLYPH = { '待开工': 'zap', '施工中': 'zap', '待拍板': 'bell', '收官': 'checks', '已完工': 'checks' }
+
+function cardHtml(status, [id, title, pct, pend]) {
+  const building = status === '施工中'
+  const tone = TONE[status]
+  return `<article class="tc spot ${building ? 'building' : ''}" data-card>
+    ${building ? '<span class="glow-edge"></span>' : ''}
+    <div class="h"><span class="tile spec tone-${tone}"><i><svg viewBox="0 0 24 24"><use href="#i-${GLYPH[status]}"/></svg></i></span>
+      <span class="tid">${id}</span>${pend ? `<span class="badge warn" style="margin-left:auto;padding:0 5px">${pend}</span>` : ''}</div>
+    <div class="t">${title}</div>
+    ${building ? `<div class="pw"><div class="glow-rail"><i style="width:${pct || 0}%"></i></div><span class="pct">${pct || 0}%</span></div>` : ''}
+  </article>`
+}
+function laneHtml(status, cards, withStation) {
+  return `<section class="lane" data-lane="${status}">
+    ${withStation ? '<span class="st"></span>' : ''}
+    <header class="lane-h"><span class="badge ${TONE[status]}"><span class="tile lg spec tone-${TONE[status]}"><i><svg viewBox="0 0 24 24"><use href="#i-${GLYPH[status]}"/></svg></i></span>${status}</span><span class="badge n">${cards.length}</span></header>
+    <div class="lane-b" style="display:grid;gap:6px">${cards.map(c => cardHtml(status, c)).join('')}</div>
+  </section>`
+}
+
+/* ============================================================
+   ① 城与天
+   ============================================================ */
+const skies = new Map()
+
+function cloneProjects() { return PROJECTS.map(p => ({ ...p })) }
+
+function renderSky(el, st, opts = {}) {
+  el.classList.toggle('compact', !!opts.compact)
+  el.innerHTML = `<div class="stars"></div><div class="aurora"></div>
+    <div class="cloud"><i></i></div><div class="cloud"><i></i></div><div class="cloud"><i></i></div><div class="cloud"><i></i></div>
+    <div class="bolt"></div><div class="rain"></div><canvas class="fw"></canvas><div class="city"></div><div class="ground"></div>`
+  const city = $('.city', el)
+  for (const p of st.projects) {
+    const cols = Math.max(3, Math.min(7, Math.round(Math.sqrt(p.total) / 1.6)))
+    const off = p.total - p.done - p.build - p.pend - p.block - p.park
+    const seq = [...Array(p.done).fill('done'), ...Array(p.build).fill('build'), ...Array(p.pend).fill('pend'),
+      ...Array(p.block).fill('blocked'), ...Array(p.park).fill('parked'), ...Array(Math.max(0, off)).fill('off')]
+    const top = seq.slice().reverse() // 网格从上往下铺，楼要从下往上亮，所以倒过来
+    const b = document.createElement('div')
+    b.className = 'bld' + (p.id === st.current ? ' cur' : '') + (p.done === p.total ? ' full' : '')
+    b.style.gridTemplateColumns = `repeat(${cols}, var(--wp, 6px))`
+    b.title = `${p.name} · ${p.done}/${p.total} 完工`
+    let k = 0
+    b.innerHTML = top.map(s => `<span class="win ${s}${s === 'build' ? ' d' + (1 + (k++ % 3)) : ''}"></span>`).join('')
+      + (p.build ? '<span class="crane"><span class="mast"></span><span class="jib"></span></span>' : '')
+      + `<span class="beacon ${p.block ? 'bad' : p.pend ? 'warn' : ''}"></span><span class="spire"></span><span class="name">${p.name}</span>`
+    b.addEventListener('click', () => { st.current = p.id; renderSky(el, st, opts) })
+    city.appendChild(b)
+  }
+  const cur = st.projects.find(p => p.id === st.current)
+  el.classList.toggle('clear', cur.pend === 0 && cur.block === 0)
+  el.classList.toggle('rainy', cur.block > 0)
+  $$('.cloud', el).forEach((c, i) => c.classList.toggle('on', i < Math.min(cur.pend, 4)))
+}
+
+function flashNewest(el, st) {
+  const cur = st.projects.find(p => p.id === st.current)
+  const b = $$('.bld', el)[st.projects.indexOf(cur)]
+  const wins = $$('.win', b)
+  const idx = wins.length - cur.done // 倒过来铺的，最新那扇完工窗在这个位置
+  wins[idx]?.classList.add('flash')
+}
+
+function fireworks(el) {
+  const cv = $('.fw', el); const box = el.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  cv.width = box.width * dpr; cv.height = box.height * dpr
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr)
+  const colors = [1, 2, 3, 4].map(i => getComputedStyle(root).getPropertyValue(`--w${i}`).trim())
+  const bursts = []
+  const spawn = (n) => bursts.push({ t0: performance.now(), x: box.width * (.3 + Math.random() * .4), y: box.height * (.18 + Math.random() * .25),
+    ps: Array.from({ length: 46 }, (_, i) => ({ a: i / 46 * Math.PI * 2, v: 1.6 + Math.random() * 1.6, c: colors[i % 4] })) })
+  spawn(); setTimeout(spawn, 500); setTimeout(spawn, 1050)
+  function frame(now) {
+    ctx.clearRect(0, 0, box.width, box.height)
+    let alive = false
+    for (const b of bursts) {
+      const t = (now - b.t0) / 1000; if (t > 1.5) continue
+      alive = true
+      ctx.globalAlpha = Math.max(0, 1 - t / 1.5)
+      for (const p of b.ps) {
+        const d = p.v * t * 40 * (1 - t * .35)
+        ctx.fillStyle = p.c
+        ctx.beginPath(); ctx.arc(b.x + Math.cos(p.a) * d, b.y + Math.sin(p.a) * d + t * t * 30, 1.6, 0, 7); ctx.fill()
+      }
+    }
+    if (alive || now - bursts[0].t0 < 1200) requestAnimationFrame(frame); else ctx.clearRect(0, 0, box.width, box.height)
+  }
+  requestAnimationFrame(frame)
+}
+
+function skyAct(el, st, act, opts) {
+  const p = st.projects.find(x => x.id === st.current)
+  const off = () => p.total - p.done - p.build - p.pend - p.block - p.park
+  if (act === 'pend' && off() > 0) { p.pend++; renderSky(el, st, opts); const b = $('.bolt', el); b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit'); return }
+  if (act === 'decide' && p.pend > 0) { p.pend--; p.build++ }
+  if (act === 'block') { if (p.build > 0) p.build--; else if (off() > 0) { /* 从没开工里拿 */ } else return; p.block++ }
+  if (act === 'unblock' && p.block > 0) { p.block--; p.build++ }
+  if (act === 'done') { if (p.build > 0) p.build--; else if (off() > 0) { } else return; p.done++ }
+  if (act === 'full') { Object.assign(p, { done: p.total, build: 0, pend: 0, block: 0, park: 0 }) }
+  if (act === 'reset') { st.projects = cloneProjects() }
+  renderSky(el, st, opts)
+  if (act === 'done') flashNewest(el, st)
+  if (act === 'full') fireworks(el)
+}
+
+$$('[data-sky]').forEach(el => {
+  const st = { projects: cloneProjects(), current: 'dashboard' }
+  skies.set(el, st); renderSky(el, st)
+  const sim = el.parentElement.querySelector('[data-sim]')
+  $$('[data-act]', sim).forEach(b => b.addEventListener('click', () => skyAct(el, st, b.dataset.act)))
+})
+
+/* ============================================================
+   ② 光之河
+   ============================================================ */
+const EVENTS = [
+  ['claim', 'hand', '认领 AUD-HOOKS-DEDUP-COST'], ['done', 'checks', '完工 AUD-UI-LAYOUT-FULLWIDTH'], ['pend', 'bell', '待拍板 d3 · 进度环上不上项目色'],
+  ['block', 'ban', '阻塞 AUD-PERF-BOARD-API-SLIM'], ['claim', 'trending', '进度 62% · 外观中心大面板'], ['done', 'checks', '完工 P07-BOT-LONGRUN'],
+  ['claim', 'pencil', '留言 · 稿子第 3 节改了'], ['pend', 'bell', '待拍板 · 连击怎么数'],
+]
+function spawnDrop(river, ev) {
+  const [kind, icon, text] = ev || EVENTS[(Math.random() * EVENTS.length) | 0]
+  const d = document.createElement('span')
+  d.className = `drop ${kind}`
+  d.style.top = (36 + Math.random() * 30) + '%'
+  d.style.setProperty('--dur', (14 + Math.random() * 8) + 's')
+  d.innerHTML = `${ico(icon)}${text}`
+  d.addEventListener('animationend', () => d.remove())
+  river.appendChild(d)
+}
+$$('[data-river]').forEach(r => {
+  spawnDrop(r, EVENTS[1]); setTimeout(() => spawnDrop(r, EVENTS[0]), 2600)
+  setInterval(() => { if (Math.random() < .6) spawnDrop(r) }, 4200)
+})
+$$('[data-river-spawn]').forEach(b => b.addEventListener('click', () => spawnDrop($(`[data-river="${b.dataset.riverSpawn}"]`))))
+
+/* ============================================================
+   ③ 光轨
+   ============================================================ */
+function renderRails(el, lanesDef) {
+  el.innerHTML = lanesDef.map(([s, cards]) => laneHtml(s, cards, true)).join('')
+    + `<div class="rail-wrap"><svg><defs><linearGradient id="railgrad" x1="0" x2="1"><stop offset="0" stop-color="var(--w1)"/><stop offset=".5" stop-color="var(--w2)"/><stop offset="1" stop-color="var(--w4)"/></linearGradient></defs>
+       <path class="rail"/><path class="rail-dash"/></svg></div>`
+  layoutRail(el)
+}
+function laneX(el, lane) { const a = el.getBoundingClientRect(), b = lane.getBoundingClientRect(); return b.left - a.left + b.width / 2 }
+function layoutRail(el) {
+  const lanes = $$('.lane', el); if (lanes.length < 2) return
+  const x0 = laneX(el, lanes[0]), x1 = laneX(el, lanes[lanes.length - 1])
+  const wrap = $('.rail-wrap', el); wrap.style.top = (lanes[0].offsetTop - 8) + 'px'
+  const d = `M${x0} 7 H${x1}`
+  $('.rail', el).setAttribute('d', d); $('.rail-dash', el).setAttribute('d', d)
+}
+function moveCard(el, from, to, mutate) {
+  const laneA = $(`[data-lane="${from}"]`, el), laneB = $(`[data-lane="${to}"]`, el)
+  const card = $('[data-card]', laneA); if (!card || !laneB) return
+  const xa = laneX(el, laneA), xb = laneX(el, laneB)
+  card.style.setProperty('--fx', (xb - xa) + 'px'); card.classList.add('fly')
+  const svg = $('.rail-wrap svg', el)
+  const bead = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+  bead.setAttribute('class', 'bead'); bead.setAttribute('r', 4); bead.setAttribute('cy', 7); bead.setAttribute('cx', xa); svg.appendChild(bead)
+  const t0 = performance.now()
+  ;(function f(now) {
+    const k = Math.min(1, (now - t0) / 700); const e = 1 - Math.pow(1 - k, 3)
+    bead.setAttribute('cx', xa + (xb - xa) * e)
+    if (k < 1) requestAnimationFrame(f); else { bead.remove(); card.remove(); const id = $('.tid', card).textContent, t = $('.t', card).textContent
+      const html = cardHtml(to, mutate ? mutate(id, t) : [id, t]); $('.lane-b', laneB).insertAdjacentHTML('afterbegin', html)
+      const nc = $('[data-card]', laneB); nc.classList.add('land'); nc.classList.add('spot')
+      $$('.lane', el).forEach(l => { $('.lane-h .badge.n', l).textContent = $$('[data-card]', l).length }) }
+  })(t0)
+}
+const RAIL_LANES = () => [['待开工', CARDS['待开工'].slice()], ['施工中', CARDS['施工中'].slice()], ['收官', CARDS['收官'].slice()]]
+$$('[data-rails].rail-demo').forEach(el => renderRails(el, RAIL_LANES()))
+$$('[data-rail-act]').forEach(b => b.addEventListener('click', () => {
+  const el = $(`.rail-demo[data-rails="${b.dataset.rails}"]`)
+  if (b.dataset.railAct === 'claim') moveCard(el, '待开工', '施工中', (id, t) => [id, t, 0])
+  if (b.dataset.railAct === 'done') moveCard(el, '施工中', '收官')
+  if (b.dataset.railAct === 'reset') renderRails(el, RAIL_LANES())
+}))
+window.addEventListener('resize', () => $$('[data-rails]').forEach(layoutRail))
+
+/* ============================================================
+   看板页整体（第 01 节）：顶上压缩版的城、泳道 + 光轨、底下的河
+   ============================================================ */
+$$('[data-board]').forEach(kb => {
+  kb.innerHTML = `
+    <div class="kb-top"><b>${ico('kanban', 'ic s16')} 项目看板</b><span class="sel">看板（多项目管理工具） ${ico('chevron', 'ic s14')}</span><span class="sp"></span>
+      <span class="dim">${ico('settings')} 外观</span><span class="bell">${ico('bell', 'ic s16')}<i>3</i></span></div>
+    <nav class="kb-nav"><span>${ico('home')}总览</span><span class="on">${ico('kanban')}看板</span><span>${ico('bell')}待拍板</span><span>${ico('calendar')}每日成果</span><span>${ico('activity')}活动流</span><span>${ico('network')}依赖</span></nav>
+    <main class="kb-main">
+      <div class="kb-head"><div><h1>看板（多项目管理工具）</h1><p>按状态查看任务；已完工泳道默认收起。</p></div><div><span class="badge info">56/65 完工</span> <span class="pv">86%</span></div></div>
+      <div class="sky" data-board-sky></div>
+      <div class="lanes" data-rails="board-${kb.dataset.board}" style="position:relative;padding-top:12px;flex:1"></div>
+      <div class="river" data-river="board-${kb.dataset.board}"><div class="shine"></div><span class="river-q">活动流</span></div>
+    </main>`
+  const sky = $('[data-board-sky]', kb); const st = { projects: cloneProjects(), current: 'dashboard' }
+  renderSky(sky, st, { compact: true })
+  const lanes = $('[data-rails]', kb)
+  renderRails(lanes, [['待开工', CARDS['待开工']], ['施工中', CARDS['施工中']], ['待拍板', CARDS['待拍板']], ['收官', CARDS['收官']]])
+  const river = $('[data-river]', kb); spawnDrop(river, EVENTS[1]); setTimeout(() => spawnDrop(river, EVENTS[2]), 3000)
+  setInterval(() => { if (Math.random() < .5) spawnDrop(river) }, 5000)
+  // 看板页上顺手演示光轨：每 9 秒完工一张再放回去
+  let flip = false
+  setInterval(() => { flip ? renderRails(lanes, [['待开工', CARDS['待开工']], ['施工中', CARDS['施工中']], ['待拍板', CARDS['待拍板']], ['收官', CARDS['收官']]]) : moveCard(lanes, '施工中', '收官'); flip = !flip; layoutRail(lanes) }, 9000)
+})
+
+/* ============================================================
+   ④ 追光 / 盖章 / 彩带
+   ============================================================ */
+document.addEventListener('pointermove', e => {
+  const c = e.target.closest?.('.spot'); if (!c) return
+  const r = c.getBoundingClientRect()
+  c.style.setProperty('--mx', (e.clientX - r.left) + 'px'); c.style.setProperty('--my', (e.clientY - r.top) + 'px')
+})
+$$('[data-stamp-go]').forEach(b => b.addEventListener('click', () => {
+  const card = $('[data-stamp]', b.closest('.pane'))
+  ;['.stamp', '.ripple'].forEach(s => { const x = $(s, card); x.classList.remove('hit'); void x.offsetWidth; x.classList.add('hit') })
+}))
+function confetti(box, count = 40) {
+  let cv = $('.conf-canvas', box); if (!cv) { cv = document.createElement('canvas'); cv.className = 'conf-canvas'; box.appendChild(cv) }
+  const dpr = window.devicePixelRatio || 1, w = box.clientWidth, h = box.clientHeight
+  cv.width = w * dpr; cv.height = h * dpr; const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr)
+  const colors = [1, 2, 3, 4].map(i => getComputedStyle(root).getPropertyValue(`--w${i}`).trim())
+  const bits = Array.from({ length: count }, () => ({ x: w * (.3 + Math.random() * .4), y: h * .5, vx: (Math.random() - .5) * 6, vy: -3 - Math.random() * 5, r: Math.random() * 6, vr: (Math.random() - .5) * .3, w: 4 + Math.random() * 4, h: 2.5 + Math.random() * 3, c: colors[(Math.random() * 4) | 0] }))
+  const t0 = performance.now()
+  ;(function f(now) {
+    const t = now - t0; ctx.clearRect(0, 0, w, h); if (t > 1200) return
+    ctx.globalAlpha = t > 800 ? 1 - (t - 800) / 400 : 1
+    for (const b of bits) { b.x += b.vx; b.y += b.vy; b.vy += .32; b.r += b.vr; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.c; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.restore() }
+    requestAnimationFrame(f)
+  })(t0)
+}
+
+/* ============================================================
+   ⑤ 施工现场（兜底）
+   ============================================================ */
+const DESKS = () => [
+  { id: 'AUD-FUN-PERSONALIZATION', kind: 'bot' }, { id: 'AUD-PERF-BOARD-API-SLIM', kind: 'build' }, { id: 'AUD-UI-KANBAN-FLOW', kind: 'pend' },
+  { id: 'P07-BOT-LONGRUN', kind: 'block' }, { id: 'N12-EXPORT', kind: 'bot' },
+]
+function renderSite(el, desks) {
+  el.innerHTML = desks.map(d => `<div class="desk ${d.kind === 'bot' || d.kind === 'build' ? 'on' : ''}" data-kind="${d.kind}">
+      ${d.kind === 'pend' ? `<span class="hand">${ico('hand', 'ic s16')}</span>` : ''}${d.kind === 'block' ? '<span class="lamp"></span>' : ''}
+      <div class="scr"></div><div class="top"></div>${d.kind === 'bot' ? `<span class="bot">${ico('bot', 'ic s16')}</span>` : '<span style="height:16px"></span>'}
+      <span class="lb">${d.id}</span></div>`).join('')
+}
+$$('[data-site]').forEach(el => renderSite(el, DESKS()))
+$$('[data-site-done]').forEach(b => b.addEventListener('click', () => {
+  const el = $(`[data-site="${b.dataset.siteDone}"]`); const d = $('.desk.on', el); if (!d) return
+  d.style.position = 'relative'; confetti(d, 28)
+  const lamp = document.createElement('span'); lamp.className = 'lamp ok'; d.appendChild(lamp)
+  setTimeout(() => { d.classList.add('leaving'); d.addEventListener('animationend', () => d.remove()) }, 900)
+}))
+$$('[data-site-reset]').forEach(b => b.addEventListener('click', () => renderSite($(`[data-site="${b.dataset.siteReset}"]`), DESKS())))
+</script>
+</body>
+</html>
