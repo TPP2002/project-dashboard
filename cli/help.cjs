@@ -29,7 +29,8 @@ const EXIT_CODES = [
 const GROUPS = [
   ['开工与同步（最常用）', ['brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
-  ['卡的生命周期', ['add', 'park', 'unpark', 'block', 'set', 'mark-landed', 'sync-progress']],
+  ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
+    'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
     'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit']],
   ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot']],
@@ -65,7 +66,7 @@ const COMMANDS = {
       'claim FEAT-12 --project myproj --branch feat/login --scope "src/auth/*" --brief',
     ],
     notes: [
-      '只能从 未开工/待开工/可复工/待拍板/已拍板/施工中 迁到 施工中；已完工的卡要先 reopen。',
+      '只能从 未开工/待开工/可复工/待拍板/已拍板/施工中 迁到 施工中；已完工/已作废的卡要先 `reopen`。',
       '卡还不在板上就先 add。不 claim 就 commit 会被闸门拒。',
     ],
   },
@@ -125,7 +126,10 @@ const COMMANDS = {
       ['--collect', '转「收官」而不是「已完工」'],
     ],
     examples: ['done FEAT-12 --project myproj --pr 42 --commit a1b2c3d'],
-    notes: ['写完立刻 `show <卡号>` 复核：多对话并行时后写的可能把先写的整份盖掉。'],
+    notes: [
+      '收官时顺手把本卡「已拍板却没标落地」的决策一起标掉（`--collect` 不做这件事）。',
+      '写完立刻 `show <卡号>` 复核：多对话并行时后写的可能把先写的整份盖掉。',
+    ],
   },
   note: {
     summary: '往活动流写一条留言（可挂在某张卡上，也可只挂项目）',
@@ -225,6 +229,55 @@ const COMMANDS = {
     ],
     notes: ['--model 与 --plain-title 是机器闸：少一个当场拒收，报错里给照抄模板。'],
   },
+  unclaim: {
+    summary: '放弃认领（施工中 → 待开工/可复工，进度不清零）',
+    usage: 'unclaim <卡号> --project <id> --reason <理由> [--branch <分支>...]',
+    args: [
+      ['--reason <文本>', '为什么不做了 / 转手给谁'],
+      ['--branch <分支>', '从卡上摘掉哪些分支，可重复；不给就摘当前 git 分支'],
+    ],
+    examples: ['unclaim FEAT-12 --project myproj --reason "对话中断，交回给下一个人"'],
+    notes: [
+      '只能从「施工中」退回；解除过暂缓的卡退回「可复工」，其余退回「待开工」。',
+      '进度保留——「做到 60% 没人接」比「回到 0」更接近事实。',
+    ],
+  },
+  cancel: {
+    summary: '作废：这活不做了（任意状态 → 已作废）',
+    usage: 'cancel <卡号> --project <id> --reason <理由>',
+    args: [['--reason <文本>', '为什么不做了：方案被否 / 需求撤了 / 重复建卡']],
+    examples: ['cancel FEAT-12 --project myproj --reason "需求撤了，改走新方案"'],
+    notes: [
+      '别拿 done 当垃圾桶——完工数里混进没干的活，进度就不可信了。',
+      '作废卡不进完成度的分母（它不是「没做完」，是「不做了」）。',
+    ],
+  },
+  reopen: {
+    summary: '重开：结了案又要重来（已完工/已作废 → 待开工）',
+    usage: 'reopen <卡号> --project <id> --reason <理由>',
+    args: [['--reason <文本>', '为什么要重来：验收没过 / 当初作废的活又要做了']],
+    examples: ['reopen FEAT-12 --project myproj --reason "验收发现锁定时长算错了，返工"'],
+    notes: [
+      'percent 归 0、完工日期清空；PR / 提交 / 拍板记录全留——重开不是重建。',
+      '活动流一条不删，返工历史查得到。',
+    ],
+  },
+  edit: {
+    summary: '改卡面文字（标题/人话标题/说明/档位/波次），带校验',
+    usage: 'edit <卡号> --project <id> [--title <技术说明>] [--plain-title <人话标题>] [--desc <一句话>] [--model <档位>] [--wave <n>]',
+    args: [
+      ['--title <文本>', '给模型看的技术说明，不能改成空'],
+      ['--plain-title <文本>', '给负责人看的一句人话，不能改成空'],
+      ['--desc <文本>', '一句话补充说明，允许改成空串'],
+      ['--model <档位>', '建议施工档位，≤40 字符'],
+      ['--wave <n>', '波次，≥0 的整数'],
+    ],
+    examples: ['edit FEAT-12 --project myproj --plain-title "连续输错密码要能自动锁一会儿"'],
+    notes: [
+      '至少给一个要改的字段；flag 后面漏写值当场拒（那是手误，不是"要清空"）。',
+      '只认这五个字段——写错字段名就往卡上挂一个谁也不认识的属性，那是 `set` 的老毛病。',
+    ],
+  },
   park: {
     summary: '主动挂起一张卡（转「暂缓」并写清为什么）',
     usage: 'park <卡号> --project <id> --reason <理由> [--note <遗留>]',
@@ -264,13 +317,15 @@ const COMMANDS = {
   },
   'mark-landed': {
     summary: '把某条已拍板的决策标记为"代码已落地"',
-    usage: 'mark-landed <卡号> --project <id> --did <dN> [--commit <sha>]',
+    usage: 'mark-landed <卡号> --project <id> (--did <dN> | --all) [--commit <sha>]',
     args: [
       ['--did <dN>', '哪条决策'],
+      ['--all', '本卡所有「已拍板但没标落地」的决策一次标完'],
       ['--commit <sha>', '落地在哪个提交'],
     ],
-    examples: ['mark-landed FEAT-12 --project myproj --did d1 --commit a1b2c3d'],
-    notes: ['还没拍板的决策不能标落地。'],
+    examples: ['mark-landed FEAT-12 --project myproj --did d1 --commit a1b2c3d',
+      'mark-landed FEAT-12 --project myproj --all'],
+    notes: ['还没拍板的决策不能标落地。', '`done` 收官时会自动把本卡未标落地的已拍板决策一起结掉。'],
   },
   'sync-progress': {
     summary: '按当前分支自动同步进度（TodoWrite 钩子调用，一般不手动跑）',

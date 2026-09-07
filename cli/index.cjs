@@ -35,11 +35,14 @@ function parseFlags(argv) {
 const REGISTRY = {
   // —— 已实现（core+cli 承重墙）——
   register: ['./commands.cjs', 'register'], add: ['./commands.cjs', 'add'],
-  claim: ['./commands.cjs', 'claim'], progress: ['./commands.cjs', 'progress'],
+  claim: ['./commands.cjs', 'claim'], unclaim: ['./commands.cjs', 'unclaim'],
+  progress: ['./commands.cjs', 'progress'],
   pending: ['./commands.cjs', 'pending'], decide: ['./commands.cjs', 'decide'],
   park: ['./commands.cjs', 'park'], unpark: ['./commands.cjs', 'unpark'], block: ['./commands.cjs', 'block'],
-  done: ['./commands.cjs', 'done'], note: ['./commands.cjs', 'note'],
-  set: ['./commands.cjs', 'set'], list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
+  done: ['./commands.cjs', 'done'], cancel: ['./commands.cjs', 'cancel'], reopen: ['./commands.cjs', 'reopen'],
+  note: ['./commands.cjs', 'note'],
+  edit: ['./commands.cjs', 'edit'], set: ['./commands.cjs', 'set'],
+  list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
   cost: ['./commands.cjs', 'cost'],
   // 新对话开工的唯一入口(AUD-CLI-BRIEF-AND-HELP):一条命令给全开工信息,不用再拼 show+inbox+precheck
   brief: ['./brief.cjs', 'brief'],

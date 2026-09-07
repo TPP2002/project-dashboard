@@ -9,12 +9,17 @@
 
 const SCHEMA_VERSION = '1.0';
 
-const STATUS = ['未开工', '待开工', '待拍板', '已拍板', '施工中', '可复工', '收官', '已完工', '暂缓', '压轴'];
+const STATUS = ['未开工', '待开工', '待拍板', '已拍板', '施工中', '可复工', '收官', '已完工', '暂缓', '压轴', '已作废'];
+
+// 作废 = 这张卡不做了(方案被否/需求撤了/重复建卡)。它跟'已完工'一样不再需要任何人动手,
+// 但【不算成果】:完成度的分母里必须把它剔掉,否则作废越多、进度看着越低,负责人会以为活越干越回去。
+// CLI / server / INDEX 三处算完成度的地方共用这一份口径,别各写各的(审计 §4-C1)。
+const VOID_STATUSES = ['已作废'];
 
 // statusEmoji 由 status 派生（不独立存/校验）
 const STATUS_EMOJI = {
   未开工: '⬜', 待开工: '📋', 待拍板: '❓', 已拍板: '✅', 施工中: '🔨',
-  可复工: '🔄', 收官: '🏁', 已完工: '✅', 暂缓: '🚫', 压轴: '🎬',
+  可复工: '🔄', 收官: '🏁', 已完工: '✅', 暂缓: '🚫', 压轴: '🎬', 已作废: '⛔',
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -151,4 +156,4 @@ function assertValid(board) {
   if (!ok) throw new Error(`board.json 校验失败（${errors.length} 处）：\n  ` + errors.join('\n  '));
 }
 
-module.exports = { SCHEMA_VERSION, STATUS, STATUS_EMOJI, emojiFor, emptyBoard, validate, assertValid };
+module.exports = { SCHEMA_VERSION, STATUS, VOID_STATUSES, STATUS_EMOJI, emojiFor, emptyBoard, validate, assertValid };

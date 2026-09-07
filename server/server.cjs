@@ -41,6 +41,7 @@ const { execFile } = require('child_process');
 const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const { readStamp, runtimeMode, displayCliCommand } = require('../core/runtimeRoot.cjs');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
+const { VOID_STATUSES } = require('../core/boardSchema.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
@@ -201,12 +202,12 @@ function readBoardFile(boardPath) {
   return JSON.parse(raw);
 }
 
-/** 从 board 派生摘要（读时算、不落盘 R9a）；done 口径对齐 CLI deriveStats（只数"已完工"） */
+/** 从 board 派生摘要（读时算、不落盘 R9a）；口径对齐 CLI deriveStats：只数"已完工"，分母剔掉作废卡 */
 function deriveSummary(board) {
   const tasks = (board && board.tasks) || [];
   const byStatus = {};
   for (const t of tasks) byStatus[t.status] = (byStatus[t.status] || 0) + 1;
-  const total = tasks.length;
+  const total = tasks.filter((t) => !VOID_STATUSES.includes(t.status)).length;
   const done = byStatus['已完工'] || 0;
   const progress = total ? Math.round((done / total) * 100) : 0;
   let pendingCount = 0;
