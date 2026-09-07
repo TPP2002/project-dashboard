@@ -244,10 +244,15 @@ table.spec td.k{font-weight:600;color:#1a1a19;white-space:nowrap}
 /* 远景剪影 */
 .far{fill:var(--far)}.far-win{fill:var(--far-win);opacity:.5}
 /* 楼 */
-.bld{cursor:pointer;transition:filter .25s ease}
-.bld:not(.cur){filter:saturate(.7) brightness(.9)}
-.bld.cur .halo{opacity:1}
-.halo{fill:none;stroke:var(--info);stroke-width:1;opacity:0;stroke-dasharray:3 3;transition:opacity .3s ease}
+.bld{cursor:pointer}
+.bld:hover .face{filter:brightness(1.06)}
+/* 当前项目不画选框：用景深说话——别的楼罩一层薄雾、招牌不亮；当前楼招牌亮着、门口有灯光洒在地上 */
+.haze{fill:var(--sky-3);opacity:.34;pointer-events:none}
+.pane.dark .haze{opacity:.42}
+.bld:not(.cur) .sign-t{opacity:.45;filter:none}
+.bld:not(.cur) .sign{opacity:.7}
+.spill{fill:var(--win-on);opacity:.16}
+.pane.dark .spill{opacity:.32;filter:blur(1.5px)}
 .face{fill:url(#facade)}.face-l{stroke:var(--bld-line);stroke-width:.6;fill:none}
 .side{fill:var(--bld-side)}.top{fill:var(--bld-top)}
 .ledge{stroke:var(--bld-line);stroke-width:.8}
@@ -432,7 +437,7 @@ table.spec td.k{font-weight:600;color:#1a1a19;white-space:nowrap}
 <section class="sec">
 <h2><span class="no">02</span>城，放大看</h2>
 <p>同一座城的放大版。楼是按数据长出来的：窗数 = 卡数，超过九层自动退台成两截（下宽上窄），所以每栋楼的轮廓都不一样。
-  点楼切项目——当前项目描一圈蓝虚线，别的楼略暗。这里的按钮只影响这一块。</p>
+  点楼切项目——不画任何选框：当前项目的楼是清楚的、招牌亮着、门口有灯光洒在地上；别的楼退到一层薄雾后面、招牌不亮，像远处的街区。这里的按钮只影响这一块。</p>
 <div class="pair">
   <div class="pane" data-label="白天">
     <div class="sky tall" data-sky="light"></div>
@@ -705,7 +710,8 @@ function buildingSvg(p, x, gy, isCur, id) {
   s += `<line class="ant" x1="${sx + 3}" y1="${topY}" x2="${sx + 3}" y2="${topY - 6}"/><line class="ant" x1="${sx + sw - 3}" y1="${topY}" x2="${sx + sw - 3}" y2="${topY - 6}"/>`
   s += `<rect class="sign" x="${sx}" y="${topY - 14.5}" width="${sw}" height="8.5" rx="1"/><text class="sign-t" x="${sx + sw / 2}" y="${topY - 8.2}" text-anchor="middle" fill="${p.color}">${p.name}</text>`
   if (p.build) s += craneSvg(topX + 9, topY - DY)
-  s += `<rect class="halo" x="${x - 3}" y="${topY - 22}" width="${sp.wL + D + 6}" height="${gy - topY + 25}" rx="3"/>`
+  if (isCur) s += `<ellipse class="spill" cx="${x + sp.wL / 2}" cy="${gy + 2.5}" rx="15" ry="2.6"/>`
+  else s += `<rect class="haze" x="${x - 1}" y="${topY - 70}" width="${sp.wL + D + 2}" height="${gy - topY + 70}"/>`
   return { svg: s + `</g>`, w: sp.wL + D, top: topY - 22 }
 }
 
