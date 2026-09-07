@@ -36,7 +36,7 @@ export function createAssembly(site: Site) {
     attributes(liquid, { y: 104 - height, height, fill: 'var(--launch-signal)' })
     const percent = `${Math.round(fuel)}%`
     if (label.textContent !== percent) label.textContent = percent
-    const fueling = phase === 'FUEL' && fuel > 0 && fuel < 100
+    const fueling = frame.motionPhase === 'FUEL' && fuel > 0 && fuel < 100
     attributes(elevator, { transform: `translate(1,${fueling && !reduced ? 111+Math.sin(elapsed/1900)*83 : 181})` })
     attributes(lamp, { fill: `var(--launch-${phase === 'HOLD' ? 'amber' : 'red'})` })
     const storm = phase === 'SCRUB' || phase === 'HOLD'

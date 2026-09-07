@@ -129,7 +129,7 @@ test('转运与夹合期间维持 ROLLOUT，其他暂缓卡的刷新不取消转
     for(let i=0;i<59;i++) clean.tick(100);
     console.log(JSON.stringify({first,before,after,clean:clean.frame().phase}));
   `)
-  assert.deepEqual(out, { first: 'ROLLOUT', before: 'ROLLOUT', after: 'SCRUB', clean: 'FUEL' })
+  assert.deepEqual(out, { first: 'ROLLOUT', before: 'ROLLOUT', after: 'FUEL', clean: 'FUEL' })
 })
 
 test('起飞队列保留旧快照和同秒后续完工，结束后才通报全部完成，烟四秒后清空', () => {
@@ -163,4 +163,98 @@ test('起飞队列保留旧快照和同秒后续完工，结束后才通报全�
   assert.equal(out.refresh.flightAge, null)
   assert.equal(out.refresh.completeAge, null)
   assert.deepEqual(out.cues, ['ignition', 'liftoff', 'complete'])
+})
+
+test('发射台按施工、待拍板、暂缓选首枚，大屏和倒计时只读所选分组', () => {
+  const a = task('A', '施工中', { percent: 55 }), p = task('P', '待拍板'), b = task('B', '暂缓')
+  const inputs = [[a, b], [a, p, b], [p, b], [b], [task('Q', '未开工')], [], [task('D', '已完工')],
+    [task('G', '已拍板', { percent: 95 }), p, b], [task('F', '施工中', { percent: 95 }), b]]
+  const out = runTs(`
+    const { createSequence } = await import('./web/src/workfloor/scenes/launch/sequence.ts');
+    console.log(JSON.stringify(${JSON.stringify(inputs.map(board))}.map(input=>{
+      const frame=createSequence(deriveSceneState(input,'p')).frame();
+      return [frame.task?.id??null,frame.phase,frame.fuel,frame.countdown];
+    })));
+  `)
+  assert.deepEqual(out, [['A', 'FUEL', 55, null], ['A', 'FUEL', 55, null], ['P', 'HOLD', 0, 10],
+    ['B', 'SCRUB', 0, null], [null, 'READY', 0, null], [null, 'READY', 0, null],
+    [null, 'COMPLETE', 0, null], ['G', 'GO', 95, 10], ['F', 'FUEL', 95, 10]])
+})
+
+test('阻塞和待拍板提示只播一次四秒，到期按最新台上分组恢复', () => {
+  const a = task('A', '施工中', { percent: 55 }), p = task('P', '待拍板'), b = task('B', '暂缓')
+  const cases = [['block', 'B', [a, p, b]], ['hold', 'B', [a, p, b]], ['hold', 'P', [a, p, b]],
+    ['hold', 'P', [p, b]], ['block', 'B', [b]]]
+  const out = runTs(`
+    const { createSequence } = await import('./web/src/workfloor/scenes/launch/sequence.ts');
+    const results=${JSON.stringify(cases)}.map(([kind,taskId,tasks])=>{
+      const state=deriveSceneState({tasks},'p'), cues=[], seq=createSequence(state,cue=>cues.push(cue));
+      const event={kind,taskId,projectId:'p',ts:'2026-09-08T09:00:00Z'};
+      seq.handleEvent(event,true); const first=seq.frame();
+      for(let i=0;i<20;i++) seq.tick(100);
+      seq.setState({...state}); seq.handleEvent(event,true);
+      for(let i=0;i<19;i++) seq.tick(100); seq.tick(99); const before=seq.frame().phase;
+      seq.tick(1); seq.setState({...state}); const after=seq.frame();
+      return {first:[first.phase,first.task.id,first.stormAge,first.rainAge],before,after:after.phase,cues};
+    });
+    const state=deriveSceneState(${JSON.stringify(board([a, p, b]))},'p'), seq=createSequence(state);
+    seq.handleEvent({kind:'block',taskId:'B',projectId:'p',ts:'2026-09-08T09:00:01Z'},true);
+    seq.setState({...state,active:[]}); for(let i=0;i<40;i++) seq.tick(100);
+    const latest=seq.frame(); console.log(JSON.stringify({results,latest:[latest.phase,latest.task.id]}));
+  `)
+  assert.deepEqual(out.results.map(row => row.first), [['SCRUB', 'A', -400, 0], ['HOLD', 'A', -400, 0],
+    ['HOLD', 'A', -400, 0], ['HOLD', 'P', -400, 0], ['SCRUB', 'B', -400, 0]])
+  assert.deepEqual(out.results.map(row => row.before), ['SCRUB', 'HOLD', 'HOLD', 'HOLD', 'SCRUB'])
+  assert.deepEqual(out.results.map(row => row.after), ['FUEL', 'FUEL', 'FUEL', 'HOLD', 'SCRUB'])
+  assert.deepEqual(out.results.map(row => row.cues), [['alarm'], ['hold'], ['hold'], ['hold'], ['alarm']])
+  assert.deepEqual(out.latest, ['HOLD', 'P'])
+})
+
+test('其它卡的提示和停工不重置倒计时、转运、起飞或等待点火', () => {
+  const input = board([task('A', '施工中', { percent: 95 }), task('C', '施工中', { percent: 20 }), task('P', '待拍板'), task('B', '暂缓')])
+  const out = runTs(`
+    const { createSequence } = await import('./web/src/workfloor/scenes/launch/sequence.ts');
+    const state=deriveSceneState(${JSON.stringify(input)},'p');
+    const event=(kind,taskId)=>({kind,taskId,projectId:'p',ts:'2026-09-08T09:00:00Z'});
+    const advance=(seq,ms)=>{while(ms>0){const dt=Math.min(ms,100);seq.tick(dt);ms-=dt;}};
+    const go=createSequence(state); go.handleEvent(event('go','A'),true); advance(go,2000);
+    go.setState({...state}); go.handleEvent(event('park','B'),true); go.handleEvent(event('block','B'),true);
+    advance(go,4000); const countdown=go.frame();
+    const rollout=createSequence(state); rollout.handleEvent(event('claim','A'),true); advance(rollout,1000);
+    rollout.handleEvent(event('hold','P'),true); rollout.setState({...state}); const moving=rollout.frame();
+    advance(rollout,4899); const docking=rollout.frame(); advance(rollout,1); const docked=rollout.frame();
+    const flight=createSequence(state); flight.handleEvent(event('done','A'),true); advance(flight,100);
+    flight.handleEvent(event('block','B'),true); flight.setState({...state,active:state.active.slice(1),done:[state.active[0]]});
+    advance(flight,100); const flying=flight.frame(); advance(flight,3200); const next=flight.frame();
+    const request=createSequence(state); request.setTruckSafe(false); request.handleEvent(event('done','A'),true);
+    request.handleEvent(event('block','B'),true); request.handleEvent(event('hold','P'),true);
+    request.setState({...state}); advance(request,4000); const waiting=request.frame();
+    request.setTruckSafe(true); request.tick(1); const released=request.frame();
+    console.log(JSON.stringify({countdown,moving,docking,docked,flying,next,waiting,released}));
+  `)
+  assert.deepEqual([out.countdown.phase, out.countdown.countdown, out.countdown.task.id], ['GO', 4, 'A'])
+  assert.deepEqual([out.moving.phase, out.moving.motionPhase, out.moving.carrying], ['HOLD', 'ROLLOUT', true])
+  assert.deepEqual([out.docking.phase, out.docking.dockAge, out.docked.phase], ['ROLLOUT', 1899, 'FUEL'])
+  assert.deepEqual([out.flying.phase, out.flying.motionPhase, out.flying.task.id, out.flying.flightAge], ['SCRUB', 'LIFTOFF', 'A', 200])
+  assert.deepEqual([out.next.motionPhase, out.next.task.id, out.next.flightAge], ['ROLLOUT', 'C', null])
+  assert.deepEqual([out.waiting.launchRequested, out.waiting.task.id, out.released.flightAge], [true, 'A', 0])
+})
+
+test('禁用动画、减少动效和切项目不残留事件天气，待拍板解除后恢复加注', () => {
+  const input = board([task('A', '施工中', { percent: 55 }), task('P', '待拍板'), task('B', '暂缓')])
+  const out = runTs(`
+    const { createSequence } = await import('./web/src/workfloor/scenes/launch/sequence.ts');
+    const state=deriveSceneState(${JSON.stringify(input)},'p'), cues=[], seq=createSequence(state,cue=>cues.push(cue));
+    const event={kind:'block',taskId:'B',projectId:'p',ts:'2026-09-08T09:00:00Z'};
+    seq.handleEvent(event,false); const quiet=seq.frame().phase;
+    seq.handleEvent({...event,ts:'2026-09-08T09:00:01Z'},true); seq.setReducedMotion(true);
+    seq.handleEvent({...event,kind:'hold',taskId:'P'},true); const reduced=seq.frame().phase;
+    seq.setReducedMotion(false); for(let i=0;i<50;i++) seq.tick(100); const resumed=seq.frame().phase;
+    seq.handleEvent({...event,ts:'2026-09-08T09:00:02Z'},true); seq.setState({...state,projectId:'other'});
+    const switched=seq.frame().phase, pending=createSequence({...state,active:[]});
+    pending.handleEvent({...event,kind:'hold',taskId:'P'},true); pending.setState(state);
+    for(let i=0;i<40;i++) pending.tick(100);
+    console.log(JSON.stringify({quiet,reduced,resumed,switched,cues,recovered:pending.frame().phase}));
+  `)
+  assert.deepEqual(out, { quiet: 'FUEL', reduced: 'FUEL', resumed: 'FUEL', switched: 'FUEL', cues: ['alarm', 'alarm'], recovered: 'FUEL' })
 })

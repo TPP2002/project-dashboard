@@ -43,7 +43,7 @@ export function deriveSceneState(board: Board | null | undefined, projectId: str
   }))
   const summary = progress(board)
   return {
-    projectId, projectName: board?.project.name ?? '',
+    projectId, projectName: board?.project?.name ?? '',
     queued: rows(groups.queued), active: rows(groups.active), pending: rows(groups.pending),
     blocked: rows(groups.blocked), done: rows(groups.done),
     total: summary.total, percent: summary.percent,

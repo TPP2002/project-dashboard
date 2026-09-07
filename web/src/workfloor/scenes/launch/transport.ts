@@ -17,11 +17,11 @@ export function createTransport(site: Site) {
   const deck = site.get('[data-crawler-deck]', rollout), reverse = site.get('[data-reverse-lamp]', rollout)
   let homeSince: number | null = -Infinity
   function update(dt: number, elapsed: number, frame: LaunchFrame, detail: Detail, reducedMotion: boolean) {
-    const common = { detail, reducedMotion }, docking = frame.dockAge !== null
+    const common = { detail, reducedMotion }, docking = frame.dockAge !== null, phase = frame.motionPhase
     const backing = docking ? smooth(clamp((frame.dockAge! - 1300) / 600)) : 1
-    const progress = frame.phase === 'ROLLOUT' ? frame.rollout - backing * (docking ? 60 / length : 0) : 1 - 60 / length
+    const progress = phase === 'ROLLOUT' ? frame.rollout - backing * (docking ? 60 / length : 0) : 1 - 60 / length
     primary.update(dt, { ...common, path: route, kind: 'crawler', offsetY: -18, progress,
-      enabled: frame.phase === 'ROLLOUT' || frame.pad && frame.flightAge === null,
+      enabled: phase === 'ROLLOUT' || frame.pad && frame.flightAge === null,
       onPose: pose => attributes(carriedRocket, { transform: `matrix(1 0 0 1 ${pose.x} ${pose.y - NOZZLE_Y})` }) })
     attributes(carriedRocket, { visibility: frame.carrying ? 'visible' : 'hidden' })
     attributes(deck, { transform: `translate(0,${docking ? 6 * smooth(frame.dockAge! / 600) : 6})` })
@@ -29,7 +29,7 @@ export function createTransport(site: Site) {
     secondary.update(dt, { ...common, path: route, kind: 'crawler', offsetY: -18, progress: frame.waitingProgress, enabled: Boolean(frame.waiting),
       onPose: pose => attributes(waitingRocket, { transform: `matrix(1 0 0 1 ${pose.x} ${pose.y - NOZZLE_Y})` }) })
     attributes(waitingRocket, { visibility: frame.waiting ? 'visible' : 'hidden' })
-    const fueling = (frame.phase === 'FUEL' || frame.phase === 'GO') && frame.fuel > 0 && frame.fuel < 100 && !frame.launchRequested
+    const fueling = (phase === 'FUEL' || phase === 'GO') && frame.fuel > 0 && frame.fuel < 100 && !frame.launchRequested
     truck.update(dt, { ...common, path: truckRoute, kind: 'fuel', duration: 5600, returnHome: !fueling,
       ...(reducedMotion ? { progress: 0 } : {}),
       onPose: pose => { if (pose.distance > .1) homeSince = null; else if (homeSince === null) homeSince = elapsed } })
