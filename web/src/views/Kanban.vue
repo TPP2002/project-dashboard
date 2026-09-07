@@ -98,12 +98,27 @@ function statusTone(status: string) {
 .skel.task-skel { height: 92px; }
 .empty-help { font-size: var(--fs-sm); }
 .board-scroll { min-width: 0; display: flex; align-items: flex-start; flex: 1; gap: var(--s3); overflow-x: auto; overflow-y: hidden; padding-bottom: var(--s2); }
-.column { flex: 0 0 260px; max-height: 100%; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--surface); }
+/* 泳道自适应：flex-grow 让泳道少时把剩余宽度分光（右边不再留死白），
+   flex-shrink: 0 + 基准 280 保证泳道多时每条不低于 280，靠 .board-scroll 的横滚兜住。
+   这里刻意不设 max-width：设了上限，三条以下的泳道又会在右边空出一截——正是本次要治的病。 */
+.column { flex: 1 0 280px; max-height: 100%; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--surface); }
 /* 徽章基类是 inline-block，装了瓦片就得换 flex；左边留窄一点，瓦片自带一圈边框。 */
 .tiled { display: inline-flex; align-items: center; gap: 5px; padding-left: var(--s1); }
 .column-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s1); }
 .count-badge { font-variant-numeric: tabular-nums; }
-.column-body { min-height: 0; display: flex; flex-direction: column; gap: var(--s2); overflow-y: auto; padding: 0 var(--s1) var(--s1); }
+/* 泳道被撑宽时卡片自动多排一列（一列不窄于 260），免得一张卡横着拉成长条。
+   泳道回到常规宽度（≤ 约 530）时它就是单列，和以前一模一样。
+   align-items: start —— 同排卡片各保持自然高度，不被最高的那张撑齐。 */
+.column-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  align-content: start;
+  align-items: start;
+  gap: var(--s2);
+  overflow-y: auto;
+  padding: 0 var(--s1) var(--s1);
+}
 
 @media (max-width: 760px) {
   .page-head { flex-direction: column; }

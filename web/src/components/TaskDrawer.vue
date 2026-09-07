@@ -10,6 +10,14 @@ import StatusBadge from './StatusBadge.vue'
 import { humanTitle, specText, missingPlainTitle, plainTitleFixCommand } from '@/utils/taskTitle'
 import type { DocRef } from '@/types'
 
+/**
+ * docked = 宽屏内嵌模式(由 App.vue 按 ≥1600 的断点决定)。
+ * 两种模式共用同一份内容，只换外壳：
+ *   false → 老样子，Teleport 到 body、铺满视口的遮罩 + 右侧浮层抽屉；
+ *   true  → 不 Teleport，就地渲染成 .shell 的第三列，不遮罩、不压暗。
+ */
+const props = defineProps<{ docked?: boolean }>()
+
 const store = useBoardStore()
 const task = computed(() => store.selectedTask)
 const pid = computed(() => store.selectedTaskProjectId || '')
@@ -88,8 +96,10 @@ async function preview(d: DocRef) {
 
 // 切换任务时重置文档预览 + 技术说明展开态
 watch(task, () => { activeDoc.value = null; docText.value = ''; docErr.value = ''; specExpanded.value = false; copiedFix.value = false })
-// 抽屉开关锁 body 滚动
-watch(task, (t) => { document.body.style.overflow = t ? 'hidden' : '' })
+// 遮罩抽屉要锁 body 滚动；内嵌模式是页面的一列，不该锁（拖窄窗口回落时也要跟着放开）。
+watch([task, () => props.docked], ([t, docked]) => {
+  document.body.style.overflow = t && !docked ? 'hidden' : ''
+})
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && store.selectedTask) store.closeTask()
@@ -102,9 +112,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="docked">
     <Transition name="drawer">
-      <div v-if="task" class="overlay" @click.self="store.closeTask()">
+      <div v-if="task" class="overlay" :class="{ docked }" @click.self="docked || store.closeTask()">
         <aside class="drawer card" aria-label="任务详情">
           <header class="d-head">
             <span class="d-id mono">{{ task.id }}</span>
@@ -270,6 +280,11 @@ onUnmounted(() => {
 <style scoped>
 .overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: flex-end; background: var(--overlay); }
 .drawer.card { display: flex; flex-direction: column; width: min(520px, 94vw); height: 100%; padding: 0; overflow: hidden; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: var(--surface); box-shadow: calc(-1 * var(--s3)) 0 var(--s7) var(--drawer-shadow); }
+/* —— 内嵌模式：同一段 DOM，换成外壳的第三列 ——
+   没有 Teleport 时这个 .overlay 就是 .shell 的直接子元素，直接把它摆进 grid-column 3；
+   不压暗、不浮起，宽度交给 .shell.has-dock 的列宽定。 */
+.overlay.docked { position: static; z-index: auto; grid-column: 3; grid-row: 2; min-width: 0; background: none; }
+.overlay.docked .drawer.card { width: 100%; box-shadow: none; }
 .d-head { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); }
 .d-id { color: var(--text-2); font-weight: 700; }
 .d-body { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s4); overflow-y: auto; }

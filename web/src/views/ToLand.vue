@@ -248,7 +248,7 @@ async function markTaskLanded(task: UnlandedTask) {
 </template>
 
 <style scoped>
-.page { width: 100%; max-width: 1040px; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
+.page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
 .page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
@@ -269,7 +269,13 @@ async function markTaskLanded(task: UnlandedTask) {
 .project-note, .feedback { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r); font-size: var(--fs-sm); line-height: 1.55; }
 .project-note, .info-feedback { background: var(--info-bg); color: var(--text-2); }
 .ok-feedback { background: var(--ok-bg); color: var(--text-2); }
-.task-list { display: flex; flex-direction: column; gap: var(--s2); }
+/* 任务卡自动分栏：每列不窄于 560。提示条与项目头仍占整行，只有任务卡并排。 */
+.task-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(560px, 100%), 1fr));
+  align-items: start;
+  gap: var(--s2);
+}
 .task-row { align-items: stretch; flex-direction: column; gap: var(--s3); background: var(--surface); }
 .task-top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
 .task-id { color: var(--text-2); font-size: var(--fs-base); font-weight: 600; }

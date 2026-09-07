@@ -115,9 +115,14 @@ onUnmounted(() => {
 
 <template>
   <div class="cpu-page">
-    <header class="head">
-      <h2>算力</h2>
-      <span v-if="status" class="host mono">{{ status.hostname }} · {{ status.totalCores }} 核</span>
+    <header class="page-head">
+      <div>
+        <h1>算力</h1>
+        <p>给自己留几个核，之后启动的测试自动缩小并发让路。</p>
+      </div>
+      <div class="head-actions">
+        <span v-if="status" class="host pill mono">{{ status.hostname }} · {{ status.totalCores }} 核</span>
+      </div>
     </header>
 
     <p v-if="error" class="err">{{ error }}</p>
@@ -139,7 +144,8 @@ onUnmounted(() => {
       </p>
     </section>
 
-    <section v-if="status" class="card">
+    <div v-if="status" class="panes">
+    <section class="card">
       <h3>给我留多少</h3>
       <div class="presets">
         <button
@@ -167,7 +173,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <section v-if="status" class="card">
+    <section class="card">
       <h3>现在谁在占</h3>
       <table v-if="status.leases.length" class="tb">
         <thead>
@@ -190,14 +196,22 @@ onUnmounted(() => {
         超过上限的占用是单独授权的重活,不受此限。
       </p>
     </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.cpu-page { display: flex; flex-direction: column; gap: var(--s4); max-width: 860px; min-width: 0; }
-.head { display: flex; align-items: baseline; gap: var(--s3); }
+.cpu-page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
+.page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
+.head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
 h3 { margin-bottom: var(--s3); color: var(--text-2); }
 .host { color: var(--text-3); font-size: var(--fs-sm); }
+/* 整机预算条留整行（它讲的是整台机器，越宽读数越准）；
+   操作区两块自适应并排，每列不窄于 520。
+   这里用 auto-fit 而不是 auto-fill：块数是固定的两块，auto-fill 会多排一条空轨道、
+   右边又空出一截；auto-fit 把空轨道塌掉，两块正好把整行分光。 */
+.panes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); align-items: start; gap: var(--s4); }
 .err { color: var(--bad); font-size: var(--fs-base); }
 
 .budget-rail { display: flex; }
@@ -230,4 +244,9 @@ h3 { margin-bottom: var(--s3); color: var(--text-2); }
 .r { text-align: right; }
 .tag { margin-right: var(--s2); }
 .empty { margin: 0; color: var(--text-3); font-size: var(--fs-sm); }
+
+@media (max-width: 760px) {
+  .page-head { flex-direction: column; }
+  .head-actions { justify-content: flex-start; }
+}
 </style>

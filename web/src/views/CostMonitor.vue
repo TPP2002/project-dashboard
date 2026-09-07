@@ -238,6 +238,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 
         <!-- v-if 是硬要求：折叠时不创建几十行明细 DOM。 -->
         <div v-if="detailsOpen" class="details-content">
+          <div class="detail-pair">
           <section class="detail-section">
             <h3>按天</h3>
             <div v-if="!dailyRows.length" class="empty">
@@ -287,6 +288,8 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
             </div>
           </section>
 
+          </div>
+
           <section class="detail-section">
             <h3>各任务卡施工成本</h3>
             <div v-if="!costTasks.length" class="empty">
@@ -317,7 +320,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 </template>
 
 <style scoped>
-.page { width: 100%; max-width: 1120px; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
+.page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
 .page-head { display: flex; align-items: flex-start; gap: var(--s4); justify-content: space-between; }
 .page-subtitle, .source-note, .fine, .details-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .source-note { margin: 0; font-size: var(--fs-sm); }
@@ -336,6 +339,9 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .details-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); padding: var(--s4); }
 .details-head p { font-size: var(--fs-sm); }
 .details-content { display: flex; flex-direction: column; gap: var(--s5); border-top: 1px solid var(--line); padding: var(--s4); }
+/* 「按天」与「按模型」两张表并排，每列不窄于 520；两表各自的 min-width 由 .table-scroll 兜住，
+   放不下时只在自己的框里横滚，整页不出现横向滚动条。 */
+.detail-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); align-items: start; gap: var(--s5); }
 .detail-section { min-width: 0; }
 .detail-section h3 { margin-bottom: var(--s2); font-size: var(--fs-md); }
 .table-scroll { max-width: 100%; overflow-x: auto; }

@@ -194,7 +194,7 @@ async function submit(item: PendingItem) {
 </template>
 
 <style scoped>
-.page { width: 100%; max-width: 980px; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
+.page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
 .page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
@@ -204,7 +204,15 @@ async function submit(item: PendingItem) {
 .other-note > span:nth-of-type(2) { flex: 1; }
 .other-note b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .note-glow { position: absolute; inset: 0 0 auto; }
-.loading-list, .decision-list { display: flex; flex-direction: column; gap: var(--s3); }
+/* 决策卡自动分栏：每列不窄于 620（卡里有大段背景和逐项利弊，1920 上正好两列、每列约 826，
+   一行字长度最省力；2560 以上自动变三列，窄屏塞不下第二列就自己退回单栏）。
+   align-items: start —— 同一行里高矮不一的卡各自保持自然高度，不被最高的那张撑开留白。 */
+.loading-list, .decision-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(620px, 100%), 1fr));
+  align-items: start;
+  gap: var(--s3);
+}
 .loading-card { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s5); }
 .skel.medium { width: 42%; }
 .skel.wide { width: 86%; }

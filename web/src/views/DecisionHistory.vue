@@ -38,17 +38,21 @@ const stats = computed(() => {
 
 <template>
   <div class="history-page">
-    <div class="head">
-      <h2><Icon name="history" class="head-ic" :size="20" />拍板历史</h2>
-      <span class="pill">{{ stats.total }} 条 · 待落地 {{ stats.unlanded }} · 已落地 {{ stats.landed }}</span>
-      <ScopeToggle />
-      <span class="spacer" />
-      <label class="toggle">
-        <input type="checkbox" v-model="showLanded" />
-        <span>显示已落地</span>
-      </label>
-      <input v-model="search" class="field search" placeholder="搜任务 / 问题 / 答案…" />
-    </div>
+    <header class="page-head">
+      <div>
+        <h1><Icon name="history" class="head-ic" :size="20" />拍板历史</h1>
+        <p>拍过的每一条都留档：什么时候拍的、拍了什么、当时为什么这么推荐。</p>
+      </div>
+      <div class="head-actions">
+        <span class="pill">{{ stats.total }} 条 · 待落地 {{ stats.unlanded }} · 已落地 {{ stats.landed }}</span>
+        <ScopeToggle />
+        <label class="toggle">
+          <input type="checkbox" v-model="showLanded" />
+          <span>显示已落地</span>
+        </label>
+        <input v-model="search" class="field search" placeholder="搜任务 / 问题 / 答案…" />
+      </div>
+    </header>
 
     <div v-if="!items.length" class="empty card">
       <div class="big"><Icon name="target" :size="36" /></div>
@@ -83,11 +87,14 @@ const stats = computed(() => {
 </template>
 
 <style scoped>
-.history-page { display: flex; flex-direction: column; min-width: 0; }
-.head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); flex-wrap: wrap; }
-.toggle { display: flex; align-items: center; gap: var(--s1); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); }
+.history-page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
+.page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
+.head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
+.toggle { display: flex; align-items: center; gap: var(--s1); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); white-space: nowrap; }
 .search { width: 200px; }
-.list { display: flex; flex-direction: column; gap: var(--s2); max-width: 900px; }
+/* 记录自动分栏：每列不窄于 560（一条记录 = 问题 + 答案 + 当时的推荐理由，再窄就开始频繁折行）。 */
+.list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(560px, 100%), 1fr)); align-items: start; gap: var(--s2); }
 .decision-row { align-items: stretch; flex-direction: column; gap: var(--s2); padding: var(--s3) var(--s4); }
 .top { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .tid { color: var(--text-2); font-weight: 600; }
@@ -100,4 +107,10 @@ const stats = computed(() => {
 .ans-body { color: var(--text); font-weight: 500; }
 .custom-tag, .rec-tag { margin-left: var(--s2); }
 .reason { padding-left: var(--s3); font-size: var(--fs-sm); line-height: 1.55; }
+
+@media (max-width: 760px) {
+  .page-head { flex-direction: column; }
+  .head-actions { justify-content: flex-start; }
+  .search { width: 100%; }
+}
 </style>
