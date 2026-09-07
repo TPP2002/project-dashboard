@@ -350,3 +350,498 @@ test('decide：卡不在「待拍板」时一律不动状态（施工中的卡�
   assert.equal(cmds.decide({ _: ['P01'], did: 'd1', answer: 'B', ...P }).task.status, '施工中');
   clean(dir);
 });
+
+// ===========================================================================
+// 卡的一生缺的四个动作（审计 §4-A5/A6/A7/C1）
+//   unclaim 放弃认领 / cancel 作废 / reopen 重开 / edit 改卡面
+// 病根：CLI 只有「往前走」的命令。对话一中断，卡就永远挂着「施工中」；
+// 方案被否了没地方记，只能留着假装还要做；写错标题只能裸 set 绕过所有校验。
+// ===========================================================================
+
+function _board(P) {
+  const { readBoard } = require('../cli/store.cjs');
+  const { resolveProject } = require('../core/resolveProject.cjs');
+  return readBoard(resolveProject(P.project, { registryPath: P.registry }).board);
+}
+function _acts(P, type) { return _board(P).activity.filter((a) => a.type === type); }
+
+// ---------------------------- unclaim ----------------------------
+
+test('unclaim：施工中 → 待开工，摘掉本次分支并留痕', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  const { task } = cmds.unclaim({ _: ['P01'], branch: 'feat-a', reason: '对话中断，交回', author: 'tester', ...P });
+  assert.equal(task.status, '待开工');
+  assert.deepEqual(task.gitBranch, [], '本次分支应从占用里摘掉');
+  assert.equal(task.unclaimReason, '对话中断，交回');
+  assert.match(task.unclaimedAt, /^\d{4}-\d{2}-\d{2}$/);
+  const a = _acts(P, 'unclaim');
+  assert.equal(a.length, 1);
+  assert.equal(a[0].taskId, 'P01');
+  assert.equal(a[0].author, 'tester');
+  assert.match(a[0].text, /对话中断，交回/);
+  clean(dir);
+});
+
+test('unclaim：只摘自己那条分支，别人的分支留着', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-b', ...P });
+  const { task } = cmds.unclaim({ _: ['P01'], branch: 'feat-b', reason: '这条分支不做了', ...P });
+  assert.deepEqual(task.gitBranch, ['feat-a']);
+  clean(dir);
+});
+
+test('unclaim：暂缓解除后认领的卡，退回「可复工」而不是「待开工」', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.park({ _: ['P01'], reason: '等上游', ...P });
+  cmds.unpark({ _: ['P01'], reason: '上游好了', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  assert.equal(cmds.unclaim({ _: ['P01'], reason: '没接着做', ...P }).task.status, '可复工');
+  clean(dir);
+});
+
+test('unclaim：保留已报的进度（做到一半没人接，是有价值的信息）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  cmds.progress({ _: ['P01'], percent: '60', ...P });
+  assert.equal(cmds.unclaim({ _: ['P01'], reason: '交回', ...P }).task.percent, 60);
+  clean(dir);
+});
+
+test('unclaim：非施工中的卡被拒', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  assert.throws(() => cmds.unclaim({ _: ['P01'], reason: 'r', ...P }), /非法迁移/);
+  clean(dir);
+});
+
+test('unclaim：缺卡号或理由被拒', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  assert.throws(() => cmds.unclaim({ _: [], reason: 'r', ...P }), /缺参数.*unclaim/);
+  assert.throws(() => cmds.unclaim({ _: ['P01'], ...P }), /缺参数.*--reason/);
+  clean(dir);
+});
+
+test('unclaim 后可以再次 claim（这才是它存在的意义）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  cmds.unclaim({ _: ['P01'], branch: 'feat-a', reason: '交回', ...P });
+  assert.equal(cmds.claim({ _: ['P01'], branch: 'feat-b', ...P }).task.status, '施工中');
+  clean(dir);
+});
+
+// ---------------------------- cancel ----------------------------
+
+test('cancel：任意状态 → 已作废，记理由并留痕', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  const { task } = cmds.cancel({ _: ['P01'], reason: '方案被否，不做了', author: 'tester', ...P });
+  assert.equal(task.status, '已作废');
+  assert.equal(task.cancelReason, '方案被否，不做了');
+  assert.match(task.cancelledAt, /^\d{4}-\d{2}-\d{2}$/);
+  const a = _acts(P, 'cancel');
+  assert.equal(a.length, 1);
+  assert.equal(a[0].taskId, 'P01');
+  assert.match(a[0].text, /方案被否/);
+  clean(dir);
+});
+
+test('cancel：不写完工日期（作废不是完工）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  const { task } = cmds.cancel({ _: ['P01'], reason: '不做了', ...P });
+  assert.equal(task.dates.done, null);
+  clean(dir);
+});
+
+test('cancel：抹掉暂缓/放弃认领留下的旧说法（show 出来不许两套并存）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.park({ _: ['P01'], reason: '等上游', note: '遗留A', ...P });
+  const { task } = cmds.cancel({ _: ['P01'], reason: '干脆不做了', ...P });
+  assert.equal(task.blockReason, undefined);
+  assert.equal(task.parkedNote, undefined);
+  clean(dir);
+});
+
+test('cancel：缺理由被拒', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  assert.throws(() => cmds.cancel({ _: ['P01'], ...P }), /缺参数.*--reason/);
+  clean(dir);
+});
+
+test('作废卡不计入完成度分母（一张完工一张作废 = 100%）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'a', status: '已完工', ...P });
+  cmds.add({ _: ['P02'], title: 'b', ...P });
+  cmds.cancel({ _: ['P02'], reason: '不做了', ...P });
+  const s = cmds.deriveStats(_board(P));
+  assert.equal(s.total, 1, '分母应把作废卡排除');
+  assert.equal(s.done, 1);
+  assert.equal(s.progress, 100);
+  assert.ok(cmds.list({ ...P }).text.includes('进度 100%'));
+  clean(dir);
+});
+
+test('作废卡仍出现在状态分布里（排除的是分母，不是这张卡本身）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'a', ...P });
+  cmds.cancel({ _: ['P01'], reason: '不做了', ...P });
+  assert.equal(cmds.deriveStats(_board(P)).byStatus['已作废'], 1);
+  assert.ok(cmds.list({ ...P }).text.includes('P01'));
+  clean(dir);
+});
+
+test('claim 已作废卡被拒，并提示先 reopen', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.cancel({ _: ['P01'], reason: '不做了', ...P });
+  assert.throws(() => cmds.claim({ _: ['P01'], branch: 'b', ...P }), /reopen/);
+  clean(dir);
+});
+
+// ---------------------------- reopen ----------------------------
+
+test('reopen：已完工 → 待开工，进度归零、完工日期清空', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat-a', ...P });
+  cmds.done({ _: ['P01'], commit: 'a1b2c3d', ...P });
+  const { task } = cmds.reopen({ _: ['P01'], reason: '验收没过，返工', author: 'tester', ...P });
+  assert.equal(task.status, '待开工');
+  assert.equal(task.percent, 0);
+  assert.equal(task.dates.done, null);
+  assert.equal(task.reopenReason, '验收没过，返工');
+  assert.match(task.reopenedAt, /^\d{4}-\d{2}-\d{2}$/);
+  clean(dir);
+});
+
+test('reopen：活动流留着历史（完工那条不许抹）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.done({ _: ['P01'], ...P });
+  cmds.reopen({ _: ['P01'], reason: '返工', ...P });
+  assert.equal(_acts(P, 'done').length, 1, '完工历史被抹了');
+  assert.equal(_acts(P, 'reopen').length, 1);
+  clean(dir);
+});
+
+test('reopen：已作废 → 待开工，抹掉作废理由', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.cancel({ _: ['P01'], reason: '当时觉得不做了', ...P });
+  const { task } = cmds.reopen({ _: ['P01'], reason: '又要做了', ...P });
+  assert.equal(task.status, '待开工');
+  assert.equal(task.cancelReason, undefined);
+  assert.equal(task.cancelledAt, undefined);
+  clean(dir);
+});
+
+test('reopen：PR / commit / 拍板记录都留着（重开不是重建）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  addPending(P, 'P01', 'A?');
+  cmds.decide({ _: ['P01'], did: 'd1', answer: 'B', ...P });
+  cmds.done({ _: ['P01'], pr: '24', commit: 'a1b2c3d', ...P });
+  const { task } = cmds.reopen({ _: ['P01'], reason: '返工', ...P });
+  assert.deepEqual(task.prNumbers, [24]);
+  assert.deepEqual(task.commitShas, ['a1b2c3d']);
+  assert.equal(task.decisions[0].answer, 'B');
+  clean(dir);
+});
+
+test('reopen：非终态卡被拒（施工中的卡没什么可重开）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'b', ...P });
+  assert.throws(() => cmds.reopen({ _: ['P01'], reason: 'r', ...P }), /非法迁移/);
+  clean(dir);
+});
+
+test('reopen：缺理由被拒', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.done({ _: ['P01'], ...P });
+  assert.throws(() => cmds.reopen({ _: ['P01'], ...P }), /缺参数.*--reason/);
+  clean(dir);
+});
+
+test('reopen 后能重新 claim', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.done({ _: ['P01'], ...P });
+  cmds.reopen({ _: ['P01'], reason: '返工', ...P });
+  assert.equal(cmds.claim({ _: ['P01'], branch: 'b2', ...P }).task.status, '施工中');
+  clean(dir);
+});
+
+// ---------------------------- edit ----------------------------
+
+test('edit：改标题 / 人话标题 / 说明 / 档位 / 波次', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: '旧技术说明', ...P });
+  const { task } = cmds.edit({ _: ['P01'], title: '新技术说明', 'plain-title': '一句人话讲清这张卡在干嘛',
+    desc: '一句话说明', model: 'opus·中', wave: '2', ...P });
+  assert.equal(task.title, '新技术说明');
+  assert.equal(task.plainTitle, '一句人话讲清这张卡在干嘛');
+  assert.equal(task.description, '一句话说明');
+  assert.equal(task.modelHint, 'opus·中');
+  assert.equal(task.wave, 2);
+  assert.equal(_acts(P, 'note').filter((a) => /^edit P01/.test(a.text || '')).length, 1, '改卡面要留痕');
+  clean(dir);
+});
+
+test('edit：只改给了的字段，没给的不动', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'T', 'plain-title': '原来的人话标题写在这里', model: 'sonnet·低', wave: '3', ...P });
+  const { task } = cmds.edit({ _: ['P01'], title: 'T2', ...P });
+  assert.equal(task.title, 'T2');
+  assert.equal(task.plainTitle, '原来的人话标题写在这里');
+  assert.equal(task.modelHint, 'sonnet·低');
+  assert.equal(task.wave, 3);
+  clean(dir);
+});
+
+test('edit：一个字段都不给要报错（免得空写一条流水）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'T', ...P });
+  const 之前 = _board(P).activity.length;
+  assert.throws(() => cmds.edit({ _: ['P01'], ...P }), /至少给一个/);
+  assert.equal(_board(P).activity.length, 之前, '被拒还写了流水');
+  clean(dir);
+});
+
+test('edit：带校验（空标题 / 超长档位 / 负波次 / 空人话标题一律拒）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'T', ...P });
+  assert.throws(() => cmds.edit({ _: ['P01'], title: '  ', ...P }), /--title/);
+  assert.throws(() => cmds.edit({ _: ['P01'], model: 'x'.repeat(41), ...P }), /--model/);
+  assert.throws(() => cmds.edit({ _: ['P01'], wave: '-1', ...P }), /--wave/);
+  assert.throws(() => cmds.edit({ _: ['P01'], wave: 'abc', ...P }), /--wave/);
+  assert.throws(() => cmds.edit({ _: ['P01'], 'plain-title': '   ', ...P }), /--plain-title/);
+  clean(dir);
+});
+
+test('edit：--desc 允许清空（说明写错了要能删掉）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'T', desc: '写错的说明', ...P });
+  assert.equal(cmds.edit({ _: ['P01'], desc: '', ...P }).task.description, '');
+  clean(dir);
+});
+
+test('edit：flag 后面漏写值要报错，不许当成空字符串写进去', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'T', ...P });
+  assert.throws(() => cmds.edit({ _: ['P01'], title: true, ...P }), /--title/);
+  clean(dir);
+});
+
+// ---------------------------- mark-landed --all ----------------------------
+
+test('mark-landed --all：本卡所有已拍板未落地的决策一次标完', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  addPending(P, 'P10', '第一问?');
+  addPending(P, 'P10', '第二问?');
+  cmds.decide({ _: ['P10'], did: 'd1', answer: 'B', ...P });
+  cmds.decide({ _: ['P10'], did: 'd2', answer: 'A', ...P });
+  const r = cmds.markLanded({ _: ['P10'], all: true, commit: 'a1b2c3d', ...P });
+  assert.deepEqual(r.landed, ['d1', 'd2']);
+  for (const d of r.task.decisions) {
+    assert.equal(d.landed, true);
+    assert.equal(d.landedCommit, 'a1b2c3d');
+  }
+  clean(dir);
+});
+
+test('mark-landed --all：跳过还没拍板的决策', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  addPending(P, 'P10', '第一问?');
+  addPending(P, 'P10', '第二问?');
+  cmds.decide({ _: ['P10'], did: 'd1', answer: 'B', ...P });
+  const r = cmds.markLanded({ _: ['P10'], all: true, ...P });
+  assert.deepEqual(r.landed, ['d1']);
+  assert.equal(r.task.decisions[1].landed, undefined, '没拍板的不许标落地');
+  clean(dir);
+});
+
+test('mark-landed --all：一条可标的都没有时报错（免得写空流水）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  assert.throws(() => cmds.markLanded({ _: ['P10'], all: true, ...P }), /没有.*落地|无/);
+  clean(dir);
+});
+
+test('mark-landed 逐条写法保持不变（回归）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  addPending(P, 'P10', 'A?');
+  cmds.decide({ _: ['P10'], did: 'd1', answer: 'B', ...P });
+  assert.equal(cmds.markLanded({ _: ['P10'], did: 'd1', ...P }).task.decisions[0].landed, true);
+  clean(dir);
+});
+
+// ------------------- done 自动落地 / collect 不冒充完工（审计 A6/A7）-------------------
+
+test('done：本卡已拍板未落地的决策自动标落地，并在输出里列出来', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  addPending(P, 'P10', '第一问?');
+  addPending(P, 'P10', '第二问?');
+  cmds.decide({ _: ['P10'], did: 'd1', answer: 'B', ...P });
+  cmds.decide({ _: ['P10'], did: 'd2', answer: 'A', ...P });
+  const r = cmds.done({ _: ['P10'], commit: 'a1b2c3d', ...P });
+  assert.deepEqual(r.landed, ['d1', 'd2']);
+  assert.match(r.text, /d1.*d2|d1, d2/, '输出要列出顺带标了哪几条');
+  for (const d of r.task.decisions) {
+    assert.equal(d.landed, true);
+    assert.equal(d.landedCommit, 'a1b2c3d', '落地提交号取本次 --commit');
+  }
+  clean(dir);
+});
+
+test('done：没拍板的决策不会被顺带标落地', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  addPending(P, 'P10', '还没答的问题?');
+  const r = cmds.done({ _: ['P10'], ...P });
+  assert.deepEqual(r.landed, []);
+  assert.equal(r.task.decisions[0].landed, undefined);
+  clean(dir);
+});
+
+test('done：已经标过落地的决策不被本次提交号覆盖', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P10'], title: 'x', ...P });
+  addPending(P, 'P10', 'A?');
+  cmds.decide({ _: ['P10'], did: 'd1', answer: 'B', ...P });
+  cmds.markLanded({ _: ['P10'], did: 'd1', commit: 'aaaaaa1', ...P });
+  const r = cmds.done({ _: ['P10'], commit: 'bbbbbb2', ...P });
+  assert.deepEqual(r.landed, []);
+  assert.equal(r.task.decisions[0].landedCommit, 'aaaaaa1');
+  clean(dir);
+});
+
+test('done：没有可顺带落地的决策时，输出保持原样', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  const r = cmds.done({ _: ['P01'], ...P });
+  assert.equal(r.text, undefined, '没东西可报就别改输出格式');
+  clean(dir);
+});
+
+test('done --collect：进「收官」但不冒充完工（不写完工日期、不写 100%）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'b', ...P });
+  cmds.progress({ _: ['P01'], percent: '80', ...P });
+  const { task } = cmds.done({ _: ['P01'], collect: true, ...P });
+  assert.equal(task.status, '收官');
+  assert.equal(task.dates.done, null, '收官不是完工，不许写完工日期');
+  assert.equal(task.percent, 80, '收官不许把进度篡改成 100');
+  clean(dir);
+});
+
+test('done --collect：PR / commit 照常记（收官阶段的产物要留）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  const { task } = cmds.done({ _: ['P01'], collect: true, pr: '24', commit: 'a1b2c3d', ...P });
+  assert.deepEqual(task.prNumbers, [24]);
+  assert.deepEqual(task.commitShas, ['a1b2c3d']);
+  clean(dir);
+});
+
+test('done 真完工照旧写完工日期与 100%（回归）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  const { task } = cmds.done({ _: ['P01'], ...P });
+  assert.equal(task.status, '已完工');
+  assert.equal(task.percent, 100);
+  assert.match(task.dates.done, /^\d{4}-\d{2}-\d{2}$/);
+  clean(dir);
+});
+
+// ------------------- progress 对终态卡拒收（审计 A7）-------------------
+
+test('progress：已完工的卡拒收，并提示先 reopen', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.done({ _: ['P01'], ...P });
+  assert.throws(() => cmds.progress({ _: ['P01'], percent: '50', ...P }), /reopen/);
+  assert.equal(_board(P).tasks[0].percent, 100, '被拒还是把进度写进去了');
+  clean(dir);
+});
+
+test('progress：已作废的卡拒收，并提示先 reopen', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.cancel({ _: ['P01'], reason: '不做了', ...P });
+  assert.throws(() => cmds.progress({ _: ['P01'], percent: '50', ...P }), /reopen/);
+  clean(dir);
+});
+
+test('progress：收官中的卡照常可以报进度（收官不是终态）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.done({ _: ['P01'], collect: true, ...P });
+  assert.equal(cmds.progress({ _: ['P01'], percent: '90', ...P }).task.percent, 90);
+  clean(dir);
+});
+
+// ------------------- 施工中挂起要看得见（审计 A7）-------------------
+
+test('pending：施工中的卡登记待拍板，下一步里程碑写成「等拍板：…」', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'b', ...P });
+  cmds.progress({ _: ['P01'], percent: '40', next: '接着写接口', ...P });
+  const { task } = addPending(P, 'P01', '接口要不要兼容旧字段?');
+  assert.equal(task.status, '施工中', '施工中不因登记待拍板而倒退');
+  assert.match(task.nextMilestone, /^等拍板：/);
+  assert.match(task.nextMilestone, /接口要不要兼容旧字段/);
+  clean(dir);
+});
+
+test('pending：未开工的卡照旧转「待拍板」，不动下一步（回归）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  const { task } = addPending(P, 'P01', 'A?');
+  assert.equal(task.status, '待拍板');
+  assert.equal(task.nextMilestone, undefined);
+  clean(dir);
+});
+
+test('pending：问题太长时下一步里程碑截断（卡片上塞不下整段）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'b', ...P });
+  const { task } = addPending(P, 'P01', '问'.repeat(80) + '?');
+  assert.ok(task.nextMilestone.length <= 45, `太长了：${task.nextMilestone.length}`);
+  assert.match(task.nextMilestone, /…$/);
+  clean(dir);
+});
+
+test('reopen 后再放弃认领，退回「待开工」而不是「可复工」（重开=全新一轮）', () => {
+  const { dir, P } = setup();
+  cmds.add({ _: ['P01'], title: 'x', ...P });
+  cmds.park({ _: ['P01'], reason: '等上游', ...P });
+  cmds.unpark({ _: ['P01'], reason: '上游好了', ...P });
+  cmds.claim({ _: ['P01'], branch: 'b1', ...P });
+  cmds.done({ _: ['P01'], ...P });
+  const reopened = cmds.reopen({ _: ['P01'], reason: '返工', ...P }).task;
+  assert.equal(reopened.unparkReason, undefined, '重开没抹掉上一轮的解冻依据');
+  cmds.claim({ _: ['P01'], branch: 'b2', ...P });
+  assert.equal(cmds.unclaim({ _: ['P01'], reason: '又没做', ...P }).task.status, '待开工');
+  clean(dir);
+});
