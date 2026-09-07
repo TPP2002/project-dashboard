@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 有意思的三个新世界 v5（发射场 / 机甲装配 / 调度场）</title>
+<style>
+:root{
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+  --cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+  --spec-cool:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4;--spec-aurora:#3ddc97,#22d3ee,#6d8cff,#a86fd8,#3ddc97;
+  --spec-sunset:#ff8a5b,#ffb26b,#ff5f8d,#a05ac0,#ff8a5b;--spec-cyber:#00e5ff,#ff2fb9,#7b46ff,#00e5ff;
+  --spec-active:var(--spec-cool);
+}
+[data-spectrum="aurora"]{--spec-active:var(--spec-aurora)}[data-spectrum="sunset"]{--spec-active:var(--spec-sunset)}[data-spectrum="cyber"]{--spec-active:var(--spec-cyber)}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600}
+.doc{max-width:1500px;margin:0 auto;padding:32px 24px 96px}
+.doc-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.doc-head h1{font-size:28px;letter-spacing:-.02em}
+.doc-head p{margin:8px 0 0;color:#5c5c58;max-width:1060px}
+.doc-head .meta{margin-top:6px;color:#8e8e89;font-family:var(--mono);font-size:12px}
+.modes{display:inline-flex;border:1px solid #d2d2cf;border-radius:6px;overflow:hidden;background:#fff;position:sticky;top:12px;z-index:9;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.modes button{border:0;border-right:1px solid #e4e4e2;background:#fff;color:#5c5c58;padding:7px 15px;font:inherit;font-size:13px;cursor:pointer}
+.modes button:last-child{border-right:0}
+.sec{margin-top:44px}
+.sec>h2{font-size:22px;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:var(--mono);font-size:15px;margin-right:8px}
+.sec>h2 .tag{display:inline-block;margin-left:10px;padding:2px 8px;border-radius:4px;background:#eeeeed;color:#5c5c58;font-family:var(--mono);font-size:12px;vertical-align:middle;font-weight:500}
+.sec>h2 .tag.rec{background:#e8f4ec;color:#2c7a45}
+.sec>p{margin:8px 0 16px;color:#5c5c58;max-width:1060px}
+.sec>p a,.note a,.refs a{color:#2b5fa8}
+.note{margin:12px 0 0;padding:10px 14px;border-left:3px solid #d2d2cf;background:#f3f3f1;color:#5c5c58;font-size:13.5px;border-radius:0 6px 6px 0}
+.note b{color:#1a1a19}
+.note.ask{border-left-color:#9a6b12;background:#fdf3e0}.note.ask b{color:#9a6b12}
+.stage{position:relative;overflow:hidden;border:1px solid #2a2f3d;border-radius:10px;background:#070a14;height:360px}
+.stage::before{content:attr(data-label);position:absolute;top:9px;right:13px;color:#7b8399;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;z-index:5}
+.stage canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+.stage canvas.glow{position:absolute;inset:0;image-rendering:auto;mix-blend-mode:screen;pointer-events:none;filter:blur(5px);opacity:.9}
+.sim{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:6px 12px;border:1px solid #d2d2cf;border-radius:6px;background:#f6f6f5;color:#1a1a19;cursor:pointer;font:inherit;font-size:13px}
+.btn:hover{background:#eeeeed}
+.btn.quiet{background:transparent;border-color:transparent;color:#5c5c58}
+table.spec{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e4e2;border-radius:6px;overflow:hidden;font-size:14px}
+table.spec th,table.spec td{padding:9px 12px;border-bottom:1px solid #eeeeed;text-align:left;vertical-align:top}
+table.spec th{background:#f6f6f5;color:#5c5c58;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td.k{font-weight:600;white-space:nowrap}
+.refs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-top:14px}
+.refs>div{padding:10px 12px;background:#fff;border:1px solid #e4e4e2;border-radius:6px;font-size:13.5px;color:#5c5c58}
+.refs b{display:block;color:#1a1a19;margin-bottom:2px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:1080px){.pair{grid-template-columns:1fr}}
+.stat{position:absolute;left:12px;bottom:10px;z-index:5;color:#9fb0d8;font-family:var(--mono);font-size:11px;letter-spacing:.06em;background:rgba(5,8,18,.55);padding:3px 8px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<div class="doc-head">
+  <div>
+    <h1>看板 · 有意思的三个新世界 v5</h1>
+    <p>先承认问题出在哪：前几稿的楼再精致也只会「亮窗」——它是一张会变色的图，不是一件有人在里面干活的事。
+      像素办公室好玩，是因为<b>有角色、有动作</b>：会话开工小人就走到工位打字，卡住就举问号，收工就趴下。
+      这稿换三个世界，每个世界里都有<b>角色在做真实的事</b>——看板上每一种事件（认领、进度、待拍板、拍板、阻塞、完工）都对应一个看得见的动作，而且你的「拍板」在里面是一个实实在在的动作。
+      不要鱼了；水留着，而且三个世界里水都有用。</p>
+    <p class="meta">任务卡 AUD-FUN-WORKFLOOR · 2026-09-07 · 画风：像素 + 辉光（你说 A、B 都还将就，这是两者的合体：像素的细节、霓虹的光）· 全部 canvas 原生绘制</p>
+  </div>
+  <div class="modes"><button data-spec-cycle type="button">换配色</button></div>
+</div>
+
+<div class="note"><b>怎么看。</b>三块画面都是自动演的：每隔几秒发生一件事，一轮下来把「认领 → 施工 → 待拍板 → 你拍板 → 完工」走完。
+  底下的按钮可以随时插一件事进去。<b>找的是「你会不会想多看一分钟」的感觉</b>，细节到施工时再堆。</div>
+
+<section class="sec">
+<h2><span class="no">01</span>发射场 <span class="tag rec">推荐</span></h2>
+<p><b>每张卡是一枚火箭，你是发射指挥。</b>认领 = 履带车把火箭从总装厂房拖上发射台；施工 = 加注燃料（塔上的液位往上涨、箭体冒白雾、进度就是加注百分比）；
+  <b>待拍板 = 倒计时 HOLD</b>，塔顶亮琥珀灯，指挥中心那块大屏闪「GO?」——等你一句；你拍板 = GO，倒计时继续；阻塞 = SCRUB，红灯，下雨；
+  <b>完工 = 点火起飞</b>：火焰、烟、拔地而起、一级分离、<b>助推器折返落到海上的回收船上</b>（水就是干这个的），任务计数 +1。项目全完工 = 登月，插旗。</p>
+<div class="stage" data-label="发射场 · 夜"><canvas data-scene="launch" width="1020" height="360"></canvas><canvas class="glow" data-glow width="340" height="120"></canvas><span class="stat" data-stat></span></div>
+<div class="sim" data-sim="launch">
+  <button class="btn" data-act="claim" type="button">认领（拖上发射台）</button>
+  <button class="btn" data-act="pend" type="button">待拍板（HOLD）</button>
+  <button class="btn" data-act="go" type="button">拍板（GO）</button>
+  <button class="btn" data-act="block" type="button">阻塞（SCRUB）</button>
+  <button class="btn" data-act="done" type="button">完工（点火）</button>
+  <button class="btn quiet" data-act="auto" type="button">自动演</button>
+</div>
+<table class="spec" style="margin-top:14px">
+  <tr><th style="width:22%">看板里的事</th><th>发射场里发生什么</th><th style="width:26%">谁在动</th></tr>
+  <tr><td class="k">未开工</td><td>火箭躺在总装厂房里，厂房大门开着能看见</td><td>—</td></tr>
+  <tr><td class="k">认领</td><td>履带车驮着火箭沿履带路开到发射台，塔架合拢</td><td>履带车（= 那个会话）</td></tr>
+  <tr><td class="k">进度</td><td>塔上液位表涨到百分比，箭体排白雾，工程车在塔脚来回</td><td>加注车</td></tr>
+  <tr><td class="k">待拍板</td><td>倒计时停在 T-00:10，塔顶琥珀灯，指挥中心大屏闪 GO?</td><td>等你</td></tr>
+  <tr><td class="k">拍板</td><td>大屏绿 GO，倒计时继续走</td><td>你</td></tr>
+  <tr><td class="k">阻塞</td><td>SCRUB：红灯、雨、塔架重新合拢</td><td>—</td></tr>
+  <tr><td class="k">完工</td><td>点火 → 起飞 → 一级分离 → 助推器折返、反推、落在海上回收船 → 大屏 LANDED，任务数 +1</td><td>火箭、回收船</td></tr>
+  <tr><td class="k">项目 100%</td><td>登月画面：月面插旗，烟花</td><td>—</td></tr>
+</table>
+</section>
+
+<section class="sec">
+<h2><span class="no">02</span>机甲装配 <span class="tag">备选</span></h2>
+<p><b>每个项目是一台巨型机甲，每张卡是它身上的一个部件，会话是焊接无人机。</b>认领 = 无人机从零件架取下一块部件飞过去；施工 = 悬停在槽位上焊，火花四溅（进度 = 焊缝长度）；
+  <b>待拍板 = 无人机举着部件停在半空，槽位上挂一张琥珀色的检验单等你盖章</b>；你拍板 = 盖章，部件咔哒扣上；阻塞 = 部件卡住，红色警报旋转；
+  <b>完工 = 部件扣入、闪一下、装甲面亮起</b>；项目 100% = 机甲眼睛亮（RGB）、胸口核心点亮、蒸汽喷出、抬起手臂。机甲站在湿船坞里，脚泡在水里，水面映着舱内灯光。</p>
+<div class="stage" data-label="机甲装配 · 船坞"><canvas data-scene="mecha" width="1020" height="360"></canvas><canvas class="glow" data-glow width="340" height="120"></canvas><span class="stat" data-stat></span></div>
+<div class="sim" data-sim="mecha">
+  <button class="btn" data-act="claim" type="button">认领（取件）</button>
+  <button class="btn" data-act="pend" type="button">待拍板（挂检验单）</button>
+  <button class="btn" data-act="go" type="button">拍板（盖章）</button>
+  <button class="btn" data-act="block" type="button">阻塞（卡件）</button>
+  <button class="btn" data-act="done" type="button">完工（扣上）</button>
+  <button class="btn" data-act="full" type="button">全部完工（通电）</button>
+  <button class="btn quiet" data-act="auto" type="button">自动演</button>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">03</span>调度场 <span class="tag">备选</span></h2>
+<p><b>每张卡是一节货车，会话是机车，泳道是股道，你是扳道员。</b>认领 = 机车倒进待开工股道，挂上一节车，拉出来；施工 = 车在环线上跑（进度 = 跑了几圈，车厢上的灯一节节亮）；
+  <b>待拍板 = 车停在红灯前，道岔手柄立起来闪琥珀</b>；你拍板 = 扳道岔，绿灯，车过去；阻塞 = 前方脱轨、红灯、抢修车出动；
+  <b>完工 = 车进港，龙门吊把它吊上货船，船拉笛驶出港</b>（水就是港）。项目 100% = 港里放焰火，最后一艘船出港。</p>
+<div class="stage" data-label="调度场 · 港区 · 夜"><canvas data-scene="rail" width="1020" height="360"></canvas><canvas class="glow" data-glow width="340" height="120"></canvas><span class="stat" data-stat></span></div>
+<div class="sim" data-sim="rail">
+  <button class="btn" data-act="claim" type="button">认领（挂车）</button>
+  <button class="btn" data-act="pend" type="button">待拍板（红灯）</button>
+  <button class="btn" data-act="go" type="button">拍板（扳道岔）</button>
+  <button class="btn" data-act="block" type="button">阻塞（脱轨）</button>
+  <button class="btn" data-act="done" type="button">完工（进港装船）</button>
+  <button class="btn quiet" data-act="auto" type="button">自动演</button>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">04</span>三个世界对照，与我的推荐</h2>
+<table class="spec">
+  <tr><th style="width:16%"></th><th>发射场</th><th>机甲装配</th><th>调度场</th></tr>
+  <tr><td class="k">你在里面是谁</td><td>发射指挥：GO / NO GO 就是拍板</td><td>验收官：盖章就是拍板</td><td>扳道员：扳道岔就是拍板</td></tr>
+  <tr><td class="k">最爽的一刻</td><td>点火起飞 + 助推器落回海上的船</td><td>部件扣上的那一声 + 机甲通电亮眼</td><td>龙门吊装船、船拉笛出港</td></tr>
+  <tr><td class="k">多项目怎么放</td><td>一个项目一座发射台，并排；指挥中心大屏分格</td><td>一个项目一台机甲，并排站在船坞里，各不一样的机型</td><td>一个项目一条股道，一个港</td></tr>
+  <tr><td class="k">长期看会变的东西</td><td>任务数、登月旗、发射台越修越大</td><td>机甲一块块拼完整，完工的机甲留在船坞里列队</td><td>港里停的船、跑过的里程</td></tr>
+  <tr><td class="k">RGB 在哪</td><td>塔架灯带、指挥中心整墙的屏、火焰</td><td>机甲的眼和核心、舱内灯带、焊接火花</td><td>信号灯、控制塔、港口灯光倒影</td></tr>
+  <tr><td class="k">水的用处</td><td>助推器回收船就在海上</td><td>湿船坞，机甲脚泡在水里</td><td>港口，船从这里出去</td></tr>
+  <tr><td class="k">工程量</td><td>中（序列多但都是二维动画）</td><td>中偏大（机型要画好几套）</td><td>中</td></tr>
+</table>
+<div class="note"><b>我推荐发射场。</b>三个里它的「事件 → 动作」对得最紧：等你拍板 = 倒计时 HOLD，这个隐喻不用解释，谁都看得懂；完工那一下是三个里最有戏的（点火、起飞、分离、折返、落船，一气呵成十来秒）；
+  它天然是夜景（发射场的夜晚本来就全是灯），RGB 有地方放而不违和；而且「任务数」这个长期积累的数字，比楼高更让人想往上堆。机甲第二，长期看着一台台完整的机甲列队很有成就感，但机型要一套套画，工程量最大。</div>
+<div class="note ask"><b>要你拍的：选一个世界（或者点名要哪个世界里的哪一段）。</b>定了我出它的全细节稿（白天 / 夜 / 天气 / 全部事件序列 / 多项目排布 / 互动），然后派单施工。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">05</span>这一稿参考了什么</h2>
+<p>你让我到处看看，看了这些。共同点只有一条：<b>好玩的东西都有「角色在做事」</b>，没有一个是靠画得漂亮取胜的。</p>
+<div class="refs">
+  <div><b>像素办公室那一族</b><a href="https://github.com/pixel-agents-hq/pixel-agents">Pixel Agents</a>、<a href="https://github.com/KbWen/agent-virtual-office">Agent Virtual Office</a>、<a href="https://github.com/IvanWng97/pixtuoid">pixtuoid</a>、<a href="https://github.com/liuyixin-louis/agentroom">AgentRoom</a>、<a href="https://github.com/harishkotra/agent-office">Agent Office</a>。全是同一个配方：会话 = 小人，编辑文件就打字、搜索就翻书、等你就举问号、收工就趴下。好玩在「动作对应真实事件」，不在小人本身。</div>
+  <div><b>Gource / code_swarm / Logstalgia</b><a href="https://gource.io/">Gource</a> 把仓库历史画成一棵会长的树，开发者是绕着树飞、往文件上打光束的小点；<a href="https://github.com/gtrafimenkov/docker-codeswarm">code_swarm</a> 是文件像星群围着人转；<a href="https://lwn.net/Articles/382468/">Logstalgia</a> 把服务器日志画成打乒乓——请求是球，服务器是球拍，接住就是 200，漏了就是 404。二十年前的东西，今天看还是好玩，因为有戏。</div>
+  <div><b>GitHub 贡献图变城市</b><a href="https://github.com/srizzon/git-city">git-city</a>、<a href="https://www.producthunt.com/products/gitcity">GitCity</a>（能开车穿过自己的城）、GitHub Skyline。这就是我前几稿走的路——好看，但看一眼就完了，没有事发生。你的反应证明了这一点。</div>
+  <div><b>放置类 / 工厂 / 弹珠机</b><a href="https://idlespinnerfactorybuilder.web.app/">Idle Spinner Factory</a>、<a href="https://njyt.github.io/Marble-Machine-Simulator/">弹珠机模拟器</a>：让人盯着看的是「东西在一条线上被处理」的过程感——这正是调度场和机甲装配线的来源。</div>
+  <div><b>喂 commit 的电子宠物</b><a href="https://dev.to/depapp/i-built-a-tamagotchi-that-judges-your-github-activity-and-its-brutally-honest-oh1">GitHub Tamagotchi</a> 一类：有意思，但你明说不要桌宠，所以只取它的一点——「长期积累会变成看得见的东西」（任务数、机甲列队、港里的船）。</div>
+</div>
+</section>
+
+<p style="margin-top:48px;color:#8e8e89;font-size:13px;text-align:center">看板 · AUD-FUN-WORKFLOOR · 新方案三选 v5 · 2026-09-07</p>
+</div><!-- /.doc -->
+<script>
+/* ============================================================
+   像素舞台：340×120 逐像素画，放大 3 倍；亮的东西另画一层做辉光（CSS 模糊 + 滤色叠加）
+   ============================================================ */
+const root = document.documentElement
+const $ = (s, el = document) => el.querySelector(s)
+const $$ = (s, el = document) => [...el.querySelectorAll(s)]
+const SPECS = ['cool', 'aurora', 'sunset', 'cyber']; let specIdx = 0
+function splitStops(raw) { const out = []; let d = 0, c = ''; for (const ch of raw) { if (ch === '(') d++; else if (ch === ')') d--; if (ch === ',' && d === 0) { out.push(c.trim()); c = '' } else c += ch } out.push(c.trim()); return out.filter(Boolean) }
+let SPEC = []
+function sampleSpectrum() { const st = splitStops(getComputedStyle(root).getPropertyValue('--spec-active')); SPEC = st.length > 1 ? st.slice(0, -1) : st }
+root.setAttribute('data-spectrum', 'cool'); sampleSpectrum()
+$('[data-spec-cycle]').addEventListener('click', () => { specIdx = (specIdx + 1) % SPECS.length; root.setAttribute('data-spectrum', SPECS[specIdx]); sampleSpectrum() })
+const specAt = k => SPEC[((k % SPEC.length) + SPEC.length) % SPEC.length]
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 } }
+const lerp = (a, b, k) => a + (b - a) * k
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+
+/* 3×5 像素字：只做这几块大屏要用的字符 */
+const FONT = {
+  '0': ['111', '101', '101', '101', '111'], '1': ['010', '110', '010', '010', '111'], '2': ['111', '001', '111', '100', '111'], '3': ['111', '001', '111', '001', '111'], '4': ['101', '101', '111', '001', '001'],
+  '5': ['111', '100', '111', '001', '111'], '6': ['111', '100', '111', '101', '111'], '7': ['111', '001', '001', '010', '010'], '8': ['111', '101', '111', '101', '111'], '9': ['111', '101', '111', '001', '111'],
+  '-': ['000', '000', '111', '000', '000'], ':': ['000', '010', '000', '010', '000'], ' ': ['000', '000', '000', '000', '000'], '?': ['111', '001', '011', '000', '010'], '%': ['101', '001', '010', '100', '101'],
+  'A': ['010', '101', '111', '101', '101'], 'B': ['110', '101', '110', '101', '110'], 'C': ['011', '100', '100', '100', '011'], 'D': ['110', '101', '101', '101', '110'], 'E': ['111', '100', '110', '100', '111'],
+  'F': ['111', '100', '110', '100', '100'], 'G': ['011', '100', '101', '101', '011'], 'H': ['101', '101', '111', '101', '101'], 'I': ['111', '010', '010', '010', '111'], 'K': ['101', '101', '110', '101', '101'],
+  'L': ['100', '100', '100', '100', '111'], 'M': ['101', '111', '111', '101', '101'], 'N': ['110', '101', '101', '101', '101'], 'O': ['111', '101', '101', '101', '111'], 'P': ['110', '101', '110', '100', '100'],
+  'R': ['110', '101', '110', '101', '101'], 'S': ['011', '100', '010', '001', '110'], 'T': ['111', '010', '010', '010', '010'], 'U': ['101', '101', '101', '101', '111'], 'W': ['101', '101', '111', '111', '101'],
+  'V': ['101', '101', '101', '101', '010'], 'X': ['101', '101', '010', '101', '101'], 'Y': ['101', '101', '010', '010', '010'],
+}
+
+class Stage {
+  constructor(host, draw) {
+    this.cv = $('canvas[data-scene]', host); this.gl = $('canvas.glow', host); this.statEl = $('[data-stat]', host)
+    this.W = 340; this.H = 120
+    this.off = document.createElement('canvas'); this.off.width = this.W; this.off.height = this.H
+    this.c = this.off.getContext('2d'); this.g = this.gl.getContext('2d'); this.out = this.cv.getContext('2d')
+    this.t = 0; this.timers = []; this.draw = draw; this.auto = true
+    setInterval(() => this.tick(), 1000 / 12)
+  }
+  tick() {
+    this.t++
+    const due = this.timers.filter(tm => this.t >= tm.at); this.timers = this.timers.filter(tm => this.t < tm.at); due.forEach(tm => tm.fn())
+    this.c.clearRect(0, 0, this.W, this.H); this.g.clearRect(0, 0, this.W, this.H)
+    this.draw(this)
+    this.out.imageSmoothingEnabled = false; this.out.clearRect(0, 0, this.cv.width, this.cv.height); this.out.drawImage(this.off, 0, 0, this.cv.width, this.cv.height)
+  }
+  after(frames, fn) { this.timers.push({ at: this.t + frames, fn }) }
+  px(x, y, w, h, col) { this.c.fillStyle = col; this.c.fillRect(Math.round(x), Math.round(y), w, h) }
+  /** 亮的东西：画在正常层，同时画到辉光层 */
+  lit(x, y, w, h, col, strength = 1) { this.px(x, y, w, h, col); this.g.globalAlpha = strength; this.g.fillStyle = col; this.g.fillRect(Math.round(x), Math.round(y), w, h); this.g.globalAlpha = 1 }
+  text(str, x, y, col, glow = false) {
+    let cx = x
+    for (const ch of String(str).toUpperCase()) {
+      const gl = FONT[ch]; if (gl) gl.forEach((row, ry) => { for (let rx = 0; rx < 3; rx++) if (row[rx] === '1') glow ? this.lit(cx + rx, y + ry, 1, 1, col, .8) : this.px(cx + rx, y + ry, 1, 1, col) })
+      cx += 4
+    }
+  }
+  sprite(rows, x, y, pal, flipX = false) {
+    rows.forEach((row, ry) => { for (let rx = 0; rx < row.length; rx++) { const ch = row[rx]; if (ch === '.' || !pal[ch]) continue; const col = pal[ch]; const px = flipX ? row.length - 1 - rx : rx; if (col[0] === '!') this.lit(x + px, y + ry, 1, 1, col.slice(1)); else this.px(x + px, y + ry, 1, 1, col) } })
+  }
+  stat(s) { if (this.statEl) this.statEl.textContent = s }
+  sky(cols, starSeed = 3, starY = 60) {
+    const bandH = Math.ceil(starY / cols.length); cols.forEach((col, i) => this.px(0, i * bandH, this.W, bandH, col))
+    if (!this.stars) { const r = rng(starSeed); this.stars = Array.from({ length: 44 }, () => [Math.floor(r() * this.W), Math.floor(r() * starY * .9), Math.floor(r() * 14)]) }
+    this.stars.forEach(([x, y, ph]) => { if ((this.t + ph) % 16 < 11) this.px(x, y, 1, 1, '#dfe6ff') })
+  }
+  water(y0, y1, cols, mirrorFrom) {
+    for (let y = y0; y < y1; y++) this.px(0, y, this.W, 1, (y % 2) ? cols[0] : cols[1])
+    if (mirrorFrom != null) {
+      const rows = y1 - y0
+      const img = this.c.getImageData(0, 0, this.W, mirrorFrom); const tmp = document.createElement('canvas'); tmp.width = this.W; tmp.height = mirrorFrom; tmp.getContext('2d').putImageData(img, 0, 0)
+      for (let r = 0; r < rows; r++) { const sy = mirrorFrom - 1 - r; if (sy < 0) break; const dx = Math.round(1.5 * Math.sin(this.t * .28 + r * .55)); this.c.globalAlpha = Math.max(.06, .42 - r * .012); this.c.drawImage(tmp, 0, sy, this.W, 1, dx, y0 + r, this.W, 1); this.c.globalAlpha = 1; if (r % 2) { this.c.fillStyle = cols[0]; for (let x = (r >> 1) % 2; x < this.W; x += 2) this.c.fillRect(x, y0 + r, 1, 1) } }
+    }
+    for (let k = 0; k < 7; k++) { const wx = (Math.floor(this.t * .9) + k * 47) % this.W; this.px(wx, y0 + 2 + (k % 4) * 6, 3, 1, cols[2]) }
+  }
+  rgbStrip(x, y, w, h, speed = .5) { for (let i = 0; i < Math.max(w, h); i++) { const col = specAt(Math.floor(i / 6 + this.t * speed / 6)); w > h ? this.lit(x + i, y, 1, h, col, .6) : this.lit(x, y + i, w, 1, col, .6) } }
+}
+
+/* ============================================================
+   ① 发射场
+   ============================================================ */
+const ROCKET = [
+  '....W....', '...WWW...', '..WWWWW..', '..WWWWW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WrrrW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..',
+  '..dddddd.', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '.gWwwwWg.', '.gWwwwWg.', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..WwwwW..', '..dddddd.', '..d.d.d..', '..d.d.d..', '.........',
+]
+const RPAL = { W: '#f2f4f8', w: '#d7dbe6', r: '#e0463c', d: '#2a3040', g: '#8c94a6' }
+const CRAWLER = ['..gggggggggggg..', '.gGGGGGGGGGGGGg.', 'ddddddddddddddd.', 'd.d.d.d.d.d.d.d.']
+const CPAL = { g: '#6b7386', G: '#8d95a8', d: '#22283a' }
+const BARGE = ['....!ccccccccccccccccccccccc!...', 'ddddddddddddddddddddddddddddddd', '.dDDDDDDDDDDDDDDDDDDDDDDDDDDDd.', '..ddddddddddddddddddddddddddd..']
+const BPAL = { c: '#3a4560', d: '#1c2233', D: '#2a3350', '!': '!#ffcf6b' }
+
+function launchScene(st) {
+  const S = st.S || (st.S = { phase: 'hangar', rx: 22, ry: 46, fuel: 0, count: 10, board: 'READY', boardCol: '#4ad9c4', missions: 56, launch: null, rain: 0, beacon: 'red', arms: true, auto: true })
+  const T = st.t
+  st.sky(['#04060f', '#080d1e', '#0d1530', '#132044'], 3, 64)
+  st.px(0, 64, st.W, 24, '#0e1428')
+  // 海（右侧）与回收船
+  for (let y = 88; y < 120; y++) st.px(232, y, st.W - 232, 1, (y % 2) ? '#0a1a36' : '#0b1e40')
+  for (let k = 0; k < 6; k++) { const wx = 236 + ((Math.floor(T * .9) + k * 31) % 100); st.px(wx, 91 + (k % 3) * 8, 3, 1, '#5a8fd6') }
+  const bob = Math.round(Math.sin(T * .2)); const bx = 272, by = 85 + bob
+  st.sprite(BARGE, bx, by, BPAL)
+  const landedCol = S.landedGlow ? '!#4ad97a' : '!#ffcf6b'; st.sprite(['!', '.', '.', '.'], bx + 4, by, { '!': landedCol }); st.sprite(['!'], bx + 27, by, { '!': landedCol })
+  ;[[bx + 12, by + 1], [bx + 19, by + 1]].forEach(([x, y]) => st.px(x, y, 1, 1, '#5a6580'))
+  // 陆地、履带路、火焰槽
+  st.px(0, 88, 232, 32, '#0f1626'); st.px(0, 88, 232, 1, '#1e2a44')
+  st.px(60, 90, 90, 4, '#1a2236'); for (let x = 60; x < 150; x += 4) st.px(x, 91, 2, 2, '#243050')
+  // 总装厂房（VAB）
+  st.px(12, 40, 52, 48, '#1b2338'); st.px(12, 40, 52, 1, '#2c3856'); st.px(62, 41, 2, 47, '#121a2c')
+  st.px(30, 52, 18, 36, S.phase === 'hangar' ? '#0a0e1a' : '#151c2e'); st.px(30, 52, 1, 36, '#2c3856'); st.px(47, 52, 1, 36, '#2c3856')
+  st.rgbStrip(12, 39, 52, 1, .8); st.lit(14, 44, 2, 1, '#ffcf6b', .5); st.lit(58, 44, 2, 1, '#ffcf6b', .5)
+  st.text('VAB', 16, 43, '#5a6a90')
+  // 指挥中心 + 大屏
+  st.px(176, 66, 48, 22, '#171f34'); st.px(176, 66, 48, 1, '#2c3856')
+  for (let i = 0; i < 6; i++) { const on = (T + i * 3) % 9 < 7; st.lit(180 + i * 7, 74, 4, 3, on ? (i % 2 ? '#4ad9c4' : '#4a9eff') : '#1a2440', .35) }
+  st.px(184, 54, 32, 11, '#0a0e1a'); st.px(184, 54, 32, 1, '#2c3856'); st.px(184, 65, 32, 1, '#2c3856'); st.px(199, 65, 2, 1, '#2c3856')
+  const blink = S.board === 'HOLD' || S.board === 'GO?' ? (T % 8 < 5) : true
+  if (blink) st.text(S.board, 186, 57, S.boardCol, true)
+  st.text('MISSIONS ' + S.missions, 178, 82, '#6a7aa0')
+  // 发射台、塔架、灯带、摆臂、液位表
+  st.px(138, 84, 34, 4, '#252d44'); st.px(146, 86, 18, 2, '#0a0e1a')
+  for (let y = 36; y < 84; y++) { st.px(126, y, 1, 1, '#9aa3b8'); st.px(131, y, 1, 1, '#9aa3b8'); if ((y - 36) % 3 === 0) st.px(127, y, 4, 1, '#5a6480') }
+  st.rgbStrip(133, 38, 1, 44, .6)
+  const beaconCol = S.beacon === 'amber' ? '#ffb020' : S.beacon === 'green' ? '#4ad97a' : '#ff3b30'
+  if ((T % 10 < 6) || S.beacon !== 'red') st.lit(128, 34, 2, 2, beaconCol)
+  if (S.arms && S.phase === 'pad') { st.px(132, 50, 14, 1, '#7f8aa4'); st.px(132, 66, 14, 1, '#7f8aa4') }
+  st.px(123, 48, 2, 32, '#0a0e1a'); const fh = Math.round(30 * S.fuel / 100); st.lit(123, 80 - fh, 2, fh, S.fuel >= 100 ? '#4ad97a' : '#4ad9c4', .4)
+  // 火箭（厂房里 / 履带车上 / 台上 / 飞行中）
+  if (S.phase === 'hangar') st.sprite(ROCKET, 33, 48, RPAL)
+  if (S.phase === 'moving') { st.sprite(CRAWLER, S.rx - 3, 89, CPAL); st.sprite(ROCKET, S.rx, 49, RPAL) }
+  if (S.phase === 'pad' || S.phase === 'count') {
+    st.sprite(ROCKET, 147, 45, RPAL)
+    if (S.fuel > 0 && S.fuel < 100 && T % 2) { st.px(146 - (T % 5), 60 + ((T * 3) % 20), 2, 1, '#c9d2e8'); st.px(156 + (T % 4), 55 + ((T * 5) % 22), 2, 1, '#c9d2e8') }
+    if (S.fuel > 0 && S.fuel < 100 && T % 6 < 3) st.sprite(['gggggg', 'g.g.g.'], 150 + ((T >> 2) % 3), 83, { g: '#6b7386' })
+  }
+  if (S.phase === 'launch' && S.launch) drawLaunch(st, S)
+  if (S.rain > 0) { const r = rng(T); for (let i = 0; i < 60; i++) { const x = Math.floor(r() * st.W), y = Math.floor(r() * 88); st.px(x, y, 1, 2, '#3a4a70') } }
+  st.stat(`任务数 ${S.missions} · ${S.phase === 'hangar' ? '火箭在厂房' : S.phase === 'moving' ? '履带车运往发射台' : S.phase === 'pad' ? `加注 ${S.fuel}%` : S.phase === 'count' ? `倒计时 T-${String(S.count).padStart(2, '0')}` : '飞行中'}`)
+  // 自动演：一件事接一件事
+  if (S.auto && !S.busy) launchAuto(st, S)
+}
+function drawLaunch(st, S) {
+  const L = S.launch; L.f++
+  const f = L.f
+  // 点火：前 10 帧火焰长起来、烟往两边铺
+  const flameH = Math.min(14, f * 2)
+  if (f < 10) { st.sprite(ROCKET, 147, 45, RPAL) ; L.y = 45 }
+  else { L.vy = (L.vy || 0) + .12; L.y -= L.vy; if (f < 40) st.sprite(ROCKET, 147, L.y, RPAL) }
+  const fy = (f < 10 ? 45 : L.y) + 39
+  if (f < 40) { for (let i = 0; i < flameH; i++) { const w = Math.max(1, 5 - Math.floor(i / 3)) + (rng(st.t + i)() > .5 ? 1 : 0); const col = i < 3 ? '#ffffff' : i < 7 ? '#ffe08a' : i < 11 ? '#ff9a3c' : '#ff5a2a'; st.lit(151.5 - w / 2, fy + i, w, 1, col, i < 7 ? 1 : .6) } }
+  if (f > 2 && f < 60) { const r = rng(f); for (let i = 0; i < 14; i++) { const sx = 150 + (r() - .5) * Math.min(80, f * 6), sy = 86 - r() * Math.min(14, f); st.px(sx, sy, 3, 2, r() > .5 ? '#6b7386' : '#4a5266') } }
+  // 分离：40 帧后上面级继续上、助推器折返落船
+  if (f >= 40) {
+    const u = clamp((f - 40) / 55, 0, 1)
+    const ux = 147, uy = L.y - (f - 40) * 2.2; if (uy > -20) { st.sprite(ROCKET.slice(0, 18), ux, uy, RPAL); st.lit(ux + 3, uy + 18, 3, 3, '#7fc8ff', .8) }
+    const sepY = L.y; const bx = lerp(147, 284, u), byy = sepY + 60 * Math.sin(Math.PI * Math.min(u, .5)) * -1 + Math.pow(u, 2.2) * (63 - sepY)
+    const by = u < .5 ? sepY - 40 * Math.sin(Math.PI * u) : lerp(sepY - 40, 63, (u - .5) / .5)
+    st.sprite(ROCKET.slice(18), bx, by, RPAL)
+    if (u > .6 && u < 1) { for (let i = 0; i < 6; i++) st.lit(bx + 3.5 + (i % 2), by + 22 + i, 2, 1, i < 2 ? '#fff' : '#ff9a3c', .8) }
+    if (u >= 1) { S.landedGlow = true; if (!L.landed) { L.landed = true; S.missions++; S.board = 'LANDED'; S.boardCol = '#4ad97a'; S.beacon = 'green'; st.after(30, () => { S.phase = 'hangar'; S.fuel = 0; S.board = 'READY'; S.boardCol = '#4ad9c4'; S.beacon = 'red'; S.launch = null; S.landedGlow = false; S.busy = false }) } }
+  }
+}
+function launchAct(st, S, act) {
+  if (act === 'claim' && S.phase === 'hangar') { S.phase = 'moving'; S.rx = 33; S.busy = true; S.board = 'ROLLOUT'; S.boardCol = '#4a9eff'; const mv = setInterval(() => { S.rx += 2; if (S.rx >= 147) { clearInterval(mv); S.phase = 'pad'; S.board = 'FUEL 0'; S.busy = false } }, 1000 / 12); return }
+  if (act === 'fuel' && S.phase === 'pad' && S.fuel < 100) { S.busy = true; const fl = setInterval(() => { S.fuel = Math.min(100, S.fuel + 2); S.board = 'FUEL ' + S.fuel; if (S.fuel >= 100) { clearInterval(fl); S.board = 'T-00:30'; S.busy = false } }, 1000 / 12); return }
+  if (act === 'pend' && (S.phase === 'pad' || S.phase === 'count')) { S.phase = 'count'; S.count = 10; S.board = 'HOLD'; S.boardCol = '#ffb020'; S.beacon = 'amber'; S.hold = true; st.after(18, () => { if (S.hold) { S.board = 'GO?'; } }); return }
+  if (act === 'go' && S.hold) { S.hold = false; S.board = 'GO'; S.boardCol = '#4ad97a'; S.beacon = 'green'; S.busy = true; let c = 10; const cd = setInterval(() => { c--; S.count = c; S.board = 'T-00:' + String(c).padStart(2, '0'); if (c <= 0) { clearInterval(cd); launchAct(st, S, 'done') } }, 280); return }
+  if (act === 'block') { S.rain = 1; S.board = 'SCRUB'; S.boardCol = '#ff3b30'; S.beacon = 'red'; S.hold = false; st.after(36, () => { S.rain = 0; S.board = S.phase === 'hangar' ? 'READY' : 'HOLD'; S.boardCol = S.phase === 'hangar' ? '#4ad9c4' : '#ffb020'; if (S.phase !== 'hangar') { S.hold = true; S.beacon = 'amber' } }); return }
+  if (act === 'done' && (S.phase === 'pad' || S.phase === 'count')) { S.phase = 'launch'; S.launch = { f: 0, y: 45 }; S.board = 'LIFTOFF'; S.boardCol = '#ffe08a'; S.arms = false; S.busy = true; S.hold = false; return }
+}
+function launchAuto(st, S) {
+  if (S.hold) { if (!S.autoGoAt) S.autoGoAt = st.t + 30; if (st.t >= S.autoGoAt) { S.autoGoAt = 0; launchAct(st, S, 'go') } return }
+  if (S.phase === 'hangar' && !S.nextAt) S.nextAt = st.t + 24
+  if (S.phase === 'hangar' && st.t >= S.nextAt) { S.nextAt = 0; launchAct(st, S, 'claim'); return }
+  if (S.phase === 'pad' && S.fuel === 0) { launchAct(st, S, 'fuel'); return }
+  if (S.phase === 'pad' && S.fuel >= 100 && !S.hold) { launchAct(st, S, 'pend'); return }
+}
+const launchStage = new Stage($('[data-scene="launch"]').closest('.stage'), launchScene)
+$$('[data-sim="launch"] [data-act]').forEach(b => b.addEventListener('click', () => { const S = launchStage.S; if (!S) return; if (b.dataset.act === 'auto') { S.auto = !S.auto; b.textContent = S.auto ? '自动演' : '手动'; return } S.auto = false; $('[data-sim="launch"] [data-act="auto"]').textContent = '手动'; launchAct(launchStage, S, b.dataset.act) }))
+/* ============================================================
+   ② 机甲装配
+   ============================================================ */
+const MPARTS = [ // [名字, x, y, w, h]  相对机甲原点；顺序 = 装配顺序
+  ['footL', 10, 67, 11, 6], ['footR', 27, 67, 11, 6], ['shinL', 12, 53, 9, 14], ['shinR', 27, 53, 9, 14], ['thighL', 13, 39, 9, 14], ['thighR', 26, 39, 9, 14],
+  ['hipL', 14, 33, 8, 6], ['hipR', 26, 33, 8, 6], ['abdomen', 16, 25, 16, 8], ['chest', 12, 11, 24, 14], ['core', 22, 16, 4, 4], ['shoulderL', 0, 12, 10, 8], ['shoulderR', 38, 12, 10, 8],
+  ['upperArmL', 2, 20, 8, 12], ['upperArmR', 38, 20, 8, 12], ['forearmL', 0, 32, 8, 12], ['forearmR', 40, 32, 8, 12], ['handL', 0, 44, 8, 5], ['handR', 40, 44, 8, 5], ['neck', 21, 8, 6, 3], ['head', 18, 0, 12, 8], ['eyes', 20, 4, 8, 2],
+]
+const DRONE = ['.oo.oo.', 'dddDddd', '.d!!!d.', '..ddd..']
+const DPAL = { o: '#9aa3b8', d: '#2a3040', D: '#5a6480', '!': '!#4ad9c4' }
+function mechaScene(st) {
+  const S = st.S || (st.S = { parts: MPARTS.map((p, i) => i < 14 ? 'done' : 'off'), drone: { x: 72, y: 40, tx: 72, ty: 40, carry: false }, target: -1, auto: true, full: false, alarm: 0, raise: 0 })
+  const T = st.t, mx = 150, my = 20
+  // 机库：背墙、面板线、顶部灯带、吊架
+  st.px(0, 0, st.W, 96, '#0b1020'); for (let x = 0; x < st.W; x += 24) st.px(x, 0, 1, 96, '#121a33'); for (let y = 16; y < 96; y += 20) st.px(0, y, st.W, 1, '#10172c')
+  st.px(0, 6, st.W, 3, '#1a2340'); st.rgbStrip(0, 9, st.W, 1, .7)
+  for (let x = 20; x < st.W; x += 60) { st.px(x, 9, 1, 8, '#2a3350'); st.lit(x - 2, 17, 5, 1, '#ffe9b0', .35) }
+  if (S.alarm > 0) { const ax = (T * 9) % st.W; st.lit(ax, 12, 14, 2, '#ff3b30', .9); st.lit(st.W - ax, 12, 14, 2, '#ff3b30', .9) }
+  // 零件架
+  st.px(14, 30, 42, 60, '#141b30'); st.px(14, 30, 1, 60, '#2a3556'); st.px(55, 30, 1, 60, '#2a3556')
+  ;[40, 58, 76].forEach(sy => st.px(14, sy, 42, 1, '#2a3556'))
+  let k = 0
+  S.parts.forEach((s, i) => { if (s !== 'off') return; const sx = 17 + (k % 4) * 10, sy = [35, 53, 71][Math.floor(k / 4) % 3]; if (Math.floor(k / 4) < 3) st.px(sx, sy, 7, 4, i % 2 ? '#5a6a94' : '#8b9bc4'); k++ })
+  st.text('PARTS', 20, 84, '#5a6a90')
+  // 船坞地面 + 水
+  st.px(0, 94, st.W, 2, '#26304a'); st.px(60, 90, 60, 4, '#1a2236'); st.px(230, 90, 100, 4, '#1a2236')
+  // 机甲：按状态画每个部件
+  const armor = (x, y, w, h, main, dark, light) => { st.px(x, y, w, h, main); st.px(x + w - 1, y, 1, h, dark); st.px(x, y + h - 1, w, 1, dark); st.px(x, y, w, 1, light); st.px(x, y, 1, h, light) }
+  MPARTS.forEach(([name, px, py, w, h], i) => {
+    const s = S.parts[i]
+    let x = mx + px, y = my + py
+    if (S.full && /R$/.test(name) && /Arm|hand|forearm|shoulder/i.test(name)) y -= S.raise
+    if (s === 'done') {
+      const red = /shoulder|head/.test(name)
+      armor(x, y, w, h, '#8b9bc4', '#4c5a82', '#b9c6e6'); if (red) st.px(x + 1, y + 1, w - 2, 1, '#e0463c')
+      if (name === 'eyes') st.lit(x, y, w, h, S.full ? '#4ad9ff' : '#1e2a4a', S.full ? 1 : 0)
+      if (name === 'core') { S.full ? st.lit(x, y, w, h, specAt(Math.floor(T / 3)), 1) : st.px(x, y, w, h, '#2a3350') }
+      if (/foot/.test(name)) st.px(x + 1, y + h - 2, w - 2, 1, '#3a4664')
+    } else {
+      const col = s === 'build' ? '#4a9eff' : s === 'pend' ? '#ffb020' : s === 'block' ? '#ff3b30' : '#26324f'
+      const on = s === 'off' || T % 8 < 5
+      if (on) { st.px(x, y, w, 1, col); st.px(x, y + h - 1, w, 1, col); st.px(x, y, 1, h, col); st.px(x + w - 1, y, 1, h, col) }
+      if (s === 'build') { st.c.globalAlpha = .25; st.px(x, y, w, h, '#4a9eff'); st.c.globalAlpha = 1 }
+      if (s === 'pend' && T % 10 < 7) { st.px(x + w / 2 - 3, y - 9, 7, 7, '#0a0e1a'); st.lit(x + w / 2 - 3, y - 9, 7, 1, '#ffb020', .5); st.text('?', x + w / 2 - 1, y - 8, '#ffb020', true) }
+    }
+  })
+  // 通电：蒸汽、抬臂
+  if (S.full) { S.raise = Math.min(10, S.raise + .5); const r = rng(T); for (let i = 0; i < 6; i++) { const sx = mx + (r() > .5 ? 4 : 42) + r() * 6, sy = my + 14 + r() * 30 - (T % 20); st.px(sx, sy, 2, 1, '#c9d2e8') } }
+  // 无人机：飞向目标、悬停、焊接火花
+  const D = S.drone; D.x = lerp(D.x, D.tx, .18); D.y = lerp(D.y, D.ty, .18) + Math.sin(T * .6)
+  st.sprite(DRONE, D.x, D.y, { ...DPAL, o: (T % 2) ? '#9aa3b8' : '#5a6480' })
+  if (D.carry) st.px(D.x + 1, D.y + 4, 5, 3, '#8b9bc4')
+  if (S.target >= 0 && S.parts[S.target] === 'build' && Math.abs(D.x - D.tx) < 2) { const [, px, py, w, h] = MPARTS[S.target]; const r = rng(T); for (let i = 0; i < 5; i++) st.lit(mx + px + r() * w, my + py + r() * h, 1, 1, i < 2 ? '#ffffff' : '#ffe08a', 1); st.lit(mx + px + w / 2 - 1, my + py + h / 2, 2, 2, '#fff', 1) }
+  st.water(96, 120, ['#0a1836', '#0b1c40', '#5a8fd6'], 96)
+  const done = S.parts.filter(s => s === 'done').length
+  st.stat(`部件 ${done}/${MPARTS.length}${S.full ? ' · 通电' : S.target >= 0 ? ' · ' + MPARTS[S.target][0] + ' ' + S.parts[S.target] : ''}`)
+  if (S.auto && !S.busy) mechaAuto(st, S)
+}
+function mechaAct(st, S, act) {
+  const D = S.drone, mx = 150, my = 20
+  const slotOf = i => { const [, px, py, w] = MPARTS[i]; return [mx + px + w / 2 - 3, my + py - 8] }
+  if (act === 'claim' && S.target < 0) { const i = S.parts.indexOf('off'); if (i < 0) return; S.busy = true; S.target = i; D.tx = 30; D.ty = 46; st.after(12, () => { D.carry = true; const [tx, ty] = slotOf(i); D.tx = tx; D.ty = ty; st.after(14, () => { D.carry = false; S.parts[i] = 'build'; S.busy = false }) }); return }
+  if (act === 'pend' && S.target >= 0 && S.parts[S.target] === 'build') { S.parts[S.target] = 'pend'; return }
+  if (act === 'go' && S.target >= 0 && S.parts[S.target] === 'pend') { S.parts[S.target] = 'build'; S.busy = true; st.after(14, () => mechaAct(st, S, 'done')); return }
+  if (act === 'block' && S.target >= 0) { const prev = S.parts[S.target]; S.parts[S.target] = 'block'; S.alarm = 1; st.after(30, () => { S.alarm = 0; if (S.parts[S.target] === 'block') S.parts[S.target] = prev === 'block' ? 'build' : prev }); return }
+  if (act === 'done' && S.target >= 0) { const i = S.target; S.parts[i] = 'done'; S.flash = i; S.target = -1; D.tx = 72; D.ty = 40; S.busy = false; if (S.parts.every(s => s === 'done')) S.full = true; return }
+  if (act === 'full') { S.parts = S.parts.map(() => 'done'); S.target = -1; S.full = true; D.tx = 72; D.ty = 40; S.busy = false; return }
+}
+function mechaAuto(st, S) {
+  if (S.full) { if (!S.resetAt) S.resetAt = st.t + 70; if (st.t >= S.resetAt) { S.resetAt = 0; S.full = false; S.raise = 0; S.parts = MPARTS.map((p, i) => i < 14 ? 'done' : 'off') } return }
+  if (S.target < 0) { if (!S.nextAt) S.nextAt = st.t + 20; if (st.t >= S.nextAt) { S.nextAt = 0; mechaAct(st, S, 'claim') } return }
+  const s = S.parts[S.target]
+  if (s === 'build' && !S.stepAt) S.stepAt = st.t + 36
+  if (s === 'build' && st.t >= S.stepAt) { S.stepAt = 0; S.parts.filter(x => x === 'done').length % 3 === 1 ? mechaAct(st, S, 'pend') : mechaAct(st, S, 'done'); return }
+  if (s === 'pend' && !S.goAt) S.goAt = st.t + 28
+  if (s === 'pend' && st.t >= S.goAt) { S.goAt = 0; mechaAct(st, S, 'go') }
+}
+const mechaStage = new Stage($('[data-scene="mecha"]').closest('.stage'), mechaScene)
+$$('[data-sim="mecha"] [data-act]').forEach(b => b.addEventListener('click', () => { const S = mechaStage.S; if (!S) return; if (b.dataset.act === 'auto') { S.auto = !S.auto; b.textContent = S.auto ? '自动演' : '手动'; return } S.auto = false; $('[data-sim="mecha"] [data-act="auto"]').textContent = '手动'; mechaAct(mechaStage, S, b.dataset.act) }))
+
+/* ============================================================
+   ③ 调度场
+   ============================================================ */
+const LOCO = ['..ddddddddddd.', '.dDDDDDdDDDDdd', '.d!DDDDdDDDDd!', 'dddddddddddddd', '.oo..oo..oo.oo']
+const LPAL = { d: '#2a3350', D: '#4a5a86', '!': '!#ffe9b0', o: '#111826' }
+const CAR = ['cccccccccccc', 'cCCCCCCCCCCc', 'cccccccccccc', '.o...oo...o.']
+const PROJ_COL = [['#2f6fd0', '#4a9eff'], ['#2a9a66', '#3ddc97'], ['#b8801a', '#f0b429']]
+function carPal(i) { const [c, C] = PROJ_COL[i % 3]; return { c, C, o: '#111826' } }
+function railScene(st) {
+  const S = st.S || (st.S = { train: { x: -40, cars: [], phase: 'idle' }, yard: [0, 1, 2, 0, 1], signal: 'green', lever: 0, shipped: 56, ship: { x: 262, cargo: [0, 1], leaving: false }, crane: { tx: 252, hook: 0, holding: null }, derail: 0, auto: true })
+  const T = st.t
+  st.sky(['#04060f', '#080d1e', '#0d1530', '#132044'], 7, 60)
+  st.px(0, 60, st.W, 10, '#0e1428')
+  // 陆地与港池
+  st.px(0, 70, 236, 50, '#0f1626'); st.px(0, 70, 236, 1, '#1e2a44')
+  st.px(236, 70, 24, 14, '#2a3350'); st.px(236, 70, 24, 1, '#3d4a6b'); st.px(258, 70, 2, 14, '#1a2236')
+  // 控制塔（RGB 窗）
+  st.px(96, 34, 20, 36, '#171f34'); st.px(94, 32, 24, 3, '#2a3350'); for (let i = 0; i < 4; i++) st.lit(98 + i * 5, 38, 3, 2, specAt(i + Math.floor(T / 6)), .5); st.lit(105, 30, 2, 2, T % 12 < 6 ? '#ff3b30' : '#5a1a1a', .8)
+  // 股道：待开工场（上）、干线（下）、岔线
+  const tie = (x0, x1, y) => { for (let x = x0; x < x1; x += 4) st.px(x, y - 1, 2, 3, '#2a3040'); st.px(x0, y - 1, x1 - x0, 1, '#8a93a8'); st.px(x0, y + 1, x1 - x0, 1, '#8a93a8') }
+  tie(16, 130, 50); tie(0, 236, 68)
+  for (let i = 0; i < 9; i++) st.px(130 + i * 2, 51 + i * 2, 2, 1, '#8a93a8')
+  // 场内停着的车（未开工）
+  S.yard.forEach((p, i) => st.sprite(CAR, 20 + i * 15, 44, carPal(p)))
+  // 信号机 + 道岔手柄
+  st.px(196, 54, 1, 12, '#8a93a8'); st.px(194, 50, 4, 5, '#1a2236'); st.lit(195, 51, 2, 2, S.signal === 'red' ? '#ff3b30' : '#4ad97a', 1)
+  const lev = S.lever; st.px(204, 66 - 6, 1, 6, '#8a93a8'); st.px(204 + (lev ? 3 : 0), 58 + (lev ? 2 : 0), 2, 2, S.signal === 'red' && T % 8 < 5 ? '#ffb020' : '#c9d2e8'); if (S.signal === 'red' && T % 8 < 5) st.lit(204, 58, 2, 2, '#ffb020', .8)
+  // 龙门吊
+  st.px(246, 30, 2, 54, '#5a6480'); st.px(288, 30, 2, 54, '#5a6480'); st.px(240, 30, 60, 2, '#8a93a8'); for (let x = 242; x < 298; x += 5) st.px(x, 32, 1, 2, '#5a6480')
+  const C = S.crane; st.px(C.tx, 32, 6, 3, '#e0b52e'); st.px(C.tx + 2, 35, 1, C.hook, '#c9d2e8'); st.px(C.tx + 1, 35 + C.hook, 4, 1, '#c9d2e8')
+  if (C.holding != null) st.sprite(CAR, C.tx - 3, 36 + C.hook, carPal(C.holding))
+  st.lit(247, 29, 1, 1, '#ff3b30', .6); st.lit(289, 29, 1, 1, '#ff3b30', .6)
+  // 火车
+  const Tr = S.train
+  if (Tr.phase !== 'idle') { st.sprite(LOCO, Tr.x, 62, LPAL); Tr.cars.forEach((p, i) => { const cx = Tr.x - 14 - i * 14; const tilt = S.derail && i === 0 ? 1 : 0; st.sprite(CAR, cx, 64 + tilt, carPal(p)); if (S.derail && i === 0 && T % 6 < 3) st.lit(cx + 5, 61, 2, 1, '#ff3b30', 1) }); if (Tr.phase === 'pull' || Tr.phase === 'toHarbor') { if (T % 4 < 2) st.px(Tr.x + 3, 60, 2, 1, '#6b7386') } }
+  if (S.derail) { const rx = 40 + ((T * 2) % 120); st.sprite(['yyyyyyyy', 'yYYYYYYy', 'oo.oo.oo'], rx, 55, { y: '#c9a227', Y: '#e3b73a', o: '#111826' }); st.lit(rx + 3, 54, 2, 1, T % 4 < 2 ? '#ffb020' : '#5a4a10', .9) }
+  // 港池与船
+  const Sh = S.ship; const bob = Math.round(Math.sin(T * .2))
+  for (let y = 84; y < 120; y++) st.px(236, y, st.W - 236, 1, (y % 2) ? '#0a1836' : '#0b1c40')
+  st.px(Sh.x, 84 + bob, 68, 8, '#1c2233'); st.px(Sh.x + 2, 82 + bob, 64, 2, '#2a3350'); st.px(Sh.x + 54, 74 + bob, 6, 8, '#2a3350'); st.lit(Sh.x + 56, 72 + bob, 2, 1, '#ffcf6b', .6)
+  Sh.cargo.forEach((p, i) => st.sprite(CAR.slice(0, 3), Sh.x + 6 + (i % 4) * 13, 78 + bob - Math.floor(i / 4) * 4, carPal(p)))
+  if (Sh.leaving && T % 6 < 3) st.px(Sh.x + 55, 68 + bob - (T % 12), 3, 2, '#c9d2e8')
+  for (let k = 0; k < 6; k++) { const wx = 240 + ((Math.floor(T * .9) + k * 31) % 96); st.px(wx, 95 + (k % 3) * 8, 3, 1, '#5a8fd6') }
+  st.text('SHIPPED ' + S.shipped, 262, 100, '#6a7aa0')
+  st.stat(`装船 ${S.shipped} · ${Tr.phase === 'idle' ? '机车待命' : Tr.phase === 'toYard' ? '进场挂车' : Tr.phase === 'pull' ? '拉出' : Tr.phase === 'signal' ? '红灯前等拍板' : Tr.phase === 'toHarbor' ? '进港' : Tr.phase === 'crane' ? '吊装' : Tr.phase}`)
+  if (S.auto && !S.busy) railAuto(st, S)
+}
+function railAct(st, S, act) {
+  const Tr = S.train, C = S.crane, Sh = S.ship
+  if (act === 'claim' && Tr.phase === 'idle' && S.yard.length) { Tr.phase = 'toYard'; Tr.x = -40; Tr.cars = []; S.busy = true; const mv = setInterval(() => { Tr.x += 3; if (Tr.x >= 150) { clearInterval(mv); Tr.cars = [S.yard.shift()]; Tr.phase = 'pull'; S.busy = false; const mv2 = setInterval(() => { Tr.x += 2; if (Tr.x >= 178) { clearInterval(mv2); Tr.phase = 'signal' } }, 1000 / 12) } }, 1000 / 12); return }
+  if (act === 'pend' && Tr.phase === 'signal') { S.signal = 'red'; S.lever = 0; return }
+  if (act === 'go' && Tr.phase === 'signal') { S.signal = 'green'; S.lever = 1; Tr.phase = 'toHarbor'; S.busy = true; const mv = setInterval(() => { Tr.x += 2; if (Tr.x >= 262) { clearInterval(mv); Tr.phase = 'crane'; S.busy = false } }, 1000 / 12); return }
+  if (act === 'block' && (Tr.phase === 'signal' || Tr.phase === 'pull' || Tr.phase === 'toHarbor')) { S.derail = 1; S.signal = 'red'; st.after(40, () => { S.derail = 0; if (Tr.phase === 'signal') S.signal = 'red' }); return }
+  if (act === 'done' && Tr.phase === 'crane' && Tr.cars.length) { S.busy = true; C.tx = 248; C.hook = 0; const p = Tr.cars[0]; const down = setInterval(() => { C.hook += 3; if (C.hook >= 30) { clearInterval(down); C.holding = p; Tr.cars = []; const up = setInterval(() => { C.hook -= 3; if (C.hook <= 0) { clearInterval(up); const over = setInterval(() => { C.tx += 2; if (C.tx >= 262 + 6 + (Sh.cargo.length % 4) * 13 + 2) { clearInterval(over); const dn = setInterval(() => { C.hook += 3; if (C.hook >= 44 - Math.floor(Sh.cargo.length / 4) * 4) { clearInterval(dn); Sh.cargo.push(p); C.holding = null; S.shipped++; const up2 = setInterval(() => { C.hook -= 4; if (C.hook <= 0) { clearInterval(up2); C.hook = 0; Tr.phase = 'leave'; const lv = setInterval(() => { Tr.x -= 3; if (Tr.x < -60) { clearInterval(lv); Tr.phase = 'idle'; S.busy = false } }, 1000 / 12); if (Sh.cargo.length >= 8) { Sh.leaving = true; const sail = setInterval(() => { Sh.x += 2; if (Sh.x > st.W + 10) { clearInterval(sail); Sh.x = 262; Sh.cargo = []; Sh.leaving = false } }, 1000 / 12) } } }, 1000 / 12) } }, 1000 / 12) } }, 1000 / 12) } }, 1000 / 12) } }, 1000 / 12); return }
+}
+function railAuto(st, S) {
+  const Tr = S.train
+  if (Tr.phase === 'idle') { if (!S.nextAt) S.nextAt = st.t + 20; if (st.t >= S.nextAt) { S.nextAt = 0; if (!S.yard.length) S.yard = [0, 1, 2, 0, 1]; railAct(st, S, 'claim') } return }
+  if (Tr.phase === 'signal') { if (S.signal === 'green' && !S.pendAt) { S.pendAt = st.t + 6 } if (S.signal === 'green' && st.t >= S.pendAt) { railAct(st, S, 'pend'); S.goAt = st.t + 30 } if (S.signal === 'red' && S.goAt && st.t >= S.goAt) { S.goAt = 0; S.pendAt = 0; railAct(st, S, 'go') } return }
+  if (Tr.phase === 'crane') { if (!S.doneAt) S.doneAt = st.t + 8; if (st.t >= S.doneAt) { S.doneAt = 0; railAct(st, S, 'done') } }
+}
+const railStage = new Stage($('[data-scene="rail"]').closest('.stage'), railScene)
+$$('[data-sim="rail"] [data-act]').forEach(b => b.addEventListener('click', () => { const S = railStage.S; if (!S) return; if (b.dataset.act === 'auto') { S.auto = !S.auto; b.textContent = S.auto ? '自动演' : '手动'; return } S.auto = false; $('[data-sim="rail"] [data-act="auto"]').textContent = '手动'; railAct(railStage, S, b.dataset.act) }))
+</script>
+</body>
+</html>

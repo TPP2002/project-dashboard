@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 2D 插画机甲 v9</title>
+<style>
+:root{--mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600}
+.doc{max-width:1520px;margin:0 auto;padding:32px 24px 96px}
+.doc-head h1{font-size:28px;letter-spacing:-.02em}
+.doc-head p{margin:8px 0 0;color:#5c5c58;max-width:1080px}
+.doc-head .meta{margin-top:6px;color:#8e8e89;font-family:var(--mono);font-size:12px}
+.sec{margin-top:44px}
+.sec>h2{font-size:22px;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:var(--mono);font-size:15px;margin-right:8px}
+.sec>p{margin:8px 0 16px;color:#5c5c58;max-width:1080px}
+.note{margin:12px 0 0;padding:10px 14px;border-left:3px solid #d2d2cf;background:#f3f3f1;color:#5c5c58;font-size:13.5px;border-radius:0 6px 6px 0}
+.note b{color:#1a1a19}
+.note.ask{border-left-color:#9a6b12;background:#fdf3e0}.note.ask b{color:#9a6b12}
+.stage{position:relative;overflow:hidden;border:1px solid #2a2f3d;border-radius:10px;background:#0a0d16;height:520px}
+.stage::before{content:attr(data-label);position:absolute;top:9px;right:13px;color:#7b8399;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;z-index:5;pointer-events:none}
+.stage svg{display:block;width:100%;height:100%}
+.stat{position:absolute;left:12px;bottom:10px;z-index:5;color:#9fb0d8;font-family:var(--mono);font-size:11px;letter-spacing:.06em;background:rgba(5,8,18,.55);padding:3px 8px;border-radius:4px;pointer-events:none}
+.sim{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:6px 12px;border:1px solid #d2d2cf;border-radius:6px;background:#f6f6f5;color:#1a1a19;cursor:pointer;font:inherit;font-size:13px}
+.btn:hover{background:#eeeeed}
+.btn.quiet{background:transparent;border-color:transparent;color:#5c5c58}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:1080px){.pair{grid-template-columns:1fr}}
+.stage.closeup{height:720px;background:#111623}
+table.spec{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e4e2;border-radius:6px;overflow:hidden;font-size:14px}
+table.spec th,table.spec td{padding:9px 12px;border-bottom:1px solid #eeeeed;text-align:left;vertical-align:top}
+table.spec th{background:#f6f6f5;color:#5c5c58;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td.k{font-weight:600;white-space:nowrap}
+.detail-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px;margin-top:14px}
+.detail-list>div{padding:10px 12px;background:#fff;border:1px solid #e4e4e2;border-radius:6px;font-size:13.5px;color:#5c5c58}
+.detail-list b{display:block;color:#1a1a19;margin-bottom:2px}
+
+/* ===== 机甲的部件状态（CSS 变量透进 <use> 实例） ===== */
+.mech .part{--fo:1;--so:1;--dash:none;--ol:#0e121c;transition:opacity .3s ease}
+.mech .part.off{--fo:.14;--so:.75;--dash:none;--ol:#3d6f96}
+.mech .part.off .pl{fill:#4fc3ff}
+.mech .part.build{--fo:.45;--so:1;--dash:none;--ol:#4fc3ff}
+.mech .part.pend{--fo:.45;--so:1;--dash:none;--ol:#ffb020;animation:blink 1.2s ease-in-out infinite}
+.mech .part.block{--fo:.45;--so:1;--dash:none;--ol:#ff4d5a;animation:blink .7s ease-in-out infinite}
+@keyframes blink{50%{opacity:.45}}
+.mech .pl{fill-opacity:var(--fo);stroke:var(--ol);stroke-opacity:var(--so);stroke-dasharray:var(--dash);stroke-width:1.1;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.mech .pl.main{stroke-width:2.2}
+.mech .cable{fill:none;stroke:#1b2030;stroke-width:3;stroke-opacity:var(--so);stroke-linecap:round;vector-effect:non-scaling-stroke}
+.mech .part.off .cable{stroke:#3d6f96}
+.mech .ln{fill:none;stroke:#0e121c;stroke-opacity:calc(var(--so) * .75);stroke-width:1;vector-effect:non-scaling-stroke;stroke-linecap:round}
+.mech .part.off .ln,.mech .part.build .ln,.mech .part.pend .ln,.mech .part.block .ln{stroke:var(--ol);stroke-opacity:.35}
+.mech .hi{fill:#fff;fill-opacity:calc(var(--fo) * .28);stroke:none}
+.mech .sh{fill:#000;fill-opacity:calc(var(--fo) * .32);stroke:none}
+.mech .riv{fill:#0e121c;fill-opacity:calc(var(--fo) * .8);stroke:none}
+.mech .glow{fill:var(--gl,#5be3ff);stroke:none;filter:url(#fglow)}
+.mech .part.off .glow,.mech .part.build .glow,.mech .part.pend .glow,.mech .part.block .glow{fill-opacity:.15;filter:none}
+.mech .decal{font-family:var(--mono);font-weight:700;fill:#f2f4f8;fill-opacity:calc(var(--fo) * .85);letter-spacing:.06em}
+.mech .part.off .decal,.mech .part.build .decal{fill-opacity:0}
+/* 待机呼吸、通电 */
+.mech.idle .torso{animation:breathe 3.4s ease-in-out infinite}
+@keyframes breathe{50%{transform:translateY(-2px)}}
+.mech.idle .head{animation:headsway 6s ease-in-out infinite;transform-origin:200px 112px}
+@keyframes headsway{30%{transform:rotate(-1.2deg)}70%{transform:rotate(1.4deg)}}
+.mech.powered .glow{--gl:#7ff0ff;animation:corepulse 1.6s ease-in-out infinite}
+@keyframes corepulse{50%{fill:#ffffff}}
+.mech .thr{opacity:0;transform-origin:50% 0;transform-box:fill-box}
+.mech.powered .thr{opacity:1;animation:thr .12s linear infinite alternate}
+@keyframes thr{from{transform:scaleY(.85)}to{transform:scaleY(1.15)}}
+.mech.powered{animation:hover 2.4s ease-in-out infinite}
+@keyframes hover{50%{transform:translateY(-14px)}}
+.mech .eline{stroke:#5be3ff;stroke-width:1.2;fill:none;opacity:0;vector-effect:non-scaling-stroke;filter:url(#fglow)}
+.mech.powered .eline{opacity:.85}
+.scan{fill:none;stroke:#7ff0ff;stroke-width:2;filter:url(#fglow);opacity:.9}
+.seam{fill:none;stroke:#ffe27a;stroke-width:2.2;stroke-linecap:round;filter:url(#fglow);vector-effect:non-scaling-stroke}
+.drone .rotor{animation:rotor .08s linear infinite alternate;transform-origin:center}
+@keyframes rotor{from{transform:scaleX(.25)}to{transform:scaleX(1)}}
+.rgb{animation:rgbflow 9s linear infinite}
+.beacon{opacity:.35}.alarm .beacon{opacity:1;animation:blink .45s ease-in-out infinite}
+.wash{fill:#ff2d3d;opacity:0;transition:opacity .3s}.alarm .wash{opacity:.1}
+.mech .part.fresh{animation:flash .6s ease-out}
+@keyframes flash{0%{filter:brightness(2.6)}100%{filter:brightness(1)}}
+@keyframes rgbflow{to{stroke-dashoffset:-400}}
+.console{font-family:ui-monospace,Consolas,monospace;font-size:11px}
+.console .caption{font-size:9px;letter-spacing:.06em}
+.console .title{font-size:12px;letter-spacing:.03em}
+.console .screen-part{stroke-width:1.2;stroke-linejoin:round}
+.console .screen-part.off{opacity:.3}
+.console .screen-part.build,.console .progress-segment.build,.console .rec{animation:blink 1.2s ease-in-out infinite}
+.console .screen-part.pend,.console .progress-segment.pend{animation:blink 1.2s ease-in-out infinite}
+.console .screen-part.block,.console .progress-segment.block{animation:blink .7s ease-in-out infinite}
+.console-event{transition:transform .35s ease,opacity .35s ease}
+.scope-wave{fill:none;stroke-width:1.4;stroke-linejoin:round;stroke-dasharray:46 7;animation:scopeflow 1.8s linear infinite;transform-origin:0 183px}
+.console.powered .scope-wave{transform:scaleY(1.65)}
+@keyframes scopeflow{to{stroke-dashoffset:-106}}
+.scene-grain{opacity:.035;mix-blend-mode:overlay;pointer-events:none}
+@media (prefers-reduced-motion:reduce){
+  .stage *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<div class="doc-head">
+  <h1>看板 · 2D 插画机甲 v9</h1>
+  <p>3D 撤了。这稿按你贴的那组参考重画：<b>高分辨率矢量插画</b>——尖角层叠装甲、面板线、铆钉、赛璐璐式明暗（基色 / 阴影面 / 高光棱线）、硬朗的深色线稿；
+    大肩甲带散热口、V 形头翼、面罩发光、胸口动力核心、裙甲、翼状背包推进器。矢量意味着放大不糊、每块部件能单独动。
+    机甲身上没有跑马灯——只有面罩、核心、通电时的能量线发光，颜色是项目色系。机库同样按插画画法重画，没有水。</p>
+  <p class="meta">任务卡 AUD-FUN-WORKFLOOR · 2026-09-08 · SVG 矢量 + CSS 动画，无外部依赖 · 发射场随后按同一画法重画</p>
+</div>
+
+<section class="sec">
+<h2><span class="no">01</span>机甲装配 · 机库（整体）</h2>
+<div class="stage" data-label="机甲装配 · 插画"><svg data-scene viewBox="0 0 1400 520"></svg><span class="stat" data-stat></span></div>
+<div class="sim" data-sim>
+  <button class="btn" data-act="claim" type="button">认领（取件焊接）</button>
+  <button class="btn" data-act="pend" type="button">待拍板（检验）</button>
+  <button class="btn" data-act="go" type="button">拍板（盖章）</button>
+  <button class="btn" data-act="block" type="button">阻塞（卡件）</button>
+  <button class="btn" data-act="done" type="button">完工（扣上）</button>
+  <button class="btn" data-act="full" type="button">项目 100%（通电）</button>
+  <button class="btn quiet" data-act="auto" type="button">自动演</button>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">02</span>机甲特写（放大三倍看细节）</h2>
+<p>同一份矢量，放大看线稿、面板线、铆钉、明暗面。点部件状态按钮看全息蓝图（未装）和实体（已装）的差别。</p>
+<div class="stage closeup" data-label="特写 · 矢量放大"><svg data-closeup viewBox="0 0 400 640"></svg></div>
+<div class="sim" data-sim2>
+  <button class="btn" data-mode="done" type="button">全部已装</button>
+  <button class="btn" data-mode="half" type="button">装了一半</button>
+  <button class="btn" data-mode="off" type="button">全部蓝图</button>
+  <button class="btn" data-mode="powered" type="button">通电</button>
+</div>
+<div class="detail-list">
+  <div><b>头部</b>V 形头翼（金）、额前红宝石、发光面罩带高光线、下颚护甲、两侧耳块与散热槽、右背包一根天线（唯一的不对称点缀）。</div>
+  <div><b>胸甲</b>大块斜面胸板 + 两片胸肌板、中央六角核心座与发光核心、领口层板、下缘散热格栅、编号贴花「02」。</div>
+  <div><b>肩甲</b>风筝形主板 + 浅蓝上盖 + 金色饰条 + 外侧深灰尖翼、三道散热口、肩尖红色示位灯。</div>
+  <div><b>手臂</b>内层机械臂（深灰）+ 外层护臂板、肘关节盘带金环、下端外张的前臂护腕 + 外侧刃翼 + 腕部金环、拳背甲 + 四指 + 拇指。</div>
+  <div><b>腰腿</b>腹部三段肋板、V 形骨盆甲 + 六角扣、浅蓝前裙 + 外尖侧裙、髋关节球 + 锥形大腿甲、尖膝甲（金条 + 中脊 + 两根活塞）、下端外张的护胫（浅蓝中脊、散热缝、小腿喷口舱、金边）、踝关节、靴身 + 脚趾盖 + 脚跟刺，脚底两具悬浮喷口。</div>
+  <div><b>背包</b>后掠翼状背包两片（深蓝外板 + 灰内板）、翼尖喷口；通电时翼尖与脚底喷焰、悬浮起伏、能量线沿前臂与小腿亮起。</div>
+  <div><b>明暗</b>每块板：基色渐变 + 上缘高光棱线 + 下缘硬阴影面；主色蓝 / 浅蓝二色 + 深灰骨架 + 金饰 + 红灯；全身统一左上光源；外轮廓 2.2px、内部面板线 1.1px，放大不变粗（矢量描边不缩放）。</div>
+  <div><b>未装 / 焊接中</b>未装 = 青色全息投影（平台两枚投影器打上去的，不是虚线）；焊接中 = 半透明实体 + 焊缝沿轮廓亮起（长度 = 进度）+ 扫描线上下走 + 焊接无人机在旁边打火花；待拍板 = 琥珀色闪 + 橙色检验无人机飞来扫描；阻塞 = 红色闪 + 龙门塔警灯 + 全场红光；完工 = 部件白闪一下扣上；项目 100% = 通电悬浮。</div>
+  <div><b>手臂定位</b>左右手臂的横向间距固定在外层支架上，呼吸起伏只作用于部件本身；扫描线按移位后的部件轮廓定位，焊到前臂时仍对准前臂。</div>
+  <div><b>工业零件架</b>带竖向拉丝的洞洞板、开孔槽钢、角撑、三层厚钢板和条码货位条；待装件落在板面上，带接触阴影、高光棱线和吊牌。架顶挂扳手、线缆与焊枪，底座有警示斜纹和在线灯。</div>
+  <div><b>装配控制台</b>金属外壳带螺钉、铭牌和实体按钮；玻璃叠扫描线、微光与斜向反射。剪影与二十九格进度条同步显示部件状态，下方保留最近三条事件，时钟逐秒更新，通电后波形变绿、振幅增大。</div>
+  <div><b>机库材质</b>墙板斜向拉丝、接缝亮暗边与固定污渍；地面花纹钢板、平台周围磨痕、台面同心刻线和警示外圈；管线高光与双箍、栏杆底座、灯罩内壁和双层光锥共同表现厚度。全场只叠一层静态细颗粒。</div>
+  <div><b>减少动效</b>跟随系统设置停止呼吸、摆头、悬浮、闪烁、旋翼、灯带、波形和事件过渡；扫描线静止，无人机直接落位，焊接不生成火花。按钮、装配进度和状态颜色仍保留。</div>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">03</span>下一步</h2>
+<div class="note ask"><b>机甲这个方向对不对？</b>对的话：①我再磨一轮造型细节（你点名要加的都加）；②发射场按同一插画画法重画（火箭、塔架、海、指挥中心，全部矢量高细节）；③出全细节稿后拆工单派 GPT。不对就继续说，贴图也行。</div>
+</section>
+
+<p style="margin-top:48px;color:#8e8e89;font-size:13px;text-align:center">看板 · AUD-FUN-WORKFLOOR · 2D 插画机甲 v9 · 2026-09-08</p>
+</div>
+<script>
+/* ============================================================
+   矢量插画机甲：几何是点阵（左半边手写，右半边镜像），每块板 = 基色渐变 + 高光棱线 + 硬阴影面 + 面板线 + 铆钉
+   ============================================================ */
+const $ = (s, el = document) => el.querySelector(s)
+const $$ = (s, el = document) => [...el.querySelectorAll(s)]
+const M = pts => pts.map(([x, y]) => [400 - x, y])                 // 镜像到右半边
+const P = pts => pts.map(p => p.join(',')).join(' ')
+const pg = (pts, g, cls = '') => `<polygon class="pl ${cls}" points="${P(pts)}" fill="url(#${g})"/>`
+const hi = pts => `<polygon class="hi" points="${P(pts)}"/>`
+const sh = pts => `<polygon class="sh" points="${P(pts)}"/>`
+const ln = (pts, cls = 'ln') => `<polyline class="${cls}" points="${P(pts)}"/>`
+const riv = (x, y) => `<circle class="riv" cx="${x}" cy="${y}" r="1.7"/>`
+const circ = (x, y, r, g, cls = 'pl') => `<circle class="${cls}" cx="${x}" cy="${y}" r="${r}" fill="url(#${g})"/>`
+const hexPts = (cx, cy, r) => Array.from({ length: 6 }, (_, k) => { const a = Math.PI / 6 + k * Math.PI / 3; return [+(cx + Math.cos(a) * r).toFixed(1), +(cy + Math.sin(a) * r).toFixed(1)] })
+
+/** 部件几何：名字 → { main: 主轮廓（焊缝沿它走）, svg(side) } ；side 为 'L' | 'R' | '' */
+const PARTS = []
+const shiftX = (pts, dx) => pts.map(([x, y]) => [x + dx, y])
+function part(name, main, build, rings, dx = 0) { PARTS.push({ name, main: shiftX(main, dx), build, rings: rings && rings.map(r => shiftX(r, dx)), dx }) }
+function sided(name, main, build, rings, dx = 0) { part(name + 'L', main, () => build(p => p, 'L'), rings, -dx); part(name + 'R', M(main), () => build(M, 'R'), rings && rings.map(M), dx) }
+const seamD = p => (p.rings || [p.main]).map(r => 'M' + P(r) + 'Z').join(' ')
+const clsFor = (n, st) => 'part ' + st + (n === 'head' ? ' head' : ' torso')
+
+// ---- 背包翼（肩后，含喷口；右翼多一根天线做不对称点缀） ----
+sided('pack', [[26, 86], [76, 64], [118, 78], [126, 146], [56, 198], [28, 166]], (m, side) =>
+  (side === 'R' ? pg([[282, 80], [288, 80], [298, 30], [294, 28]], 'gGreyD') + `<circle class="glow" style="--gl:#ff5a5a" cx="296" cy="30" r="2.5"/>` : '') +
+  `<polygon class="thr" points="${P(m([[30, 198], [50, 198], [40, 280]]))}" fill="url(#gFlame)"/>` +
+  pg(m([[26, 86], [76, 64], [118, 78], [126, 146], [56, 198], [28, 166]]), 'gBlueD', 'main') +
+  pg(m([[40, 98], [78, 80], [110, 90], [116, 140], [58, 182], [40, 152]]), 'gGrey') +
+  hi(m([[28, 88], [76, 66], [116, 80], [114, 86], [78, 74], [32, 94]])) +
+  sh(m([[58, 160], [116, 128], [116, 140], [58, 182], [44, 170]])) +
+  ln(m([[52, 100], [50, 150]])) + ln(m([[76, 92], [78, 156]])) + ln(m([[100, 96], [104, 138]])) +
+  pg(m([[28, 166], [56, 176], [56, 198], [34, 196]]), 'gDark') +
+  circ(...m([[40, 188]])[0], 9, 'gDark') + circ(...m([[40, 188]])[0], 5, 'gGrey') +
+  `<circle class="glow" cx="${m([[40, 188]])[0][0]}" cy="188" r="3"/>` +
+  riv(...m([[112, 84]])[0]) + riv(...m([[30, 90]])[0]))
+
+// ---- 大腿：髋关节球 + 锥形甲 ----
+sided('thigh', [[122, 330], [184, 330], [180, 440], [130, 444]], m =>
+  circ(...m([[154, 336]])[0], 15, 'gGrey') + circ(...m([[154, 336]])[0], 7, 'gDark') +
+  pg(m([[122, 330], [184, 330], [180, 440], [130, 444]]), 'gBlue', 'main') +
+  hi(m([[124, 332], [182, 332], [182, 340], [126, 343]])) +
+  sh(m([[162, 338], [182, 336], [180, 440], [164, 442]])) +
+  sh(m([[130, 426], [180, 424], [180, 440], [130, 444]])) +
+  ln(m([[156, 338], [154, 438]])) + ln(m([[132, 350], [152, 348]])) + ln(m([[132, 356], [152, 354]])) +
+  riv(...m([[136, 338]])[0]) + riv(...m([[176, 338]])[0]) + riv(...m([[136, 432]])[0]))
+
+// ---- 膝：关节块 + 活塞 + 尖膝盖甲 + 金条 ----
+sided('knee', [[126, 428], [182, 428], [184, 458], [154, 484], [124, 458]], m =>
+  pg(m([[132, 432], [176, 432], [174, 472], [134, 472]]), 'gGrey') +
+  `<path class="cable" d="M${m([[140, 430]])[0][0]} 430 v 40"/>` + `<path class="cable" d="M${m([[168, 430]])[0][0]} 430 v 40"/>` +
+  pg(m([[126, 428], [182, 428], [184, 458], [154, 484], [124, 458]]), 'gBlue', 'main') +
+  pg(m([[128, 430], [180, 430], [180, 438], [128, 438]]), 'gGold') +
+  pg(m([[150, 442], [158, 442], [157, 478], [151, 478]]), 'gBlueL') +
+  sh(m([[154, 458], [184, 458], [154, 484]])) +
+  ln(m([[154, 440], [154, 480]])) + riv(...m([[134, 448]])[0]) + riv(...m([[174, 448]])[0]))
+
+// ---- 小腿：内骨架 + 小腿喷口舱 + 外张护胫 + 中脊 + 散热缝 + 金边 ----
+sided('shin', [[130, 474], [178, 474], [188, 560], [182, 586], [126, 586], [118, 560]], m =>
+  pg(m([[134, 468], [176, 468], [180, 586], [132, 586]]), 'gGreyD') +
+  pg(m([[112, 486], [132, 486], [132, 562], [114, 558]]), 'gGreyD') +
+  circ(...m([[122, 566]])[0], 6, 'gDark') + `<circle class="glow" cx="${m([[122, 566]])[0][0]}" cy="566" r="2.5"/>` +
+  pg(m([[130, 474], [178, 474], [188, 560], [182, 586], [126, 586], [118, 560]]), 'gBlue', 'main') +
+  pg(m([[148, 478], [164, 478], [166, 586], [146, 586]]), 'gBlueL') +
+  hi(m([[132, 476], [176, 476], [176, 484], [134, 486]])) +
+  hi(m([[149, 480], [154, 480], [152, 584], [147, 584]])) +
+  sh(m([[170, 480], [178, 474], [188, 560], [182, 586], [172, 586]])) +
+  ln(m([[134, 520], [144, 518]])) + ln(m([[134, 528], [144, 526]])) + ln(m([[134, 536], [144, 534]])) +
+  ln(m([[132, 482], [128, 578]]), 'eline') +
+  pg(m([[126, 578], [182, 578], [182, 586], [126, 586]]), 'gGold') +
+  riv(...m([[136, 570]])[0]) + riv(...m([[174, 570]])[0]))
+
+// ---- 踝 ----
+sided('ankle', [[136, 584], [174, 584], [176, 602], [134, 602]], m =>
+  pg(m([[136, 584], [174, 584], [176, 602], [134, 602]]), 'gDark', 'main') +
+  circ(...m([[143, 593]])[0], 4, 'gGrey') + circ(...m([[167, 593]])[0], 4, 'gGrey') + ln(m([[155, 586], [155, 600]])))
+
+// ---- 脚：底板 + 靴身 + 脚趾盖 + 外侧脚跟刺 + 趾灯 + 悬浮喷焰 ----
+sided('foot', [[92, 600], [196, 600], [198, 640], [90, 640]], m =>
+  `<polygon class="thr" points="${P(m([[104, 640], [126, 640], [115, 684]]))}" fill="url(#gFlame)"/>` +
+  `<polygon class="thr" points="${P(m([[164, 640], [186, 640], [175, 684]]))}" fill="url(#gFlame)"/>` +
+  pg(m([[96, 626], [196, 626], [198, 640], [94, 640]]), 'gDark') +
+  pg(m([[102, 600], [190, 600], [196, 626], [96, 626]]), 'gBlue', 'main') +
+  pg(m([[132, 598], [190, 598], [194, 614], [128, 614]]), 'gBlueL') +
+  hi(m([[134, 600], [188, 600], [188, 605], [136, 606]])) +
+  sh(m([[100, 618], [196, 618], [196, 626], [96, 626]])) +
+  pg(m([[94, 606], [106, 598], [106, 626], [90, 626]]), 'gGreyD') +
+  ln(m([[162, 614], [162, 626]])) + ln(m([[134, 614], [134, 626]])) +
+  ln(m([[96, 612], [104, 612]])) + ln(m([[96, 618], [104, 618]])) +
+  `<circle class="glow" cx="${m([[180, 608]])[0][0]}" cy="608" r="2.5"/>`)
+
+// ---- 腰带：V 形骨盆甲 + 六角扣 ----
+part('waist', [[148, 292], [252, 292], [246, 322], [200, 340], [154, 322]], () =>
+  pg([[148, 292], [252, 292], [246, 322], [200, 340], [154, 322]], 'gBlue', 'main') +
+  hi([[150, 294], [250, 294], [250, 299], [150, 299]]) +
+  sh([[200, 322], [246, 322], [200, 340]]) +
+  pg(hexPts(200, 308, 11), 'gGold') + ln([[164, 308], [184, 308]]) + ln([[216, 308], [236, 308]]) +
+  riv(156, 298) + riv(244, 298))
+
+// ---- 裙甲：侧裙（外尖）+ 前裙 ----
+sided('skirt', [[108, 300], [150, 300], [154, 320], [196, 320], [196, 384], [162, 378], [146, 380], [124, 376], [106, 352]], m =>
+  pg(m([[110, 302], [150, 300], [146, 380], [124, 376], [106, 352]]), 'gBlue', 'main') +
+  hi(m([[106, 304], [148, 302], [148, 308], [108, 310]])) +
+  sh(m([[130, 352], [146, 356], [146, 380], [124, 376]])) +
+  ln(m([[128, 310], [128, 372]])) + riv(...m([[116, 310]])[0]) +
+  pg(m([[154, 320], [196, 320], [196, 384], [162, 378]]), 'gBlueL', 'main') +
+  hi(m([[156, 322], [194, 322], [194, 328], [158, 330]])) +
+  sh(m([[164, 360], [196, 362], [196, 384], [162, 378]])) +
+  ln(m([[176, 326], [178, 376]])) + ln(m([[158, 346], [194, 346]])) + riv(...m([[160, 328]])[0]),
+  [[[110, 302], [150, 300], [146, 380], [124, 376], [106, 352]], [[154, 320], [196, 320], [196, 384], [162, 378]]])
+
+// ---- 腹甲：骨架 + 三道肋甲 ----
+part('abdomen', [[162, 246], [238, 246], [232, 298], [168, 298]], () =>
+  pg([[162, 246], [238, 246], [232, 298], [168, 298]], 'gGreyD', 'main') +
+  pg([[166, 252], [234, 252], [233, 264], [167, 264]], 'gBlueD') +
+  pg([[168, 268], [232, 268], [231, 280], [169, 280]], 'gBlueD') +
+  pg([[170, 284], [230, 284], [229, 296], [171, 296]], 'gBlueD') +
+  hi([[167, 253], [233, 253], [233, 256], [167, 256]]) + hi([[169, 269], [231, 269], [231, 272], [169, 272]]) + hi([[171, 285], [229, 285], [229, 288], [171, 288]]) +
+  sh([[162, 246], [238, 246], [237, 252], [163, 252]]) +
+  ln([[200, 252], [200, 296]]))
+
+// ---- 胸甲：主板 + 中脊 + 胸大肌斜板 + 进气格栅 + 六角核心 ----
+part('chest', [[130, 132], [270, 132], [284, 190], [262, 246], [138, 246], [116, 190]], () =>
+  pg([[130, 132], [270, 132], [284, 190], [262, 246], [138, 246], [116, 190]], 'gBlue', 'main') +
+  pg([[190, 132], [210, 132], [208, 246], [192, 246]], 'gBlueD') + hi([[191, 134], [196, 134], [195, 244], [192, 244]]) +
+  pg([[136, 146], [188, 142], [186, 196], [144, 206]], 'gBlueL') + pg(M([[136, 146], [188, 142], [186, 196], [144, 206]]), 'gBlueL') +
+  hi([[138, 148], [186, 144], [186, 150], [140, 156]]) + hi(M([[138, 148], [186, 144], [186, 150], [140, 156]])) +
+  sh([[144, 190], [186, 184], [186, 196], [144, 206]]) + sh(M([[144, 190], [186, 184], [186, 196], [144, 206]])) +
+  sh([[138, 228], [262, 228], [262, 246], [138, 246]]) +
+  ln([[150, 212], [172, 210]]) + ln([[151, 218], [173, 216]]) + ln([[152, 224], [174, 222]]) + ln(M([[150, 212], [172, 210]])) + ln(M([[151, 218], [173, 216]])) + ln(M([[152, 224], [174, 222]])) +
+  pg([[146, 132], [254, 132], [248, 144], [152, 144]], 'gGreyD') +
+  pg(hexPts(200, 198, 26), 'gGrey') + `<circle class="pl" cx="200" cy="198" r="18" fill="none" stroke="#e2b54c" stroke-width="2"/>` + `<circle class="glow" cx="200" cy="198" r="13" fill="url(#gVisor)"/>` +
+  ln([[132, 150], [122, 190]]) + ln([[268, 150], [278, 190]]) +
+  riv(146, 158) + riv(254, 158) + riv(142, 236) + riv(258, 236) +
+  `<text class="decal" x="162" y="186" font-size="10">02</text>` +
+  ln([[186, 206], [196, 214]], 'eline') + ln(M([[186, 206], [196, 214]]), 'eline'))
+
+// ---- 肩甲：大风筝底板 + 外侧尖翼 + 上盖 + 金边 + 散热缝 + 红灯 ----
+sided('shoulder', [[20, 150], [92, 118], [158, 128], [154, 192], [132, 214], [72, 222], [36, 176]], m =>
+  pg(m([[36, 158], [20, 150], [28, 178], [44, 182]]), 'gGreyD') +
+  pg(m([[36, 158], [92, 118], [158, 128], [154, 192], [132, 214], [72, 222]]), 'gBlue', 'main') +
+  hi(m([[38, 158], [92, 120], [156, 130], [150, 136], [94, 128], [44, 164]])) +
+  sh(m([[72, 208], [132, 204], [154, 186], [154, 192], [132, 214], [72, 222]])) +
+  pg(m([[52, 150], [96, 126], [150, 136], [146, 162], [66, 172]]), 'gBlueL') +
+  hi(m([[54, 151], [96, 128], [148, 138], [146, 144], [96, 134], [58, 157]])) +
+  pg(m([[52, 150], [96, 124], [150, 134], [150, 139], [97, 130], [55, 155]]), 'gGold') +
+  ln(m([[78, 196], [106, 192]])) + ln(m([[80, 203], [108, 199]])) + ln(m([[82, 210], [110, 206]])) +
+  ln(m([[100, 140], [96, 166]])) +
+  `<circle class="glow" style="--gl:#ff5a5a" cx="${m([[40, 170]])[0][0]}" cy="170" r="3"/>` +
+  riv(...m([[70, 180]])[0]) + riv(...m([[146, 140]])[0]) + riv(...m([[140, 206]])[0]))
+
+// ---- 上臂 ----
+sided('upperArm', [[84, 204], [134, 206], [130, 272], [90, 272]], m =>
+  pg(m([[96, 204], [134, 206], [130, 272], [100, 270]]), 'gGreyD') +
+  pg(m([[84, 208], [126, 210], [122, 266], [90, 270]]), 'gBlue', 'main') +
+  hi(m([[86, 210], [124, 212], [124, 218], [88, 218]])) +
+  sh(m([[112, 214], [126, 210], [122, 266], [110, 266]])) +
+  ln(m([[104, 214], [102, 262]])) + ln(m([[88, 240], [104, 238]])) +
+  riv(...m([[92, 216]])[0]) + riv(...m([[118, 258]])[0]), undefined, 30)
+
+// ---- 肘：后护板 + 关节盘 + 金环 ----
+sided('elbow', [[96, 262], [128, 262], [128, 300], [96, 300]], m =>
+  pg(m([[98, 262], [126, 262], [112, 302]]), 'gGreyD') +
+  circ(...m([[112, 280]])[0], 16, 'gGrey', 'pl main') +
+  `<circle class="pl" cx="${m([[112, 280]])[0][0]}" cy="280" r="11" fill="none" stroke="#e2b54c" stroke-width="1.6"/>` +
+  circ(...m([[112, 280]])[0], 6, 'gDark') +
+  riv(...m([[104, 272]])[0]) + riv(...m([[120, 288]])[0]), undefined, 30)
+
+// ---- 前臂：内骨架 + 外侧刃翼 + 外张护腕 + 金腕环 ----
+sided('forearm', [[60, 298], [140, 298], [148, 382], [72, 382]], m =>
+  pg(m([[94, 292], [130, 292], [132, 392], [92, 392]]), 'gGreyD') +
+  pg(m([[80, 298], [62, 318], [58, 366], [74, 382]]), 'gGreyD') +
+  ln(m([[78, 302], [64, 320], [62, 364]])) +
+  pg(m([[84, 298], [140, 298], [146, 382], [76, 382]]), 'gBlue', 'main') +
+  hi(m([[86, 300], [138, 300], [138, 308], [88, 308]])) +
+  sh(m([[126, 302], [140, 298], [146, 382], [130, 382]])) +
+  sh(m([[78, 368], [146, 368], [146, 382], [76, 382]])) +
+  pg(m([[74, 380], [148, 380], [150, 394], [72, 394]]), 'gGold') +
+  ln(m([[112, 302], [114, 378]])) + ln(m([[92, 322], [92, 346]])) + ln(m([[100, 320], [100, 348]])) +
+  ln(m([[86, 304], [84, 374]]), 'eline') +
+  `<circle class="glow" cx="${m([[124, 312]])[0][0]}" cy="312" r="2.5"/>` +
+  riv(...m([[90, 312]])[0]) + riv(...m([[134, 312]])[0]), undefined, 30)
+
+// ---- 手：掌 + 拳背甲 + 四指 + 拇指 ----
+sided('hand', [[82, 394], [140, 394], [142, 446], [86, 446]], m =>
+  pg(m([[88, 394], [138, 394], [140, 424], [86, 424]]), 'gGrey', 'main') +
+  pg(m([[86, 392], [140, 392], [142, 406], [84, 406]]), 'gBlue') +
+  hi(m([[88, 394], [138, 394], [138, 397], [88, 397]])) +
+  [88, 100, 112, 124].map(x => pg(m([[x, 424], [x + 10, 424], [x + 10, 446], [x, 446]]), 'gGrey') + ln(m([[x + 1, 435], [x + 9, 435]]))).join('') +
+  pg(m([[82, 404], [90, 404], [92, 432], [80, 428]]), 'gGrey'), undefined, 30)
+
+// ---- 颈：颈筒 + 两侧线缆 + 领甲 ----
+part('neck', [[146, 126], [196, 120], [204, 120], [254, 126], [246, 146], [154, 146]], () =>
+  pg([[188, 110], [212, 110], [214, 128], [186, 128]], 'gDark', 'main') + ln([[194, 112], [194, 126]]) + ln([[206, 112], [206, 126]]) +
+  `<path class="cable" d="M172 116 C 160 122, 154 130, 150 138"/>` + `<path class="cable" d="M228 116 C 240 122, 246 130, 250 138"/>` +
+  pg([[146, 126], [196, 120], [198, 140], [154, 146]], 'gBlueL') + pg(M([[146, 126], [196, 120], [198, 140], [154, 146]]), 'gBlueL') +
+  hi([[148, 127], [194, 122], [194, 126], [150, 132]]) + hi(M([[148, 127], [194, 122], [194, 126], [150, 132]])) +
+  sh([[154, 138], [198, 134], [198, 140], [154, 146]]) + sh(M([[154, 138], [198, 134], [198, 140], [154, 146]])))
+
+// ---- 头：耳块 + 头盔 + V 形天线 + 红宝石 + 面罩 + 护目镜 + 下颚 ----
+part('head', [[180, 44], [220, 44], [236, 60], [238, 84], [228, 104], [212, 114], [188, 114], [172, 104], [162, 84], [164, 60]], () =>
+  pg([[156, 70], [168, 70], [168, 102], [158, 98]], 'gGreyD') + pg(M([[156, 70], [168, 70], [168, 102], [158, 98]]), 'gGreyD') +
+  ln([[160, 80], [166, 80]]) + ln([[160, 88], [166, 88]]) + ln(M([[160, 80], [166, 80]])) + ln(M([[160, 88], [166, 88]])) +
+  pg([[180, 44], [220, 44], [236, 60], [238, 84], [228, 104], [212, 114], [188, 114], [172, 104], [162, 84], [164, 60]], 'gBlue', 'main') +
+  hi([[182, 46], [218, 46], [228, 58], [172, 58]]) +
+  sh([[212, 96], [236, 86], [228, 104], [212, 114]]) +
+  pg([[198, 56], [154, 12], [146, 18], [190, 66]], 'gGold') + pg(M([[198, 56], [154, 12], [146, 18], [190, 66]]), 'gGold') +
+  hi([[196, 58], [156, 16], [152, 17], [192, 62]]) +
+  pg([[200, 56], [207, 63], [200, 70], [193, 63]], 'gRed') +
+  pg([[170, 72], [230, 72], [232, 86], [168, 86]], 'gGreyD') +
+  `<polygon class="glow" points="${P([[174, 76], [226, 76], [224, 90], [176, 90]])}" fill="url(#gVisor)"/>` +
+  `<line x1="176" y1="78" x2="224" y2="78" stroke="#fff" stroke-opacity=".7" stroke-width="1"/>` +
+  sh([[176, 90], [224, 90], [222, 95], [178, 95]]) +
+  pg([[184, 94], [216, 94], [210, 116], [190, 116]], 'gGrey') + ln([[200, 96], [200, 114]]) + sh([[200, 94], [216, 94], [210, 116], [200, 116]]) +
+  ln([[166, 90], [170, 102]]) + ln([[171, 92], [175, 104]]) + ln(M([[166, 90], [170, 102]])) + ln(M([[171, 92], [175, 104]])) +
+  riv(178, 70) + riv(222, 70))
+
+const ORDER = ['footL', 'footR', 'ankleL', 'ankleR', 'shinL', 'shinR', 'kneeL', 'kneeR', 'thighL', 'thighR', 'waist', 'skirtL', 'skirtR', 'abdomen', 'chest', 'packL', 'packR', 'shoulderL', 'shoulderR', 'upperArmL', 'upperArmR', 'elbowL', 'elbowR', 'forearmL', 'forearmR', 'handL', 'handR', 'neck', 'head']
+const DRAW = ['packL', 'packR', 'thighL', 'thighR', 'shinL', 'shinR', 'ankleL', 'ankleR', 'footL', 'footR', 'kneeL', 'kneeR', 'abdomen', 'waist', 'skirtL', 'skirtR', 'chest', 'shoulderL', 'shoulderR', 'upperArmL', 'upperArmR', 'elbowL', 'elbowR', 'forearmL', 'forearmR', 'handL', 'handR', 'neck', 'head']
+const byName = Object.fromEntries(PARTS.map(p => [p.name, p]))
+const NAME_CN = { head: '头部', neck: '颈部', chest: '胸甲', abdomen: '腹甲', waist: '腰带', skirtL: '左裙甲', skirtR: '右裙甲', shoulderL: '左肩甲', shoulderR: '右肩甲', upperArmL: '左上臂', upperArmR: '右上臂', elbowL: '左肘', elbowR: '右肘', forearmL: '左前臂', forearmR: '右前臂', handL: '左手', handR: '右手', thighL: '左大腿', thighR: '右大腿', kneeL: '左膝', kneeR: '右膝', shinL: '左小腿', shinR: '右小腿', ankleL: '左踝', ankleR: '右踝', footL: '左脚', footR: '右脚', packL: '左推进翼', packR: '右推进翼' }
+
+const DEFS = `<defs>
+  <linearGradient id="gBlue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8ec0ff"/><stop offset=".45" stop-color="#3b7bd6"/><stop offset="1" stop-color="#1c4a8f"/></linearGradient>
+  <linearGradient id="gBlueL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c2e0ff"/><stop offset=".5" stop-color="#6ea6ea"/><stop offset="1" stop-color="#2f66b4"/></linearGradient>
+  <linearGradient id="gBlueD" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a86d0"/><stop offset="1" stop-color="#173a6e"/></linearGradient>
+  <linearGradient id="gGrey" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6b7488"/><stop offset=".5" stop-color="#3a4152"/><stop offset="1" stop-color="#20252f"/></linearGradient>
+  <linearGradient id="gGreyD" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3f4658"/><stop offset="1" stop-color="#171b24"/></linearGradient>
+  <linearGradient id="gDark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b303d"/><stop offset="1" stop-color="#0f1219"/></linearGradient>
+  <linearGradient id="gGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbe6a3"/><stop offset=".5" stop-color="#e2b54c"/><stop offset="1" stop-color="#9c6f1e"/></linearGradient>
+  <linearGradient id="gRed" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff8a8a"/><stop offset="1" stop-color="#a51f1f"/></linearGradient>
+  <linearGradient id="gVisor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d9fbff"/><stop offset="1" stop-color="#2cb8ff"/></linearGradient>
+  <linearGradient id="gFlame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#8fe9ff"/><stop offset="1" stop-color="#2a7bff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gWall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#101521"/><stop offset="1" stop-color="#1b2232"/></linearGradient>
+  <linearGradient id="gFloor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2334"/><stop offset="1" stop-color="#0b0e16"/></linearGradient>
+  <linearGradient id="gCone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9b0" stop-opacity=".22"/><stop offset="1" stop-color="#ffe9b0" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gRgb" x1="0" x2="1"><stop offset="0" stop-color="#4ad9c4"/><stop offset=".33" stop-color="#4a9eff"/><stop offset=".66" stop-color="#8b7bf7"/><stop offset="1" stop-color="#c96bd8"/></linearGradient>
+  <filter id="fglow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="fsoft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
+</defs>`
+
+function mechSvg(prefix) {
+  // 横移归外层所有，部件的呼吸动画不能覆盖装配位置。
+  return `<g class="mech idle" data-mech="${prefix}">${DRAW.map(n => { const p = byName[n]; return `<g transform="translate(${p.dx},0)"><g class="${clsFor(n, 'done')}" data-part="${n}">${p.build()}</g></g>` }).join('')}</g>`
+}
+const screenPaint = { done: '#34d7ff', off: '#1a2440', build: '#ffb020', pend: '#ffb020', block: '#ff4d5a', powered: '#8affc1' }
+function silhouetteSvg(states) { return DRAW.map(n => `<polygon class="screen-part ${states[n]}" data-screen-part="${n}" points="${P(byName[n].main)}" fill="${screenPaint[states[n]]}"/>`).join('') }
+function bounds(pts) {
+  const x = Math.min(...pts.map(p => p[0])), y = Math.min(...pts.map(p => p[1]))
+  return { x, y, width: Math.max(...pts.map(p => p[0])) - x, height: Math.max(...pts.map(p => p[1])) - y }
+}
+
+// 场景材质单独定义；特写继续只使用原有机甲渐变，纹理不进入逐帧重绘。
+const SCENE_DEFS = `<defs>
+  <pattern id="pWallBrush" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><path d="M1 0V7 M4 0V7" stroke="var(--scene-light)" stroke-width=".6" opacity=".05"/></pattern>
+  <pattern id="pRackBrush" width="6" height="12" patternUnits="userSpaceOnUse"><path d="M1 0V12 M4 0V12" stroke="var(--scene-light)" stroke-width=".6" opacity=".07"/></pattern>
+  <pattern id="pPegboard" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5.6" r="1.8" fill="url(#gGrey)"/><circle cx="5" cy="5" r="1.6" fill="url(#gDark)"/></pattern>
+  <pattern id="pDiamond" width="32" height="16" patternUnits="userSpaceOnUse"><path d="M2 5l6-3 2 1-6 3z M18 13l6-3 2 1-6 3z" fill="url(#gVisor)"/><path d="M4 7l6-3 M20 15l6-3" stroke="var(--scene-ink)" stroke-width="1"/></pattern>
+  <pattern id="pHazard" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><rect width="16" height="16" fill="url(#gDark)"/><rect width="8" height="16" fill="url(#gGold)"/></pattern>
+  <pattern id="pScreenLines" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 .5H4" stroke="var(--scene-light)" stroke-width="1" opacity=".065"/></pattern>
+  <pattern id="pScreenGrid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="var(--scene-light)" stroke-width=".5" opacity=".13"/></pattern>
+  <linearGradient id="gHousing" href="#gGreyD" x1="0" y1="0" x2="0" y2="1"/>
+  <linearGradient id="gLabel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--scene-paper)"/><stop offset="1" stop-color="var(--scene-paper)" stop-opacity=".72"/></linearGradient>
+  <radialGradient id="gScreenBloom" cx=".35" cy=".2" r=".9"><stop offset="0" stop-color="var(--console-cyan)" stop-opacity=".13"/><stop offset="1" stop-color="var(--console-cyan)" stop-opacity="0"/></radialGradient>
+  <filter id="fSceneGrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="2" seed="17"/><feColorMatrix type="saturate" values="0"/></filter>
+  <clipPath id="clipConsoleGlass"><rect x="12" y="12" width="306" height="186" rx="2"/></clipPath>
+  <clipPath id="clipConsoleEvents"><rect x="122" y="128" width="184" height="42"/></clipPath>
+  <clipPath id="clipConsoleScope"><rect x="122" y="174" width="184" height="20"/></clipPath>
+</defs>`
+const shelfY = row => 78 + row * 78
+const rackCode = i => String.fromCharCode(65 + Math.floor(i / 4)) + (i % 4 + 1)
+function rackItemsSvg(names) {
+  return names.slice(0, 12).map((n, i) => {
+    const pts = byName[n].main, bb = bounds(pts), scale = Math.min(49 / bb.width, 54 / bb.height, .9)
+    const cx = 48 + (i % 4) * 68, base = shelfY(Math.floor(i / 4)), left = cx - bb.width * scale / 2
+    const edge = pts.map((p, k) => [p, pts[(k + 1) % pts.length]]).sort((a, b) => (a[0][1] + a[1][1]) - (b[0][1] + b[1][1]))[0]
+    const tagX = cx + 22, tagY = base - 18
+    return `<g data-stock="${n}"><ellipse cx="${cx}" cy="${base}" rx="${bb.width * scale / 2 + 3}" ry="2.2" fill="url(#gDark)" opacity=".8"/>
+      <g transform="translate(${left},${base - bb.height * scale}) scale(${scale}) translate(${-bb.x},${-bb.y})"><polygon points="${P(pts)}" fill="url(#gBlueD)" stroke="var(--scene-ink)" stroke-width="1.3" vector-effect="non-scaling-stroke"/><polyline points="${P(edge)}" fill="none" stroke="var(--scene-light)" stroke-width="1" opacity=".65" vector-effect="non-scaling-stroke"/></g>
+      <path d="M${cx + bb.width * scale / 3} ${base - 12}L${tagX + 2} ${tagY + 2}" stroke="var(--scene-metal)" fill="none"/>
+      <g transform="translate(${tagX},${tagY}) rotate(8)"><rect width="10" height="14" rx="1" fill="url(#gGrey)" stroke="var(--scene-ink)"/><circle cx="3" cy="3" r="1" fill="url(#gDark)"/><path d="M2 7H8 M2 10H6" stroke="var(--scene-light)" stroke-width=".6" opacity=".6"/></g></g>`
+  }).join('')
+}
+function rackSvg() {
+  return `<g data-rack transform="translate(1040,150)">
+    <path d="M0 0H292L302-6H10Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M292 0L302-6V250L292 256Z" fill="url(#gDark)"/>
+    <rect width="292" height="250" fill="url(#gGreyD)" stroke="var(--scene-ink)" stroke-width="2"/><rect x="12" y="8" width="268" height="234" fill="url(#pRackBrush)"/><rect x="12" y="8" width="268" height="234" fill="url(#pPegboard)"/>
+    ${[0, 280].map(x => `<g><rect x="${x}" width="12" height="250" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M${x + 2} 1V249" stroke="var(--scene-light)" opacity=".25"/>${Array.from({ length: 10 }, (_, i) => `<rect x="${x + 4}" y="${12 + i * 24}" width="4" height="7" rx="2" fill="url(#gDark)"/><circle cx="${x + 6}" cy="${14 + i * 24}" r="1" fill="var(--scene-ink)"/>`).join('')}</g>`).join('')}
+    <path d="M12 4H42L12 30Z M280 4H250L280 30Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><g fill="url(#gDark)"><circle cx="19" cy="10" r="2"/><circle cx="273" cy="10" r="2"/></g>
+    <g transform="translate(38,-42)"><rect width="216" height="34" rx="2" fill="url(#gHousing)" stroke="var(--scene-ink)"/><rect x="2" y="2" width="212" height="30" fill="url(#pPegboard)"/>
+      ${[16, 45].map((x, i) => `<g transform="translate(${x},4) rotate(${i ? 12 : -12},6,10)"><path d="M3 1L0 5 3 10 5 10 5 23Q7 27 9 23V10L12 5 9 1 9 6 5 6 5 1Z" fill="url(#gGrey)" stroke="var(--scene-ink)" stroke-width=".8"/><path d="M6 12V22" stroke="var(--scene-light)" opacity=".3"/></g>`).join('')}
+      <g fill="none" stroke="var(--scene-metal)" stroke-width="2"><ellipse cx="108" cy="18" rx="17" ry="10"/><ellipse cx="108" cy="18" rx="13" ry="8"/><ellipse cx="108" cy="18" rx="9" ry="6"/><path d="M122 21q14 10 18 3"/></g>
+      <path d="M163 11H184L191 16 185 20 176 17 172 29 165 27 168 17H162Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M189 17h10l3-5 M165 26q-9 6-19 2" fill="none" stroke="var(--scene-metal)" stroke-width="2"/>
+      <path d="M22 2v4 M51 2v4 M108 3v5 M173 2v6" stroke="var(--scene-light)" stroke-width="1.5" opacity=".45"/>
+    </g>
+    ${[0, 1, 2].map(row => { const y = shelfY(row); return `<path d="M12 ${y + 8}H280V${y + 15}H12Z" fill="url(#gDark)" opacity=".75"/><path d="M12 ${y - 4}H280L288 ${y + 2}H4Z" fill="url(#gGrey)" stroke="var(--scene-ink)"/><rect x="4" y="${y + 2}" width="284" height="9" fill="url(#gHousing)" stroke="var(--scene-ink)"/><path d="M5 ${y + 2}H287" stroke="var(--scene-light)" stroke-width="1" opacity=".55"/>
+      ${[0, 1, 2, 3].map(col => `<g transform="translate(${28 + col * 68},${y + 3})"><rect width="39" height="7" rx=".7" fill="url(#gLabel)"/><g stroke="var(--scene-ink)">${[0, 2, 5, 6, 9, 13, 15].map((x, k) => `<path d="M${3 + x} 1V6" stroke-width="${k % 3 === 0 ? 1.6 : .65}"/>`).join('')}</g><text x="23" y="6" font-family="ui-monospace,Consolas,monospace" font-size="7" fill="url(#gDark)">${rackCode(row * 4 + col)}</text></g>`).join('')}` }).join('')}
+    <g data-rack-items></g><rect x="-3" y="249" width="298" height="11" fill="url(#gGreyD)" stroke="var(--scene-ink)"/><rect x="6" y="251" width="256" height="6" fill="url(#pHazard)"/>
+    <path d="M1 260H22V265H1Z M270 260H292V265H270Z" fill="url(#gDark)"/><circle cx="279" cy="254" r="4" fill="url(#gDark)"/><circle cx="279" cy="253" r="2" fill="var(--console-on)" filter="url(#fglow)"/>
+    <text x="12" y="278" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="url(#gGrey)" letter-spacing="3">PARTS / STORES</text><g data-rack-overflow visibility="hidden"><rect x="240" y="3" width="36" height="12" fill="url(#gLabel)"/><text x="258" y="12" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="9" fill="url(#gDark)" data-rack-extra></text></g>
+  </g>`
+}
+function consoleSvg() {
+  return `<g class="console" data-board transform="translate(92,150)">
+    <path d="M4 6H334V220H4Z" fill="url(#gDark)" opacity=".8"/><rect width="330" height="216" rx="5" fill="url(#gHousing)" stroke="var(--scene-ink)" stroke-width="2"/><path d="M5 2H325 M2 5V209" stroke="var(--scene-light)" opacity=".3"/><rect x="8" y="8" width="314" height="194" rx="3" fill="url(#gDark)" stroke="var(--scene-metal)"/>
+    <g clip-path="url(#clipConsoleGlass)"><rect x="12" y="12" width="306" height="186" fill="#070a10"/><rect x="12" y="12" width="306" height="186" fill="url(#gScreenBloom)"/>
+      <g fill="#34d7ff"><text class="title" x="20" y="29">ASSEMBLY // BAY 02</text><circle class="rec" cx="226" cy="25" r="2"/><text class="caption" x="232" y="29">REC</text><text class="caption" x="310" y="29" text-anchor="end" data-clock>00:00:00</text>
+      <path d="M20 36H310 M113 42V189" fill="none" stroke="var(--scene-light)" opacity=".18"/><rect x="20" y="42" width="85" height="147" fill="url(#pScreenGrid)"/>
+      <g transform="translate(20,46) scale(.208)" filter="url(#fglow)" data-sil></g><text class="caption" x="23" y="193">UNIT / 02</text>
+      <text x="122" y="82" font-size="48" font-weight="800" data-pct>58%</text><text class="caption" x="306" y="52" text-anchor="end" data-count></text>
+      <g data-progress>${ORDER.map((n, i) => `<rect class="progress-segment off" data-progress-part="${n}" x="${122 + i * 6.3}" y="93" width="4.7" height="8" rx=".6" fill="${screenPaint.off}"/>`).join('')}</g>
+      <circle cx="125" cy="115" r="2.5" data-status-led/><text x="134" y="119" data-status>STANDBY</text><path d="M122 125H306 M122 172H306" stroke="var(--scene-light)" opacity=".16"/>
+      <g clip-path="url(#clipConsoleEvents)"><g transform="translate(123,138)" class="caption" data-events></g></g>
+      <g clip-path="url(#clipConsoleScope)"><path d="M122 183H306" stroke="var(--scene-light)" opacity=".13"/><polyline class="scope-wave" data-scope points="122,183 130,183 134,181 138,185 142,183 150,183 153,177 157,190 161,180 164,183 177,183 182,181 186,185 190,183 198,183 202,178 206,189 210,180 214,183 230,183 234,181 238,185 242,183 250,183 254,177 258,190 262,180 266,183 280,183 284,181 288,185 292,183 299,183 302,179 306,183"/></g></g>
+      <rect x="12" y="12" width="306" height="186" fill="url(#pScreenLines)" pointer-events="none"/><path d="M12 12H80L226 198H170Z" fill="var(--scene-paper)" opacity=".05" pointer-events="none"/>
+    </g>
+    ${[[5, 5], [325, 5], [5, 210], [325, 210]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.8" fill="url(#gGrey)" stroke="var(--scene-ink)"/><path d="M${x - 1.5} ${y}h3 M${x} ${y - 1.5}v3" stroke="var(--scene-ink)" stroke-width=".8"/>`).join('')}
+    <rect x="18" y="203" width="228" height="10" rx="1" fill="url(#gDark)"/><text class="caption" x="24" y="211" fill="url(#gVisor)">ASSEMBLY CONSOLE · BAY 02</text>
+    ${[277, 301].map((x, i) => `<circle cx="${x}" cy="209" r="5" fill="url(#gDark)"/><circle cx="${x}" cy="207" r="4" fill="url(#${i ? 'gVisor' : 'gRed'})" stroke="var(--scene-ink)"/><path d="M${x - 2} 205h4" stroke="var(--scene-light)" opacity=".5"/>`).join('')}
+  </g>`
+}
+
+/* ============================================================
+   机库场景
+   ============================================================ */
+const scene = $('[data-scene]'), stat = $('[data-stat]')
+const MX = 564, MY = 34, MS = .68
+scene.innerHTML = DEFS + SCENE_DEFS + `
+  <rect width="1400" height="520" fill="url(#gWall)"/>
+  <rect width="1400" height="400" fill="url(#pWallBrush)"/>
+  <g fill="none" stroke-width="1">${Array.from({ length: 60 }, (_, i) => { const x = (i % 12) * 120 + 2, row = Math.floor(i / 12), y = [2, 62, 152, 242, 332][row], h = [56, 86, 86, 86, 66][row]; return `<path d="M${x} ${y + h}V${y}H${x + 115}" stroke="var(--scene-light)" opacity=".12"/><path d="M${x + 115} ${y}V${y + h}H${x}" stroke="var(--scene-ink)" opacity=".8"/>` }).join('')}</g>
+  <g fill="var(--scene-ink)" opacity=".18">${[[367, 164], [1220, 254], [728, 71], [129, 338], [964, 345]].map(([x, y], i) => `<path d="M${x} ${y}l${22 + i * 3} -5 18 10 -8 17 -19 4 -12 -9 -11 3Z"/>`).join('')}</g>
+  <g opacity=".9">${Array.from({ length: 12 }, (_, i) => `<line x1="${i * 120}" y1="0" x2="${i * 120}" y2="400" stroke="#0c1019" stroke-width="3"/>`).join('')}${Array.from({ length: 4 }, (_, i) => `<line x1="0" y1="${60 + i * 90}" x2="1400" y2="${60 + i * 90}" stroke="#0c1019" stroke-width="2"/>`).join('')}</g>
+  <g fill="#2a3346">${Array.from({ length: 60 }, (_, i) => `<circle cx="${(i % 12) * 120 + 8}" cy="${Math.floor(i / 12) * 90 + 68}" r="2.2"/><circle cx="${(i % 12) * 120 + 112}" cy="${Math.floor(i / 12) * 90 + 68}" r="2.2"/>`).join('')}</g>
+  <text x="40" y="150" font-family="ui-monospace,Consolas,monospace" font-size="120" font-weight="800" fill="#1c2436" opacity=".9">BAY 02</text>
+  <rect x="0" y="14" width="1400" height="10" fill="#222a3a"/><rect x="0" y="24" width="1400" height="4" fill="#0f131c"/>
+  <line class="rgb" x1="0" y1="30" x2="1400" y2="30" stroke="url(#gRgb)" stroke-width="3" stroke-dasharray="120 60" opacity=".7"/>
+  <g stroke="#3a4458" stroke-width="6" fill="none"><path d="M0 46 H 520 Q 540 46 540 66 V 96"/><path d="M1400 52 H 980 Q 960 52 960 72 V 96"/></g>
+  <g stroke="var(--scene-light)" stroke-width="1" fill="none" opacity=".35"><path d="M0 44H520Q538 44 538 66V96"/><path d="M1400 50H980Q958 50 958 72V96"/></g>
+  <g fill="url(#gGrey)" stroke="var(--scene-ink)" stroke-width=".8">${[[130, 46], [360, 46], [1030, 52], [1280, 52]].map(([x, y]) => `<rect x="${x}" y="${y - 5}" width="3" height="10"/><rect x="${x + 7}" y="${y - 5}" width="3" height="10"/>`).join('')}<rect x="534" y="81" width="12" height="3"/><rect x="534" y="88" width="12" height="3"/><rect x="954" y="82" width="12" height="3"/><rect x="954" y="89" width="12" height="3"/></g>
+  <g fill="#c9a227"><rect x="536" y="70" width="8" height="8"/><rect x="956" y="76" width="8" height="8"/></g>
+  <g stroke="#2a3346" stroke-width="3" fill="none"><path d="M300 28 q 20 120 -10 260"/><path d="M1120 28 q -30 140 20 260"/></g>
+  <g stroke="var(--scene-metal)" stroke-width=".6" fill="none" opacity=".45"><path d="M299 28q20 120-10 260"/><path d="M1119 28q-30 140 20 260"/></g>
+  <g>${[[250, 56], [700, 48], [1150, 56]].map(([x, y]) => `<polygon points="${x - 29},${y + 20} ${x + 29},${y + 20} ${x + 230},480 ${x - 230},480" fill="url(#gCone)" opacity=".28"/><polygon points="${x - 22},${y + 22} ${x + 22},${y + 22} ${x + 200},470 ${x - 200},470" fill="url(#gCone)"/><path d="M${x - 26} ${y}h52l-5 22h-42Z" fill="url(#gGreyD)" stroke="var(--scene-ink)"/><path d="M${x - 21} ${y + 4}h42l-4 14h-34Z" fill="url(#gGold)" opacity=".5"/><rect x="${x - 18}" y="${y + 16}" width="36" height="5" rx="2" fill="var(--scene-warm)"/><ellipse cx="${x}" cy="${y + 18}" rx="10" ry="2" fill="var(--scene-paper)" filter="url(#fglow)"/><path d="M${x - 23} ${y + 1}h46" stroke="var(--scene-light)" opacity=".4"/>`).join('')}</g>
+  <g><rect x="0" y="112" width="1400" height="6" fill="#3a4458"/><rect x="0" y="118" width="1400" height="3" fill="#161c2a"/>${Array.from({ length: 36 }, (_, i) => `<rect x="${i * 40 + 6}" y="92" width="3" height="20" fill="#3a4458"/>`).join('')}<rect x="0" y="92" width="1400" height="3" fill="#3a4458"/></g>
+  <g fill="url(#gGreyD)" stroke="var(--scene-ink)" stroke-width=".6">${Array.from({ length: 36 }, (_, i) => `<rect x="${i * 40 + 3}" y="110" width="9" height="4"/><path d="M${i * 40 + 6} 94v15" stroke="var(--scene-metal)"/>`).join('')}</g>
+  <g>${[[560, 232], [880, 260], [1330, 240]].map(([x, y]) => `<rect x="${x - 40}" y="${y - 36}" width="80" height="36" fill="#141a26" stroke="#2a3346"/><rect x="${x - 34}" y="${y - 30}" width="68" height="24" fill="#0c1019"/><g fill="#3ad0ff" opacity=".8"><rect x="${x - 30}" y="${y - 26}" width="24" height="3"/><rect x="${x - 30}" y="${y - 20}" width="40" height="3"/><rect x="${x - 30}" y="${y - 14}" width="16" height="3"/></g>`).join('')}</g>
+  <rect x="0" y="400" width="1400" height="120" fill="url(#gFloor)"/>
+  <rect x="0" y="407" width="1400" height="113" fill="url(#pDiamond)" opacity=".08"/>
+  <g fill="none" stroke="var(--scene-light)" stroke-width=".8" opacity=".16">${[[426, 478, 28], [471, 504, 39], [542, 513, 29], [793, 510, 45], [927, 490, 35], [951, 452, 20], [449, 448, 19], [857, 426, 24]].map(([x, y, w]) => `<path d="M${x} ${y}l${w} -3 M${x + 5} ${y + 3}l${w / 2} -2"/>`).join('')}</g>
+  <g stroke="#243044" stroke-width="1.2">${Array.from({ length: 15 }, (_, i) => `<line x1="${i * 100}" y1="520" x2="${700 + (i * 100 - 700) * .35}" y2="400"/>`).join('')}<line x1="0" y1="430" x2="1400" y2="430"/><line x1="0" y1="470" x2="1400" y2="470"/></g>
+  <g>${Array.from({ length: 70 }, (_, i) => `<rect x="${i * 20}" y="400" width="10" height="7" fill="${i % 2 ? '#c9a227' : '#111826'}"/>`).join('')}</g>
+
+  ${[470, 900].map(x => `<g><rect x="${x}" y="60" width="6" height="360" fill="#3a4458"/><rect x="${x + 24}" y="60" width="6" height="360" fill="#3a4458"/>${Array.from({ length: 9 }, (_, i) => `<line x1="${x + 3}" y1="${60 + i * 40}" x2="${x + 27}" y2="${100 + i * 40}" stroke="#2f3848" stroke-width="2"/><line x1="${x + 3}" y1="${60 + i * 40}" x2="${x + 27}" y2="${60 + i * 40}" stroke="#2f3848" stroke-width="2"/>`).join('')}<rect x="${x - 6}" y="416" width="42" height="10" fill="#2a3346"/><rect x="${x - 10}" y="426" width="50" height="4" fill="#c9a227"/><rect x="${x - 2}" y="48" width="34" height="12" fill="#2a3346"/><circle class="beacon" cx="${x + 15}" cy="54" r="3" fill="#ff4d5a" filter="url(#fglow)"/></g>`).join('')}
+  <g><rect x="500" y="62" width="96" height="8" fill="#3a4458"/><rect x="588" y="70" width="14" height="10" fill="#2a3346"/><rect x="590" y="80" width="10" height="3" fill="#ffe9b0"/><polygon points="588,83 602,83 660,200 560,200" fill="url(#gCone)"/></g>
+  <g><rect x="804" y="62" width="96" height="8" fill="#3a4458"/><rect x="798" y="70" width="14" height="10" fill="#2a3346"/><rect x="800" y="80" width="10" height="3" fill="#ffe9b0"/><polygon points="798,83 812,83 840,200 740,200" fill="url(#gCone)"/></g>
+  <g><rect x="500" y="200" width="44" height="5" fill="#3a4458"/><rect x="500" y="184" width="2" height="16" fill="#3a4458"/><rect x="542" y="184" width="2" height="16" fill="#3a4458"/><rect x="500" y="184" width="44" height="2" fill="#3a4458"/><rect x="856" y="300" width="44" height="5" fill="#3a4458"/><rect x="856" y="284" width="2" height="16" fill="#3a4458"/><rect x="898" y="284" width="2" height="16" fill="#3a4458"/><rect x="856" y="284" width="44" height="2" fill="#3a4458"/></g>
+  <g fill="url(#gGrey)" stroke="var(--scene-ink)" stroke-width=".7">${[[501, 200], [543, 200], [857, 300], [899, 300]].map(([x, y]) => `<rect x="${x - 4}" y="${y - 2}" width="8" height="4"/><circle cx="${x - 2}" cy="${y}" r=".6"/><circle cx="${x + 2}" cy="${y}" r=".6"/>`).join('')}</g>
+  <g>${Array.from({ length: 7 }, (_, i) => `<rect x="452" y="${100 + i * 44}" width="14" height="3" fill="#3a4458"/>`).join('')}<rect x="452" y="96" width="2" height="300" fill="#3a4458"/><rect x="464" y="96" width="2" height="300" fill="#3a4458"/></g>
+  <g><path d="M1040 440 C 1000 452, 980 468, 950 474" stroke="#0d1119" stroke-width="5" fill="none"/><path d="M1040 444 C 1004 456, 986 470, 956 476" stroke="#2a3346" stroke-width="2" fill="none"/><path d="M420 470 C 380 462, 340 468, 300 476" stroke="#0d1119" stroke-width="4" fill="none"/></g>
+  <g><rect x="990" y="432" width="56" height="30" rx="2" fill="#2a3346" stroke="#161c2a"/><rect x="994" y="437" width="48" height="9" fill="#1c2334"/><rect x="994" y="449" width="48" height="9" fill="#1c2334"/><rect x="1032" y="440" width="6" height="3" fill="#c9a227"/><rect x="1032" y="452" width="6" height="3" fill="#c9a227"/><circle cx="998" cy="466" r="4" fill="#0f131c"/><circle cx="1038" cy="466" r="4" fill="#0f131c"/><rect x="990" y="424" width="56" height="8" fill="#1c2334"/></g>
+  <g><rect x="1348" y="374" width="10" height="26" rx="2" fill="#c0392b"/><rect x="1350" y="368" width="6" height="6" fill="#0f131c"/><path d="M1352 372 q -8 4 -6 14" stroke="#0f131c" stroke-width="2" fill="none"/></g>
+  <g fill="#c9a227" opacity=".7">${[400, 414, 428].map(x => `<polygon points="${x},440 ${x + 8},440 ${x + 20},460 ${x + 12},460"/>`).join('')}${[960, 974, 988].map(x => `<polygon points="${x},440 ${x + 8},440 ${x + 20},460 ${x + 12},460"/>`).join('')}</g>
+  <text x="700" y="508" text-anchor="middle" font-family="ui-monospace,Consolas,monospace" font-size="22" fill="#2a3448" letter-spacing="8">BAY-02</text>
+  ${rackSvg()}
+  ${consoleSvg()}
+  <ellipse cx="700" cy="474" rx="250" ry="38" fill="#1f2738" stroke="#3a4458" stroke-width="3"/><ellipse cx="700" cy="468" rx="240" ry="32" fill="#141a26"/>
+  <ellipse cx="700" cy="468" rx="246" ry="35" fill="none" stroke="url(#pHazard)" stroke-width="6"/>
+  <g fill="none" stroke="var(--scene-metal)" stroke-width=".8" opacity=".6">${[[214, 27], [176, 22], [134, 17]].map(([rx, ry]) => `<ellipse cx="700" cy="468" rx="${rx}" ry="${ry}"/>`).join('')}</g>
+  <path d="M468 464a232 31 0 0 1 464 0" fill="none" stroke="var(--scene-light)" stroke-width="1" opacity=".25"/>
+  <g data-ring>${Array.from({ length: 16 }, (_, i) => { const a = i / 16 * Math.PI * 2; return `<rect x="${700 + Math.cos(a) * 236 - 7}" y="${470 + Math.sin(a) * 31 - 2}" width="14" height="4" rx="1" fill="#0b0f18" data-seg/>` }).join('')}</g>
+  <g><polygon points="560,470 840,470 872,40 528,40" fill="#4fc3ff" fill-opacity=".045"/>${[80, 140, 200, 260, 320, 380].map(y => `<line x1="${540 + (y - 40) / 430 * 20}" y1="${y}" x2="${860 - (y - 40) / 430 * 20}" y2="${y}" stroke="#4fc3ff" stroke-opacity=".07"/>`).join('')}<circle cx="560" cy="467" r="3" fill="#5be3ff" filter="url(#fglow)"/><circle cx="840" cy="467" r="3" fill="#5be3ff" filter="url(#fglow)"/></g>
+  <g transform="translate(${MX},${MY}) scale(${MS})" data-mechwrap>${mechSvg('main')}<path class="seam" data-seam d="" style="display:none"/><line class="scan" data-scan x1="0" x2="0" y1="0" y2="0" style="display:none"/></g>
+  <rect class="wash" width="1400" height="520"/>
+  <g data-sparks></g>
+  <g class="drone" data-drone transform="translate(1000,120)"><ellipse cx="0" cy="12" rx="26" ry="5" fill="#000" opacity=".25"/><rect x="-16" y="-8" width="32" height="14" rx="4" fill="url(#gGrey)" stroke="#0e121c"/><rect x="-30" y="-4" width="14" height="3" fill="#3a4152"/><rect x="16" y="-4" width="14" height="3" fill="#3a4152"/><ellipse class="rotor" cx="-30" cy="-6" rx="12" ry="2" fill="#9aa3b8" opacity=".8"/><ellipse class="rotor" cx="30" cy="-6" rx="12" ry="2" fill="#9aa3b8" opacity=".8"/><rect x="-3" y="6" width="6" height="12" fill="#e2b54c"/><circle cx="0" cy="0" r="3" fill="#5be3ff" filter="url(#fglow)"/><g data-arc style="display:none"><circle cx="0" cy="20" r="6" fill="#fff" filter="url(#fglow)"/></g></g>
+  <g class="drone" data-drone2 transform="translate(1200,90)"><ellipse cx="0" cy="12" rx="22" ry="4" fill="#000" opacity=".25"/><rect x="-14" y="-7" width="28" height="12" rx="4" fill="url(#gGrey)" stroke="#0e121c"/><rect x="-26" y="-4" width="12" height="3" fill="#3a4152"/><rect x="14" y="-4" width="12" height="3" fill="#3a4152"/><ellipse class="rotor" cx="-26" cy="-6" rx="10" ry="2" fill="#9aa3b8" opacity=".8"/><ellipse class="rotor" cx="26" cy="-6" rx="10" ry="2" fill="#9aa3b8" opacity=".8"/><rect x="-4" y="5" width="8" height="10" fill="#ffb020"/><circle cx="0" cy="0" r="3" fill="#ffb020" filter="url(#fglow)"/><g data-beam style="display:none"><polygon points="-3,14 3,14 26,64 -26,64" fill="#ffb020" fill-opacity=".18"/></g></g>
+  <rect class="scene-grain" width="1400" height="520" filter="url(#fSceneGrain)"/>`
+
+// 从现有色站取色，场景细节不另造调色板。
+Object.entries({ ink: '#gDark stop[offset="1"]', metal: '#gGrey stop', light: '#gVisor stop', paper: '#gFlame stop', warm: '#gCone stop' }).forEach(([name, selector]) => scene.style.setProperty('--scene-' + name, $(selector, scene).getAttribute('stop-color')))
+scene.style.setProperty('--console-cyan', screenPaint.done)
+scene.style.setProperty('--console-on', screenPaint.powered)
+
+const partEls = Object.fromEntries($$('[data-mechwrap] .part', scene).map(el => [el.dataset.part, el]))
+const S = { st: Object.fromEntries(ORDER.map((n, i) => [n, i < 17 ? 'done' : 'off'])), target: null, seam: 0, tag: null, alarm: 0, full: false, auto: true, busy: false, timers: [] }
+const after = (ms, fn) => S.timers.push({ at: performance.now() + ms, fn })
+const mechEl = $('[data-mechwrap] .mech', scene), seamEl = $('[data-seam]', scene), scanEl = $('[data-scan]', scene), drone = $('[data-drone]', scene), arc = $('[data-arc]', scene), sparks = $('[data-sparks]', scene)
+const droneTo = { x: 1000, y: 120 }, dronePos = { x: 1000, y: 120 }
+const drone2 = $('[data-drone2]', scene), beam = $('[data-beam]', scene), drone2To = { x: 1200, y: 90 }, drone2Pos = { x: 1200, y: 90 }
+const motionPreference = matchMedia('(prefers-reduced-motion: reduce)')
+const boardEl = $('[data-board]', scene), eventEl = $('[data-events]', scene), eventRows = []
+let lastScreenState = '', lastRackState = '', lastClockSecond = -1, lastWeldEvent = ''
+$('[data-sil]', scene).innerHTML = silhouetteSvg(S.st)
+const screenParts = Object.fromEntries($$('[data-screen-part]', scene).map(el => [el.dataset.screenPart, el]))
+const progressParts = Object.fromEntries($$('[data-progress-part]', scene).map(el => [el.dataset.progressPart, el]))
+function arrangeEvents() {
+  eventRows.forEach((row, i) => { const slot = i - Math.max(0, eventRows.length - 3); row.style.transform = `translateY(${slot * 14}px)`; row.style.opacity = slot < 0 ? '0' : String(.55 + slot * .2) })
+}
+function pushEvent(action, name, detail = '') {
+  const partName = name ? name.replace(/([a-z])([A-Z])/g, '$1-$2').replace(/-([LR])$/, (_, side) => '|' + side).split('|').reverse().join('-').toUpperCase() : ''
+  const row = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+  row.setAttribute('class', 'console-event'); row.textContent = [action.padEnd(7), partName, detail].filter(Boolean).join(' ')
+  row.setAttribute('xml:space', 'preserve'); row.style.transform = 'translateY(42px)'; row.style.opacity = '0'
+  eventEl.appendChild(row); eventRows.push(row)
+  if (eventRows.length > 4) eventRows.shift().remove()
+  if (motionPreference.matches) arrangeEvents()
+  else requestAnimationFrame(() => requestAnimationFrame(arrangeEvents))
+}
+pushEvent('STANDBY')
+function centroid(name) { const pts = byName[name].main; const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length; return { x: MX + cx * MS, y: MY + cy * MS } }
+function render(now = performance.now()) {
+  for (const n of ORDER) partEls[n].setAttribute('class', clsFor(n, S.st[n]) + (S.fresh === n ? ' fresh' : ''))
+  scene.classList.toggle('alarm', !!S.alarm)
+  mechEl.classList.toggle('powered', S.full)
+  const done = ORDER.filter(n => S.st[n] === 'done').length, pct = Math.round(done / ORDER.length * 100)
+  const screenState = ORDER.map(n => S.st[n]).join(',')
+  if (screenState !== lastScreenState) {
+    lastScreenState = screenState
+    ORDER.forEach(n => { screenParts[n].setAttribute('class', 'screen-part ' + S.st[n]); screenParts[n].setAttribute('fill', screenPaint[S.st[n]]); progressParts[n].setAttribute('class', 'progress-segment ' + S.st[n]); progressParts[n].setAttribute('fill', screenPaint[S.st[n]]) })
+  }
+  $('[data-pct]', scene).textContent = pct + '%'
+  const status = S.full ? 'POWER ON' : S.alarm ? 'JAMMED' : S.tag ? 'INSPECT?' : S.target ? 'WELDING ' + NAME_CN[S.target] : 'STANDBY'
+  const statusColor = S.full ? screenPaint.powered : S.alarm ? '#ff4d5a' : S.tag ? '#ffb020' : '#34d7ff'
+  const sEl = $('[data-status]', scene); sEl.textContent = status; sEl.setAttribute('fill', statusColor)
+  $('[data-status-led]', scene).setAttribute('fill', statusColor)
+  $('[data-scope]', scene).setAttribute('stroke', S.full ? statusColor : screenPaint.done)
+  boardEl.classList.toggle('powered', S.full)
+  if (Math.floor(now / 1000) !== lastClockSecond) {
+    lastClockSecond = Math.floor(now / 1000)
+    // 墙上时钟只负责展示，不参与装配状态或计时器判定。
+    const clock = new Date(); $('[data-clock]', scene).textContent = [clock.getHours(), clock.getMinutes(), clock.getSeconds()].map(v => String(v).padStart(2, '0')).join(':')
+  }
+  $('[data-count]', scene).textContent = `PARTS ${done}/${ORDER.length}`
+  $$('[data-seg]', scene).forEach((r, i) => r.setAttribute('fill', i < Math.round(pct / 100 * 16) ? '#34d7ff' : '#0b0f18'))
+  const stocked = ORDER.filter(n => S.st[n] === 'off'), rackState = stocked.join(',')
+  if (rackState !== lastRackState) {
+    lastRackState = rackState; $('[data-rack-items]', scene).innerHTML = rackItemsSvg(stocked)
+    $('[data-rack-overflow]', scene).setAttribute('visibility', stocked.length > 12 ? 'visible' : 'hidden')
+    $('[data-rack-extra]', scene).textContent = stocked.length > 12 ? '+' + (stocked.length - 12) : ''
+  }
+  if (S.target && (S.st[S.target] === 'build' || S.st[S.target] === 'pend')) { const p = byName[S.target]; seamEl.setAttribute('d', seamD(p)); seamEl.style.display = ''; const len = seamEl.getTotalLength(); seamEl.setAttribute('stroke-dasharray', `${len * S.seam / 100} ${len}`); const bb = bounds(p.main); scanEl.style.display = ''; scanEl.style.stroke = S.st[S.target] === 'pend' ? '#ffb020' : ''; const y = bb.y + bb.height * (motionPreference.matches ? .5 : (now / 1400) % 1); scanEl.setAttribute('x1', bb.x - 6); scanEl.setAttribute('x2', bb.x + bb.width + 6); scanEl.setAttribute('y1', y); scanEl.setAttribute('y2', y) } else { seamEl.style.display = 'none'; scanEl.style.display = 'none' }
+  if (S.welding && S.target) { const milestone = Math.floor(S.seam / 10) * 10, key = S.target + ':' + milestone; if (key !== lastWeldEvent) { lastWeldEvent = key; pushEvent('WELD', S.target, milestone + '%') } }
+  stat.textContent = `部件 ${done}/${ORDER.length} · ${status}${S.target ? ' · 焊缝 ' + S.seam + '%' : ''}`
+}
+function act(a) {
+  if (a === 'claim' && !S.target) { const n = ORDER.find(k => S.st[k] === 'off'); if (!n) return; S.busy = true; S.target = n; S.seam = 0; pushEvent('CLAIM', n); Object.assign(droneTo, { x: 1090, y: 200 }); after(900, () => { const c = centroid(n); Object.assign(droneTo, { x: c.x + 46, y: c.y - 40 }); after(1100, () => { S.st[n] = 'build'; S.welding = true; S.busy = false }) }); return }
+  if (a === 'pend' && S.target && S.st[S.target] === 'build') { S.st[S.target] = 'pend'; S.tag = S.target; S.welding = false; droneTo.x += 40; pushEvent('INSPECT', S.target); return }
+  if (a === 'go' && S.tag) { pushEvent('RESUME', S.tag); S.st[S.tag] = 'build'; S.tag = null; S.welding = true; droneTo.x -= 40; return }
+  if (a === 'block' && S.target) { const prev = S.st[S.target]; S.st[S.target] = 'block'; S.alarm = 1; S.welding = false; droneTo.x += 80; pushEvent('JAMMED', S.target); after(2600, () => { S.alarm = 0; if (S.st[S.target] === 'block') { S.st[S.target] = prev === 'block' ? 'build' : prev; S.welding = S.st[S.target] === 'build'; droneTo.x -= 80; pushEvent('CLEAR', S.target) } }); return }
+  if (a === 'done' && S.target) { const n = S.target; S.st[n] = 'done'; S.fresh = n; pushEvent('DONE', n); after(700, () => { if (S.fresh === n) S.fresh = null }); S.target = null; S.tag = null; S.welding = false; Object.assign(droneTo, { x: 1000, y: 120 }); S.busy = false; if (ORDER.every(k => S.st[k] === 'done')) { S.full = true; pushEvent('POWER ON') } return }
+  if (a === 'full') { ORDER.forEach(k => { S.st[k] = 'done' }); S.target = null; S.tag = null; S.welding = false; S.full = true; Object.assign(droneTo, { x: 1000, y: 120 }); pushEvent('POWER ON'); return }
+}
+function auto(now) {
+  if (S.full) { if (!S.resetAt) S.resetAt = now + 9000; if (now >= S.resetAt) { S.resetAt = 0; S.full = false; ORDER.forEach((n, i) => { S.st[n] = i < 17 ? 'done' : 'off' }) } return }
+  if (!S.target) { if (!S.nextAt) S.nextAt = now + 1600; if (now >= S.nextAt) { S.nextAt = 0; act('claim') } return }
+  const st = S.st[S.target]
+  if (st === 'build' && S.seam >= 100) { act('done'); return }
+  if (st === 'build' && S.seam >= 45 && S.seam < 48 && !S.pended && ORDER.filter(k => S.st[k] === 'done').length % 3 === 1) { S.pended = true; act('pend'); S.goAt = now + 2600; return }
+  if (st === 'pend' && S.goAt && now >= S.goAt) { S.goAt = 0; act('go') }
+  if (st === 'done') S.pended = false
+}
+$$('[data-sim] [data-act]').forEach(b => b.addEventListener('click', () => { if (b.dataset.act === 'auto') { S.auto = !S.auto; b.textContent = S.auto ? '自动演' : '手动'; return } S.auto = false; $('[data-sim] [data-act="auto"]').textContent = '手动'; act(b.dataset.act) }))
+let last = 0, lastSeam = 0, sparkList = []
+motionPreference.addEventListener('change', () => {
+  if (motionPreference.matches) {
+    sparkList = []; sparks.innerHTML = ''; arc.style.display = 'none'; arrangeEvents()
+    Object.assign(dronePos, droneTo); Object.assign(drone2Pos, drone2To)
+    drone.setAttribute('transform', `translate(${dronePos.x},${dronePos.y})`); drone2.setAttribute('transform', `translate(${drone2Pos.x},${drone2Pos.y})`)
+  }
+  render()
+})
+function frame(now) {
+  requestAnimationFrame(frame); if (now - last < 1000 / 30) return; last = now
+  S.timers = S.timers.filter(t => { if (now >= t.at) { t.fn(); return false } return true })
+  if (S.auto && !S.busy) auto(now)
+  if (S.welding && S.target && now - lastSeam > 110) { lastSeam = now; S.seam = Math.min(100, S.seam + 1) }
+  if (motionPreference.matches) Object.assign(dronePos, droneTo)
+  else { dronePos.x += (droneTo.x - dronePos.x) * .06; dronePos.y += (droneTo.y - dronePos.y) * .06 + Math.sin(now / 350) * .4 }
+  drone.setAttribute('transform', `translate(${dronePos.x.toFixed(1)},${dronePos.y.toFixed(1)})`)
+  if (S.tag) { const c = centroid(S.tag); drone2To.x = c.x - 40; drone2To.y = c.y - 56 } else { drone2To.x = 1200; drone2To.y = 90 }
+  if (motionPreference.matches) Object.assign(drone2Pos, drone2To)
+  else { drone2Pos.x += (drone2To.x - drone2Pos.x) * .05; drone2Pos.y += (drone2To.y - drone2Pos.y) * .05 + Math.cos(now / 420) * .4 }
+  drone2.setAttribute('transform', `translate(${drone2Pos.x.toFixed(1)},${drone2Pos.y.toFixed(1)})`)
+  beam.style.display = S.tag && Math.abs(drone2Pos.x - drone2To.x) < 8 ? '' : 'none'
+  const welding = S.welding && S.target && S.st[S.target] === 'build' && Math.abs(dronePos.x - droneTo.x) < 6
+  arc.style.display = !motionPreference.matches && welding && (now / 60 | 0) % 2 ? '' : 'none'
+  if (welding && !motionPreference.matches) { const pt = seamEl.getPointAtLength(seamEl.getTotalLength() * S.seam / 100); const sx = MX + pt.x * MS, sy = MY + pt.y * MS; for (let i = 0; i < 3; i++) sparkList.push({ x: sx, y: sy, vx: (Math.random() - .5) * 6, vy: -Math.random() * 5, life: 1 }); arc.setAttribute('transform', `translate(${(sx - dronePos.x).toFixed(1)},${(sy - dronePos.y - 20).toFixed(1)})`) }
+  sparkList = sparkList.filter(s => s.life > 0); sparkList.forEach(s => { s.life -= .06; s.vy += .35; s.x += s.vx; s.y += s.vy })
+  sparks.innerHTML = sparkList.map(s => `<line x1="${s.x}" y1="${s.y}" x2="${s.x - s.vx}" y2="${s.y - s.vy}" stroke="${s.life > .5 ? '#fff6d0' : '#ffb347'}" stroke-width="1.6" opacity="${s.life}"/>`).join('')
+  render(now)
+}
+render(); requestAnimationFrame(frame)
+
+/* ============================================================
+   特写：同一份几何，放大
+   ============================================================ */
+const close = $('[data-closeup]')
+close.setAttribute('viewBox', '0 0 400 690'); close.innerHTML = DEFS + `<rect width="400" height="690" fill="#111623"/><g transform="translate(0,0)">${mechSvg('close')}</g>`
+const closeParts = Object.fromEntries($$('.part', close).map(el => [el.dataset.part, el])), closeMech = $('.mech', close)
+$$('[data-sim2] [data-mode]').forEach(b => b.addEventListener('click', () => {
+  const mode = b.dataset.mode; closeMech.classList.toggle('powered', mode === 'powered')
+  ORDER.forEach((n, i) => { const st = mode === 'off' ? 'off' : mode === 'half' ? (i < 15 ? 'done' : (i === 15 ? 'build' : 'off')) : 'done'; closeParts[n].setAttribute('class', clsFor(n, st)) })
+}))
+</script>
+</body>
+</html>

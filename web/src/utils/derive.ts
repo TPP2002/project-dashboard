@@ -234,14 +234,26 @@ export function activityCountsOfDay(boards: Board[], day: string): Record<string
   return out
 }
 
-/** 连续产出天数（今天没有完工则从昨天起算；遇到 0 完工的一天即停） */
-export function doneStreak(byDay: Map<string, DoneRecord[]>): number {
+/**
+ * 连续产出天数：今天无产出则从昨天起算，起点必须有产出。
+ * 默认遇到空日即停，保留旧调用方规则；grace 按 AUD-FUN-PERSONALIZATION 的 d2 拍板，
+ * 将两个产出日之间的单个空日也计入天数，连续两个空日才断。
+ */
+export function doneStreak(byDay: Map<string, DoneRecord[]>, grace = false): number {
   const d = new Date()
   if (!byDay.get(localDay(d))?.length) d.setDate(d.getDate() - 1) // 今天还没出货，从昨天起算
   let streak = 0
   while (byDay.get(localDay(d))?.length) {
     streak++
     d.setDate(d.getDate() - 1)
+    if (grace && !byDay.get(localDay(d))?.length) {
+      const previous = new Date(d)
+      previous.setDate(previous.getDate() - 1)
+      if (byDay.get(localDay(previous))?.length) {
+        streak++
+        d.setDate(d.getDate() - 1)
+      }
+    }
   }
   return streak
 }

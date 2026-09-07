@@ -10,6 +10,14 @@
     "build": "npm --prefix web run build",
     "release": "node cli/index.cjs release",
     "serve": "node server/server.cjs",
-    "start": "node server/server.cjs"
-  }
+    "start": "node server/server.cjs",
+    "codex:dispatch": "tsx scripts/codex/codex-dispatch.ts dispatch",
+    "codex:status": "tsx scripts/codex/codex-dispatch.ts status",
+    "codex:collect": "tsx scripts/codex/codex-dispatch.ts collect",
+    "codex:say": "tsx scripts/codex/codex-dispatch.ts say"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  },
+  "//codex": "派单器（scripts/codex/）只在开发机跑，tsx 是它唯一的依赖，不进发布副本、不影响 CLI/server 零依赖的运行口径。"
 }

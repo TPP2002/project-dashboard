@@ -1,0 +1,1234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 2D 插画发射场 v10</title>
+<style>
+:root{--mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600}
+.doc{max-width:1520px;margin:0 auto;padding:32px 24px 96px}
+.doc-head h1{font-size:28px;letter-spacing:-.02em}
+.doc-head p{margin:8px 0 0;color:#5c5c58;max-width:1080px}
+.doc-head .meta{margin-top:6px;color:#8e8e89;font-family:var(--mono);font-size:12px}
+.sec{margin-top:44px}
+.sec>h2{font-size:22px;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:var(--mono);font-size:15px;margin-right:8px}
+.sec>p{margin:8px 0 16px;color:#5c5c58;max-width:1080px}
+.note{margin:12px 0 0;padding:10px 14px;border-left:3px solid #d2d2cf;background:#f3f3f1;color:#5c5c58;font-size:13.5px;border-radius:0 6px 6px 0}
+.note b{color:#1a1a19}
+.note.ask{border-left-color:#9a6b12;background:#fdf3e0}.note.ask b{color:#9a6b12}
+.stage{position:relative;overflow:hidden;border:1px solid #2a2f3d;border-radius:10px;background:#0a0d16;height:520px}
+.stage::before{content:attr(data-label);position:absolute;top:9px;right:13px;color:#7b8399;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;z-index:5;pointer-events:none}
+.stage svg{display:block;width:100%;height:100%}
+.stat{position:absolute;left:12px;bottom:10px;z-index:5;color:#9fb0d8;font-family:var(--mono);font-size:11px;letter-spacing:.06em;background:rgba(5,8,18,.55);padding:3px 8px;border-radius:4px;pointer-events:none}
+.sim{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:6px 12px;border:1px solid #d2d2cf;border-radius:6px;background:#f6f6f5;color:#1a1a19;cursor:pointer;font:inherit;font-size:13px}
+.btn:hover{background:#eeeeed}
+.btn.quiet{background:transparent;border-color:transparent;color:#5c5c58}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:1080px){.pair{grid-template-columns:1fr}}
+.stage.closeup{height:720px;background:#111623}
+table.spec{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e4e2;border-radius:6px;overflow:hidden;font-size:14px}
+table.spec th,table.spec td{padding:9px 12px;border-bottom:1px solid #eeeeed;text-align:left;vertical-align:top}
+table.spec th{background:#f6f6f5;color:#5c5c58;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td.k{font-weight:600;white-space:nowrap}
+.detail-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px;margin-top:14px}
+.detail-list>div{padding:10px 12px;background:#fff;border:1px solid #e4e4e2;border-radius:6px;font-size:13.5px;color:#5c5c58}
+.detail-list b{display:block;color:#1a1a19;margin-bottom:2px}
+
+
+
+/* 单文件设计稿沿用 v9 色站；场景用变量取色，产品接入时仍归产品色站管理。 */
+:root{--ink:#0e121c;--black:#000;--paper:#fff;--metal:#6b7488;--light:#d9fbff;--muted:#9aa3b8;--cyan:#34d7ff;--blue:#3b7bd6;--project:#6ea6ea;--amber:#ffb020;--red:#ff4d5a;--warm:#ffe9b0;--ice:#f2f4f8;--deep:#0a0d16;--horizon:#3a4152;--ocean:#173a6e;--floor:#20252f;--glass:#0b0f18;--scene-light:var(--light);--scene-ink:var(--ink)}
+.illustration .pl{stroke:var(--ink);stroke-width:1.1;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.illustration .pl.main{stroke-width:2.2}
+.illustration .hi{fill:var(--paper);fill-opacity:.28;stroke:none}
+.illustration .sh{fill:var(--black);fill-opacity:.32;stroke:none}
+.illustration .ln{fill:none;stroke:var(--ink);stroke-opacity:.75;stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.illustration .riv{fill:var(--ink);fill-opacity:.8;stroke:none}
+.illustration .edge{fill:none;stroke:var(--light);stroke-width:.8;opacity:.28;vector-effect:non-scaling-stroke}
+.illustration text{font-family:var(--mono);fill:var(--muted)}
+.illustration .decal{fill:var(--ice);font-weight:700;letter-spacing:.06em}
+.illustration .glow{filter:url(#fglow)}
+.illustration [fill="url(#pPegboard)"],.illustration [fill="url(#pDiamond)"],.illustration [fill="url(#pHazard)"],.illustration [stroke="url(#pHazard)"]{opacity:.08}
+.illustration .signal{fill:var(--signal,var(--cyan))}
+.illustration .beam{fill:var(--signal,var(--light));opacity:.06}
+.illustration .beam-core{fill:var(--signal,var(--light));opacity:.06}
+.scene-grain{opacity:.035;mix-blend-mode:overlay;pointer-events:none}
+.star{animation:twinkle 7s ease-in-out infinite alternate}
+.star:nth-child(3n){animation-duration:11s;animation-delay:-3s}.star:nth-child(3n + 1){animation-duration:9s;animation-delay:-6s}
+@keyframes twinkle{from{opacity:.28}to{opacity:.85}}
+.aviation,.buoy-light{animation:beacon 3s ease-in-out infinite}.aviation.alt{animation-delay:-1.5s}
+@keyframes beacon{0%,100%{opacity:.3}45%,65%{opacity:1}}
+.rgb{animation:rgbflow 9s linear infinite}
+@keyframes rgbflow{to{stroke-dashoffset:-400}}
+.wave{animation:wave 19s linear infinite alternate}.wave.two{animation-duration:25s;animation-direction:alternate-reverse}.wave.three{animation-duration:32s}
+@keyframes wave{to{transform:translateX(26px)}}
+.foam{animation:foam 6s ease-in-out infinite alternate}
+@keyframes foam{to{transform:translate(1.5px,-1px);opacity:.35}}
+.fx-beam-rotor{transform-box:view-box;transform-origin:0 0;animation:beam-turn 9s linear infinite}
+@keyframes beam-turn{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.dish-turn{transform-origin:646px 257px;animation:dish 14s ease-in-out infinite alternate}
+@keyframes dish{from{transform:rotate(-8deg)}to{transform:rotate(10deg)}}
+.flag-cloth{transform-box:fill-box;transform-origin:left center;animation:flag 2.4s steps(1,end) infinite}
+@keyframes flag{0%,100%{transform:skewY(0) scaleX(1)}33%{transform:skewY(-5deg) scaleX(.88)}66%{transform:skewY(4deg) scaleX(.97)}}
+.windows rect{animation:windowlight 5s ease-in-out infinite alternate}.windows rect:nth-child(2n){animation-delay:-2.5s}
+@keyframes windowlight{to{opacity:.55}}
+.illustration[data-state="HOLD"] .windows rect,.illustration[data-state="SCRUB"] .windows rect{fill:var(--signal);animation:none}
+.rocket .frost,.rocket .frost-ring{opacity:var(--frost,0)}
+.fx{pointer-events:none}
+.fx .fx-stroke{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.crawler .tread{stroke-dasharray:2 4}.crawler.moving .tread{animation:tread .65s linear infinite}
+@keyframes tread{to{stroke-dashoffset:-12}}
+.crawler .headlight{opacity:0}.crawler.moving .headlight{opacity:1}
+.assembly-stock{transition:transform 1.2s ease,opacity .7s ease}
+.btn[aria-pressed="true"]{border-color:var(--metal);box-shadow:inset 0 -2px var(--metal)}
+.btn:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.caption{font-family:var(--mono);font-size:11px;letter-spacing:.05em}
+.footer{margin-top:48px;color:#8e8e89;font-size:13px;text-align:center}
+@media (prefers-reduced-motion:reduce){.stage *{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="doc">
+<div class="doc-head">
+  <h1>看板 · 2D 插画发射场 v10</h1>
+  <p>海边的夜间发射场，沿用机库的<b>矢量插画、硬朗线稿与层叠明暗</b>。月光、工作灯照着总装厂房、储罐和勤务塔；一张任务卡是一枚火箭，从认领转运到加注、等待拍板，再点火升空。箭离开画面，就是这张卡完工。</p>
+  <p class="meta">任务卡 AUD-FUN-WORKFLOOR · 2026-09-08 · SVG 矢量 + CSS 动画，无外部依赖 · 单文件夜景设计稿</p>
+</div>
+<section class="sec">
+<h2><span class="no">01</span>海边发射场 · 夜景（整体）</h2>
+<p>先点「认领」看四秒转运，抵达后等四夹合拢、双臂搭上，再自动加注，十二秒涨到满。转运和接驳期间液位保持零。待拍板会停住加注；拍板后逐秒倒数，未完工时停在最后一秒。阻塞按钮再次点击即可解除。自动演示依次完成三枚火箭。</p>
+<div class="stage" data-label="发射场 · 夜 · 插画"><svg class="illustration" data-scene viewBox="0 0 1400 520" role="img" aria-label="海边夜景发射场，包含总装厂房、储罐区、指挥中心与火箭发射台"></svg><span class="stat" data-stat></span></div>
+<div class="sim" data-sim>
+  <button class="btn" data-act="claim" type="button">认领（转运上台）</button>
+  <button class="btn" data-act="pend" type="button">待拍板（HOLD）</button>
+  <button class="btn" data-act="go" type="button">拍板（GO）</button>
+  <button class="btn" data-act="block" type="button">阻塞（SCRUB）</button>
+  <button class="btn" data-act="done" type="button">完工（点火起飞）</button>
+  <button class="btn" data-act="full" type="button">项目 100%</button>
+  <button class="btn quiet" data-act="auto" type="button" aria-pressed="false">自动演</button>
+</div>
+<div class="note" data-help aria-live="polite">READY · 三枚火箭在总装厂房等待认领。</div>
+</section>
+<section class="sec">
+<h2><span class="no">02</span>火箭与勤务塔特写（放大看细节）</h2>
+<p>同一枚火箭、同一座塔：三台钟形喷口、四片格栅翼、圆柱徽带、检修口与铆钉。特写只展示所选状态，不改变整体演示。</p>
+<div class="stage closeup" data-label="特写 · 同一份矢量"><svg class="illustration" data-closeup viewBox="0 0 480 960" role="img" aria-label="火箭与勤务塔放大特写"></svg></div>
+<div class="sim" data-sim2>
+  <button class="btn" data-mode="clean" type="button" aria-pressed="true">总装（干净）</button>
+  <button class="btn" data-mode="fuel" type="button" aria-pressed="false">加注 60%（结霜白雾）</button>
+  <button class="btn" data-mode="hold" type="button" aria-pressed="false">HOLD（琥珀灯 + 闪电残光）</button>
+  <button class="btn" data-mode="ignite" type="button" aria-pressed="false">点火（火焰 + 烟 + 碎霜）</button>
+</div>
+<div class="detail-list">
+  <div><b>天空与海</b>连续的深蓝夜空渐变，三档星点、右上月亮与三条薄云。海里三层波纹缓慢横移，月光碎亮带、石块防波堤、条纹灯塔与两只红灯浮标。</div>
+  <div><b>岸线与倒影</b>岸线斜穿右下前景，三道泡沫靠着礁石。月亮、发射台灯和灯塔光束的镜像只留在海面内，四成亮度叠静态水面扭曲；晴天场坪不铺倒影。</div>
+  <div><b>总装厂房 VAB</b>竖向拉丝墙、楼层缝、喷字铭牌与四角交替航空灯。全场唯一跑马灯在屋顶。大门常开，暖光里最多露三枚箭，当前箭落在台架上，后两枚局部遮挡；门前旗杆与风向袋。</div>
+  <div><b>履带车</b>双履带、轮组、滚动踏板纹、双车灯与四根撑杆。车从厂房门口先向前驶出，再沿圆弧转入碎石路，沿途路灯的灯罩、灯杆和地面光斑对应落位。</div>
+  <div><b>火箭</b>三台带暗内壁与喷口环的钟形发动机；一级竖向面板与项目色圆柱徽带、编号贴花；四片展开格栅翼、黑色级间段、二级、尖头整流罩、接缝和小舷窗。</div>
+  <div><b>储罐区</b>两个球罐带高光弧、环形检修梯和顶灯；立式罐带螺旋梯。阀门、法兰与管线连到加注车，加注时车辆往返。</div>
+  <div><b>指挥中心</b>两层金属矮楼、青蓝交替窗灯、慢转天线锅和任务计数牌。屋顶大屏与按钮同步，等待拍板全窗琥珀，阻塞全窗红色。</div>
+  <div><b>发射台与塔</b>混凝土墩与朝海的火焰导流槽，四夹具扣箭。格构塔五层平台、检修梯、升降机、两条摆臂和避雷针；塔脚有厚基座、锚栓与接触阴影，四根桅杆用双层光锥照箭。</div>
+  <div><b>液位表（卡进度）</b>塔侧标尺从 0 到 100，数字和液面同步上涨。结霜的竖条和边缘碎块随进度显现，两侧四个排气口冒出逐团下沉、膨胀散开的冷雾，升降机随加注运行。火箭出画、下一枚待命及项目完成时，液位和加注效果归零。</div>
+  <div><b>天气（闪电、雨）</b>待拍板倒数停在十秒，积雨云下的分叉闪电双击避雷针，三层通道照亮云底、塔与箭体朝向来光的一侧，针尖留短暂蓝光。阻塞下斜雨、压暗天空，场坪出现小片积水；解除后恢复原来的等待或加注。</div>
+  <div><b>起飞序列</b>点火后四百毫秒内双臂绕铰链摆开、固定夹翻开；三束三层火焰带冲击菱并照亮台面。烟先贴地翻滚一秒再上升朝海漂，碎霜翻转落台弹起；火箭先缓升再加速出画，烟再留四秒淡出。出画后下一枚箭移到总装台，没有回收。</div>
+  <div><b>项目 100%</b>大屏显示 MISSION COMPLETE，海上三轮项目色、白色与金色烟花，约七百毫秒错开，盛放直径六十至九十像素，下坠淡出并在海里留下倒影亮斑。旗换项目色，岸边纪念柱升起并点灯；自动演完三枚，停留九秒后回到起点。</div>
+  <div><b>明暗与纹理</b>右上月光与工作灯统一照明：基色渐变、白色高光棱线、下缘硬阴影、面板线与铆钉。沿用拉丝、花纹钢板、洞洞板、斜纹警示条，纹理透明度不超过百分之八；静态颗粒为百分之三点五。</div>
+  <div><b>动效降级</b>跟随系统减少动效：星灯、海浪、光束、旗、窗灯、白雾和灯带全停；排气、烟、碎霜和闪电直接到消散态，不生成雨和烟花；光束停在固定朝向，转运直接到位、火箭直接出画。状态、液位与按钮仍可使用，自动演示不循环。</div>
+</div>
+</section>
+<section class="sec">
+<h2><span class="no">03</span>下一步</h2>
+<div class="note"><b>先核对这幅夜景。</b>整体看海陆、建筑、塔架与火箭的关系；放大看表面与机械细节；逐项核对按钮动作和四种特写。世界切换、白天版、多项目和音效属于后续施工。</div>
+</section>
+<p class="footer">看板 · AUD-FUN-WORKFLOOR · 2D 插画发射场 v10 · 2026-09-08</p>
+</div>
+<script>
+const $ = (s, el = document) => el.querySelector(s)
+const $$ = (s, el = document) => [...el.querySelectorAll(s)]
+const P = pts => pts.map(p => p.join(',')).join(' ')
+const pg = (pts, g, cls = '') => `<polygon class="pl ${cls}" points="${P(pts)}" fill="url(#${g})"/>`
+const hi = pts => `<polygon class="hi" points="${P(pts)}"/>`
+const sh = pts => `<polygon class="sh" points="${P(pts)}"/>`
+const ln = (pts, cls = 'ln') => `<polyline class="${cls}" points="${P(pts)}"/>`
+const riv = (x, y) => `<circle class="riv" cx="${x}" cy="${y}" r="1.7"/>`
+const circ = (x, y, r, g, cls = 'pl') => `<circle class="${cls}" cx="${x}" cy="${y}" r="${r}" fill="url(#${g})"/>`
+const repeat = (n, fn) => Array.from({ length:n }, (_, i) => fn(i)).join('')
+const clamp = (n, min = 0, max = 1) => Math.max(min, Math.min(max, n))
+const rect = (x, y, w, h, g, cls = '') => pg([[x,y],[x+w,y],[x+w,y+h],[x,y+h]],g,cls)
+const txt = (x,y,s,size = 9,cls = '') => `<text x="${x}" y="${y}" font-size="${size}" class="${cls}">${s}</text>`
+
+/* 所有长度为场景像素；同一份几何用于主景、特写和受光剪影。 */
+const PAD_X=902, MOUNT_TOP=412, BODY_R=13, NOZZLE_Y=190
+const ROCKET_Y=MOUNT_TOP-NOZZLE_Y-4, TOWER_X=PAD_X-78, TOWER_Y=154
+const ARM1_Y=ROCKET_Y+82.5, ARM2_Y=ROCKET_Y+28
+const ARM_ROOT=TOWER_X+16, ARM_END=PAD_X-BODY_R, ARM_LENGTH=ARM_END-ARM_ROOT
+const CRAWLER_PATH='M283 382v24a14 14 0 0 0 14 14H902'
+const TRUCK_PATH='M550 409C598 401 638 408 677 408S767 403 816 415'
+const FX_LIMITS=Object.freeze({vent:48,smoke:70,frost:24})
+const radians=degrees=>degrees*Math.PI/180
+const lerp=(a,b,t)=>a+(b-a)*t
+const smooth=t=>{t=clamp(t);return t*t*(3-2*t)}
+const noise=(i,seed=17)=>{let n=(i+seed)*374761393;n=Math.imul(n^(n>>>13),1274126177);return ((n^(n>>>16))>>>0)/4294967296}
+function cabinetFaces(x,y,w,h) {
+  const dx=-w*.45*Math.cos(Math.PI/6),dy=-w*.45*.5
+  return {front:[[x,y],[x+w,y],[x+w,y+h],[x,y+h]],
+    left:[[x+dx,y+dy],[x,y],[x,y+h],[x+dx,y+h+dy]],
+    top:[[x+dx,y+dy],[x+w+dx,y+dy],[x+w,y],[x,y]]}
+}
+function cabinet(x,y,w,h,front='gGrey',top='gGrey',side='gGreyD') {
+  const p=cabinetFaces(x,y,w,h)
+  return pg(p.left,side,'main')+pg(p.top,top)+pg(p.front,front,'main')+
+    sh(p.left)+ln([[x,y],[x+w,y],[x+w,y+h]],'edge')
+}
+function pathPose(path,distance) {
+  const length=path.getTotalLength(),at=clamp(distance,0,length)
+  const p=path.getPointAtLength(at),a=path.getPointAtLength(Math.max(0,at-.5)),b=path.getPointAtLength(Math.min(length,at+.5))
+  return {x:p.x,y:p.y,angle:Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI}
+}
+/* 特效只读注入的时钟/参数，不读 S、不调度帧；svg 插入后调用 update(host, frame)。 */
+function effect(id,svg,step) {
+  let element
+  return {svg:`<g class="fx" data-fx="${id}">${svg}</g>`,update(host,frame){
+    element ||= host.querySelector(`[data-fx="${id}"]`)
+    if(!element)throw new Error(`Missing effect anchor: ${id}`)
+    return step(element,frame)
+  }}
+}
+function softFilter(id,blur,distortion=0) {
+  return `<filter id="${id}" x="-65%" y="-65%" width="230%" height="230%">${distortion?`<feTurbulence type="fractalNoise" baseFrequency=".04 .12" numOctaves="2" seed="17" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="${distortion}" xChannelSelector="R" yChannelSelector="G"/>`:''}<feGaussianBlur stdDeviation="${blur}"/></filter>`
+}
+function radial(id,stops) {
+  return `<radialGradient id="${id}">${stops.map(([offset,color,opacity])=>`<stop offset="${offset}" stop-color="var(--${color})" stop-opacity="${opacity}"/>`).join('')}</radialGradient>`
+}
+
+const DEFS = `<defs>
+  <linearGradient id="gBlue" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ec0ff"/><stop offset=".45" stop-color="#3b7bd6"/><stop offset="1" stop-color="#1c4a8f"/></linearGradient>
+  <linearGradient id="gBlueL" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c2e0ff"/><stop offset=".5" stop-color="#6ea6ea"/><stop offset="1" stop-color="#2f66b4"/></linearGradient>
+  <linearGradient id="gBlueD" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a86d0"/><stop offset="1" stop-color="#173a6e"/></linearGradient>
+  <linearGradient id="gGrey" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6b7488"/><stop offset=".5" stop-color="#3a4152"/><stop offset="1" stop-color="#20252f"/></linearGradient>
+  <linearGradient id="gGreyD" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f4658"/><stop offset="1" stop-color="#171b24"/></linearGradient>
+  <linearGradient id="gDark" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b303d"/><stop offset="1" stop-color="#0f1219"/></linearGradient>
+  <linearGradient id="gGold" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbe6a3"/><stop offset=".5" stop-color="#e2b54c"/><stop offset="1" stop-color="#9c6f1e"/></linearGradient>
+  <linearGradient id="gRed" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff8a8a"/><stop offset="1" stop-color="#a51f1f"/></linearGradient>
+  <linearGradient id="gVisor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d9fbff"/><stop offset="1" stop-color="#2cb8ff"/></linearGradient>
+  <linearGradient id="gFlame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#8fe9ff"/><stop offset="1" stop-color="#2a7bff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gWall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#101521"/><stop offset="1" stop-color="#1b2232"/></linearGradient>
+  <linearGradient id="gFloor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2334"/><stop offset="1" stop-color="#0b0e16"/></linearGradient>
+  <linearGradient id="gCone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9b0" stop-opacity=".22"/><stop offset="1" stop-color="#ffe9b0" stop-opacity="0"/></linearGradient>
+  <linearGradient id="gRgb" x1="0" x2="1"><stop offset="0" stop-color="#4ad9c4"/><stop offset=".33" stop-color="#4a9eff"/><stop offset=".66" stop-color="#8b7bf7"/><stop offset="1" stop-color="#c96bd8"/></linearGradient>
+  <filter id="fglow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="fsoft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="6"/></filter>
+</defs>`
+const SURFACE_DEFS = `<defs>
+<pattern id="pWallBrush" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><path d="M1 0V7 M4 0V7" stroke="var(--scene-light)" stroke-width=".6" opacity=".05"/></pattern>
+<pattern id="pRackBrush" width="6" height="12" patternUnits="userSpaceOnUse"><path d="M1 0V12 M4 0V12" stroke="var(--scene-light)" stroke-width=".6" opacity=".07"/></pattern>
+<pattern id="pPegboard" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5.6" r="1.8" fill="url(#gGrey)"/><circle cx="5" cy="5" r="1.6" fill="url(#gDark)"/></pattern>
+<pattern id="pDiamond" width="32" height="16" patternUnits="userSpaceOnUse"><path d="M2 5l6-3 2 1-6 3z M18 13l6-3 2 1-6 3z" fill="url(#gVisor)"/><path d="M4 7l6-3 M20 15l6-3" stroke="var(--scene-ink)" stroke-width="1"/></pattern>
+<pattern id="pHazard" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-35)"><rect width="16" height="16" fill="url(#gDark)"/><rect width="8" height="16" fill="url(#gGold)"/></pattern>
+<pattern id="pScreenLines" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 .5H4" stroke="var(--scene-light)" stroke-width="1" opacity=".065"/></pattern>
+  <pattern id="pSceneGrain" width="19" height="17" patternUnits="userSpaceOnUse"><path d="M2 3h1M7 14h1M11 7h1M17 2h1M16 12h1" stroke="var(--ice)" stroke-width=".65"/></pattern>
+  <linearGradient id="gSky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="var(--deep)"/><stop offset=".65" stop-color="var(--ocean)"/><stop offset="1" stop-color="var(--horizon)"/></linearGradient>
+  <linearGradient id="gSea" x1="0" y1="0" x2=".35" y2="1"><stop stop-color="var(--horizon)"/><stop offset=".35" stop-color="var(--ocean)"/><stop offset="1" stop-color="var(--deep)"/></linearGradient>
+  <linearGradient id="gConcrete" x1="1" y1="0" x2="0" y2="1"><stop stop-color="var(--metal)"/><stop offset="1" stop-color="var(--floor)"/></linearGradient>
+  <linearGradient id="gRocket" x1="0" y1=".15" x2="1" y2="0"><stop stop-color="var(--metal)"/><stop offset=".22" stop-color="var(--muted)"/><stop offset=".65" stop-color="var(--ice)"/><stop offset=".82" stop-color="var(--paper)"/><stop offset="1" stop-color="var(--muted)"/></linearGradient>
+  <linearGradient id="gBand" x1="0" y1="0" x2="1" y2=".1"><stop stop-color="var(--light)"/><stop offset=".32" stop-color="var(--project)"/><stop offset=".7" stop-color="var(--blue)"/><stop offset="1" stop-color="var(--ocean)"/></linearGradient>
+  <linearGradient id="gWarmFlame" x1="0" y1="0" x2="0" y2="1"><stop stop-color="var(--paper)"/><stop offset=".2" stop-color="var(--warm)"/><stop offset=".55" stop-color="var(--amber)"/><stop offset=".86" stop-color="var(--red)" stop-opacity=".65"/><stop offset="1" stop-color="var(--red)" stop-opacity="0"/></linearGradient>
+  <radialGradient id="gMoonHalo"><stop stop-color="var(--light)" stop-opacity=".18"/><stop offset="1" stop-color="var(--light)" stop-opacity="0"/></radialGradient>
+  <radialGradient id="gSphere" cx=".7" cy=".24" r=".78"><stop stop-color="var(--light)"/><stop offset=".4" stop-color="var(--muted)"/><stop offset=".8" stop-color="var(--metal)"/><stop offset="1" stop-color="var(--floor)"/></radialGradient>
+  <linearGradient id="gDoor" x1="0" y1="0" x2="0" y2="1"><stop stop-color="var(--warm)" stop-opacity=".25"/><stop offset="1" stop-color="var(--warm)" stop-opacity=".02"/></linearGradient>
+  <pattern id="pSlabs" width="100" height="45" patternUnits="userSpaceOnUse" patternTransform="matrix(1 0 1.732050808 1 0 0)"><path d="M0 0H100V45" fill="none" stroke="var(--ink)" stroke-width="1.3"/><path d="M2 2H98V44" fill="none" stroke="var(--light)" opacity=".05"/></pattern>
+  <pattern id="pGravel" width="11" height="9" patternUnits="userSpaceOnUse"><path d="M1 2l3-1 1 2-2 2z M7 6l3-1-1 2z" fill="var(--metal)" opacity=".6"/></pattern>
+  <pattern id="pGridFin" width="3" height="3" patternUnits="userSpaceOnUse"><path d="M0 0H3V3" fill="none" stroke="var(--ink)" stroke-width=".6"/></pattern>
+  <clipPath id="clipSea"><path d="M1000 330H1400V520H1180L1138 476 1107 447 1075 414 1040 376Z"/></clipPath>
+  <clipPath id="clipLand"><path d="M0 330H1000L1040 376 1075 414 1107 447 1138 476 1180 520H0Z"/></clipPath>
+  <clipPath id="clipBay"><rect x="208" y="166" width="109" height="229"/></clipPath>
+  <filter id="fReflection" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".012 .15" numOctaves="1" seed="31" result="water"/><feDisplacementMap in="SourceGraphic" in2="water" scale="8" xChannelSelector="R" yChannelSelector="G"/></filter>
+  <filter id="fMist" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2"/></filter>
+</defs>`
+
+function fxBeam({id,x,y,sea,stoneTops}) {
+  const svg=`<defs>${softFilter(id+'-inner',2.5)}${softFilter(id+'-outer',8)}
+    <linearGradient id="${id}-ray" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="420" y2="0"><stop stop-color="var(--paper)" stop-opacity=".55"/><stop offset="1" stop-color="var(--warm)" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${id}-air" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="380" y2="0"><stop stop-color="var(--warm)"/><stop offset="1" stop-color="var(--warm)" stop-opacity="0"/></linearGradient>
+    ${radial(id+'-lamp',[[0,'paper',1],[.3,'warm',1],[.65,'amber',.5],[1,'amber',0]])}
+    ${radial(id+'-pool',[[0,'paper',1],[.45,'warm',.6],[1,'light',0]])}
+    <clipPath id="${id}-sea"><path d="${sea}"/></clipPath>
+    <clipPath id="${id}-stones">${stoneTops}</clipPath></defs>
+    <g transform="translate(${x},${y})"><g data-rotor class="fx-beam-rotor">
+      <path data-ray="outer" d="M0 0L380 ${-380*Math.tan(radians(12))}V${380*Math.tan(radians(12))}Z" fill="url(#${id}-air)" opacity=".12" filter="url(#${id}-outer)"/>
+      <path data-ray="inner" d="M0 0L420 ${-420*Math.tan(radians(5))}V${420*Math.tan(radians(5))}Z" fill="url(#${id}-ray)" filter="url(#${id}-inner)"/>
+    </g><g data-lamp>
+      <circle r="26" fill="url(#${id}-lamp)" opacity=".55" filter="url(#${id}-outer)"/>
+      <circle r="12" fill="url(#${id}-lamp)" opacity=".9" filter="url(#${id}-inner)"/>
+      <circle r="4" fill="var(--paper)"/>
+    </g></g>
+    <g clip-path="url(#${id}-sea)"><ellipse data-sea rx="110" ry="17" opacity=".18" fill="url(#${id}-pool)" filter="url(#${id}-outer)"/></g>
+    <g clip-path="url(#${id}-stones)"><ellipse data-stones rx="58" ry="15" fill="var(--paper)" opacity=".15" filter="url(#${id}-inner)"/></g>`
+  let nodes,started
+  return effect(id,svg,(root,f)=>{
+    nodes ||= {rotor:$('[data-rotor]',root),lamp:$('[data-lamp]',root),sea:$('[data-sea]',root),stones:$('[data-stones]',root)}
+    started ??= f.now
+    const angle=f.reduced?90:((f.now-started)%9000)/9000*360,a=radians(angle)
+    // 外晕的 .12 只乘一次；朝后仍保留四分之一体积光，不再叠乘内芯的 .55。
+    nodes.rotor.style.animationDelay=f.reduced?'0s':`-${((f.now-started)%9000)/1000}s`
+    nodes.rotor.style.animationPlayState='paused'
+    nodes.rotor.style.transform=f.reduced?'rotate(90deg)':''
+    set(nodes.rotor,'opacity',.25+.75*Math.max(0,Math.cos(a-Math.PI/2)))
+    set(nodes.lamp,'opacity',f.reduced?.9:.8+.2*Math.max(0,Math.sin(a)))
+    const distance=230,px=x+Math.cos(a)*distance,py=y+Math.sin(a)*distance*.65
+    set(nodes.sea,'transform',`translate(${px},${py}) rotate(${Math.atan2(Math.sin(a)*.65,Math.cos(a))*180/Math.PI})`)
+    set(nodes.sea,'opacity',.18*Math.max(0,Math.sin(a)))
+    const hit=Math.sin(a)>0?(350-y)/Math.sin(a):Infinity
+    visible(nodes.stones,hit>0&&hit<420)
+    if(hit<420)set(nodes.stones,'transform',`translate(${x+Math.cos(a)*hit},350)`)
+  })
+}
+
+function fxVent({id,ports}) {
+  const svg=`<defs>${softFilter(id+'-soft',3)}${radial(id+'-mist',[[0,'paper',.8],[.45,'ice',.45],[1,'ice',0]])}</defs>
+    <g data-threads>${ports.map(p=>`<path class="fx-stroke" d="M${p.x} ${p.y}q${p.side*5} 1 ${p.side*6} 5" stroke="var(--ice)" stroke-width="1.8" filter="url(#${id}-soft)"/>`).join('')}</g>
+    ${repeat(FX_LIMITS.vent,()=>`<g data-puff visibility="hidden" filter="url(#${id}-soft)"><ellipse rx="12" ry="8" fill="url(#${id}-mist)"/><ellipse cx="5" cy="5" rx="10" ry="7" fill="url(#${id}-mist)" opacity=".7"/><ellipse cx="-4" cy="-3" rx="7" ry="5" fill="url(#${id}-mist)" opacity=".8"/></g>`)}`
+  let nodes,threads,puffs=[],last=null,next=0,serial=0
+  return effect(id,svg,(root,f)=>{
+    nodes ||= $$('[data-puff]',root);threads ||= $('[data-threads]',root)
+    const fuel=clamp(f.fuel/100),launchFade=f.launchElapsed==null?1:clamp(1-f.launchElapsed/1000)
+    const enabled=f.enabled&&fuel>0&&!f.reduced
+    set(threads,'opacity',enabled?.4*fuel*launchFade:0)
+    if(!enabled){puffs=[];nodes.forEach(n=>visible(n,false));last=null;return}
+    if(last===null){next=f.now;last=f.now}
+    const interval=lerp(350,250,fuel),life=2600
+    puffs=puffs.filter(p=>f.now-p.born<life)
+    if(f.launchElapsed==null&&f.now>=next){
+      ports.forEach((port,i)=>{if(puffs.length<FX_LIMITS.vent)puffs.push({port,born:f.now,phase:noise(serial++,i)*Math.PI*2})})
+      next=f.now+interval
+    }
+    puffs.forEach((p,i)=>{
+      const t=clamp((f.now-p.born)/life),s=lerp(.3,1.6,t),x=p.port.x+p.port.side*(4+27*t)+Math.sin(t*5+p.phase)*3*t,y=p.port.y+42*t+11*t*t
+      visible(nodes[i],true);set(nodes[i],'transform',`translate(${x},${y}) scale(${s})`)
+      set(nodes[i],'opacity',.7*(1-t)*(.25+.75*fuel)*launchFade)
+    })
+    nodes.slice(puffs.length).forEach(n=>visible(n,false));last=f.now
+  })
+}
+
+function fxFlame({id,x,y}) {
+  const svg=`<defs>
+    <filter id="${id}-edge" x="-45%" y="-20%" width="190%" height="150%"><feTurbulence data-fire-noise type="fractalNoise" baseFrequency=".05 .11" numOctaves="2" seed="2" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="9" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation=".55"/></filter>
+    ${softFilter(id+'-halo-blur',3)}${softFilter(id+'-nozzle',12)}
+    <linearGradient id="${id}-core" x2="0" y2="1"><stop stop-color="var(--paper)"/><stop offset=".45" stop-color="var(--warm)"/><stop offset="1" stop-color="var(--amber)" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${id}-mantle" x2="0" y2="1"><stop stop-color="var(--warm)"/><stop offset=".4" stop-color="var(--amber)"/><stop offset=".75" stop-color="color-mix(in srgb, var(--amber) 76%, var(--red))" stop-opacity=".8"/><stop offset="1" stop-color="var(--red)" stop-opacity="0"/></linearGradient>
+    <linearGradient id="${id}-halo" x2="0" y2="1"><stop stop-color="color-mix(in srgb, var(--amber) 40%, var(--red))" stop-opacity=".7"/><stop offset=".6" stop-color="color-mix(in srgb, var(--red) 75%, var(--horizon))" stop-opacity=".45"/><stop offset="1" stop-color="var(--red)" stop-opacity="0"/></linearGradient>
+    ${radial(id+'-glow',[[0,'warm',1],[.35,'amber',.7],[1,'red',0]])}</defs>
+    <g data-fire transform="translate(${x},${y})" visibility="hidden">
+      <ellipse data-nozzle-light cy="8" rx="48" ry="30" fill="url(#${id}-glow)" opacity=".55" filter="url(#${id}-nozzle)"/>
+      <g data-plume filter="url(#${id}-edge)">
+        <path d="M-19 25C-20 48-39 58-32 86C-29 103-48 113-44 127C-28 115-27 145-13 157C-14 140-3 157 1 173C10 155 20 153 18 136C28 142 40 122 45 107C32 118 38 89 28 74C20 61 19 44 19 25Z" fill="url(#${id}-halo)" filter="url(#${id}-halo-blur)"/>
+        <path d="M-15 39C-19 58-25 70-22 87C-17 101-31 112-25 126C-17 116-12 137 0 151C10 133 22 123 17 108C29 110 27 88 20 73C17 61 15 48 15 39Z" fill="url(#${id}-mantle)" opacity=".65"/>
+        <path d="M-6 68C-11 80-7 95-12 108C-5 104-6 118 1 132C8 115 5 103 10 92C7 82 6 75 6 68Z" fill="url(#${id}-core)" opacity=".35"/>
+      </g>
+      ${[-8,0,8].map((dx,i)=>`<g transform="translate(${dx},${i===1?0:-1})"><g data-jet="${i}" filter="url(#${id}-edge)">
+        <path d="M-7.7 0C-9 12-7 23-13 38C-21 55-21 80-32 100C-19 94-22 130-12 139C-8 129-4 149 0 160C10 141 21 132 14 115C31 127 31 97 25 84C20 68 11 48 10 29C8 16 8 6 7.7 0Z" fill="url(#${id}-halo)" filter="url(#${id}-halo-blur)"/>
+        <path d="M-5.25 0C-7 10-4 23-8 34C-12 49-15 62-18 85C-12 79-14 104-7 116C-6 104-2 119 0 130C5 117 11 102 10 90C17 99 19 84 14 66C11 48 7 28 5.25 0Z" fill="url(#${id}-mantle)" opacity=".85"/>
+        <path d="M-3.5 0C-4 12-1 19-5 34C-8 45-8 59-10 73C-5 69-5 89 0 100C5 84 10 72 7 58C5 44 7 32 4 20C2 12 4 6 3.5 0Z" fill="url(#${id}-core)"/>
+        ${[20,40,60,80].map((cy,k)=>`<ellipse data-diamond cx="0" cy="${cy}" rx="${3.4-k*.55}" ry="${2.4-k*.35}" fill="var(--paper)"/>`).join('')}
+      </g></g>`).join('')}
+    </g>`
+  let fire,jets,diamonds,turbulence,plume,glow
+  return effect(id,svg,(root,f)=>{
+    fire ||= $('[data-fire]',root);jets ||= $$('[data-jet]',root);diamonds ||= $$('[data-diamond]',root)
+    turbulence ||= $('[data-fire-noise]',root);plume ||= $('[data-plume]',root);glow ||= $('[data-nozzle-light]',root)
+    visible(fire,f.enabled)
+    if(!f.enabled)return
+    const time=f.reduced?0:f.now,altitude=Math.max(0,f.altitude),length=lerp(60,110,clamp(altitude/380)),thin=lerp(1,.22,clamp((altitude-430)/260))
+    jets.forEach((jet,i)=>set(jet,'transform',`scale(${thin*(1+(f.reduced?0:Math.sin(time*.038+i*2)*.08))},${length/100*(i===1?1:.88)*(1+(f.reduced?0:Math.sin(time*.046+i*3)*.12))})`))
+    set(plume,'transform',`scale(${thin*(f.reduced?1:1+Math.sin(time*.032)*.08)},${length/100*(f.reduced?1:1+Math.sin(time*.041)*.12)})`)
+    set(glow,'opacity',f.reduced?.55:.5+.08*Math.sin(time*.04))
+    diamonds.forEach((diamond,i)=>set(diamond,'opacity',f.reduced?.85:.55+.45*noise(Math.floor(time/45)+i,43)))
+    // 与样张相同的八档种子、600ms 周期；由注入时钟驱动，减少动效时固定。
+    set(turbulence,'seed',f.reduced?2:1+Math.floor(time/75)%8)
+  })
+}
+
+function fxSmoke({id,exits,mark}) {
+  const clusters=Array.from({length:FX_LIMITS.smoke},(_,i)=>{
+    const anchors=[[-8,3],[0,-5],[8,0],[3,7],[-5,-10],[12,-7],[-12,-4],[10,8],[0,1]]
+    return anchors.slice(0,6+i%4).map(([x,y],k)=>({x:x+(noise(i*11+k,121)-.5)*3,y:y+(noise(i*11+k,123)-.5)*3,r:4.5+noise(i*11+k,127)*3.7}))
+  })
+  const circles=(parts,paint)=>parts.map(p=>`<circle data-lobe cx="${p.x}" cy="${p.y}" r="${p.r}" ${paint?`fill="url(#${paint})"`:''}/>`).join('')
+  const svg=`<defs>
+    <filter id="${id}-edge" x="-35%" y="-35%" width="170%" height="170%"><feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="3" seed="5" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="5.5" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation=".55"/></filter>
+    <radialGradient id="${id}-body" cx=".42" cy=".38" r=".62"><stop stop-color="var(--ice)" stop-opacity=".95"/><stop offset=".55" stop-color="var(--muted)" stop-opacity=".8"/><stop offset="1" stop-color="var(--metal)" stop-opacity="0"/></radialGradient>
+    ${radial(id+'-shadow',[[0,'horizon',.7],[.5,'ocean',.3],[1,'horizon',0]])}
+    ${radial(id+'-rim',[[0,'paper',.7],[.55,'ice',.25],[1,'ice',0]])}
+    ${radial(id+'-cool',[[0,'project',.4],[.5,'light',.2],[1,'project',0]])}
+    ${radial(id+'-fire',[[0,'amber',.65],[.55,'red',.25],[1,'amber',0]])}
+    ${radial(id+'-mark',[[0,'muted',.3],[1,'muted',0]])}
+    ${clusters.map((parts,i)=>`<clipPath id="${id}-skin-${i}">${circles(parts)}</clipPath>`).join('')}</defs>
+    <ellipse data-mark cx="${mark.x}" cy="${mark.y}" rx="79" ry="10" fill="url(#${id}-mark)" opacity="0"/>
+    <g data-clouds>${clusters.map((parts,i)=>`<g data-cloud visibility="hidden" filter="url(#${id}-edge)">
+      ${circles(parts,id+'-body')}
+      <g clip-path="url(#${id}-skin-${i})"><circle cx="5" cy="6" r="10" fill="url(#${id}-shadow)"/><circle cx="-4" cy="-8" r="7.5" fill="url(#${id}-rim)"/>
+        <ellipse data-moonlight cx="1" cy="-11" rx="12" ry="7" fill="url(#${id}-cool)"/>
+        <ellipse data-firelight cx="-2" cy="10" rx="15" ry="8" fill="url(#${id}-fire)"/>
+      </g></g>`).join('')}</g>`
+  let nodes,lights,layer,markNode,last=null,accumulator=0,birthSerial=0,event=null,puffs=[],lastOrder=''
+  return effect(id,svg,(root,f)=>{
+    nodes ||= $$('[data-cloud]',root);lights ||= nodes.map(n=>$('[data-firelight]',n));layer ||= $('[data-clouds]',root);markNode ||= $('[data-mark]',root)
+    if(event!==f.launchAt){event=f.launchAt;puffs=[];accumulator=0;last=f.now;birthSerial=0;lastOrder=''}
+    if(f.reduced||f.launchAt==null){nodes.forEach(n=>visible(n,false));set(markNode,'opacity',0);puffs=[];last=f.now;return}
+    const age=f.now-f.launchAt,delta=Math.max(0,Math.min(250,f.now-(last??f.now)));last=f.now;accumulator+=delta
+    while(accumulator>=1000/60){
+      accumulator-=1000/60
+      const simNow=f.now-accumulator
+      if(simNow>=f.launchAt&&simNow-f.launchAt<800){
+        exits.forEach(exit=>{for(let k=0;k<2&&puffs.length<FX_LIMITS.smoke;k++){
+          const n=birthSerial++,r=noise(n,51)
+          puffs.push({slot:n%FX_LIMITS.smoke,x:exit.x,y:exit.y,baseY:exit.y,side:exit.side,vx:exit.side*2.5*(exit.side>0?1.4:1),vy:-.6,born:simNow,life:5000+r*2000,phase:r*7,r:.7+r*.4})
+        }})
+      }
+      puffs.forEach(p=>{
+        const t=(simNow-p.born)/1000
+        p.vx=p.vx*.985+.02;p.x+=p.vx
+        if(t<1)p.y=p.baseY-1.5*Math.sin(t*Math.PI)
+        else {p.vy-=.008;p.y+=p.vy}
+      })
+    }
+    puffs=puffs.filter(p=>f.now-p.born<p.life&&f.now<f.clearAt).sort((a,b)=>lerp(1,4,clamp((f.now-b.born)/3000))*b.r-lerp(1,4,clamp((f.now-a.born)/3000))*a.r||a.born-b.born)
+    // 每团绑定自己的轮廓；只换画序，不能因大小排序而在两帧间换一朵烟。
+    const order=puffs.map(p=>p.slot).join(',')
+    if(order!==lastOrder){puffs.forEach(p=>layer.appendChild(nodes[p.slot]));lastOrder=order}
+    const living=new Set(puffs.map(p=>p.slot))
+    puffs.forEach(p=>{
+      const ms=f.now-p.born,t=ms/1000,scale=lerp(1,4,clamp(t/3))*p.r
+      const fade=smooth(ms/120)*clamp(1-(ms-2500)/(p.life-2500))*clamp((f.clearAt-f.now)/1300)
+      const roll=Math.sin(t*2.6+p.phase)*6+p.side*Math.min(t,1)*8
+      visible(nodes[p.slot],true);set(nodes[p.slot],'transform',`translate(${p.x+Math.sin(t*3+p.phase)*2},${p.y+Math.cos(t*2+p.phase)*1.5}) scale(${scale}) rotate(${roll})`)
+      set(nodes[p.slot],'opacity',.85*fade);set(lights[p.slot],'opacity',clamp(1-f.altitude/120))
+    })
+    nodes.forEach((n,i)=>{if(!living.has(i))visible(n,false)})
+    set(markNode,'opacity',age>800?clamp(1-(f.now-(f.exitAt??f.launchAt+3400))/6000):0)
+  })
+}
+
+function fxFrost({id,x,top,bottom,platform,flameX,bodyR}) {
+  const shards=Array.from({length:FX_LIMITS.frost},(_,i)=>{
+    const r=2+noise(i,71)*2,count=4+i%2
+    return Array.from({length:count},(_,k)=>{const a=k/count*Math.PI*2;return [Math.cos(a)*r*(.65+noise(k+i,77)*.35),Math.sin(a)*r]})
+  })
+  const svg=shards.map(points=>`<g data-shard visibility="hidden"><polygon points="${P(points)}" fill="var(--ice)"/><polygon points="${P(points.slice(0,3))}" fill="var(--light)" opacity=".55"/></g>`).join('')
+  let nodes,event=null,last=null,accumulator=0,pieces=[]
+  return effect(id,svg,(root,f)=>{
+    nodes ||= $$('[data-shard]',root)
+    if(event!==f.launchAt){
+      event=f.launchAt;last=f.launchAt;accumulator=0
+      pieces=f.launchAt==null?[]:shards.map((_,i)=>({x:x+(i%2?-1:1)*(bodyR+noise(i,82)*3),y:lerp(top,bottom,noise(i,83)),vx:(noise(i,84)*2-1)*1.2,vy:-noise(i,85),spin:(i%2?-1:1)*(3+noise(i,86)*5),angle:noise(i,87)*360,bounced:false,fadeAt:null,dead:false}))
+    }
+    if(f.reduced||f.launchAt==null){nodes.forEach(n=>visible(n,false));pieces=[];return}
+    accumulator+=Math.max(0,Math.min(250,f.now-(last??f.now)));last=f.now
+    while(accumulator>=1000/60){
+      accumulator-=1000/60;const simNow=f.now-accumulator
+      pieces.forEach(p=>{
+        if(p.dead)return
+        p.vx*=.98;p.vy=p.vy*.98+.25;p.x+=p.vx;p.y+=p.vy;p.angle+=p.spin
+        if(Math.abs(p.x-flameX)<17&&p.y>=platform.y-4&&f.altitude<120){p.dead=true;return}
+        if(!p.bounced&&p.y>=platform.y&&p.x>=platform.left&&p.x<=platform.right){p.y=platform.y;p.vy*=-.3;p.bounced=true;p.fadeAt=simNow}
+        if((p.fadeAt!==null&&simNow-p.fadeAt>800)||simNow-f.launchAt>2600)p.dead=true
+      })
+    }
+    pieces.forEach((p,i)=>{visible(nodes[i],!p.dead);if(!p.dead){set(nodes[i],'transform',`translate(${p.x},${p.y}) rotate(${p.angle})`);set(nodes[i],'opacity',.9*(p.fadeAt===null?1:clamp(1-(f.now-p.fadeAt)/800)))}})
+  })
+}
+
+function fxLightning({id,cloud,tip,towerClip,rocketClip,towerX,rocketX,groundY,bodyR}) {
+  const lobes=[[-53,6,28,14],[-29,-7,30,21],[0,-13,33,26],[29,-6,28,20],[52,9,28,13]]
+  const cloudShapes=lobes.map(([dx,dy,rx,ry])=>`<ellipse cx="${cloud.x+dx}" cy="${cloud.y+dy}" rx="${rx}" ry="${ry}"/>`).join('')
+  const svg=`<defs>${softFilter(id+'-halo',6)}${softFilter(id+'-soft',4)}${softFilter(id+'-sky',14)}
+    <linearGradient id="${id}-cloud" x2="0" y2="1"><stop stop-color="var(--metal)"/><stop offset=".35" stop-color="var(--horizon)"/><stop offset="1" stop-color="var(--deep)"/></linearGradient>
+    ${radial(id+'-flash',[[0,'paper',1],[.2,'light',.8],[.5,'project',.3],[1,'project',0]])}
+    <linearGradient id="${id}-face"><stop stop-color="var(--paper)"/><stop offset=".65" stop-color="var(--light)" stop-opacity=".35"/><stop offset="1" stop-color="var(--light)" stop-opacity="0"/></linearGradient>
+    <clipPath id="${id}-cloud-clip">${cloudShapes}</clipPath></defs>
+    <g data-weather visibility="hidden">
+      <ellipse data-sky cx="${cloud.x}" cy="${cloud.y}" rx="190" ry="82" fill="url(#${id}-flash)" filter="url(#${id}-sky)" opacity="0"/>
+      <g fill="url(#${id}-cloud)" filter="url(#${id}-soft)">${cloudShapes}</g>
+      <g clip-path="url(#${id}-cloud-clip)"><ellipse cx="${cloud.x+12}" cy="${cloud.y-20}" rx="70" ry="12" fill="var(--ice)" opacity=".12" filter="url(#${id}-soft)"/>
+        <ellipse data-cloud-light cx="${cloud.x}" cy="${cloud.y+18}" rx="80" ry="17" fill="var(--light)" filter="url(#${id}-soft)" opacity="0"/></g>
+      <g data-channel opacity="0">
+        <path data-bolt class="fx-stroke" stroke="var(--project)" stroke-width="8" opacity=".55" filter="url(#${id}-halo)"/>
+        <path data-bolt class="fx-stroke" stroke="var(--light)" stroke-width="3"/>
+        <path data-bolt class="fx-stroke" stroke="var(--paper)" stroke-width="1.4"/>
+        <g opacity=".6"><path data-branches class="fx-stroke" stroke="var(--project)" stroke-width="6" opacity=".55" filter="url(#${id}-halo)"/><path data-branches class="fx-stroke" stroke="var(--light)" stroke-width="2"/><path data-branches class="fx-stroke" stroke="var(--paper)" stroke-width=".8"/></g>
+      </g>
+      <circle data-flash cx="${tip.x}" cy="${tip.y}" r="90" fill="url(#${id}-flash)" opacity="0"/>
+      <circle data-afterglow cx="${tip.x}" cy="${tip.y}" r="9" fill="url(#${id}-flash)" opacity="0"/>
+      <g data-surfaces opacity="0"><g clip-path="url(#${towerClip})"><rect x="${towerX-18}" y="${tip.y}" width="24" height="${groundY-tip.y}" fill="url(#${id}-face)"/></g>
+        <g clip-path="url(#${rocketClip})"><rect x="${rocketX-bodyR-2}" y="${tip.y}" width="${bodyR+2}" height="${groundY-tip.y}" fill="url(#${id}-face)"/></g></g>
+      <ellipse data-ground cx="${towerX}" cy="${groundY+3}" rx="64" ry="12" fill="url(#${id}-flash)" filter="url(#${id}-soft)" opacity="0"/>
+    </g>`
+  let nodes,event=null,pathKey=''
+  return effect(id,svg,(root,f)=>{
+    nodes ||= {weather:$('[data-weather]',root),bolts:$$('[data-bolt]',root),branches:$$('[data-branches]',root),channel:$('[data-channel]',root),flash:$('[data-flash]',root),after:$('[data-afterglow]',root),faces:$('[data-surfaces]',root),sky:$('[data-sky]',root),cloud:$('[data-cloud-light]',root),ground:$('[data-ground]',root)}
+    visible(nodes.weather,f.enabled)
+    if(!f.enabled){event=null;return}
+    if(event!==f.event){event=f.event;pathKey=''}
+    const elapsed=f.now-event,active=!f.reduced&&Number.isFinite(elapsed)&&elapsed>=0
+    const cycle=active?Math.floor(elapsed/5600):0,age=active?elapsed%5600:Infinity
+    const second=active&&age>=140,key=`${event}|${cycle}|${second}`
+    if(key!==pathKey){
+      pathKey=key;const points=Array.from({length:14},(_,i)=>{const t=i/13;return [lerp(cloud.x-19,tip.x,t)+(i&&i<13?(noise(i+cycle*29,second?93:91)*2-1)*14*(1-t):0),lerp(cloud.y+17,tip.y,t)]})
+      const d='M'+points.map(p=>p.join(' ')).join('L')
+      const branches=[4,6,8].map((index,k)=>{const start=points[index],side=k%2?-1:1,len=(tip.y-(cloud.y+17))*(.3+noise(k+cycle,94)*.2);return `M${start.join(' ')}l${side*len*.3} ${len*.25} ${side*len*.2} ${len*.2} ${-side*len*.1} ${len*.2}`}).join(' ')
+      nodes.bolts.forEach(n=>set(n,'d',d));nodes.branches.forEach(n=>set(n,'d',branches))
+    }
+    // 首次亮相由 event 定时；60ms 仍处在第一击亮段，整段光影在 480ms 收尽。
+    const pulse=age<100?1-.2*smooth(age/100):age<140?0:age<240?.82*(1-.3*smooth((age-140)/100)):age<480?.24*(1-smooth((age-240)/240)):0
+    const bloom=active?Math.max(pulse,clamp(1-age/480)*.3):0
+    set(nodes.channel,'opacity',pulse);set(nodes.flash,'opacity',.9*bloom)
+    set(nodes.after,'opacity',active?.4*clamp(1-age/1500):0);set(nodes.faces,'opacity',.35*bloom)
+    set(nodes.cloud,'opacity',.35*bloom);set(nodes.sky,'opacity',.3*bloom);set(nodes.ground,'opacity',.3*bloom)
+  })
+}
+
+function fxTruck({id,path}) {
+  const svg=`<defs>${softFilter(id+'-headlight',3)}<linearGradient id="${id}-head"><stop stop-color="var(--warm)"/><stop offset="1" stop-color="var(--warm)" stop-opacity="0"/></linearGradient></defs>
+    <path data-route d="${path}" fill="none" visibility="hidden"/>
+    <g data-position><g data-heading><g data-turn>
+      <path d="M31-13L110-25V6L31-9Z" fill="url(#${id}-head)" opacity=".12" filter="url(#${id}-headlight)"/>
+      <ellipse cx="0" cy="6" rx="36" ry="5" fill="var(--black)" opacity=".3"/>
+      ${cabinet(-25,-10,55,9,'gGreyD')}${cabinet(14,-26,18,21,'gBlue','gBlueL')}${rect(18,-24,12,9,'gVisor')}
+      <rect x="-26" y="-29" width="37" height="19" rx="9" fill="url(#gRocket)" class="pl"/>
+      <path d="M-17-28v17 M3-28v17" class="ln"/>${ln([[-20,-26],[5,-26]],'edge')}${txt(-18,-17,'FUEL',5)}
+      ${[-18,23].map(x=>`<g transform="translate(${x},1)">${circ(0,0,5.5,'gDark')}${circ(0,0,3.4,'gGrey')}<g data-wheel><path d="M-3 0H3M0-3V3M-2-2L2 2M-2 2L2-2" class="ln"/></g></g>`).join('')}
+      <path data-hose class="ln" d="M-23-8h-3" stroke-width="2"/>
+      <rect data-brake x="-28" y="-9" width="3" height="4" fill="var(--red)" opacity=".2"/>
+      <rect x="31" y="-14" width="2" height="4" fill="var(--warm)"/>
+      <circle data-beacon cx="21" cy="-29" r="2.2" fill="var(--amber)" filter="url(#fglow)"/>
+    </g></g></g>`
+  let nodes,length,last=null,distance=0,direction=1,endpointAt=null,wheelTravel=0,turnScale=1,cycle=null,tripComplete=false
+  return effect(id,svg,(root,f)=>{
+    nodes ||= {route:$('[data-route]',root),position:$('[data-position]',root),heading:$('[data-heading]',root),turn:$('[data-turn]',root),brake:$('[data-brake]',root),hose:$('[data-hose]',root),beacon:$('[data-beacon]',root),wheels:$$('[data-wheel]',root)}
+    length ??= nodes.route.getTotalLength()
+    if(cycle!==f.cycle){cycle=f.cycle;tripComplete=false;distance=0;direction=1;endpointAt=null}
+    const delta=clamp(f.now-(last??f.now),0,100);last=f.now
+    let steering=0,brake=false,arm=0
+    if(f.reduced||!f.enabled||distance===0&&endpointAt===null&&(tripComplete||f.returnHome)){distance=0;direction=1;turnScale=1;endpointAt=null;brake=true}
+    else if(endpointAt!==null){
+      const age=f.now-endpointAt;brake=true
+      arm=age<300?smooth(age/300):age<600?1-smooth((age-300)/300):0
+      if(age>=600){const turn=clamp((age-600)/360);turnScale=direction*(turn<1/3?1:turn<2/3?.25:-1);steering=direction*6*Math.sin(turn*Math.PI)}
+      if(age>=960){direction*=-1;turnScale=direction;endpointAt=null}
+    } else {
+      // 往返末段给安全撤离留足时间；只在 FUEL 内行驶。
+      const old=distance;distance=clamp(distance+direction*delta*.052,0,length);wheelTravel+=Math.abs(distance-old)
+      if(distance===0||distance===length){endpointAt=f.now;if(distance===0)tripComplete=true}
+      turnScale=direction
+    }
+    const pose=pathPose(nodes.route,distance)
+    set(nodes.position,'transform',`translate(${pose.x},${pose.y})`);set(nodes.heading,'transform',`rotate(${pose.angle})`)
+    set(nodes.turn,'transform',`rotate(${steering}) scale(${turnScale},1)`)
+    set(nodes.brake,'opacity',brake?1:.2);set(nodes.hose,'d',`M-23-8h${-3-arm*12}`)
+    set(nodes.beacon,'opacity',f.reduced?.6:.35+.65*Math.max(0,Math.sin(f.now/110)))
+    nodes.wheels.forEach(w=>set(w,'transform',`rotate(${wheelTravel/5.5*180/Math.PI})`))
+    return {atHome:distance===0,distance}
+  })
+}
+
+/* 几何基准：箭尖 y=0，喷口底 y=190；各摆放只改变外层变换。 */
+function rocketSvg(number = 1,fx={}) {
+  const fin = (x,y,w,h) => rect(x,y,w,h,'gGrey') + `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#pGridFin)"/>` + hi([[x,y],[x+w,y],[x+w,y+1],[x,y+1]])
+  return `<g class="rocket" data-rocket><g ${fx.hullId?`id="${fx.hullId}"`:''}>
+    ${fin(-23,75,10,13)}${fin(13,75,10,13)}
+    ${rect(-13,85,26,94,'gRocket','main')}
+    ${hi([[8,86],[11,86],[11,177],[8,177]])}${sh([[-13,85],[-7,85],[-7,177],[-13,179]])}
+    ${rect(-13,124,26,13,'gBand')}${hi([[-12,125],[-8,125],[-8,136],[-12,136]])}
+    ${rect(-13,78,26,9,'gDark','main')}${repeat(8,i=>ln([[-11+i*3,79],[-11+i*3,85]]))}
+    ${rect(-12,38,24,40,'gRocket','main')}${hi([[8,39],[11,39],[11,77],[8,77]])}${sh([[-12,38],[-7,38],[-7,78],[-12,78]])}
+    ${pg([[0,0],[-5,7],[-11,21],[-13,30],[-13,38],[13,38],[13,30],[11,21],[5,7]],'gRocket','main')}
+    ${hi([[0,2],[4,9],[10,25],[10,36],[7,36],[7,25],[2,9]])}${sh([[-3,8],[-11,21],[-13,30],[-13,38],[-8,38],[-7,25]])}
+    ${ln([[0,4],[0,24],[1,31],[1,37]])}${circ(0,27,3.3,'gDark')}${circ(-.5,26.4,1.8,'gVisor')}
+    ${ln([[-7,42],[-7,73]])}${ln([[6,42],[6,73]])}${ln([[-12,57],[12,57]])}
+    ${repeat(4,i=>ln([[-10+i*6,92],[-10+i*6,122]]))}${ln([[-10,142],[-10,169]])}${ln([[8,141],[8,174]])}
+    ${[91,119,140,171].map(y=>[-8,0,8].map(x=>`<g transform="translate(${x},${y}) scale(.42)">${riv(0,0)}</g>`).join('')).join('')}
+    ${rect(-5,99,7,10,'gRocket')}${ln([[-3,101],[0,101],[0,106]])}
+    ${txt(-6,155,String(number).padStart(2,'0'),8,'serial')}${txt(-6,165,'LC',3)}
+    ${fin(-10,80,5,15)}${fin(5,80,5,15)}
+    <g class="frost" fill="var(--ice)">
+      <path d="M-11 109l3 5 1 18-1 10 2 9-2 23-3-1 1-24-2-12z M-3 116l2 5 1 16-1 17 2 17-2 5-2-5 1-15-2-21z M7 116l2 5 1 22-2 12 2 15-2 5-2-3 1-26z"/>
+      ${repeat(12,i=>`<path d="M${i%2?-14:11} ${119+i*4}l${i%2?-2:3} 3 2 4 2-3z" opacity=".65"/>`)}
+    </g>
+    <g class="frost-ring" fill="var(--ice)" filter="url(#fMist)">${[88,105].map(y=>`<ellipse cy="${y}" rx="13" ry="10" opacity=".2"/>`).join('')}</g>
+    ${[-1,1].map(side=>[88,105].map(y=>`<g>${rect(side<0?-16:12,y-1.5,4,3,'gGrey')}<ellipse cx="${side*16}" cy="${y}" rx="1" ry="1.4" fill="var(--ink)"/></g>`).join('')).join('')}
+    <ellipse cy="175" rx="${BODY_R+3}" ry="2.2" fill="url(#gRocket)" class="pl"/>
+    ${rect(-BODY_R-3,175,(BODY_R+3)*2,5,'gGreyD')}${hi([[-15,175],[15,175],[15,176],[-15,176]])}
+    ${[-8,0,8].map((x,i)=>`<g transform="translate(${x},${i===1?1:0})"><path class="pl" d="M-2 180H2Q2 185 4 189H-4Q-2 185-2 180Z" fill="url(#gGrey)"/><ellipse class="pl" cy="189" rx="4" ry="1.4" fill="url(#gDark)"/><path d="M-3 189Q0 187.5 3 189" fill="none" stroke="var(--metal)" stroke-width=".7"/></g>`).join('')}
+    </g>${fx.vent?.svg||''}${fx.flame?.svg||''}
+  </g>`
+}
+
+function supportSvg() {
+  return `<g>${[[-25,-5,-10,-38],[22,-5,9,-38],[-18,0,-8,-27],[17,0,7,-27]].map(([x,y,ex,ey])=>pg([[x,y],[x+3,y],[ex+2,ey],[ex,ey]],'gGrey')+ln([[x+1,y],[ex+1,ey]],'edge')).join('')}${rect(-29,0,58,5,'gGreyD')}${rect(-26,0,52,3,'pHazard')}</g>`
+}
+function crawlerSvg() {
+  return `<g class="crawler" data-crawler>
+    <g data-crawler-heading>
+      <ellipse cx="-8" cy="23" rx="53" ry="8" fill="var(--black)" opacity=".3"/>
+      ${[-38,21].map(x=>`<g><rect x="${x}" y="6" width="29" height="16" rx="6" fill="url(#gDark)" class="pl main"/>${repeat(5,i=>circ(x+4+i*5.2,14,3.6,'gGrey'))}<rect class="tread" x="${x+1}" y="7" width="27" height="14" rx="5" fill="none" stroke="var(--metal)" stroke-width="2"/></g>`).join('')}
+      ${cabinet(-40,0,80,11)}${rect(-35,7,55,3,'pHazard')}${cabinet(25,-7,12,12,'gBlue','gBlueL')}${rect(27,-5,8,5,'gVisor')}
+      ${[-29,17,37].map(x=>riv(x,7)).join('')}
+      <g class="headlight"><path d="M37 5L145 8 137 27 37 8Z" fill="url(#gCone)" filter="url(#fMist)"/><path d="M37 5L108 10 102 18 37 8Z" fill="var(--warm)" opacity=".08" filter="url(#fMist)"/></g>
+      <rect x="37" y="5" width="3" height="3" fill="var(--warm)"/><circle data-reverse-lamp cx="-41" cy="6" r="2" fill="var(--amber)" opacity="0"/>
+    </g>
+    <g data-crawler-deck>${supportSvg()}</g>
+  </g>`
+}
+
+/* 塔坐标以中轴为原点，臂根恒为 +16；转角只作用在铰链内层。 */
+function towerSvg() {
+  const depth=cabinetFaces(-16,10,32,234),back=depth.left[0][0],backY=depth.left[0][1]-10
+  const platform=y=>cabinet(-22,y,49,4)+`<path d="M-21 ${y}v-11H26v11M-7 ${y-11}v11M12 ${y-11}v11" class="ln"/>`+
+    pg([[-15,y+4],[-6,y+4],[-15,y+14]],'gGreyD')+pg([[16,y+4],[7,y+4],[16,y+14]],'gGreyD')
+  const arm=(globalY,type)=>{
+    const localY=globalY-TOWER_Y,len=ARM_LENGTH
+    return `<g transform="translate(16,${localY})">${cabinet(-5,-6,9,12,'gGreyD')}
+      <g class="arm" data-arm="${type}" transform="rotate(-60)">
+        ${cabinet(0,-4,len,8)}${rect(2,-3,len-4,6,'pPegboard')}
+        ${repeat(4,i=>ln([[3+i*11,-3],[12+i*11,3],[14+i*11,-3]]))}${ln([[0,-4],[len,-4]],'edge')}
+        <path d="M0-4v-6H${len-1}v6M12-10v6M26-10v6" class="ln"/>
+        ${type==='fuel'?`${rect(len-3,-6,3,12,'gDark')}<path d="M${len-2} 4q-5 8-3 19M${len-5} 4q-8 8-6 17" fill="none" stroke="var(--ink)" stroke-width="2"/><path d="M${len-2} 4q-5 8-3 19" class="edge"/>`:
+          `${cabinet(len-13,-4,13,14,'gRocket')}${rect(len-9,-1,7,6,'gVisor')}${ln([[len,0],[len,10]])}`}
+      </g>${circ(0,0,4.5,'gGold')}${circ(0,0,1.8,'gDark')}
+    </g>`
+  }
+  return `<g class="tower">
+    <ellipse cx="-13" cy="257" rx="49" ry="8" fill="var(--black)" opacity=".4"/>
+    ${cabinet(-32,250,64,8,'gConcrete')}
+    <g>${pg([[back,10+backY],[back+4,10+backY],[back+4,244+backY],[back,244+backY]],'gGreyD')}
+      ${repeat(10,i=>{const y=10+i*23;return pg([[back+1,y+backY],[-15,y+21],[-15,y+23],[back+1,y+2+backY]],'gGrey')+pg([[-16,y],[back+2,y+22+backY],[back,y+22+backY],[-16,y+2]],'gGreyD')})}
+      <path d="M${back} ${10+backY}V${244+backY}" class="ln"/>
+    </g>
+    ${[-16,10].map(x=>rect(x,10,6,234,'gGrey','main')+ln([[x+5,11],[x+5,243]],'edge')).join('')}
+    ${repeat(10,i=>{const y=10+i*23;return pg([[-10,y],[-8,y],[10,y+21],[8,y+21]],'gGrey')+pg([[8,y],[10,y],[-8,y+21],[-10,y+21]],'gGreyD')+rect(-11,y,23,3,'gGrey')+riv(-13,y+1)+riv(13,y+1)})}
+    ${[21,65,109,153,197].map(platform).join('')}
+    <path d="M-8 14V240M-2 14V240M3 13V241M13 13V241" class="ln"/>
+    ${repeat(36,i=>ln([[-8,18+i*6],[-2,18+i*6]]))}
+    <g data-elevator transform="translate(1,181)">${cabinet(0,0,13,20)}${rect(2,3,9,10,'gVisor')}${rect(1,16,11,3,'pHazard')}${ln([[6,3],[6,13]])}</g>
+    ${cabinet(-24,6,48,7)}${rect(-1.5,-12,3,18,'gGrey')}
+    <path d="M0-12V-28M0-18L-5-12M0-18L5-12" fill="none" stroke="var(--metal)" stroke-width="1.3"/>
+    <circle class="aviation glow" data-tower-lamp cx="0" cy="-12" r="2.6" fill="var(--red)"/>
+    ${arm(ARM2_Y,'crew')}${arm(ARM1_Y,'fuel')}
+    <g transform="translate(-43,92)">${rect(-4,-13,28,12,'gDark')}<text x="-1" y="-4" font-size="8" class="signal" data-level-label>0%</text>${rect(0,0,7,105,'gDark')}
+      <rect x="1.4" y="104" width="4.2" height="0" fill="var(--cyan)" data-liquid/>
+      ${repeat(11,i=>`<path d="M9 ${i*10.3}h${i%5===0?7:4}" stroke="var(--metal)" stroke-width=".8"/>${i%5===0?txt(18,i*10.3+3,100-i*10,6):''}`)}
+    </g>
+    ${[-27,27].map(x=>circ(x,254,2.2,'gDark')+ln([[x-1,254],[x+1,254]],'edge')).join('')}
+  </g>`
+}
+
+function skySeaSvg() {
+  return `<rect width="1400" height="330" fill="url(#gSky)"/>
+    <g fill="var(--light)">${[[32,44],[144,68],[247,36],[341,84],[456,42],[532,124],[611,65],[705,36],[754,138],[866,89],[975,46],[1074,132],[1264,40],[1360,130],[1321,95]].map(([x,y],i)=>`<circle class="star" cx="${x}" cy="${y}" r="${[.7,1.1,1.6][i%3]}"/>`).join('')}</g>
+    <circle cx="1180" cy="80" r="88" fill="url(#gMoonHalo)"/>
+    <g id="moon-source"><circle cx="1180" cy="80" r="20" fill="var(--ice)"/><path d="M1185 62a20 20 0 0 1 10 32 20 20 0 0 0-1-25Z" fill="var(--metal)" opacity=".18"/><g fill="var(--metal)" opacity=".13"><circle cx="1172" cy="76" r="4"/><circle cx="1184" cy="89" r="3"/><circle cx="1188" cy="72" r="2"/></g></g>
+    <g fill="var(--light)" opacity=".085" filter="url(#fsoft)"><path d="M328 108l42-11 19 4 42-5 45 12-53 5-40-4-23 4Z"/><path d="M727 156l43-9 34 3 58-8 40 11-44 7-64-4-30 5Z"/><path d="M1047 160l25-7 39 3 43-4 53 12-61 5-27-6-45 4Z"/></g>
+    <g clip-path="url(#clipSea)"><rect x="988" y="330" width="412" height="190" fill="url(#gSea)"/>
+      <g opacity=".4" filter="url(#fReflection)">
+        <use href="#moon-source" transform="translate(0,442) scale(1,-.45)"/>
+        <use href="#pad-light-source" transform="matrix(1 0 -.85 -.55 348.5 635.5)"/>
+        <use href="#lighthouse-light-source" transform="translate(0,575) scale(1,-.64)"/>
+        <use href="#firework-source" transform="translate(0,530) scale(1,-.45)"/>
+      </g>
+      <g fill="var(--light)">${repeat(29,i=>{const y=345+i*6,w=7+i*.9+(i%4)*7;return `<path d="M${1180-w/2+(i%3-1)*5} ${y}h${w}l-3 1.1h${-w+4}z" opacity="${.09+(i%5)*.025}"/>`})}</g>
+      <g fill="none" stroke-width="1">
+        <path class="wave" d="M980 361q22-3 44 0t44 0t44 0t44 0t44 0t44 0t44 0t44 0t44 0t44 0 M1000 394q30-3 60 0t60 0t60 0t60 0t60 0t60 0t60 0" stroke="var(--light)" opacity=".18"/>
+        <path class="wave two" d="M985 425q24-4 48 0t48 0t48 0t48 0t48 0t48 0t48 0t48 0t48 0 M1010 460q28-3 56 0t56 0t56 0t56 0t56 0t56 0t56 0" stroke="var(--project)" opacity=".33"/>
+        <path class="wave three" d="M1000 479q32-5 64 0t64 0t64 0t64 0t64 0t64 0 M1080 511q40-4 80 0t80 0t80 0t80 0t80 0" stroke="var(--metal)" opacity=".5"/>
+      </g>
+    </g>
+    <g data-sky-dark opacity="0"><rect width="1400" height="330" fill="var(--deep)" opacity=".55"/></g>`
+}
+const SEA_SHAPE='M1000 330H1400V520H1180L1138 476 1107 447 1075 414 1040 376Z'
+const BREAKWATER_TOPS=repeat(27,i=>{const p=cabinetFaces(1080+i*12,350,12,14);return `<polygon points="${P(p.top)}"/>`})
+const lighthouseFx=fxBeam({id:'lighthouse-beam',x:1320,y:270,sea:SEA_SHAPE,stoneTops:BREAKWATER_TOPS})
+function lighthouseSvg() {
+  return `<g>
+    ${repeat(27,i=>cabinet(1080+i*12,350,12,14,i%2?'gGrey':'gGreyD','gConcrete'))}
+    ${[1120,1192,1262,1370].map(x=>`<g>${cabinet(x-3,350,8,3)}${rect(x,330,2,18,'gGrey')}<path d="M${x-3} 330h9" stroke="var(--metal)" stroke-width="2"/><circle cx="${x+1}" cy="330" r="1.6" fill="var(--warm)" class="glow"/><ellipse cx="${x+3}" cy="351" rx="11" ry="2" fill="var(--warm)" opacity=".08"/></g>`).join('')}
+    <g id="lighthouse-light-source">${lighthouseFx.svg}</g>
+    <g>${cabinet(1303,347,35,5,'gConcrete')}
+      ${pg([[1311,284],[1329,284],[1335,347],[1305,347]],'gRocket','main')}
+      ${pg([[1309,304],[1331,304],[1332,314],[1308,314]],'gRed')}${pg([[1307,329],[1333,329],[1334,339],[1306,339]],'gRed')}
+      ${hi([[1324,286],[1327,286],[1332,345],[1328,345]])}${sh([[1311,285],[1316,285],[1313,347],[1305,347]])}
+      ${rect(1316,332,8,15,'gDark')}${ln([[1317,333],[1317,345]],'edge')}${rect(1317,293,5,8,'gVisor')}
+      ${cabinet(1305,282,30,5)}<rect x="1310" y="263" width="20" height="19" fill="url(#gVisor)" fill-opacity=".28" class="pl"/>
+      <circle cx="1320" cy="270" r="3.5" fill="var(--warm)" class="glow"/>
+      <path d="M1310 264v18M1315 264v18M1320 264v18M1325 264v18M1330 264v18M1303 277v7h34v-7" fill="none" stroke="var(--metal)" stroke-width="1.4"/>
+      ${pg([[1305,262],[1320,250],[1335,262]],'gRed','main')}${hi([[1320,250],[1334,261],[1329,261],[1318,253]])}${rect(1319,245,2,6,'gGrey')}
+    </g>
+    ${[[1248,429],[1372,389]].map(([x,y],i)=>`<g transform="translate(${x},${y})"><ellipse cy="8" rx="14" ry="2" fill="var(--project)" opacity=".16"/>${pg([[-6,0],[6,0],[9,5],[-9,5]],'gRed')}${rect(-1,-12,2,12,'gGrey')}<circle class="buoy-light glow" cx="0" cy="-13" r="2" fill="var(--red)" style="animation-delay:-${i}s"/></g>`).join('')}
+  </g>`
+}
+function groundSvg() {
+  return `<g clip-path="url(#clipLand)">
+    <rect y="330" width="1400" height="190" fill="url(#gFloor)"/><rect y="330" width="1400" height="190" fill="url(#pSlabs)"/>
+    <path d="M102 364l31 3 8 12 26-3 17 13 M353 460l34-5 12 8 23-6 M683 493l23-11 18 7 23-4 M937 457l20 4 10-6" fill="none" stroke="var(--ink)" stroke-width="1.2"/>
+    <path d="M166 477q68-28 143-15 M170 485q68-28 143-15 M667 459q78-26 137-9 M671 465q78-26 137-9" fill="none" stroke="var(--black)" stroke-width="5" opacity=".16" stroke-dasharray="2 2"/>
+    <path data-crawler-route d="${CRAWLER_PATH}" fill="none" stroke="var(--floor)" stroke-width="27" stroke-linecap="round"/>
+    <path d="${CRAWLER_PATH}" fill="none" stroke="url(#pGravel)" stroke-width="23"/>
+    <path d="${CRAWLER_PATH}" fill="none" stroke="var(--metal)" stroke-width=".7" stroke-dasharray="10 16" opacity=".4"/>
+    <g data-puddles opacity="0" fill="var(--light)"><path d="M346 447q30-10 65-4l8 4-23 4-33-1z" opacity=".1"/><path d="M655 438q34-8 59-1l-6 5-42 1z" opacity=".1"/><path d="M874 479q40-9 77-3l-6 8-55-1z" opacity=".1"/><path d="M356 446h39 M362 449h26 M667 438h34 M892 479h38" stroke="var(--red)" stroke-width="1" opacity=".2"/></g>
+  </g>
+  <path d="M1000 330L1040 376 1075 414 1107 447 1138 476 1180 520" fill="none" stroke="url(#gGrey)" stroke-width="10"/>
+  <g class="foam" fill="none" stroke="var(--light)" stroke-width="1" opacity=".25"><path d="M1004 332q15 15 23 33t25 28 24 29 30 29 29 28 42 41"/><path d="M1007 334q9 21 28 38t20 28 27 27 27 29 28 26 43 38" stroke-dasharray="13 7 4 8"/><path d="M1011 337q10 18 27 35t25 31 26 26 28 31 35 38 36 26" stroke-dasharray="5 14 9 18"/></g>
+  ${[[1055,397],[1118,461],[1167,510]].map(([x,y])=>pg([[x-12,y],[x-6,y-8],[x+5,y-10],[x+15,y],[x+11,y+6],[x-8,y+4]],'gGrey','main')+hi([[x-11,y],[x-5,y-7],[x+4,y-9],[x+7,y-5],[x,y-2]])+sh([[x,y-2],[x+15,y],[x+11,y+6],[x-8,y+4]])).join('')}`
+}
+function roadLightsSvg() {
+  return [358,448,538,628,718,808].map((x,i)=>{const y=426+i*3;return `<g><ellipse cx="${x+14}" cy="${y+5}" rx="29" ry="6" fill="var(--warm)" opacity=".065"/>${cabinet(x-4,y,9,4,'gGreyD')}${rect(x,y-31,2,31,'gGrey')}<path d="M${x} ${y-31}l5-3h8" fill="none" stroke="var(--metal)" stroke-width="2"/>${rect(x+5,y-36,11,3,'gGreyD')}<rect x="${x+7}" y="${y-33}" width="7" height="1.5" fill="var(--warm)"/><path d="M${x+6} ${y-32}h9l16 37h-36Z" fill="url(#gCone)"/>${riv(x+1,y+2)}</g>`}).join('')
+}
+function vabSvg() {
+  const face=cabinetFaces(196,134,134,264),back=face.left[0]
+  return `<g>
+    <path d="M196 397H330L259 422H117Z" fill="var(--black)" opacity=".3"/>
+    ${cabinet(196,134,134,264,'gGrey','gGrey','gGreyD')}
+    <g transform="matrix(1 .577350269 0 1 ${back[0]} ${back[1]})">
+      <rect width="52" height="264" fill="url(#pRackBrush)"/>
+      ${repeat(8,i=>ln([[4+i*6,5],[4+i*6,258]]))}
+      ${[40,94,147,201,252].map(y=>ln([[1,y],[51,y]])+riv(4,y+5)+riv(48,y+5)).join('')}
+      ${txt(7,91,'VAB',21,'decal')}${txt(6,108,'ASSEMBLY',5)}
+      ${rect(8,220,35,22,'gGreyD')}${repeat(5,i=>ln([[11,224+i*3],[39,224+i*3]],'edge'))}
+    </g>
+    ${cabinet(225,113,40,8,'gGreyD')}${repeat(6,i=>ln([[228+i*6,114],[228+i*6,119]],'edge'))}
+    <path class="rgb" d="M196 133H330" fill="none" stroke="url(#gRgb)" stroke-width="2.6" stroke-dasharray="28 8"/>
+    ${rect(203,157,119,239,'gDark','main')}<rect x="208" y="166" width="109" height="229" fill="url(#gDoor)"/>
+    <g clip-path="url(#clipBay)"><path d="M220 168V395M305 168V395M211 215H316M211 269H316" fill="none" stroke="var(--metal)" opacity=".28"/>
+      <g data-stock></g>
+      ${repeat(5,i=>`<g data-bay-lamp opacity=".4"><rect x="${215+i*20}" y="169" width="13" height="4" fill="var(--warm)" class="glow"/><path d="M${215+i*20} 173h13l9 40h-31Z" fill="url(#gCone)"/></g>`)}
+    </g>
+    ${rect(196,148,7,249,'gGrey')}${rect(320,146,9,251,'gGrey')}${ln([[328,148],[328,396]],'edge')}
+    ${repeat(17,i=>rect(204,146+i*.8,115,.6,'gGrey'))}
+    ${rect(195,392,137,9,'gConcrete','main')}${rect(199,393,128,4,'pHazard')}
+    ${[[back[0],back[1]],[330,134],[back[0],back[1]+248],[328,382]].map(([x,y],i)=>`<circle class="aviation ${i%2?'alt':''} glow" cx="${x}" cy="${y}" r="2.2" fill="var(--red)"/>`).join('')}
+    ${rect(37,310,2,91,'gGrey')}<circle cx="38" cy="309" r="2" fill="var(--warm)"/>
+    <path class="flag-cloth" data-flag d="M40 314q14-5 28 0t26 0v19q-13 5-26 0t-28 0Z" fill="url(#gRocket)" stroke="var(--ink)" stroke-width=".8"/>
+    ${cabinet(30,401,16,4,'gConcrete')}
+    ${rect(348,337,2,59,'gGrey')}<path d="M348 337l3-7" fill="none" stroke="var(--metal)"/>
+    <g class="flag-cloth"><path d="M352 328l35 7-1 5-34 1Z" fill="url(#gRed)" class="pl"/><path d="M358 330l4 1v10h-4zM372 333l4 1v7h-4Z" fill="var(--ice)"/></g>
+  </g>`
+}
+function tanksSvg() {
+  function sphere(x,y,r) {
+    return `<g>${[-r*.65,r*.65].map(dx=>rect(x+dx-2,y+r*.55,4,r*.9,'gGrey')+rect(x+dx-5,y+r*1.4,11,3,'gConcrete')).join('')}${circ(x,y,r,'gSphere','pl main')}
+      <path d="M${x-r*.78} ${y-r*.2}a${r*.8} ${r*.8} 0 0 1 ${r*.86} ${-r*.62}" class="edge" stroke-width="2"/>
+      <ellipse cx="${x}" cy="${y+3}" rx="${r+4}" ry="6" fill="none" stroke="var(--metal)" stroke-width="2"/>
+      <ellipse cx="${x}" cy="${y-3}" rx="${r+4}" ry="7" fill="none" stroke="var(--metal)" stroke-width="1"/>
+      ${repeat(7,i=>`<path d="M${x-r+4+i*(r-4)/3} ${y-3}v8" stroke="var(--ink)" stroke-width=".8"/>`)}
+      <path d="M${x-r*.65} ${y+r+15}V${y-4} M${x-r*.65+5} ${y+r+15}V${y-4}" fill="none" stroke="var(--metal)" stroke-width="1"/>
+      ${repeat(8,i=>ln([[x-r*.65,y+i*5],[x-r*.65+5,y+i*5]]))}
+      ${rect(x-2,y-r-6,4,6,'gGrey')}<circle cx="${x}" cy="${y-r-7}" r="1.7" fill="var(--red)"/>
+      ${txt(x-10,y+15,'LOX',7)}${ln([[x-8,y+r*.6],[x+8,y+r*.6]])}</g>`
+  }
+  return `<g><ellipse cx="463" cy="393" rx="99" ry="13" fill="var(--black)" opacity=".3"/>
+    ${cabinet(371,400,184,5,'gConcrete')}
+    ${sphere(412,340,27)}${sphere(476,334,31)}
+    ${rect(516,305,24,75,'gRocket','main')}<ellipse cx="528" cy="305" rx="12" ry="5" fill="url(#gSphere)" class="pl"/>
+    ${sh([[533,307],[540,307],[540,380],[533,380]])}${rect(516,375,24,6,'gGrey')}
+    <path d="M516 314q26 5 24 12t-24 12 24 12-24 12 24 12 M513 314q30 4 30 12t-30 12 30 12-30 12 30 12" fill="none" stroke="var(--metal)" stroke-width="1.4"/>
+    ${rect(527,297,2,5,'gGrey')}<circle cx="528" cy="296" r="1.7" fill="var(--red)"/>
+    <path d="M412 377V388H548 M476 376V391H520 M535 377V387" fill="none" stroke="var(--ink)" stroke-width="6"/>
+    <path d="M412 377V387H548 M476 376V390H520 M535 377V386" fill="none" stroke="var(--metal)" stroke-width="3"/>
+    ${[434,499,539].map(x=>`<g>${rect(x,383,3,9,'gGreyD')}${circ(x+1,380,4,'gRed')}${ln([[x-2,377],[x+4,383]])}${ln([[x-2,383],[x+4,377]])}${rect(x,377,2,7,'gGrey')}</g>`).join('')}
+
+  </g>`
+}
+function commandSvg() {
+  return `<g><ellipse cx="662" cy="397" rx="108" ry="12" fill="var(--black)" opacity=".28"/>
+    ${cabinet(573,317,163,81)}
+    ${rect(573,317,163,81,'gGrey','main')}${rect(576,319,157,76,'pWallBrush')}${hi([[574,318],[735,318],[735,321],[574,321]])}${sh([[574,391],[736,391],[736,398],[574,398]])}
+    ${rect(570,355,168,5,'gGreyD')}${hi([[571,355],[737,355],[737,356],[571,356]])}
+    <g class="windows">${repeat(16,i=>`<rect x="${580+(i%8)*19}" y="${329+Math.floor(i/8)*37}" width="13" height="13" fill="var(--${i%2?'blue':'cyan'})" stroke="var(--ink)" stroke-width="1"/>`)}</g>
+    <g stroke="var(--light)" opacity=".15">${repeat(8,i=>`<path d="M${580+i*19} 331l8 9 M${580+i*19} 368l8 9"/>`)}</g>
+    ${rect(625,377,21,21,'gDark')}${ln([[635,379],[635,395]],'edge')}${rect(620,398,32,4,'gConcrete')}
+    ${[580,729].map(x=>riv(x,320)+riv(x,394)).join('')}
+    ${pg([[638,304],[653,304],[649,255],[645,255]],'gGrey')}
+    <g class="dish-turn"><path class="pl main" d="M628 246Q646 276 664 246Q646 253 628 246Z" fill="url(#gRocket)"/>
+      <path d="M646 256L641 239 M638 241h6" stroke="var(--metal)" stroke-width="1.6"/>${ln([[630,247],[646,257],[660,248]])}</g>
+    ${rect(707,278,2,26,'gGrey')}<path d="M703 282h10 M704 287h8" stroke="var(--metal)" stroke-width="1"/>
+    ${rect(582,279,153,29,'gGreyD','main')}${hi([[583,280],[734,280],[734,281],[583,281]])}${rect(586,283,145,21,'gDark')}
+    <rect x="586" y="283" width="145" height="21" fill="url(#pScreenLines)"/>
+    <text data-screen x="658.5" y="297" text-anchor="middle" font-size="11" class="signal" letter-spacing=".7">READY</text>
+    ${riv(583,281)}${riv(734,306)}<text data-countdown x="735" y="317" text-anchor="end" font-size="7.5" class="signal"></text>
+    ${rect(662,382,72,13,'gDark')}<text x="666" y="391" font-size="8" data-missions class="decal">MISSIONS 57</text>
+    <text x="541" y="300" font-size="6" transform="rotate(90,541,300)">LAUNCH CONTROL</text>
+  </g>`
+}
+function clampSvg(prefix,front) {
+  return `<g id="${prefix}-${front?'front':'rear'}-clamps">${[-1,1].map(side=>{
+    const px=PAD_X+side*27-(front?0:5),py=MOUNT_TOP-2-(front?0:3)
+    const dx=PAD_X+side*(front?15:12)-px,dy=ROCKET_Y+175-(front?0:1)-py
+    return `<g transform="translate(${px},${py})"><g data-clamp data-side="${side}" transform="rotate(${side*35})">
+      ${pg([[-4,3],[4,3],[4,-4],[dx+side*3,dy-3],[dx,dy-3],[dx,dy],[dx+side*2,dy+1],[-3,-3]],'gGrey','main')}
+      ${ln([[3,-2],[dx+side*3,dy-2],[dx,dy-2]],'edge')}${circ(0,0,3,'gGold')}${circ(0,0,1,'gDark')}
+    </g></g>`
+  }).join('')}</g>`
+}
+function mountSvg() {
+  const top=cabinetFaces(PAD_X-54,MOUNT_TOP,128,8)
+  return `<g>
+    <path d="M836 418H980L927 447H780Z" fill="var(--black)" opacity=".35"/>
+    ${pg(top.left,'gGreyD','main')}${pg(top.top,'gConcrete','main')}${sh(top.left)}
+    ${rect(PAD_X-54,MOUNT_TOP,38,8,'gGrey','main')}${rect(PAD_X+16,MOUNT_TOP,58,8,'gGrey','main')}
+    ${pg([[PAD_X-28,MOUNT_TOP-7],[PAD_X+4,MOUNT_TOP-7],[PAD_X+16,MOUNT_TOP],[PAD_X-16,MOUNT_TOP]],'gDark')}
+    ${rect(PAD_X-16,MOUNT_TOP,32,8,'gDark')}${ln([[PAD_X-54,MOUNT_TOP],[PAD_X-16,MOUNT_TOP]],'edge')}${ln([[PAD_X+16,MOUNT_TOP],[PAD_X+74,MOUNT_TOP]],'edge')}
+    ${cabinet(PAD_X+24,437,142,8,'gConcrete')}
+    ${pg([[PAD_X+24,431],[PAD_X+166,431],[PAD_X+116,402],[PAD_X-26,402]],'gDark')}
+    <path d="M${PAD_X+24} 435H${PAD_X+166}M${PAD_X-26} 400H${PAD_X+116}" fill="none" stroke="var(--metal)" stroke-width="3"/>
+    <path d="M${PAD_X+116} 402l50 29v9l-50-29Z" fill="url(#gDark)"/>
+    ${ln([[PAD_X+119,401],[PAD_X+169,430]],'edge')}
+    ${rect(PAD_X-51,MOUNT_TOP+1,32,3,'pHazard')}${rect(PAD_X+19,MOUNT_TOP+1,53,3,'pHazard')}
+    ${[-48,-20,20,68].map(dx=>riv(PAD_X+dx,MOUNT_TOP+5)).join('')}
+    ${[-1,1].map(side=>cabinet(PAD_X+side*18-2,MOUNT_TOP-4,4,4,'gGreyD')).join('')}
+  </g>`
+}
+function launchEffects(prefix) {
+  const ports=[-1,1].flatMap(side=>[88,105].map(y=>({x:side*16,y,side})))
+  return {
+    vent:fxVent({id:prefix+'-vent',ports}),flame:fxFlame({id:prefix+'-flame',x:0,y:NOZZLE_Y}),
+    smoke:fxSmoke({id:prefix+'-smoke',exits:[{x:PAD_X-24,y:428,side:-1},{x:PAD_X+150,y:434,side:1}],mark:{x:PAD_X+53,y:438}}),
+    frost:fxFrost({id:prefix+'-frost',x:PAD_X,top:ROCKET_Y+141,bottom:ROCKET_Y+176,platform:{y:MOUNT_TOP,left:PAD_X-54,right:PAD_X+74},flameX:PAD_X,bodyR:BODY_R}),
+    lightning:fxLightning({id:prefix+'-lightning',cloud:{x:TOWER_X,y:44},tip:{x:TOWER_X,y:TOWER_Y-28},towerClip:prefix+'-tower-clip',rocketClip:prefix+'-rocket-clip',towerX:TOWER_X,rocketX:PAD_X,groundY:MOUNT_TOP,bodyR:BODY_R})
+  }
+}
+function padSvg(prefix,fx,{masts=true}={}) {
+  const mast=(x,y)=>`<g>${cabinet(x-6,414,12,7,'gConcrete')}${rect(x-1,y+6,3,408-y,'gGrey')}${ln([[x,y+8],[x,412]],'edge')}${cabinet(x-8,y-2,17,8,'gGreyD')}${rect(x-6,y,13,4,'gRocket')}</g>`
+  const light=(x,y)=>`<g><path class="beam" d="M${x-6} ${y}h12L925 346 895 224Z" filter="url(#fMist)"/><path class="beam-core" d="M${x-4} ${y}h8L919 324 900 236Z" filter="url(#fMist)"/><rect x="${x-5}" y="${y}" width="11" height="2.5" class="signal glow"/></g>`
+  return `<g data-assembly="${prefix}"><defs>
+    <clipPath id="${prefix}-tower-clip" data-surface-clip="tower" clipPathUnits="userSpaceOnUse"/>
+    <clipPath id="${prefix}-rocket-clip" data-surface-clip="rocket" clipPathUnits="userSpaceOnUse"/>
+    <clipPath id="${prefix}-warm-clip" data-surface-clip="warm" clipPathUnits="userSpaceOnUse"/>
+    ${softFilter(prefix+'-ground-soft',8)}${radial(prefix+'-orange',[[0,'warm',1],[.2,'amber',.85],[.7,'red',.2],[1,'red',0]])}
+    <linearGradient id="${prefix}-warm-face" x2="0" y2="1"><stop stop-color="var(--amber)" stop-opacity="0"/><stop offset=".6" stop-color="var(--amber)"/><stop offset="1" stop-color="color-mix(in srgb, var(--amber) 76%, var(--red))"/></linearGradient>
+  </defs>
+    <g id="${prefix}-mount">${mountSvg()}</g>
+    ${masts?[[783,246],[982,236],[857,302],[999,312]].map(([x,y])=>mast(x,y)).join(''):''}
+    <g id="${prefix}-tower-solid" transform="translate(${TOWER_X},${TOWER_Y})" data-main-tower>${towerSvg()}</g>
+    ${clampSvg(prefix,false)}
+    <g data-pad-rocket transform="translate(${PAD_X},${ROCKET_Y})">${rocketSvg(1,{...fx,hullId:prefix+'-rocket-hull'})}</g>
+    ${clampSvg(prefix,true)}
+    <g data-warm-surfaces opacity="0" clip-path="url(#${prefix}-warm-clip)"><rect x="${TOWER_X-60}" y="${MOUNT_TOP-112}" width="320" height="150" fill="url(#${prefix}-warm-face)"/></g>
+    <ellipse data-warm-ground cx="${PAD_X+25}" cy="${MOUNT_TOP+17}" rx="144" ry="24" fill="url(#${prefix}-orange)" opacity="0" filter="url(#${prefix}-ground-soft)"/>
+    ${fx.lightning.svg}${fx.smoke.svg}${fx.frost.svg}
+    ${masts?`<g id="pad-light-source" data-pad-lights opacity=".2">${[[783,246],[982,236],[857,302],[999,312]].map(([x,y])=>light(x,y)).join('')}</g>`:''}
+    <text x="864" y="464" font-size="10" letter-spacing="3">LAUNCH / 02</text>
+  </g>`
+}
+function foregroundSvg() {
+  return `<g>
+    <g>${cabinet(95,453,123,46,'gBlue','gBlueL','gBlueD')}${hi([[96,454],[201,454],[201,456],[96,456]])}${sh([[96,491],[202,491],[202,499],[96,499]])}${repeat(12,i=>ln([[103+i*8,458],[103+i*8,490]])+ln([[104+i*8,458],[104+i*8,489]],'edge'))}${txt(116,480,'PROJECT / 02',9,'decal')}${riv(99,457)}${riv(199,494)}</g>
+    <g transform="translate(232,472)">${cabinet(0,0,85,27)}${repeat(10,i=>ln([[5+i*8,3],[5+i*8,24]]))}${rect(14,12,21,8,'gDark')}${txt(17,18,'TOOLS',5)}</g>
+    <g transform="translate(398,483)"><ellipse cx="0" cy="11" rx="35" ry="7" fill="var(--black)" opacity=".3"/>
+      ${cabinet(-29,-8,47,16,'gGold','gGold')}${hi([[-28,-7],[17,-7],[17,-4],[-28,-4]])}
+      ${rect(18,-40,4,51,'gGreyD')}${rect(25,-40,3,51,'gGrey')}${ln([[20,-29],[27,-29]])}${ln([[20,-19],[27,-19]])}<path d="M22 5h27v3H22" stroke="var(--metal)" fill="none" stroke-width="2"/>
+      <path d="M-13-9V-33H13V-9 M-16-34H16" stroke="var(--metal)" fill="none" stroke-width="2.2"/>
+      ${rect(-7,-19,7,8,'gDark')}${ln([[-1,-20],[9,-14]])}${[-19,12].map(x=>circ(x,7,7,'gDark')+circ(x,7,3,'gGrey')).join('')}${txt(-23,0,'02',6)}</g>
+    <g>${[530,593,656,719,782].map(x=>`${cabinet(x-5,493,12,5,'gGreyD')}${rect(x,465,3,30,'gGrey')}${riv(x+1,495)}`).join('')}<path d="M531 467H784 M531 480H784" fill="none" stroke="var(--metal)" stroke-width="3"/><path d="M532 466H784" class="edge"/></g>
+    <path d="M452 508h402 M837 479h133l39 28" fill="none" stroke="url(#pHazard)" stroke-width="5"/>
+    <path d="M470 512h365" fill="none" stroke="var(--light)" opacity=".14"/>
+    <g transform="translate(1039,412)"><ellipse cy="4" rx="24" ry="6" fill="var(--black)" opacity=".32"/>
+      ${cabinet(-18,0,36,4,'gConcrete')}
+      <g data-monument opacity="0" transform="scale(1,0)">${cabinet(-9,-37,21,37)}${rect(-7,-34,14,3,'gBand')}
+        <circle cx="0" cy="-40" r="2.2" fill="var(--project)" class="glow"/>${txt(-6,-22,'100%',5,'decal')}${txt(-6,-13,'COMPLETE',2.7)}${ln([[-5,-7],[7,-7]],'edge')}
+      </g>
+    </g>
+  </g>`
+}
+
+const scene = $('[data-scene]'), close = $('[data-closeup]'), stat = $('[data-stat]')
+const mainFx=launchEffects('main'), closeFx=launchEffects('close'), tankerFx=fxTruck({id:'tanker',path:TRUCK_PATH})
+scene.innerHTML = DEFS + SURFACE_DEFS + skySeaSvg() + lighthouseSvg() + groundSvg() + vabSvg() + tanksSvg() + commandSvg() +
+  `<g data-crawler-position>${crawlerSvg()}</g><g data-crawler-rocket transform="translate(283,174)">${rocketSvg()}</g>` + padSvg('main',mainFx) + tankerFx.svg + roadLightsSvg() + foregroundSvg() +
+  `<g id="firework-source" data-fireworks></g><g data-rain></g><rect class="scene-grain" width="1400" height="520" fill="url(#pSceneGrain)"/>`
+close.innerHTML = `<rect width="480" height="960" fill="url(#gSky)"/>
+  <g transform="translate(-1510,20) scale(2)"><path d="M746 420H1080M746 449H1080" stroke="var(--metal)" opacity=".16"/>
+    ${padSvg('close',closeFx,{masts:false})}</g>
+  <text x="22" y="31" font-size="12" letter-spacing="2">LAUNCH VEHICLE / 02</text><text x="22" y="53" font-size="10" data-close-label>CLEAN · ASSEMBLY</text>
+  <rect class="scene-grain" width="480" height="960" fill="url(#pSceneGrain)"/>`
+
+/* 状态时间由入口注入；装饰随机与任务计数互不影响。接驳顺序为 600 + 300 + 400 + 600 ms。 */
+const motionPreference = matchMedia('(prefers-reduced-motion: reduce)')
+const QUEUE_SIZE = 3, BASE_MISSIONS = 57
+const ROLLOUT_MS = 4000, DOCK_MS = 1900, FIREWORK_LIFE = 1600
+function initialState(now) {
+  return { now,phase:'READY',phaseAt:now,active:null,tasks:repeatTasks(),fuel:0,auto:false,timers:[],epoch:0,
+    pad:false,rollout:0,altitude:0,armsOpen:true,clampsClosed:false,doorLit:false,countdown:null,countAt:now,
+    pending:false,pended:false,holdUntil:0,strikeAt:-Infinity,blockReturn:'FUEL',nextAt:0,resetAt:0,
+    launchAt:null,lastLaunchSecond:-Infinity,smokeUntil:0,fullAt:0,closeMode:'clean',
+    dockAt:null,launchRequested:false,truckHomeSince:now,closeAt:now,flightExitedAt:null }
+}
+function repeatTasks() { return Array.from({length:QUEUE_SIZE},(_,i)=>({id:i+1,complete:false,counted:false})) }
+const S = initialState(performance.now())
+const activeTask = () => S.tasks.find(t=>t.id===S.active)
+const after = (ms,fn) => S.timers.push({at:S.now+ms,epoch:S.epoch,fn})
+function drainTimers() {
+  // 必须先移出到期项，再执行回调；回调新建的 after 留到下一帧，不能被 filter 覆盖。
+  const due = S.timers.filter(t=>t.at<=S.now)
+  S.timers = S.timers.filter(t=>t.at>S.now)
+  due.forEach(t=>{if(t.epoch===S.epoch)t.fn()})
+}
+function enter(phase) { S.phase=phase;S.phaseAt=S.now }
+function tell(message) { $('[data-help]').textContent=message }
+function resetScene() {
+  const epoch=S.epoch+1,autoEnabled=S.auto,closeMode=S.closeMode
+  Object.assign(S,initialState(S.now),{epoch,auto:autoEnabled,closeMode})
+  fireworks=[];seed=1024;lastStockKey=''
+  tell('READY · 三枚火箭在总装厂房等待认领。')
+}
+function arrive() {
+  if(S.phase!=='ROLLOUT')return
+  if(motionPreference.matches){S.rollout=1;S.pad=true;S.armsOpen=false;S.clampsClosed=true;beginFuel();return}
+  if(S.pad||S.now-S.phaseAt<ROLLOUT_MS)return
+  S.rollout=1;S.pad=true;S.dockAt=S.now;S.armsOpen=false;S.clampsClosed=true
+  tell('ROLLOUT · 转运到位，等待四夹合拢、双臂搭上；液位保持零。')
+  // 先落座，再扣夹、接臂；履带车退离桌面后才允许加注。
+  after(DOCK_MS,beginFuel)
+}
+function beginFuel() {
+  if(S.phase!=='ROLLOUT'||!S.pad)return
+  enter('FUEL')
+  tell('FUEL · 转运到位，四夹合拢、双臂搭上，开始加注。')
+}
+function hold() {
+  if(!S.active||!['FUEL','GO','HOLD'].includes(S.phase))return
+  S.launchRequested=false;S.pending=true;S.pended=true;S.countdown=motionPreference.matches?10:13;S.countAt=S.now
+  S.strikeAt=S.now+400;S.armsOpen=false;S.clampsClosed=true;enter('HOLD')
+  tell('HOLD · 等待拍板，倒计时停在 T-00:10。')
+}
+function approve() {
+  if(!S.active||!['FUEL','HOLD'].includes(S.phase))return
+  S.pending=false;S.holdUntil=0;S.countdown=10;S.countAt=S.now;enter('GO')
+  tell('GO · 已拍板，逐秒倒数；未完工时停在 T-00:01。')
+}
+function clearBlock() {
+  if(S.phase!=='SCRUB')return
+  const returnTo=S.blockReturn;enter(returnTo);S.pending=returnTo==='HOLD';S.countdown=S.pending?10:null;S.countAt=S.now
+  if(S.pending&&S.auto)S.holdUntil=S.now+3000
+  tell(S.pending?'HOLD · 阻塞解除，继续等待拍板。':'FUEL · 阻塞解除，继续加注。')
+}
+function countTask(task) { if(task&&!task.counted){task.complete=true;task.counted=true} }
+function ignite() {
+  if(!S.active||['LIFTOFF','NOMINAL','COMPLETE'].includes(S.phase))return
+  S.launchRequested=true
+  if(!motionPreference.matches&&(S.truckHomeSince===null||S.now-S.truckHomeSince<2000)){
+    tell('完工已收到，加注车撤回并保持两秒安全距离后点火。');return
+  }
+  S.launchRequested=false;S.flightExitedAt=null
+  S.lastLaunchSecond=Math.floor(S.now/1000);S.launchAt=S.now;S.pad=true;S.pending=false;S.armsOpen=true;S.clampsClosed=false
+  S.countdown=0;S.altitude=0;enter('LIFTOFF');S.smokeUntil=S.now+7000
+  tell('LIFTOFF · 点火升空，烟向海侧飘，碎霜下坠。')
+  if(motionPreference.matches){exitFlight();return}
+}
+function exitFlight() {
+  if(S.phase!=='LIFTOFF')return
+  countTask(activeTask());S.active=null;S.pad=false;S.fuel=0;S.altitude=850;S.countdown=null;S.smokeUntil=S.now+4000;S.flightExitedAt=S.now
+  enter('NOMINAL');tell('NOMINAL · 火箭已出画，任务数加一，下一枚移到总装台。')
+  after(1400,()=>{
+    if(S.phase!=='NOMINAL')return
+    enter('MISSIONS');tell(`MISSIONS ${BASE_MISSIONS+S.tasks.filter(t=>t.counted).length} · 等待下一次认领。`)
+    after(1600,()=>{if(S.phase==='MISSIONS')enter('READY')})
+  })
+}
+function finishTasks(ids) {
+  // 同一秒不同任务只启动一枚；重复任务幂等，其余完成事件直接进入计数。
+  const tasks=[...new Set(ids)].map(id=>S.tasks.find(t=>t.id===id)).filter(t=>t&&!t.complete)
+  if(!tasks.length)return
+  tasks.forEach(t=>{t.complete=true})
+  const inFlight=['LIFTOFF','NOMINAL'].includes(S.phase)
+  const batchSuppressed=inFlight||Math.floor(S.now/1000)===S.lastLaunchSecond||S.phase==='COMPLETE'
+  const launchTask=batchSuppressed?null:(tasks.find(t=>t.id===S.active)||(!S.active?tasks[0]:null))
+  tasks.filter(t=>t!==launchTask&&t.id!==S.active).forEach(countTask)
+  if(!launchTask)return
+  S.active=launchTask.id;S.pad=true;S.rollout=1
+  if(S.phase==='GO'){tell('GO · 完工已收到，倒计时归零后点火。');return}
+  ignite()
+}
+function celebrate() {
+  if(S.phase==='COMPLETE')return
+  S.epoch++;S.timers=[];S.tasks.forEach(countTask);S.active=null;S.pad=false;S.fuel=0;S.pending=false;S.countdown=null
+  S.launchRequested=false;S.armsOpen=true;S.clampsClosed=false;S.fullAt=S.now;S.resetAt=S.now+9000;enter('COMPLETE')
+  tell('MISSION COMPLETE · 三轮海上烟花，项目色旗与纪念柱。')
+  if(!motionPreference.matches){burst(0);after(700,()=>burst(1));after(1400,()=>burst(2))}
+}
+function act(action,payload,now=performance.now()) {
+  // 动作入口重新取时，直接调用也不能沿用上一帧的旧时钟；自动演显式传入帧时钟。
+  S.now=now
+  if(action==='auto') {
+    if(motionPreference.matches){S.auto=false;tell('已跟随系统减少动效，自动循环停用；可用其余按钮查看状态。');return}
+    S.auto=!S.auto;S.nextAt=0
+    if(S.auto&&S.phase==='HOLD'&&!S.holdUntil)S.holdUntil=S.now+3000
+    tell(S.auto?'自动演示 · 三枚依次认领、加注、倒数、起飞；每三枚有一枚中途等待拍板。':'手动演示 · 当前动作继续，可点按钮接管。')
+    return
+  }
+  if(action==='full'){celebrate();return}
+  if(action==='claim') {
+    if(S.active)return
+    if(S.phase==='COMPLETE')resetScene()
+    const task=S.tasks.find(t=>!t.complete)
+    if(!task){tell('三枚火箭均已完成，可查看项目 100% 或自动演示。');return}
+    S.epoch++;S.timers=[];S.active=task.id;S.fuel=0;S.rollout=0;S.altitude=0;S.pad=false;S.doorLit=true;S.dockAt=null;S.launchRequested=false
+    S.pending=false;S.pended=false;S.holdUntil=0;S.countdown=null;S.nextAt=0;S.armsOpen=true;S.clampsClosed=false;enter('ROLLOUT')
+    tell('ROLLOUT · 门内顶灯全亮，履带车转运至发射台。')
+    if(motionPreference.matches)arrive()
+    else after(ROLLOUT_MS,arrive)
+    return
+  }
+  if(action==='done') {
+    const ids=Array.isArray(payload)?payload:(S.active?[S.active]:[])
+    if(!ids.length){tell('先认领一枚火箭，再模拟完工起飞。');return}
+    finishTasks(ids);return
+  }
+  if(!S.active){tell('先点「认领」，火箭上台后再模拟待拍板、拍板或阻塞。');return}
+  if(action==='pend'){hold();return}
+  if(action==='go'){approve();return}
+  if(action==='block') {
+    if(S.phase==='SCRUB'){clearBlock();return}
+    if(!['FUEL','HOLD','GO'].includes(S.phase))return
+    S.launchRequested=false;S.blockReturn=S.pending?'HOLD':'FUEL';S.countdown=null;S.armsOpen=false;S.clampsClosed=true;S.strikeAt=S.now;enter('SCRUB')
+    tell('SCRUB · 下雨，倒计时清空；再次点阻塞解除。')
+  }
+}
+function auto(now) {
+  if(motionPreference.matches)return
+  if(S.phase==='COMPLETE'){if(now>=S.resetAt)resetScene();return}
+  if(S.tasks.every(t=>t.counted)&&!['LIFTOFF','NOMINAL'].includes(S.phase)){celebrate();return}
+  if(!S.active) {
+    if(!['READY','MISSIONS'].includes(S.phase))return
+    if(!S.nextAt)S.nextAt=now+1200
+    if(now>=S.nextAt)act('claim',undefined,now)
+    return
+  }
+  if(S.phase==='FUEL'&&S.active%3===0&&S.fuel>=45&&!S.pended){hold();S.holdUntil=now+3000;return}
+  if(S.phase==='HOLD'&&S.holdUntil&&now>=S.holdUntil){approve();return}
+  if(S.fuel>=100&&['FUEL','GO'].includes(S.phase)) {
+    activeTask().complete=true
+    if(S.phase==='FUEL')approve()
+  }
+}
+function tick(dt) {
+  if(S.launchRequested&&S.phase!=='GO'&&S.truckHomeSince!==null&&S.now-S.truckHomeSince>=2000)ignite()
+  if(S.phase==='ROLLOUT')S.rollout=clamp((S.now-S.phaseAt-250)/(ROLLOUT_MS-250))
+  // 到期回调先切状态；本帧只计进入加注状态后的时间，不能把接驳时间算进液位。
+  if(['FUEL','GO'].includes(S.phase)) {
+    const elapsed=Math.max(0,Math.min(dt,S.now-S.phaseAt))
+    // 累计加注时长后再换算百分比，避免十二秒末尾因浮点尾差停在 99.999...%。
+    S.fuel=clamp(Math.round((S.fuel*120+elapsed)*1e6)/1e6/120,0,100)
+  }
+  if(S.phase==='HOLD'&&S.countdown>10&&S.now-S.countAt>=1000) {
+    const steps=Math.floor((S.now-S.countAt)/1000);S.countdown=Math.max(10,S.countdown-steps);S.countAt+=steps*1000
+  }
+  if(S.phase==='GO'&&S.now-S.countAt>=1000) {
+    const steps=Math.floor((S.now-S.countAt)/1000);S.countAt+=steps*1000
+    S.countdown=Math.max(activeTask()?.complete?0:1,S.countdown-steps)
+    if(S.countdown===0)ignite()
+  }
+  if(S.phase==='LIFTOFF') {
+    const ascent=Math.max(0,(S.now-S.launchAt-400)/1000)
+    S.altitude=ascent<=1?30*ascent:30+30*(ascent-1)+190*(ascent-1)**2
+    if(S.now-S.launchAt>=3400)exitFlight()
+  }
+}
+
+let seed=1024,fireworks=[]
+function random(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+function burst(round) {
+  if(motionPreference.matches||S.phase!=='COMPLETE')return
+  const [x,y]=[[1148,178],[1302,164],[1226,212]][round]
+  // 每轮 54 颗独立保留；快速展开至 70~86px，前轮不会被下一轮覆盖。
+  fireworks.push(...Array.from({length:54},(_,i)=>{const a=i/54*Math.PI*2,r=35+random()*8;return{x,y,dx:Math.cos(a)*r,dy:Math.sin(a)*r,born:S.now,round,paint:['var(--project)','var(--paper)','url(#gGold)'][i%3]}}))
+}
+function fireworkPoint(p,t) {
+  const spread=1-Math.exp(-t*6)
+  return{x:p.x+p.dx*spread,y:p.y+p.dy*spread+18*t*t}
+}
+const rainDrops=Array.from({length:108},(_,i)=>({x:(i*137)%1470,y:(i*71)%580,speed:250+(i%5)*29}))
+function particles() {
+  if(motionPreference.matches){fireworks=[];return}
+  fireworks=fireworks.filter(p=>S.now-p.born<FIREWORK_LIFE)
+}
+
+/* clipPath 内的 use 只指向实体图元；复制祖先变换，保持摆臂和夹具的受光同步。 */
+function bindSurfaceClips(host) {
+  const assembly=$('[data-assembly]',host),prefix=assembly.dataset.assembly
+  const tower=$(`#${prefix}-tower-solid`,host),rocket=$(`#${prefix}-rocket-hull`,host)
+  const sources={tower:[tower],rocket:[rocket],warm:[tower,$(`#${prefix}-mount`,host),$(`#${prefix}-front-clamps`,host),$(`#${prefix}-rear-clamps`,host)]}
+  let serial=0
+  const bindings=[]
+  for(const [name,groups] of Object.entries(sources)) {
+    const clip=$(`[data-surface-clip="${name}"]`,host)
+    for(const group of groups)for(const shape of $$('.pl',group)) {
+      if(!['path','polygon','rect','circle','ellipse','polyline'].includes(shape.tagName))continue
+      if(!shape.getAttribute('id'))set(shape,'id',`${prefix}-lit-${serial++}`)
+      const use=document.createElementNS('http://www.w3.org/2000/svg','use')
+      set(use,'href','#'+shape.getAttribute('id'));clip.appendChild(use)
+      const parents=[]
+      for(let parent=shape.parentElement;parent&&parent!==assembly;parent=parent.parentElement)parents.unshift(parent)
+      bindings.push({use,parents})
+    }
+  }
+  return ()=>bindings.forEach(({use,parents})=>set(use,'transform',parents.map(parent=>parent.getAttribute('transform')).filter(Boolean).join(' ')))
+}
+function assemblyNodes(host) {
+  return {host,padRocket:$('[data-pad-rocket]',host),rocket:$('[data-pad-rocket] .rocket',host),
+    arms:$$('[data-arm]',host),clamps:$$('[data-clamp]',host),updateLightClips:bindSurfaceClips(host),
+    level:$('[data-liquid]',host),levelText:$('[data-level-label]',host),elevator:$('[data-elevator]',host),towerLamp:$('[data-tower-lamp]',host),
+    warmGround:$('[data-warm-ground]',host),warmSurfaces:$('[data-warm-surfaces]',host)}
+}
+const E={...assemblyNodes(scene),
+  crawlerPosition:$('[data-crawler-position]',scene),crawler:$('[data-crawler]',scene),crawlerHeading:$('[data-crawler-heading]',scene),
+  crawlerDeck:$('[data-crawler-deck]',scene),reverseLamp:$('[data-reverse-lamp]',scene),crawlerRoute:$('[data-crawler-route]',scene),
+  crawlerRocket:$('[data-crawler-rocket]',scene),stock:$('[data-stock]',scene),lamps:$$('[data-bay-lamp]',scene),
+  screen:$('[data-screen]',scene),countdown:$('[data-countdown]',scene),missions:$('[data-missions]',scene),
+  lights:$('[data-pad-lights]',scene),skyDark:$('[data-sky-dark]',scene),puddles:$('[data-puddles]',scene),flag:$('[data-flag]',scene),monument:$('[data-monument]',scene),
+  fireworks:$('[data-fireworks]',scene),rain:$('[data-rain]',scene),autoButton:$('[data-act="auto"]'),blockButton:$('[data-act="block"]')
+}
+const C=assemblyNodes(close)
+E.stock.innerHTML=[3,2,1].map(id=>`<g class="assembly-stock" data-stock-id="${id}"><ellipse cy="195" rx="26" ry="4" fill="var(--black)" opacity=".35"/>${rocketSvg(id)}<g transform="translate(0,190)">${supportSvg()}</g></g>`).join('')
+const stockEls=$$('[data-stock-id]',scene)
+let lastStockKey='',lastReadout='',lastPhase='',lastNumber=0
+function set(el,name,value){const s=String(value);if(el.getAttribute(name)!==s)el.setAttribute(name,s)}
+function visible(el,on){set(el,'visibility',on?'visible':'hidden')}
+function gauge(level,label,pct) {
+  const h=104*clamp(pct/100);set(level,'y',(104-h).toFixed(2));set(level,'height',h.toFixed(2))
+  const text=Math.round(pct)+'%';if(label.textContent!==text)label.textContent=text
+}
+function render(now=S.now) {
+  const reduced=motionPreference.matches,phase=S.phase,fuel=Math.floor(S.fuel)
+  const signal=phase==='HOLD'?'amber':phase==='SCRUB'?'red':'cyan'
+  if(lastPhase!==phase) {
+    lastPhase=phase;set(scene,'data-state',phase);scene.style.setProperty('--signal',`var(--${signal})`)
+    E.blockButton.textContent=phase==='SCRUB'?'解除阻塞（雨停）':'阻塞（SCRUB）'
+  }
+  const queue=S.tasks.filter(t=>t.id!==S.active&&!t.complete).map(t=>t.id),stockKey=queue.join(',')
+  if(lastStockKey!==stockKey||!lastStockKey) {
+    lastStockKey=stockKey
+    stockEls.forEach(el=>{const i=queue.indexOf(Number(el.dataset.stockId));visible(el,i>=0);if(i>=0)set(el,'transform',`translate(${283-i*16},${193+i*6}) scale(${1-i*.025})`)})
+  }
+  const dockElapsed=S.dockAt===null?null:now-S.dockAt
+  const backing=dockElapsed!==null?clamp((dockElapsed-1300)/600):0
+  const crawlerVisible=phase==='ROLLOUT'||S.pad||S.dockAt!==null
+  visible(E.crawlerPosition,crawlerVisible)
+  const travel=E.crawlerRoute.getTotalLength()*S.rollout-backing*60,pose=pathPose(E.crawlerRoute,travel)
+  const lowering=phase==='ROLLOUT'&&S.pad&&dockElapsed!==null?6*smooth(dockElapsed/600):S.dockAt!==null?6:0
+  set(E.crawlerPosition,'transform',`translate(${pose.x},${pose.y-18})`)
+  set(E.crawlerHeading,'transform',`rotate(${pose.angle})`)
+  set(E.crawlerDeck,'transform',`translate(0,${lowering})`)
+  // 箭体直接挂在场景坐标下，只平移；转弯矩阵永远不会进入箭体的祖先链。
+  set(E.crawlerRocket,'transform',`matrix(1 0 0 1 ${pose.x} ${pose.y-18-NOZZLE_Y})`)
+  visible(E.crawlerRocket,phase==='ROLLOUT'&&!S.pad)
+  E.crawler.classList.toggle('moving',!reduced&&phase==='ROLLOUT'&&(!S.pad||backing>0&&backing<1))
+  set(E.reverseLamp,'opacity',backing>0&&backing<1&&!reduced?(Math.sin(now/85)>0?1:.25):0)
+  updateAssembly(E,mainFx,{now,reduced,phase,fuel:S.fuel,altitude:S.altitude,rocketVisible:S.pad,
+    dockElapsed:phase==='ROLLOUT'&&S.pad?dockElapsed:null,closed:S.clampsClosed,
+    launchAt:S.launchAt,launchElapsed:phase==='LIFTOFF'?now-S.launchAt:null,clearAt:S.smokeUntil,exitAt:S.flightExitedAt,
+    storm:['HOLD','SCRUB'].includes(phase),event:Number.isFinite(S.strikeAt)?S.strikeAt:S.phaseAt})
+  if(S.active&&lastNumber!==S.active){lastNumber=S.active;[E.padRocket,E.crawlerRocket].forEach(el=>$('.serial',el).textContent=String(S.active).padStart(2,'0'))}
+  E.lamps.forEach(el=>set(el,'opacity',S.doorLit?1:.4))
+  set(E.lights,'opacity',S.pad||phase==='HOLD'||phase==='SCRUB'?1:.18)
+  const truck=tankerFx.update(scene,{now,reduced,enabled:phase==='FUEL'&&S.fuel>0&&S.fuel<100,returnHome:S.launchRequested,cycle:S.active})
+  if(truck.atHome){if(S.truckHomeSince===null)S.truckHomeSince=now}else S.truckHomeSince=null
+  lighthouseFx.update(scene,{now,reduced})
+  set(E.skyDark,'opacity',phase==='SCRUB'?1:0);set(E.puddles,'opacity',phase==='SCRUB'?1:0)
+  const holdWord=reduced||Math.floor((now-S.phaseAt)/1000)%2===0?'HOLD':'GO?'
+  const word={READY:'READY',ROLLOUT:'ROLLOUT',FUEL:`FUEL ${fuel}`,HOLD:holdWord,SCRUB:'SCRUB',GO:S.countdown===10?'GO':`T-00:${String(S.countdown).padStart(2,'0')}`,LIFTOFF:'LIFTOFF',NOMINAL:'NOMINAL',MISSIONS:'MISSIONS +1',COMPLETE:'MISSION COMPLETE'}[phase]
+  const readout=word+'|'+S.countdown+'|'+fuel+'|'+S.tasks.filter(t=>t.counted).length+'|'+S.active
+  if(readout!==lastReadout) {
+    lastReadout=readout;E.screen.textContent=word;set(E.screen,'font-size',word.length>14?9:11)
+    E.countdown.textContent=S.countdown===null?'':`T-00:${String(S.countdown).padStart(2,'0')}`
+    const done=S.tasks.filter(t=>t.counted).length;E.missions.textContent=`MISSIONS ${BASE_MISSIONS+done}`
+    stat.textContent=`火箭 ${S.active||Math.min(done+1,QUEUE_SIZE)}/${QUEUE_SIZE} · FUEL ${fuel}% · ${word}`
+  }
+  set(E.flag,'fill',phase==='COMPLETE'?'url(#gBand)':'url(#gRocket)')
+  const monument=phase==='COMPLETE'?(reduced?1:clamp((now-S.fullAt)/900)):0
+  set(E.monument,'opacity',monument);set(E.monument,'transform',`scale(1,${monument.toFixed(3)})`)
+  E.autoButton.textContent=S.auto?'停止自动演':'自动演';set(E.autoButton,'aria-pressed',S.auto)
+  renderParticles(now,reduced);updateCloseup(now)
+}
+function renderParticles(now,reduced) {
+  if(reduced){[E.fireworks,E.rain].forEach(el=>{if(el.innerHTML)el.innerHTML='' });return}
+  E.fireworks.innerHTML=fireworks.map(p=>{const t=Math.max(0,(now-p.born)/1000),head=fireworkPoint(p,t),tail=fireworkPoint(p,Math.max(0,t-.1));return `<path d="M${head.x.toFixed(1)} ${head.y.toFixed(1)}L${tail.x.toFixed(1)} ${tail.y.toFixed(1)}" stroke="${p.paint}" stroke-width="2.2" stroke-linecap="round" opacity="${Math.pow(clamp(1-t/(FIREWORK_LIFE/1000)),.65).toFixed(2)}"/>`}).join('')
+  E.rain.innerHTML=S.phase==='SCRUB'?rainDrops.map(p=>{const travel=(now-S.phaseAt)/1000*p.speed,y=(p.y+travel)%580-30,x=((p.x-travel*.3)%1470+1470)%1470-20;return `<path d="M${x.toFixed(1)} ${y.toFixed(1)}l-5 15" stroke="var(--light)" stroke-width=".8" opacity=".25"/>`}).join(''):''
+}
+function updateAssembly(nodes,fx,f) {
+  const seating=f.dockElapsed===null?0:6*(1-smooth(f.dockElapsed/600)),rocketY=ROCKET_Y-f.altitude-seating
+  visible(nodes.padRocket,f.rocketVisible)
+  set(nodes.padRocket,'transform',`translate(${PAD_X},${rocketY})`)
+  let arms=f.closed?0:1,clamps=arms
+  if(f.dockElapsed!==null&&!f.reduced){clamps=1-smooth((f.dockElapsed-600)/300);arms=1-smooth((f.dockElapsed-900)/400)}
+  if(f.launchElapsed!==null){arms=clamps=f.reduced?1:smooth(f.launchElapsed/400)}
+  nodes.arms.forEach(arm=>set(arm,'transform',`rotate(${-60*arms})`))
+  nodes.clamps.forEach(clampNode=>set(clampNode,'transform',`rotate(${35*Number(clampNode.dataset.side)*clamps})`))
+  const shedding=f.launchElapsed===null?1:f.reduced?.18:lerp(1,.18,clamp(f.launchElapsed/700))
+  nodes.rocket.style.setProperty('--frost',clamp(f.fuel/100)*.85*shedding)
+  gauge(nodes.level,nodes.levelText,f.fuel)
+  const fueling=f.phase==='FUEL'&&f.fuel>0&&f.fuel<100
+  set(nodes.elevator,'transform',`translate(1,${fueling&&!f.reduced?111+Math.sin(f.now/1900)*83:181})`)
+  set(nodes.towerLamp,'fill',`var(--${f.phase==='HOLD'?'amber':'red'})`)
+  const burning=f.phase==='LIFTOFF',warm=burning?clamp(1-f.altitude/260):0
+  set(nodes.warmGround,'opacity',.35*warm);set(nodes.warmSurfaces,'opacity',.25*warm)
+  if(burning||f.storm)nodes.updateLightClips()
+  fx.vent.update(nodes.host,{now:f.now,reduced:f.reduced,enabled:f.rocketVisible,fuel:f.fuel,launchElapsed:f.launchElapsed})
+  fx.flame.update(nodes.host,{now:f.now,reduced:f.reduced,enabled:burning,altitude:f.altitude})
+  fx.lightning.update(nodes.host,{now:f.now,reduced:f.reduced,enabled:f.storm,event:f.event})
+  fx.smoke.update(nodes.host,{now:f.now,reduced:f.reduced,launchAt:f.launchAt,altitude:burning?f.altitude:Infinity,clearAt:f.clearAt,exitAt:f.exitAt})
+  fx.frost.update(nodes.host,{now:f.now,reduced:f.reduced,launchAt:f.launchAt,altitude:burning?f.altitude:Infinity})
+}
+function updateCloseup(now) {
+  const mode=S.closeMode,igniteMode=mode==='ignite',reduced=motionPreference.matches
+  const launchAt=igniteMode?S.closeAt+Math.floor(Math.max(0,now-S.closeAt)/7000)*7000:null
+  updateAssembly(C,closeFx,{now,reduced,phase:igniteMode?'LIFTOFF':mode==='hold'?'HOLD':mode==='fuel'?'FUEL':'READY',
+    fuel:mode==='clean'?0:igniteMode?100:60,altitude:0,rocketVisible:true,closed:mode!=='clean',dockElapsed:null,
+    launchAt,launchElapsed:igniteMode?now-launchAt:null,clearAt:igniteMode?launchAt+7000:0,exitAt:null,
+    storm:mode==='hold',event:S.closeAt+400})
+}
+function renderCloseup(mode) {
+  S.closeMode=mode;S.closeAt=performance.now()
+  set(close,'data-state',mode==='hold'?'HOLD':mode==='ignite'?'LIFTOFF':'FUEL')
+  close.style.setProperty('--signal',`var(--${mode==='hold'?'amber':'cyan'})`)
+  $('[data-close-label]',close).textContent={clean:'CLEAN · ASSEMBLY',fuel:'FUEL 60% · CRYOGENIC',hold:'HOLD · T-00:10',ignite:'IGNITION · LIFTOFF'}[mode]
+  $$('[data-sim2] [data-mode]').forEach(b=>set(b,'aria-pressed',b.dataset.mode===mode))
+  updateCloseup(S.closeAt)
+}
+$$('[data-sim] [data-act]').forEach(button=>button.addEventListener('click',()=>{
+  if(button.dataset.act!=='auto'){S.auto=false;S.holdUntil=0}
+  act(button.dataset.act);render()
+}))
+$$('[data-sim2] [data-mode]').forEach(button=>button.addEventListener('click',()=>renderCloseup(button.dataset.mode)))
+motionPreference.addEventListener('change',()=>{
+  S.now=performance.now()
+  if(motionPreference.matches) {
+    S.auto=false;S.holdUntil=0;S.strikeAt=-Infinity;fireworks=[]
+    if(S.phase==='ROLLOUT')arrive()
+    if(S.phase==='LIFTOFF')exitFlight()
+    if(S.phase==='HOLD')S.countdown=10
+  }
+  renderCloseup(S.closeMode);render()
+})
+let last=0,scheduled=null
+function scheduleFrame() {
+  if(motionPreference.matches)scheduled=setTimeout(()=>frame(performance.now()),250)
+  else scheduled=requestAnimationFrame(frame)
+}
+function frame(now) {
+  const reduced=motionPreference.matches
+  if(!reduced&&now-last<1000/30){scheduleFrame();return}
+  const dt=last?Math.min(now-last,250):0;last=now;S.now=now
+  drainTimers();tick(dt)
+  if(S.auto&&!reduced)auto(now)
+  particles();render(now);scheduleFrame()
+}
+renderCloseup('clean');render();scheduleFrame()
+</script>
+</body>
+</html>

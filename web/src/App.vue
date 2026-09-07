@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '@/utils/celebrate'
 import Icon from '@/components/Icon.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'

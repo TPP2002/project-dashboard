@@ -139,7 +139,7 @@ function removeColor(index: number) {
   margin-top: var(--s1);
   border-radius: 4px;
   background-size: 200% 100%;
-  animation: slide 3.4s linear infinite;
+  animation: slide var(--sp-base) linear infinite;
 }
 .color-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-top: var(--s2); }
 .color-cell { position: relative; display: inline-flex; }

@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 3D 试作 v8（机甲装配 / 发射场）</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>
+:root{--mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600}
+.doc{max-width:1520px;margin:0 auto;padding:32px 24px 96px}
+.doc-head h1{font-size:28px;letter-spacing:-.02em}
+.doc-head p{margin:8px 0 0;color:#5c5c58;max-width:1080px}
+.doc-head .meta{margin-top:6px;color:#8e8e89;font-family:var(--mono);font-size:12px}
+.sec{margin-top:44px}
+.sec>h2{font-size:22px;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:var(--mono);font-size:15px;margin-right:8px}
+.sec>p{margin:8px 0 16px;color:#5c5c58;max-width:1080px}
+.note{margin:12px 0 0;padding:10px 14px;border-left:3px solid #d2d2cf;background:#f3f3f1;color:#5c5c58;font-size:13.5px;border-radius:0 6px 6px 0}
+.note b{color:#1a1a19}
+.note.ask{border-left-color:#9a6b12;background:#fdf3e0}.note.ask b{color:#9a6b12}
+.stage{position:relative;overflow:hidden;border:1px solid #2a2f3d;border-radius:10px;background:#05070c;height:560px}
+.stage::before{content:attr(data-label);position:absolute;top:9px;right:13px;color:#7b8399;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;z-index:5;pointer-events:none}
+.stage canvas{display:block;width:100%;height:100%}
+.stat{position:absolute;left:12px;bottom:10px;z-index:5;color:#9fb0d8;font-family:var(--mono);font-size:11px;letter-spacing:.06em;background:rgba(5,8,18,.55);padding:3px 8px;border-radius:4px;pointer-events:none}
+.loading{position:absolute;inset:0;display:grid;place-items:center;color:#7b8399;font-family:var(--mono);font-size:12px;letter-spacing:.1em;z-index:4;pointer-events:none}
+.sim{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:6px 12px;border:1px solid #d2d2cf;border-radius:6px;background:#f6f6f5;color:#1a1a19;cursor:pointer;font:inherit;font-size:13px}
+.btn:hover{background:#eeeeed}
+.btn.quiet{background:transparent;border-color:transparent;color:#5c5c58}
+table.spec{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e4e2;border-radius:6px;overflow:hidden;font-size:14px}
+table.spec th,table.spec td{padding:9px 12px;border-bottom:1px solid #eeeeed;text-align:left;vertical-align:top}
+table.spec th{background:#f6f6f5;color:#5c5c58;font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td.k{font-weight:600;white-space:nowrap}
+.hint{color:#8e8e89;font-size:12.5px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="doc">
+
+<div class="doc-head">
+  <h1>看板 · 3D 试作 v8</h1>
+  <p>你说「试一下」，这是实时 3D 的第一版：机甲是带金属漆与环境反射的实体模型（身上没有跑马灯，只有面罩、反应堆和掌心自发光），机库灯条才有你的配色；
+    发射场的海是真的水面（波纹、反射），火焰和烟是粒子。<b>两块画面都能用鼠标拖着转、滚轮拉近拉远。</b>还是试作：几何是程序拼的，材质与光照是正式方案的水平，细节（铆钉、面板线、贴花）施工时再堆。</p>
+  <p class="meta">任务卡 AUD-FUN-WORKFLOOR · 2026-09-07 · three.js r160（正式版会打包进看板，不走网络）· 需要显卡 · 30 帧封顶 · 像素版留作兜底档</p>
+</div>
+
+<section class="sec">
+<h2><span class="no">01</span>机甲装配 · 机库</h2>
+<p>金属漆（项目色）+ 金色镶边 + 石墨色关节；未装的部件是全息蓝图（线框 + 半透明），正在焊的部件上有一圈扫描环在走，装好即实体。无人机在焊点打弧光、溅火花。通电：面罩、反应堆、掌心亮起，脚底推进器喷焰，整机悬浮。</p>
+<div class="stage" data-label="机甲装配 · 3D"><canvas data-mecha></canvas><div class="loading" data-loading>LOADING 3D …</div><span class="stat" data-stat-mecha></span></div>
+<div class="sim" data-sim="mecha">
+  <button class="btn" data-act="claim" type="button">认领（取件焊接）</button>
+  <button class="btn" data-act="pend" type="button">待拍板（检验）</button>
+  <button class="btn" data-act="go" type="button">拍板（盖章）</button>
+  <button class="btn" data-act="block" type="button">阻塞（卡件）</button>
+  <button class="btn" data-act="done" type="button">完工（扣上）</button>
+  <button class="btn" data-act="full" type="button">项目 100%（通电）</button>
+  <button class="btn quiet" data-act="auto" type="button">自动演</button>
+</div>
+<p class="hint">拖动旋转视角，滚轮缩放。这一版机甲有 26 块部件；正式版按项目卡数选轻/中/重三种机型。</p>
+</section>
+
+<section class="sec">
+<h2><span class="no">02</span>发射场 · 海边 · 夜</h2>
+<p>真实水面（法线波纹 + 反射，火光会映在海上）、脐带塔与避雷针、探照灯打在箭体上、指挥中心大屏、灯塔扫光。点火起飞就是完工：粒子火焰、烟从导流槽两侧铺开、镜头震一下、箭出画面，任务数 +1，没有回收。</p>
+<div class="stage" data-label="发射场 · 3D"><canvas data-launch></canvas><div class="loading" data-loading2>LOADING 3D …</div><span class="stat" data-stat-launch></span></div>
+<div class="sim" data-sim="launch">
+  <button class="btn" data-act="claim" type="button">认领（转运上台）</button>
+  <button class="btn" data-act="pend" type="button">待拍板（HOLD）</button>
+  <button class="btn" data-act="go" type="button">拍板（GO）</button>
+  <button class="btn" data-act="block" type="button">阻塞（SCRUB）</button>
+  <button class="btn" data-act="done" type="button">完工（点火起飞）</button>
+  <button class="btn quiet" data-act="auto" type="button">自动演</button>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">03</span>3D 版与像素版的账</h2>
+<table class="spec">
+  <tr><th style="width:22%"></th><th>像素 + 辉光（v7）</th><th>实时 3D（本稿）</th></tr>
+  <tr><td class="k">质感</td><td>画出来的样子</td><td>金属反射、真实水面、粒子火焰</td></tr>
+  <tr><td class="k">机甲身上的 RGB</td><td>能量线跑马灯</td><td>没有；只有面罩、反应堆、掌心自发光，颜色是项目色系</td></tr>
+  <tr><td class="k">互动</td><td>点按钮</td><td>还能拖着转、拉近看细节</td></tr>
+  <tr><td class="k">依赖</td><td>无</td><td>three.js，打包后约 150KB 压缩，随看板一起发，不走网络</td></tr>
+  <tr><td class="k">性能</td><td>随便什么机器</td><td>用显卡；30 帧封顶，不在前台就停；没显卡的机器自动退回像素版</td></tr>
+  <tr><td class="k">工程量</td><td>两个场景约一周</td><td>两个场景约两周（建模、材质、粒子、动画序列各一遍）</td></tr>
+</table>
+<div class="note ask"><b>看完说一句：</b>是这个方向就按它出全细节稿（部件分块、事件逐帧、白天版、多项目排布、设置切换），再拆工单派 GPT；要改的地方直接指。</div>
+</section>
+
+<p style="margin-top:48px;color:#8e8e89;font-size:13px;text-align:center">看板 · AUD-FUN-WORKFLOOR · 3D 试作 v8 · 2026-09-07</p>
+</div>
+
+<script type="module">
+/* ============================================================
+   ① 机甲装配 · 3D（three.js r160）
+   ============================================================ */
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+
+const $ = (s, el = document) => el.querySelector(s)
+const $$ = (s, el = document) => [...el.querySelectorAll(s)]
+const PROJ = 0x2f7fe0 // 项目色（看板 = 蓝）
+
+function makeRenderer(canvas) {
+  const r = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true })
+  r.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = .82
+  return r
+}
+function fit(renderer, camera, composer) {
+  const c = renderer.domElement, w = c.clientWidth, h = c.clientHeight
+  if (c.width !== Math.floor(w * renderer.getPixelRatio()) || c.height !== Math.floor(h * renderer.getPixelRatio())) { renderer.setSize(w, h, false); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix() }
+}
+/** 画在 canvas 上的贴图（地板网格、墙板、大屏文字都用它） */
+function canvasTex(w, h, draw, repeat) { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; draw(cv.getContext('2d'), w, h); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat) } return t }
+
+;(function mecha() {
+  const canvas = $('[data-mecha]'), stat = $('[data-stat-mecha]')
+  const renderer = makeRenderer(canvas)
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x05070c); scene.fog = new THREE.Fog(0x05070c, 16, 34)
+  const camera = new THREE.PerspectiveCamera(32, 2, .1, 100); camera.position.set(4.6, 2.4, 6.6)
+  const controls = new OrbitControls(camera, canvas); controls.target.set(0, 1.45, 0); controls.enablePan = false; controls.minDistance = 3; controls.maxDistance = 12; controls.maxPolarAngle = 1.52; controls.enableDamping = true
+  const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), .04).texture
+  // ---- 材质 ----
+  const paint = new THREE.MeshPhysicalMaterial({ color: PROJ, metalness: .85, roughness: .3, clearcoat: 1, clearcoatRoughness: .08 })
+  const gold = new THREE.MeshStandardMaterial({ color: 0xd6b25a, metalness: 1, roughness: .26 })
+  const dark = new THREE.MeshStandardMaterial({ color: 0x262b36, metalness: .7, roughness: .55 })
+  const glow = new THREE.MeshStandardMaterial({ color: 0x06202a, emissive: 0x33e6ff, emissiveIntensity: 0 })
+  const holo = new THREE.MeshStandardMaterial({ color: 0x0b2a44, emissive: 0x1a8fff, emissiveIntensity: .45, transparent: true, opacity: .2, depthWrite: false })
+  const holoLine = new THREE.LineBasicMaterial({ color: 0x5ec8ff, transparent: true, opacity: .55 })
+  ;[paint, gold, dark].forEach(m => { m.envMapIntensity = .42 })
+  // ---- 机库 ----
+  const floorTex = canvasTex(512, 512, (c, w, h) => { c.fillStyle = '#0b0f18'; c.fillRect(0, 0, w, h); c.strokeStyle = '#161d2c'; c.lineWidth = 2; for (let i = 0; i <= 8; i++) { c.beginPath(); c.moveTo(i * 64, 0); c.lineTo(i * 64, h); c.stroke(); c.beginPath(); c.moveTo(0, i * 64); c.lineTo(w, i * 64); c.stroke() } c.fillStyle = '#c9a227'; for (let i = 0; i < 8; i++) { c.save(); c.translate(i * 64, 0); c.beginPath(); c.moveTo(0, 0); c.lineTo(28, 0); c.lineTo(4, 12); c.lineTo(-24, 12); c.fill(); c.restore() } }, 5)
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ map: floorTex, roughness: .78, metalness: .25, envMapIntensity: .3 })); floor.rotation.x = -Math.PI / 2; scene.add(floor)
+  const wallTex = canvasTex(512, 256, (c, w, h) => { c.fillStyle = '#141a28'; c.fillRect(0, 0, w, h); c.strokeStyle = '#1f2740'; c.lineWidth = 3; for (let x = 0; x < w; x += 128) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke() } c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w, h / 2); c.stroke(); c.fillStyle = '#2a3452'; for (let x = 12; x < w; x += 32) for (let y = 12; y < h; y += 40) { c.beginPath(); c.arc(x, y, 2.2, 0, 7); c.fill() } }, 3)
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(40, 14), new THREE.MeshStandardMaterial({ map: wallTex, roughness: .8, metalness: .2 })); wall.position.set(0, 7, -8); scene.add(wall)
+  for (let i = -3; i <= 3; i++) { const beam = new THREE.Mesh(new THREE.BoxGeometry(.3, .5, 16), dark); beam.position.set(i * 4, 7.6, 0); scene.add(beam) }
+  const strips = []
+  ;[-6, 6].forEach(x => { const s = new THREE.Mesh(new THREE.BoxGeometry(.08, .06, 16), new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x4a9eff, emissiveIntensity: 1.6 })); s.position.set(x, 7.3, 0); scene.add(s); strips.push(s) })
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(40, .05, .05), dark); rail.position.set(0, 4.2, -7.6); scene.add(rail)
+  const walk = new THREE.Mesh(new THREE.BoxGeometry(40, .08, 1.2), dark); walk.position.set(0, 4, -7.2); scene.add(walk)
+  const platform = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.8, .14, 64), new THREE.MeshStandardMaterial({ color: 0x1b2130, metalness: .8, roughness: .35 })); platform.position.y = .07; scene.add(platform)
+  const ringLights = []
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; const m = new THREE.Mesh(new THREE.BoxGeometry(.18, .04, .06), new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x33e6ff, emissiveIntensity: 0 })); m.position.set(Math.cos(a) * 1.62, .15, Math.sin(a) * 1.62); m.rotation.y = -a; scene.add(m); ringLights.push(m) }
+  // 大屏
+  const boardCv = document.createElement('canvas'); boardCv.width = 640; boardCv.height = 280; const boardTex = new THREE.CanvasTexture(boardCv); boardTex.colorSpace = THREE.SRGBColorSpace
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.575), new THREE.MeshStandardMaterial({ map: boardTex, emissive: 0xffffff, emissiveMap: boardTex, emissiveIntensity: .9, roughness: .9 })); board.position.set(-4.6, 4.9, -7.9); scene.add(board)
+  function drawBoard(pct, done, total, status, col) { const c = boardCv.getContext('2d'); c.fillStyle = '#05080f'; c.fillRect(0, 0, 640, 280); c.fillStyle = '#6a7aa0'; c.font = '600 28px ui-monospace, Consolas, monospace'; c.fillText('ASSEMBLY', 220, 70); c.fillStyle = '#33e6ff'; c.font = '700 92px ui-monospace, Consolas, monospace'; c.fillText(pct + '%', 220, 160); c.fillStyle = col; c.font = '600 30px ui-monospace, Consolas, monospace'; c.fillText(status, 220, 220); c.fillStyle = '#6a7aa0'; c.font = '26px ui-monospace, Consolas, monospace'; c.fillText('PARTS ' + done + '/' + total, 220, 258); c.fillStyle = '#1a2440'; c.fillRect(40, 40, 140, 220); c.fillStyle = '#33e6ff'; const hh = Math.round(220 * pct / 100); c.fillRect(40, 260 - hh, 140, hh); boardTex.needsUpdate = true }
+  // ---- 灯光 ----
+  scene.add(new THREE.AmbientLight(0x90a4d0, .25))
+  const key = new THREE.DirectionalLight(0xfff1dc, 1.0); key.position.set(4, 8, 6); scene.add(key)
+  const fill = new THREE.DirectionalLight(0x6d9eea, .35); fill.position.set(-6, 4, 4); scene.add(fill)
+  const rim = new THREE.DirectionalLight(0x33e6ff, .9); rim.position.set(0, 5, -6); scene.add(rim)
+  const spots = []
+  ;[[-3, 8, 3], [3, 8, 3], [0, 8, -2]].forEach(([x, y, z]) => { const s = new THREE.SpotLight(0xffe9c8, 240, 30, .42, .55, 1.2); s.position.set(x, y, z); s.target.position.set(0, 1.3, 0); scene.add(s); scene.add(s.target); spots.push(s) })
+  // ---- 机甲：26 块部件，每块是一个 Group ----
+  const mech = new THREE.Group(); scene.add(mech)
+  const parts = {}, order = []
+  const rbox = (w, h, d, r, m) => new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 4, r), m)
+  const cap = (r, l, m) => new THREE.Mesh(new THREE.CapsuleGeometry(r, l, 6, 16), m)
+  const sph = (r, m) => new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), m)
+  const cyl = (rt, rb, h, m, seg = 24) => new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m)
+  function part(name, build) { const g = new THREE.Group(); g.name = name; build(g); g.traverse(o => { if (o.isMesh) { o.userData.solid = o.material; const e = new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry, 28), holoLine); e.name = 'edge'; o.add(e) } }); mech.add(g); parts[name] = g; order.push(name); return g }
+  const at = (m, x, y, z, rx = 0, ry = 0, rz = 0) => { m.position.set(x, y, z); m.rotation.set(rx, ry, rz); return m }
+  for (const s of [-1, 1]) {
+    const L = s < 0 ? 'L' : 'R'
+    part('boot' + L, g => { g.add(at(rbox(.36, .24, .56, .07, dark), s * .24, .12, .06)); g.add(at(rbox(.3, .1, .2, .04, gold), s * .24, .28, -.12)); g.add(at(cyl(.06, .08, .1, glow), s * .24, .04, -.16)) })
+    part('shin' + L, g => { g.add(at(rbox(.26, .62, .3, .09, paint), s * .24, .6, .02)); g.add(at(rbox(.06, .5, .1, .02, gold), s * .24, .62, .2)) })
+    part('knee' + L, g => { g.add(at(sph(.15, dark), s * .24, .95, .02)); g.add(at(rbox(.22, .14, .24, .05, gold), s * .24, 1.0, .08)) })
+    part('thigh' + L, g => { g.add(at(cap(.15, .46, paint), s * .22, 1.32, 0, 0, 0, s * .06)) })
+  }
+  part('waist', g => { g.add(at(rbox(.66, .22, .4, .07, dark), 0, 1.6, 0)); g.add(at(rbox(.7, .07, .44, .03, gold), 0, 1.72, 0)) })
+  part('abdomen', g => { g.add(at(rbox(.52, .32, .32, .09, paint), 0, 1.9, 0)) })
+  part('chest', g => { g.add(at(rbox(.96, .6, .54, .14, paint), 0, 2.32, 0)); g.add(at(rbox(.4, .3, .16, .06, gold), -.26, 2.42, .27, 0, .35, .12)); g.add(at(rbox(.4, .3, .16, .06, gold), .26, 2.42, .27, 0, -.35, -.12)) })
+  part('reactor', g => { g.add(at(cyl(.1, .1, .08, glow), 0, 2.28, .3, Math.PI / 2)); g.add(at(new THREE.Mesh(new THREE.TorusGeometry(.14, .025, 12, 32), gold), 0, 2.28, .3)) })
+  for (const s of [-1, 1]) {
+    const L = s < 0 ? 'L' : 'R'
+    part('shoulder' + L, g => { g.add(at(rbox(.4, .32, .44, .11, paint), s * .64, 2.56, 0, 0, 0, -s * .28)) })
+    part('upperArm' + L, g => { g.add(at(cap(.12, .38, paint), s * .72, 2.2, 0, 0, 0, s * .12)) })
+    part('elbow' + L, g => { g.add(at(sph(.12, dark), s * .76, 1.92, 0)) })
+    part('forearm' + L, g => { g.add(at(rbox(.24, .46, .26, .08, paint), s * .8, 1.64, .02, 0, 0, s * .08)); g.add(at(rbox(.27, .07, .29, .03, gold), s * .8, 1.82, .02)) })
+    part('hand' + L, g => { g.add(at(rbox(.2, .18, .22, .06, dark), s * .84, 1.32, .04)); g.add(at(cyl(.06, .06, .02, glow), s * .84, 1.22, .06, Math.PI / 2)) })
+    part('thruster' + L, g => { g.add(at(cyl(.09, .1, .34, dark), s * .28, 2.5, -.34)); g.add(at(cyl(.06, .08, .06, glow), s * .28, 2.3, -.34)) })
+  }
+  part('neck', g => { g.add(at(cyl(.1, .12, .14, dark), 0, 2.7, 0)) })
+  part('head', g => { g.add(at(rbox(.36, .38, .38, .15, paint), 0, 2.94, 0)); g.add(at(rbox(.28, .26, .08, .05, gold), 0, 2.9, .18)); g.add(at(rbox(.24, .05, .03, .01, glow), 0, 2.98, .22)) })
+  const glowMeshes = []; mech.traverse(o => { if (o.isMesh && o.material === glow) glowMeshes.push(o) })
+  // 焊接扫描环、无人机、火花
+  const scan = new THREE.Mesh(new THREE.TorusGeometry(.4, .012, 8, 48), new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x33e6ff, emissiveIntensity: 3 })); scan.rotation.x = Math.PI / 2; scan.visible = false; scene.add(scan)
+  const drone = new THREE.Group(); scene.add(drone)
+  drone.add(at(rbox(.26, .09, .26, .03, dark), 0, 0, 0)); const rotors = []
+  ;[[-.16, -.16], [.16, -.16], [-.16, .16], [.16, .16]].forEach(([x, z]) => { drone.add(at(new THREE.Mesh(new THREE.BoxGeometry(.04, .02, .16), dark), x, .02, z, 0, Math.atan2(x, z))); const r = new THREE.Mesh(new THREE.CylinderGeometry(.11, .11, .008, 16), new THREE.MeshStandardMaterial({ color: 0x9aa3b8, transparent: true, opacity: .55 })); r.position.set(x, .06, z); drone.add(r); rotors.push(r) })
+  drone.add(at(cyl(.03, .04, .12, gold), 0, -.1, .08, .4)); drone.position.set(2.6, 2.4, 1.4)
+  const droneLight = new THREE.PointLight(0x33e6ff, 6, 3, 2); droneLight.position.set(0, -.05, 0); drone.add(droneLight)
+  const weldLight = new THREE.PointLight(0xdff6ff, 0, 4, 2); scene.add(weldLight)
+  const N = 320, sp = new Float32Array(N * 3), sv = new Float32Array(N * 3), sl = new Float32Array(N)
+  const sparks = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0xffd27a, size: .035, transparent: true, opacity: .95, blending: THREE.AdditiveBlending, depthWrite: false }))
+  sparks.geometry.setAttribute('position', new THREE.BufferAttribute(sp, 3)); scene.add(sparks); let si = 0
+  function spawnSparks(p, n) { for (let k = 0; k < n; k++) { const i = si++ % N; sp.set([p.x, p.y, p.z], i * 3); sv.set([(Math.random() - .5) * 1.6, Math.random() * 1.4, (Math.random() - .5) * 1.6], i * 3); sl[i] = .5 + Math.random() * .5 } }
+  const powerFlames = []
+  ;[-1, 1].forEach(s => { const f = new THREE.Mesh(new THREE.ConeGeometry(.09, .5, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0x66d9ff, transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false })); f.position.set(s * .24, -.2, -.16); f.rotation.x = Math.PI; f.visible = false; mech.add(f); powerFlames.push(f) })
+  // ---- 状态 ----
+  const S = { st: Object.fromEntries(order.map((n, i) => [n, i < 15 ? 'done' : 'off'])), target: null, seam: 0, tag: null, alarm: 0, full: false, charge: 0, auto: true, busy: false, timers: [] }
+  const after = (ms, fn) => S.timers.push({ at: performance.now() + ms, fn })
+  const bbox = new THREE.Box3(), center = new THREE.Vector3(), size = new THREE.Vector3()
+  function applyStates() {
+    for (const n of order) { const g = parts[n], st = S.st[n]; g.traverse(o => { if (o.isMesh) o.material = st === 'done' ? o.userData.solid : holo; if (o.name === 'edge') { o.visible = st !== 'done'; o.material = holoLine; o.material.color.set(st === 'pend' ? 0xffb020 : st === 'block' ? 0xff4d5a : 0x5ec8ff) } }) }
+    const done = order.filter(n => S.st[n] === 'done').length, pct = Math.round(done / order.length * 100)
+    const status = S.full ? 'POWER ON' : S.alarm ? 'JAMMED' : S.tag ? 'INSPECT?' : S.target ? 'WELDING ' + S.target.toUpperCase() : 'STANDBY'
+    drawBoard(pct, done, order.length, status, S.full ? '#8affc1' : S.alarm ? '#ff4d5a' : S.tag ? '#ffb020' : '#33e6ff')
+    ringLights.forEach((m, i) => { m.material.emissiveIntensity = i < Math.round(pct / 100 * 16) ? 2.2 : 0 })
+    stat.textContent = `部件 ${done}/${order.length} · ${status}${S.target ? ' · 焊缝 ' + S.seam + '%' : ''}`
+    return pct
+  }
+  function targetPoint(n) { bbox.setFromObject(parts[n]); bbox.getCenter(center); bbox.getSize(size); return { center: center.clone(), size: size.clone() } }
+  function act(a) {
+    if (a === 'claim' && !S.target) { const n = order.find(k => S.st[k] === 'off'); if (!n) return; S.busy = true; S.target = n; S.seam = 0; const tp = targetPoint(n); drone.userData.to = new THREE.Vector3(tp.center.x + (tp.center.x < 0 ? -.9 : .9), tp.center.y + .5, tp.center.z + .8); after(1400, () => { S.st[n] = 'build'; S.busy = false; S.welding = true }); return }
+    if (a === 'pend' && S.target && S.st[S.target] === 'build') { S.st[S.target] = 'pend'; S.tag = S.target; S.welding = false; return }
+    if (a === 'go' && S.tag) { S.st[S.tag] = 'build'; S.tag = null; S.welding = true; return }
+    if (a === 'block' && S.target) { const prev = S.st[S.target]; S.st[S.target] = 'block'; S.alarm = 1; S.welding = false; after(2800, () => { S.alarm = 0; if (S.st[S.target] === 'block') { S.st[S.target] = prev === 'block' ? 'build' : prev; S.welding = S.st[S.target] === 'build' } }); return }
+    if (a === 'done' && S.target) { S.st[S.target] = 'done'; S.seam = 100; S.target = null; S.tag = null; S.welding = false; drone.userData.to = new THREE.Vector3(2.6, 2.4, 1.4); S.busy = false; if (order.every(k => S.st[k] === 'done')) S.full = true; return }
+    if (a === 'full') { order.forEach(k => { S.st[k] = 'done' }); S.target = null; S.tag = null; S.welding = false; S.full = true; drone.userData.to = new THREE.Vector3(2.6, 2.4, 1.4); return }
+  }
+  function auto(now) {
+    if (S.full) { if (!S.resetAt) S.resetAt = now + 9000; if (now >= S.resetAt) { S.resetAt = 0; S.full = false; S.charge = 0; order.forEach((n, i) => { S.st[n] = i < 15 ? 'done' : 'off' }) } return }
+    if (!S.target) { if (!S.nextAt) S.nextAt = now + 1800; if (now >= S.nextAt) { S.nextAt = 0; act('claim') } return }
+    const st = S.st[S.target]
+    if (st === 'build' && S.seam >= 100) { act('done'); return }
+    if (st === 'build' && S.seam >= 45 && S.seam < 48 && !S.pended && order.filter(k => S.st[k] === 'done').length % 3 === 1) { S.pended = true; act('pend'); S.goAt = now + 2600; return }
+    if (st === 'pend' && S.goAt && now >= S.goAt) { S.goAt = 0; act('go') }
+    if (st === 'done') S.pended = false
+  }
+  $$('[data-sim="mecha"] [data-act]').forEach(b => b.addEventListener('click', () => { if (b.dataset.act === 'auto') { S.auto = !S.auto; b.textContent = S.auto ? '自动演' : '手动'; return } S.auto = false; $('[data-sim="mecha"] [data-act="auto"]').textContent = '手动'; act(b.dataset.act) }))
+  // ---- 后期：辉光 ----
+  const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera))
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), .38, .4, 1.0); composer.addPass(bloom); composer.addPass(new OutputPass())
+  $('[data-loading]').remove()
+  window.__m3d = { scene, camera, renderer, composer, S, act }
+  let last = 0, lastSeam = 0
+  function frame(now) {
+    requestAnimationFrame(frame); if (now - last < 1000 / 30 || document.hidden) return; const dt = Math.min(.1, (now - last) / 1000); last = now
+    fit(renderer, camera, composer); controls.update()
+    S.timers = S.timers.filter(t => { if (now >= t.at) { t.fn(); return false } return true })
+    if (S.auto && !S.busy) auto(now)
+    if (S.welding && S.target && now - lastSeam > 120) { lastSeam = now; S.seam = Math.min(100, S.seam + 1) }
+    const pct = applyStates()
+    // 灯带：你的配色慢慢流
+    const hue = (now / 9000) % 1; strips.forEach((s, i) => s.material.emissive.setHSL((hue + i * .3) % 1, .8, .55))
+    // 无人机
+    const to = drone.userData.to || new THREE.Vector3(2.6, 2.4, 1.4); drone.position.lerp(to, .05); drone.position.y += Math.sin(now / 400) * .002; drone.rotation.y += .01; rotors.forEach(r => { r.rotation.y += .9 })
+    scan.visible = false; weldLight.intensity = 0
+    if (S.target && S.st[S.target] === 'build') { const tp = targetPoint(S.target); const y = tp.center.y - tp.size.y / 2 + tp.size.y * ((now / 1400) % 1); scan.position.set(tp.center.x, y, tp.center.z); scan.scale.setScalar(Math.max(tp.size.x, tp.size.z) * 1.25 / .8); scan.visible = true
+      if (S.welding) { const wp = new THREE.Vector3(tp.center.x, y, tp.center.z + tp.size.z / 2); weldLight.position.copy(wp); weldLight.intensity = 30 + Math.random() * 60; spawnSparks(wp, 4); drone.lookAt(wp) } }
+    for (let i = 0; i < N; i++) { if (sl[i] <= 0) continue; sl[i] -= dt; sv[i * 3 + 1] -= 4.5 * dt; sp[i * 3] += sv[i * 3] * dt; sp[i * 3 + 1] += sv[i * 3 + 1] * dt; sp[i * 3 + 2] += sv[i * 3 + 2] * dt; if (sp[i * 3 + 1] < .15) { sp[i * 3 + 1] = .15; sv[i * 3 + 1] *= -.35 } if (sl[i] <= 0) sp[i * 3 + 1] = -5 }
+    sparks.geometry.attributes.position.needsUpdate = true
+    // 通电：面罩 / 反应堆 / 掌心亮起，喷焰悬浮
+    S.charge = S.full ? Math.min(1, S.charge + dt * .5) : Math.max(0, S.charge - dt)
+    glow.emissiveIntensity = .2 + S.charge * 3.2; glow.emissive.setHSL(.53 + Math.sin(now / 900) * .02, 1, .6)
+    spots.forEach(s => { s.intensity = 240 * (1 - S.charge * .55) })
+    powerFlames.forEach(f => { f.visible = S.charge > .7; f.scale.set(1, .8 + Math.random() * .5, 1) })
+    mech.position.y = S.charge > .7 ? .25 + Math.sin(now / 600) * .05 : 0
+    // 警灯
+    if (S.alarm) { fill.color.setHex((now / 300 | 0) % 2 ? 0xff2a2a : 0x6d9eea); fill.intensity = 2.2 } else { fill.color.setHex(0x6d9eea); fill.intensity = .35 }
+    composer.render()
+  }
+  requestAnimationFrame(frame)
+})()
+</script>
+<script type="module">
+/* ============================================================
+   ② 发射场 · 3D：真实水面 + 粒子火焰 + 灯塔 + 大屏；点火起飞 = 完工，无回收
+   ============================================================ */
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { Water } from 'three/addons/objects/Water.js'
+import { Sky } from 'three/addons/objects/Sky.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+
+const $ = (s, el = document) => el.querySelector(s)
+const $$ = (s, el = document) => [...el.querySelectorAll(s)]
+const PROJ = 0x2f7fe0
+const canvas = $('[data-launch]'), stat = $('[data-stat-launch]')
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true })
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .58
+const scene = new THREE.Scene(); scene.fog = new THREE.FogExp2(0x03050a, .0032)
+const camera = new THREE.PerspectiveCamera(38, 2, .5, 3000); camera.position.set(-16, 11, 44)
+const controls = new OrbitControls(camera, canvas); controls.target.set(0, 7, 0); controls.enablePan = false; controls.minDistance = 18; controls.maxDistance = 90; controls.maxPolarAngle = 1.5; controls.enableDamping = true
+function texture(w, h, draw, repeat) { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; draw(cv.getContext('2d'), w, h); const t = new THREE.CanvasTexture(cv); if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat) } return t }
+// ---- 天：夜空、星、月 ----
+const sky = new Sky(); sky.scale.setScalar(10000); scene.add(sky)
+const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(112), THREE.MathUtils.degToRad(160))
+Object.assign(sky.material.uniforms, {}); sky.material.uniforms.sunPosition.value.copy(sun); sky.material.uniforms.turbidity.value = 1.5; sky.material.uniforms.rayleigh.value = .12; sky.material.uniforms.mieCoefficient.value = .001; sky.material.uniforms.mieDirectionalG.value = .8
+const starPos = new Float32Array(1400 * 3); for (let i = 0; i < 1400; i++) { const v = new THREE.Vector3().randomDirection(); if (v.y < .05) v.y = .05 + Math.random() * .9; v.normalize().multiplyScalar(1200); starPos.set([v.x, v.y, v.z], i * 3) }
+const stars = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(starPos, 3)), new THREE.PointsMaterial({ color: 0xdfe6ff, size: 2.4, sizeAttenuation: false, transparent: true, opacity: .85, depthWrite: false })); scene.add(stars)
+const moonTex = texture(128, 128, (c, w, h) => { const g = c.createRadialGradient(64, 64, 10, 64, 64, 64); g.addColorStop(0, 'rgba(255,250,225,1)'); g.addColorStop(.35, 'rgba(255,250,225,1)'); g.addColorStop(.42, 'rgba(255,250,225,.35)'); g.addColorStop(1, 'rgba(255,250,225,0)'); c.fillStyle = g; c.fillRect(0, 0, w, h) })
+const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonTex, transparent: true, depthWrite: false })); moon.position.set(420, 260, -700); moon.scale.set(90, 90, 1); scene.add(moon)
+const moonLight = new THREE.DirectionalLight(0xb8c8ff, .3); moonLight.position.set(120, 90, -160); scene.add(moonLight)
+scene.add(new THREE.AmbientLight(0x3a4a70, .28))
+// ---- 海：程序生成法线贴图的水面 ----
+const normalTex = texture(256, 256, (c, w, h) => { const img = c.createImageData(w, h); const H = (x, y) => Math.sin(x * .12 + y * .07) * .6 + Math.sin(x * .031 - y * .05) * 1.1 + Math.sin((x + y) * .17) * .35 + Math.sin(x * .29) * .2; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const dx = H(x + 1, y) - H(x - 1, y), dy = H(x, y + 1) - H(x, y - 1); const n = new THREE.Vector3(-dx * 1.6, -dy * 1.6, 1).normalize(); const i = (y * w + x) * 4; img.data[i] = (n.x * .5 + .5) * 255; img.data[i + 1] = (n.y * .5 + .5) * 255; img.data[i + 2] = (n.z * .5 + .5) * 255; img.data[i + 3] = 255 } c.putImageData(img, 0, 0) }, 1)
+normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping
+const water = new Water(new THREE.PlaneGeometry(2400, 2400), { textureWidth: 512, textureHeight: 512, waterNormals: normalTex, sunDirection: sun.clone().normalize(), sunColor: 0x5a6a9a, waterColor: 0x02121c, distortionScale: 2.0, fog: true })
+water.rotation.x = -Math.PI / 2; water.position.y = -.35; water.material.uniforms.size.value = 2.2; scene.add(water)
+// ---- 陆地、发射台、导流槽、履带路 ----
+const groundTex = texture(512, 512, (c, w, h) => { c.fillStyle = '#17202c'; c.fillRect(0, 0, w, h); for (let i = 0; i < 2600; i++) { c.fillStyle = Math.random() > .5 ? '#1c2634' : '#131a25'; c.fillRect(Math.random() * w, Math.random() * h, 3, 2) } }, 12)
+const land = new THREE.Mesh(new THREE.BoxGeometry(110, 2, 90), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 })); land.position.set(-25, -1, 0); scene.add(land)
+const sand = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.6, 90), new THREE.MeshStandardMaterial({ color: 0x3b3a3f, roughness: 1 })); sand.position.set(30.5, -1.05, 0); scene.add(sand)
+const concrete = new THREE.MeshStandardMaterial({ color: 0x555b66, roughness: .9 })
+const pad = new THREE.Mesh(new THREE.BoxGeometry(14, .6, 14), concrete); pad.position.set(0, .3, 0); scene.add(pad)
+const trench = new THREE.Mesh(new THREE.BoxGeometry(3.4, .7, 7), new THREE.MeshStandardMaterial({ color: 0x0a0d14, roughness: 1 })); trench.position.set(0, .3, 0); scene.add(trench)
+const way = new THREE.Mesh(new THREE.BoxGeometry(28, .12, 5), new THREE.MeshStandardMaterial({ color: 0x2a3140, roughness: 1 })); way.position.set(-14, .06, 3); scene.add(way)
+// ---- 脐带塔、避雷针、摆臂、液位表、灯带、探照灯 ----
+const steel = new THREE.MeshStandardMaterial({ color: 0x9aa3b8, metalness: .8, roughness: .45 })
+const tower = new THREE.Group(); scene.add(tower); tower.position.set(-2.8, 0, -2.6)
+for (const [x, z] of [[-.8, -.8], [.8, -.8], [-.8, .8], [.8, .8]]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(.16, 22, .16), steel); leg.position.set(x, 11.6, z); tower.add(leg) }
+for (let y = 2; y < 23; y += 2.2) for (const [a, b] of [[[-.8, -.8], [.8, -.8]], [[.8, -.8], [.8, .8]], [[.8, .8], [-.8, .8]], [[-.8, .8], [-.8, -.8]]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.6, .08, .08), steel); m.position.set((a[0] + b[0]) / 2, y, (a[1] + b[1]) / 2); m.rotation.y = a[0] === b[0] ? Math.PI / 2 : 0; tower.add(m) }
+for (let y = 2; y < 22; y += 2.2) { const d = new THREE.Mesh(new THREE.BoxGeometry(2.3, .06, .06), steel); d.position.set(0, y + 1.1, .8); d.rotation.z = Math.PI / 4 * (y % 4.4 < 2.2 ? 1 : -1); tower.add(d) }
+const mast = new THREE.Mesh(new THREE.CylinderGeometry(.06, .1, 12, 8), steel); mast.position.set(0, 28.6, 0); tower.add(mast)
+const mastLamp = new THREE.Mesh(new THREE.SphereGeometry(.22, 12, 8), new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff3b30, emissiveIntensity: 3 })); mastLamp.position.set(0, 34.8, 0); tower.add(mastLamp)
+const mastLight = new THREE.PointLight(0xff3b30, 40, 40, 2); mastLight.position.set(0, 34.8, 0); tower.add(mastLight)
+const elevator = new THREE.Mesh(new THREE.BoxGeometry(.7, 1.1, .7), new THREE.MeshStandardMaterial({ color: 0x2a3140, emissive: 0xffe9b0, emissiveIntensity: .4 })); elevator.position.set(-1.3, 4, 0); tower.add(elevator)
+const arms = []; for (const y of [6.5, 12.5]) { const a = new THREE.Mesh(new THREE.BoxGeometry(2.6, .18, .3), steel); a.position.set(1.4, y, .4); a.userData.base = 1.4; tower.add(a); arms.push(a) }
+const gauge = new THREE.Mesh(new THREE.BoxGeometry(.14, 1, .14), new THREE.MeshStandardMaterial({ color: 0x0a0e1a, emissive: 0x4ad9c4, emissiveIntensity: 2 })); gauge.position.set(-1.05, 1, .95); tower.add(gauge)
+const strip = new THREE.Mesh(new THREE.BoxGeometry(.05, 20, .05), new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x4a9eff, emissiveIntensity: 1.4 })); strip.position.set(.9, 11.6, .9); tower.add(strip)
+const floods = []; for (const [x, z] of [[9, 9], [-9, 9]]) { const base = new THREE.Mesh(new THREE.CylinderGeometry(.15, .2, 9, 8), steel); base.position.set(x, 4.5, z); scene.add(base); const s = new THREE.SpotLight(0xffe9c8, 320, 70, .3, .5, 1.3); s.position.set(x, 9, z); s.target.position.set(0, 8, 0); scene.add(s, s.target); floods.push(s) }
+// ---- 火箭 ----
+const rocket = new THREE.Group(); scene.add(rocket)
+const white = new THREE.MeshStandardMaterial({ color: 0xf2f4f8, roughness: .5, metalness: .05 })
+const put = (m, x, y, z) => { m.position.set(x, y, z); return m }
+rocket.add(put(new THREE.Mesh(new THREE.CylinderGeometry(.9, .9, 14, 32), white), 0, 7, 0))
+rocket.add(put(new THREE.Mesh(new THREE.ConeGeometry(.9, 3, 32), white), 0, 15.5, 0))
+rocket.add(put(new THREE.Mesh(new THREE.CylinderGeometry(.92, .92, .5, 32), new THREE.MeshStandardMaterial({ color: 0x1a1f2a, roughness: .6 })), 0, 5.6, 0))
+rocket.add(put(new THREE.Mesh(new THREE.CylinderGeometry(.93, .93, .4, 32), new THREE.MeshStandardMaterial({ color: PROJ, roughness: .4, metalness: .3 })), 0, 9.4, 0))
+for (let i = 0; i < 4; i++) { const f = new THREE.Mesh(new THREE.BoxGeometry(.06, .7, .55), steel); const a = i / 4 * Math.PI * 2; f.position.set(Math.cos(a) * 1.05, 12.2, Math.sin(a) * 1.05); f.rotation.y = -a; rocket.add(f) }
+for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2; const e = new THREE.Mesh(new THREE.ConeGeometry(.3, .7, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0x3a3f4a, metalness: .8, roughness: .4, side: THREE.DoubleSide })); e.position.set(Math.cos(a) * .42, -.2, Math.sin(a) * .42); e.rotation.x = Math.PI; rocket.add(e) }
+const engineLight = new THREE.PointLight(0xffa040, 0, 60, 1.6); engineLight.position.set(0, -.6, 0); rocket.add(engineLight)
+const crawler = new THREE.Mesh(new THREE.BoxGeometry(4, .8, 4), new THREE.MeshStandardMaterial({ color: 0x4a5266, metalness: .6, roughness: .6 })); crawler.visible = false; scene.add(crawler)
+// ---- 总装厂房、指挥中心、储罐区、防波堤与灯塔、浮标 ----
+const bld = new THREE.MeshStandardMaterial({ color: 0x2a3244, roughness: .85, metalness: .15 })
+const vab = new THREE.Mesh(new THREE.BoxGeometry(16, 22, 14), bld); vab.position.set(-30, 11, -14); scene.add(vab)
+const door = new THREE.Mesh(new THREE.BoxGeometry(6, 15, .3), new THREE.MeshStandardMaterial({ color: 0x0a0e1a, emissive: 0xffe9b0, emissiveIntensity: .25 })); door.position.set(-30, 7.5, -7); scene.add(door)
+for (const [x, z] of [[-38, -21], [-22, -21], [-38, -7], [-22, -7]]) { const l = new THREE.Mesh(new THREE.SphereGeometry(.18, 8, 6), new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff3b30, emissiveIntensity: 2.5 })); l.position.set(x, 22.3, z); scene.add(l) }
+const vabStrip = new THREE.Mesh(new THREE.BoxGeometry(16, .06, .06), new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x4a9eff, emissiveIntensity: 1.4 })); vabStrip.position.set(-30, 22, -7); scene.add(vabStrip)
+const mcc = new THREE.Mesh(new THREE.BoxGeometry(12, 4.5, 7), bld); mcc.position.set(18, 2.25, 14); scene.add(mcc)
+const boardCv = document.createElement('canvas'); boardCv.width = 512; boardCv.height = 192; const boardTex = new THREE.CanvasTexture(boardCv)
+const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(8, 3), new THREE.MeshStandardMaterial({ map: boardTex, emissive: 0xffffff, emissiveMap: boardTex, emissiveIntensity: 1, roughness: .9 })); boardMesh.position.set(18, 6.6, 17.6); scene.add(boardMesh)
+const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(8.4, 3.4, .3), bld); boardFrame.position.set(18, 6.6, 17.4); scene.add(boardFrame)
+for (let i = 0; i < 6; i++) { const w = new THREE.Mesh(new THREE.PlaneGeometry(1.2, .7), new THREE.MeshStandardMaterial({ color: 0x06202a, emissive: i % 2 ? 0x4ad9c4 : 0x4a9eff, emissiveIntensity: 1.2 })); w.position.set(13.5 + i * 1.8, 2.6, 17.52); scene.add(w); w.userData.screen = true }
+for (const [x, r] of [[-14, 2.2], [-9, 2.2]]) { const t = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), new THREE.MeshStandardMaterial({ color: 0x8a93a8, metalness: .7, roughness: .35 })); t.position.set(x, r + .3, 12); scene.add(t) }
+const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 6, 24), new THREE.MeshStandardMaterial({ color: 0x8a93a8, metalness: .7, roughness: .35 })); tank.position.set(-19, 3.3, 12); scene.add(tank)
+const pier = new THREE.Mesh(new THREE.BoxGeometry(30, 1.6, 2.4), new THREE.MeshStandardMaterial({ color: 0x3a3f48, roughness: 1 })); pier.position.set(46, .2, -18); scene.add(pier)
+const lh = new THREE.Mesh(new THREE.CylinderGeometry(.9, 1.2, 9, 20), new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: .7 })); lh.position.set(60, 5.3, -18); scene.add(lh)
+for (const y of [3, 6]) { const band = new THREE.Mesh(new THREE.CylinderGeometry(1.06, 1.12, 1, 20), new THREE.MeshStandardMaterial({ color: 0xe0463c, roughness: .7 })); band.position.set(60, y, -18); scene.add(band) }
+const lhLamp = new THREE.Mesh(new THREE.SphereGeometry(.45, 12, 8), new THREE.MeshStandardMaterial({ color: 0x332200, emissive: 0xffe9b0, emissiveIntensity: 4 })); lhLamp.position.set(60, 10.2, -18); scene.add(lhLamp)
+const beam = new THREE.SpotLight(0xffe9b0, 4000, 200, .12, .6, 1); beam.position.set(60, 10.2, -18); scene.add(beam, beam.target)
+const buoys = []; for (const [x, z] of [[42, 6], [56, 18], [70, -2]]) { const b = new THREE.Mesh(new THREE.SphereGeometry(.5, 12, 8), new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: .6 })); b.position.set(x, 0, z); scene.add(b); const l = new THREE.PointLight(0xff3b30, 8, 12, 2); l.position.set(x, .9, z); scene.add(l); buoys.push({ b, l, ph: Math.random() * 6 }) }
+// ---- 粒子：火焰、烟、雨 ----
+const flameTex = texture(64, 64, (c) => { const g = c.createRadialGradient(32, 32, 2, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.4, 'rgba(255,200,120,.8)'); g.addColorStop(1, 'rgba(255,120,40,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64) })
+const FN = 700, fp = new Float32Array(FN * 3), fv = new Float32Array(FN * 3), fl = new Float32Array(FN), fc = new Float32Array(FN * 3)
+const flame = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ map: flameTex, size: 1.6, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); flame.geometry.setAttribute('position', new THREE.BufferAttribute(fp, 3)); flame.geometry.setAttribute('color', new THREE.BufferAttribute(fc, 3)); scene.add(flame); let fi = 0
+fp.fill(-999)
+const smokeTex = texture(64, 64, (c) => { const g = c.createRadialGradient(32, 32, 4, 32, 32, 32); g.addColorStop(0, 'rgba(170,175,190,.55)'); g.addColorStop(1, 'rgba(120,125,140,0)'); c.fillStyle = g; c.fillRect(0, 0, 64, 64) })
+const smokes = []; for (let i = 0; i < 160; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, opacity: 0, depthWrite: false })); s.visible = false; scene.add(s); smokes.push({ s, v: new THREE.Vector3(), life: 0 }) }
+const RN = 1600, rp = new Float32Array(RN * 3); for (let i = 0; i < RN; i++) rp.set([(Math.random() - .5) * 90 - 10, Math.random() * 40, (Math.random() - .5) * 70], i * 3)
+const rain = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(rp, 3)), new THREE.LineBasicMaterial({ color: 0x8fa4d0, transparent: true, opacity: .5 })); rain.visible = false; scene.add(rain)
+// ---- 状态机 ----
+const S = { phase: 'hangar', fuel: 0, hold: false, board: 'READY', col: '#4ad9c4', missions: 58, auto: true, busy: false, timers: [], count: 10, rain: false, shake: 0, launch: null }
+const after = (ms, fn) => S.timers.push({ at: performance.now() + ms, fn })
+function drawBoard() { const c = boardCv.getContext('2d'); c.fillStyle = '#05080f'; c.fillRect(0, 0, 512, 192); c.fillStyle = S.col; c.font = '700 84px ui-monospace, Consolas, monospace'; c.textAlign = 'center'; c.fillText(S.board, 256, 96); c.fillStyle = '#6a7aa0'; c.font = '600 30px ui-monospace, Consolas, monospace'; c.fillText('MISSIONS ' + S.missions, 256, 160); boardTex.needsUpdate = true }
+function setBoard(t, col) { S.board = t; S.col = col || S.col; drawBoard() }
+function placeRocket() { rocket.visible = S.phase !== 'hangar'; if (S.phase === 'pad' || S.phase === 'count') rocket.position.set(0, .6, 0) }
+function act(a) {
+  if (a === 'claim' && S.phase === 'hangar') { S.phase = 'moving'; S.busy = true; setBoard('ROLLOUT', '#4a9eff'); crawler.visible = true; crawler.position.set(-28, .5, 3); rocket.visible = true; const t0 = performance.now(); const mv = () => { const k = Math.min(1, (performance.now() - t0) / 5000); crawler.position.x = -28 + 28 * k; crawler.position.z = 3 - 3 * k; rocket.position.set(crawler.position.x, 1.0, crawler.position.z); if (k < 1) requestAnimationFrame(mv); else { crawler.visible = false; S.phase = 'pad'; S.fuel = 0; setBoard('FUEL 0'); placeRocket(); S.busy = false } }; mv(); return }
+  if (a === 'fuel' && S.phase === 'pad' && S.fuel < 100) { S.busy = true; const iv = setInterval(() => { S.fuel = Math.min(100, S.fuel + 2); setBoard('FUEL ' + S.fuel); if (S.fuel >= 100) { clearInterval(iv); setBoard('T-00:30'); S.busy = false } }, 110); return }
+  if (a === 'pend' && (S.phase === 'pad' || S.phase === 'count')) { S.phase = 'count'; S.hold = true; S.count = 10; setBoard('HOLD', '#ffb020'); mastLamp.material.emissive.setHex(0xffb020); mastLight.color.setHex(0xffb020); floods.forEach(f => f.color.setHex(0xffb020)); after(1600, () => { if (S.hold) setBoard('GO?') }); return }
+  if (a === 'go' && S.hold) { S.hold = false; setBoard('GO', '#4ad97a'); mastLamp.material.emissive.setHex(0x4ad97a); mastLight.color.setHex(0x4ad97a); floods.forEach(f => f.color.setHex(0xffe9c8)); S.busy = true; let c = 10; const iv = setInterval(() => { c--; S.count = c; setBoard('T-00:' + String(c).padStart(2, '0')); if (c === 4) S.armsOpen = true; if (c <= 0) { clearInterval(iv); act('done') } }, 700); return }
+  if (a === 'block') { S.rain = true; rain.visible = true; S.hold = false; setBoard('SCRUB', '#ff3b30'); mastLamp.material.emissive.setHex(0xff3b30); mastLight.color.setHex(0xff3b30); S.armsOpen = false; after(4000, () => { S.rain = false; rain.visible = false; if (S.phase !== 'hangar') { S.hold = true; setBoard('HOLD', '#ffb020'); mastLamp.material.emissive.setHex(0xffb020) } else setBoard('READY', '#4ad9c4') }); return }
+  if (a === 'done' && (S.phase === 'pad' || S.phase === 'count')) { S.phase = 'launch'; S.launch = { t0: performance.now(), v: 0, y: .6, counted: false }; S.hold = false; S.armsOpen = true; S.busy = true; setBoard('LIFTOFF', '#ffe08a'); S.shake = 1; return }
+}
+function auto(now) {
+  if (S.hold) { if (!S.goAt) S.goAt = now + 3200; if (now >= S.goAt) { S.goAt = 0; act('go') } return }
+  if (S.phase === 'hangar') { if (!S.nextAt) S.nextAt = now + 2500; if (now >= S.nextAt) { S.nextAt = 0; act('claim') } return }
+  if (S.phase === 'pad' && S.fuel === 0) { act('fuel'); return }
+  if (S.phase === 'pad' && S.fuel >= 100 && !S.hold) { act('pend'); return }
+}
+$$('[data-sim="launch"] [data-act]').forEach(b => b.addEventListener('click', () => { if (b.dataset.act === 'auto') { S.auto = !S.auto; b.textContent = S.auto ? '自动演' : '手动'; return } S.auto = false; $('[data-sim="launch"] [data-act="auto"]').textContent = '手动'; act(b.dataset.act) }))
+drawBoard(); placeRocket()
+// ---- 后期与主循环 ----
+const composer = new EffectComposer(renderer); composer.addPass(new RenderPass(scene, camera)); composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), .4, .45, .95)); composer.addPass(new OutputPass())
+$('[data-loading2]').remove()
+const camBase = new THREE.Vector3()
+let last = 0
+function spawnFlame(p, n, spread, up) { for (let k = 0; k < n; k++) { const i = fi++ % FN; fp.set([p.x + (Math.random() - .5) * spread, p.y, p.z + (Math.random() - .5) * spread], i * 3); fv.set([(Math.random() - .5) * 6, -up - Math.random() * 10, (Math.random() - .5) * 6], i * 3); fl[i] = .35 + Math.random() * .35 } }
+function spawnSmoke(p) { const m = smokes.find(x => x.life <= 0); if (!m) return; m.life = 3 + Math.random() * 2; m.s.visible = true; m.s.position.copy(p); m.s.position.x += (Math.random() - .5) * 2; m.s.scale.setScalar(1.5); m.v.set((Math.random() - .5) * 10 + (Math.random() > .5 ? 6 : -6), 1.5 + Math.random() * 2, (Math.random() - .5) * 10); m.s.material.opacity = .55 }
+function frame(now) {
+  requestAnimationFrame(frame); if (now - last < 1000 / 30 || document.hidden) return; const dt = Math.min(.1, (now - last) / 1000); last = now
+  const c = renderer.domElement, w = c.clientWidth, h = c.clientHeight; if (c.width !== Math.floor(w * renderer.getPixelRatio())) { renderer.setSize(w, h, false); composer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix() }
+  controls.update()
+  S.timers = S.timers.filter(t => { if (now >= t.at) { t.fn(); return false } return true })
+  if (S.auto && !S.busy) auto(now)
+  water.material.uniforms.time.value += dt * .6
+  stars.rotation.y += dt * .004
+  // 灯塔扫光、浮标起伏、塔顶红灯、指挥中心屏幕、灯带
+  const ang = now / 2600; beam.target.position.set(60 + Math.cos(ang) * 80, 2, -18 + Math.sin(ang) * 80)
+  buoys.forEach(({ b, l, ph }) => { b.position.y = -.2 + Math.sin(now / 700 + ph) * .25; l.intensity = ((now / 500 + ph) % 2) < 1 ? 8 : 0 })
+  mastLight.intensity = S.hold ? 40 : ((now / 600 | 0) % 2 ? 40 : 4)
+  scene.traverse(o => { if (o.userData.screen) o.material.emissiveIntensity = S.hold ? (.8 + Math.sin(now / 120) * .4) : (1 + Math.sin(now / 400 + o.position.x) * .3) })
+  const hue = (now / 9000) % 1; strip.material.emissive.setHSL(hue, .8, .55); vabStrip.material.emissive.setHSL((hue + .3) % 1, .8, .55)
+  gauge.scale.y = Math.max(.02, S.fuel / 100 * 8); gauge.position.y = 1 + gauge.scale.y / 2
+  elevator.position.y = (S.phase === 'pad' && S.fuel > 0 && S.fuel < 100) ? 3 + (Math.sin(now / 1500) * .5 + .5) * 16 : 3
+  arms.forEach(a => { a.position.x = THREE.MathUtils.lerp(a.position.x, S.armsOpen ? -.4 : a.userData.base, .06) })
+  if (S.phase === 'pad' && S.fuel > 0 && S.fuel < 100 && Math.random() < .5) spawnSmoke(new THREE.Vector3(.9 + Math.random() * .3, 4 + Math.random() * 8, .8))
+  if (S.rain) { for (let i = 0; i < RN; i++) { rp[i * 3 + 1] -= 40 * dt; if (rp[i * 3 + 1] < 0) rp[i * 3 + 1] = 40 } rain.geometry.attributes.position.needsUpdate = true }
+  // 发射
+  if (S.phase === 'launch' && S.launch) {
+    const L = S.launch, t = (now - L.t0) / 1000
+    if (t > .6) { L.v += 14 * dt * Math.max(1, t); L.y += L.v * dt }
+    rocket.position.set(0, L.y, 0)
+    const ep = new THREE.Vector3(0, L.y - .4, 0)
+    spawnFlame(ep, 40, .8, 14); engineLight.intensity = 2500 + Math.random() * 1500
+    if (t < 2.2) for (let k = 0; k < 6; k++) spawnSmoke(new THREE.Vector3(0, .8, 0))
+    if (t > 1 && t < 1.4) S.shake = 1
+    if (t > 3 && !L.counted) { L.counted = true; setBoard('NOMINAL', '#4ad97a') }
+    if (L.y > 140) { S.phase = 'hangar'; S.launch = null; S.missions++; S.fuel = 0; S.armsOpen = false; engineLight.intensity = 0; setBoard('READY', '#4ad9c4'); mastLamp.material.emissive.setHex(0xff3b30); mastLight.color.setHex(0xff3b30); placeRocket(); S.busy = false }
+  } else engineLight.intensity = 0
+  // 粒子更新
+  for (let i = 0; i < FN; i++) { if (fl[i] <= 0) continue; fl[i] -= dt; fp[i * 3] += fv[i * 3] * dt; fp[i * 3 + 1] += fv[i * 3 + 1] * dt; fp[i * 3 + 2] += fv[i * 3 + 2] * dt; if (fp[i * 3 + 1] < .7) { fp[i * 3 + 1] = .7; fv[i * 3] *= 1.4; fv[i * 3 + 2] *= 1.4; fv[i * 3 + 1] = 0 } const k = Math.max(0, fl[i] / .7); fc.set([1, .45 + .55 * k, .15 + .6 * k * k], i * 3); if (fl[i] <= 0) fp[i * 3 + 1] = -999 }
+  flame.geometry.attributes.position.needsUpdate = true; flame.geometry.attributes.color.needsUpdate = true
+  smokes.forEach(m => { if (m.life <= 0) return; m.life -= dt; m.s.position.addScaledVector(m.v, dt); m.v.multiplyScalar(.985); m.s.scale.addScalar(dt * 5); m.s.material.opacity = Math.min(.55, m.life * .25); if (m.life <= 0) m.s.visible = false })
+  // 镜头震动
+  if (S.shake > 0) { S.shake -= dt * 1.5; camBase.copy(camera.position); camera.position.x += (Math.random() - .5) * S.shake * .5; camera.position.y += (Math.random() - .5) * S.shake * .5 }
+  composer.render()
+  if (S.shake > 0) camera.position.copy(camBase)
+  stat.textContent = `任务数 ${S.missions} · ${S.phase === 'hangar' ? '火箭在厂房' : S.phase === 'moving' ? '履带车转运' : S.phase === 'pad' ? `加注 ${S.fuel}%` : S.phase === 'count' ? (S.hold ? 'HOLD 等拍板' : `倒计时 T-${String(S.count).padStart(2, '0')}`) : '飞行中'}`
+}
+requestAnimationFrame(frame)
+</script>
+</body>
+</html>

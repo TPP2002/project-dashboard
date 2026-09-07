@@ -8,6 +8,7 @@ import Icon from '@/components/Icon.vue'
 import { ref, computed, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
+import { appearance } from '@/utils/appearance'
 import { cssVar, useEchart } from '@/charts/useEcharts'
 import { fmtShort } from '@/utils/format'
 import { humanTitle } from '@/utils/taskTitle'
@@ -58,7 +59,7 @@ const stats = computed(() => {
     month += countOf(derive.localDay(m))
     m.setDate(m.getDate() - 1)
   }
-  const streak = derive.doneStreak(byDay.value)
+  const streak = derive.doneStreak(byDay.value, appearance.streakGrace)
   const avg30 = Math.round((countLastDays(30) / 30) * 10) / 10
   return { todayN, week, month, streak, avg30 }
 })
@@ -256,7 +257,7 @@ watch([byDay, rangeDays], update)
       <div class="stat card"><b class="v">{{ stats.week }}</b><span class="l">本周</span></div>
       <div class="stat card"><b class="v">{{ stats.month }}</b><span class="l">本月</span></div>
       <div class="stat card" :class="{ fire: stats.streak >= 3 }">
-        <b class="v">{{ stats.streak }}<Icon v-if="stats.streak >= 3" name="flame" :size="16" class="fi" /></b><span class="l">连续产出（天）</span>
+        <b class="v">{{ stats.streak }}<Icon v-if="stats.streak >= 3" name="flame" :size="16" class="fi" :class="{ lit: appearance.streakFire }" /></b><span class="l">连续产出（天）</span>
       </div>
       <div class="stat card"><b class="v">{{ stats.avg30 }}</b><span class="l">日均（近30天）</span></div>
     </div>
@@ -368,6 +369,13 @@ watch([byDay, rangeDays], update)
 .stat-edge { position: absolute; inset: 0 0 auto; width: 100%; }
 .stat.fire .v { color: var(--warn); }
 .fi { margin-left: var(--s1); color: var(--warn); vertical-align: -.1em; }
+.fi.lit { animation: flicker 1.9s ease-in-out infinite; transform-origin: 50% 85%; }
+@keyframes flicker {
+  0%, 100% { transform: scale(1) rotate(0); opacity: .92; }
+  28% { transform: scale(1.14) rotate(-3deg); opacity: 1; }
+  52% { transform: scale(.97) rotate(2deg); opacity: .86; }
+  74% { transform: scale(1.08) rotate(-1deg); opacity: 1; }
+}
 
 .block { display: flex; flex-direction: column; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s3) var(--s4); }
 .block-t { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; font-size: var(--fs-base); font-weight: 600; }

@@ -1,0 +1,1103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 · 城与天细节稿 v3（楼 / 塔吊 / 河与鱼 / 销卡飞进楼）</title>
+<style>
+/* ============================================================
+   令牌层：照抄 web/src/styles/base.css + 个性化变量 + 本稿新增的「城」与「河」的色板
+   ============================================================ */
+:root{
+  --bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;
+  --line:#e4e4e2;--line-strong:#d2d2cf;
+  --text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;
+  --ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;
+  --bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;
+  --n:#8e8e89;--n-bg:#eeeeed;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+  --r-sm:4px;--r:6px;--r-lg:8px;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  --fs-xs:11px;--fs-sm:12.5px;--fs-base:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;--fs-2xl:28px;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;
+  --cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+  --spec-cool:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4;
+  --spec-warm:#f0b429,#f5825b,#e8619d,#a86fd8,#f0b429;
+  --spec-aurora:#3ddc97,#22d3ee,#6d8cff,#a86fd8,#3ddc97;
+  --spec-sunset:#ff8a5b,#ffb26b,#ff5f8d,#a05ac0,#ff8a5b;
+  --spec-cyber:#00e5ff,#ff2fb9,#7b46ff,#00e5ff;
+  --spec-info:#4a9eff,#4ad9c4,#6d8cff,#4a9eff;
+  --spec-warn:#f0b429,#f5825b,#f6d365,#f0b429;
+  --spec-ok:#6fbf82,#2c7a45,#a8e6b9,#6fbf82;
+  --spec-active:var(--spec-cool);
+  --spec-bar:var(--spec-active);--spec-top:var(--spec-active);--spec-edge:var(--spec-info);
+  --sp-k:1;--sp-base:calc(3.4s * var(--sp-k));
+  --gl-top:2px;--gl-rail:6px;--gl-edge:2px;
+  --w1:#4ad9c4;--w2:#4a9eff;--w3:#8b7bf7;--w4:#c96bd8;
+
+  /* —— 城（白天） —— */
+  --sky-1:#c9dcf3;--sky-2:#eef3fa;--sky-3:#fbf7ef;
+  --star:transparent;--moon:transparent;--sun:#ffe7a3;
+  --far:#b9c7da;--far-win:#ffffff;
+  --bld-1:#eef1f6;--bld-2:#d6dde8;--bld-side:#bfc9d8;--bld-top:#f6f8fb;--bld-line:#a9b5c6;--bld-dark:#8e9bad;
+  --win-off:#c7d1de;--win-frame:#98a5b8;--win-on:#ffb043;--win-on-2:#ffc76b;--win-glow:transparent;
+  --road:#b4bcc8;--road-line:#e6ebf2;--walk:#d9dfe7;--lamp:#c5ccd6;--lamp-glow:transparent;
+  --cloud-1:#ffffff;--cloud-2:#dfe7f1;--tree:#7fa77a;--trunk:#8b7355;
+  --car:#7d8797;--head:#fff4c2;--tail:#ff6b5a;
+  /* —— 河（白天） —— */
+  --water-1:#cfe3f4;--water-2:#a9c8e6;--water-3:#8fb4d9;--foam:#ffffff;
+}
+[data-theme="dark"],.pane.dark{
+  --bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;
+  --line:#242426;--line-strong:#343437;
+  --text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;
+  --ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;
+  --bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;
+  --n:#8e8e8e;--n-bg:#232326;--shadow:none;
+  --spec-ok:#6fbf82,#3f9a5c,#a8e6b9,#6fbf82;
+  --spec-aurora:#4ee6a8,#3ce0f5,#8aa0ff,#c08ce8,#4ee6a8;
+  /* —— 城（夜） —— */
+  --sky-1:#04060e;--sky-2:#0e1428;--sky-3:#1a2340;
+  --star:#d6dcff;--moon:#f3efd9;--sun:transparent;
+  --far:#0d1324;--far-win:#5d6a8a;
+  --bld-1:#1c2437;--bld-2:#121a2a;--bld-side:#0c1220;--bld-top:#27314a;--bld-line:#2d3850;--bld-dark:#0a0f1c;
+  --win-off:#161e2f;--win-frame:#0b101c;--win-on:#ffcf6b;--win-on-2:#ffe0a1;--win-glow:#ffcf6b;
+  --road:#080b16;--road-line:#2a3350;--walk:#141a2a;--lamp:#3a4460;--lamp-glow:#ffd98a;
+  --cloud-1:#2e3854;--cloud-2:#1c2440;--tree:#1d3328;--trunk:#2a2118;
+  --car:#0f1524;--head:#fff1b0;--tail:#ff4d3d;
+  --water-1:#0b1830;--water-2:#0a1428;--water-3:#060d1c;--foam:#9fc4ff;
+}
+[data-spectrum="warm"]{--spec-active:var(--spec-warm)}
+[data-spectrum="aurora"]{--spec-active:var(--spec-aurora)}
+[data-spectrum="sunset"]{--spec-active:var(--spec-sunset)}
+[data-spectrum="cyber"]{--spec-active:var(--spec-cyber)}
+[data-spectrum="warm"] .pane.dark{--spec-active:var(--spec-warm)}
+[data-spectrum="aurora"] .pane.dark{--spec-active:var(--spec-aurora)}
+[data-spectrum="sunset"] .pane.dark{--spec-active:var(--spec-sunset)}
+[data-spectrum="cyber"] .pane.dark{--spec-active:var(--spec-cyber)}
+[data-spectrum="cool"] .pane.dark{--spec-active:var(--spec-cool)}
+
+/* ============================================================
+   稿纸外壳
+   ============================================================ */
+*{box-sizing:border-box}html,body{margin:0}
+body{background:#e9e9e6;color:#1a1a19;font-family:var(--cn);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3{margin:0;font-weight:600}
+.doc{max-width:1500px;margin:0 auto;padding:32px 24px 96px}
+.doc-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.doc-head h1{font-size:28px;letter-spacing:-.02em;color:#1a1a19}
+.doc-head p{margin:8px 0 0;color:#5c5c58;max-width:1000px;font-size:15px}
+.doc-head .meta{margin-top:6px;color:#8e8e89;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.modes{display:inline-flex;border:1px solid #d2d2cf;border-radius:6px;overflow:hidden;background:#fff;position:sticky;top:12px;z-index:9;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.modes button{border:0;border-right:1px solid #e4e4e2;background:#fff;color:#5c5c58;padding:7px 15px;font:inherit;font-size:13px;cursor:pointer}
+.modes button:last-child{border-right:0}
+.modes button.on{background:#1a1a19;color:#fff}
+.sec{margin-top:44px}
+.sec>h2{font-size:22px;color:#1a1a19;letter-spacing:-.01em}
+.sec>h2 .no{color:#8e8e89;font-family:ui-monospace,Consolas,monospace;font-size:15px;margin-right:8px}
+.sec>h2 .tag{display:inline-block;margin-left:10px;padding:2px 8px;border-radius:4px;background:#e8f4ec;color:#2c7a45;font-family:ui-monospace,Consolas,monospace;font-size:12px;vertical-align:middle;font-weight:500}
+.sec>p{margin:8px 0 16px;color:#5c5c58;max-width:1060px}
+.sec>p code,.note code,td code{background:#fff;border:1px solid #e4e4e2;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.note{margin:12px 0 0;padding:10px 14px;border-left:3px solid #d2d2cf;background:#f3f3f1;color:#5c5c58;font-size:13.5px;border-radius:0 6px 6px 0}
+.note b{color:#1a1a19}
+.note.ask{border-left-color:#9a6b12;background:#fdf3e0}.note.ask b{color:#9a6b12}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.stackp{display:grid;gap:16px}
+@media (max-width:1080px){.pair{grid-template-columns:1fr}}
+.pane{position:relative;padding:20px;border:1px solid var(--line-strong);border-radius:10px;background:var(--bg);color:var(--text);font-size:var(--fs-base);line-height:1.65}
+.pane::before{content:attr(data-label);position:absolute;top:9px;right:13px;color:var(--text-3);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;z-index:5}
+.pane.tight{padding:0;overflow:hidden}
+.sim{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+table.spec{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e4e4e2;border-radius:6px;overflow:hidden;font-size:14px}
+table.spec th,table.spec td{padding:9px 12px;border-bottom:1px solid #eeeeed;text-align:left;vertical-align:top}
+table.spec th{background:#f6f6f5;color:#5c5c58;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:500}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td.k{font-weight:600;color:#1a1a19;white-space:nowrap}
+.detail-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-top:14px}
+.detail-list>div{padding:10px 12px;background:#fff;border:1px solid #e4e4e2;border-radius:6px;font-size:13.5px;color:#5c5c58}
+.detail-list b{display:block;color:#1a1a19;margin-bottom:2px}
+
+/* ============================================================
+   产品组件
+   ============================================================ */
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;overflow:visible}
+.ic.s14{width:14px;height:14px}.ic.s16{width:16px;height:16px}
+.ic .tint{fill:currentColor;stroke:none;opacity:.18}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);padding:var(--s2) var(--s3);border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface-2);color:var(--text);cursor:pointer;font:inherit;font-size:var(--fs-base);transition:background .14s ease,border-color .14s ease,color .14s ease}
+.btn:hover{background:var(--surface-3)}
+.btn.quiet{background:transparent;border-color:transparent;color:var(--text-2)}
+.btn.quiet:hover{background:var(--surface-2);color:var(--text)}
+.btn-sm{padding:var(--s1) var(--s2);font-size:var(--fs-sm)}
+.badge{display:inline-block;padding:var(--s1) var(--s2);border:1px solid transparent;border-radius:var(--r-sm);font-family:var(--mono);font-size:var(--fs-xs);line-height:1.6;white-space:nowrap}
+.badge.n{background:var(--surface-3);color:var(--text-2)}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.info{background:var(--info-bg);color:var(--info)}
+.mono{font-family:var(--mono)}.dim{color:var(--text-3)}
+.glow-rail{height:var(--gl-rail);overflow:hidden;border-radius:3px;background-color:var(--surface-3)}
+.glow-rail>i{display:block;height:100%;border-radius:inherit;background-image:linear-gradient(90deg,var(--spec-bar));background-size:200% 100%;animation:slide var(--sp-base) linear infinite}
+.glow-edge{position:absolute;inset:0 auto 0 0;width:var(--gl-edge);background-image:linear-gradient(180deg,var(--spec-edge));background-size:100% 200%;animation:slideY var(--sp-base) linear infinite}
+@keyframes slide{to{background-position:-200% 0}}
+@keyframes slideY{to{background-position:0 -200%}}
+.tile{display:inline-grid;place-items:center;width:16px;height:16px;padding:1px;border-radius:5px;background:var(--line);vertical-align:-.25em;flex:none}
+.tile>i{display:grid;place-items:center;width:100%;height:100%;border-radius:4px;background:var(--tone-bg,var(--surface))}
+.tile svg{width:11px;height:11px;fill:none;stroke:var(--tone,var(--text-2));stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.tile.spec{background-image:linear-gradient(90deg,var(--tone-spec,var(--spec-active)));background-size:200% 100%;animation:slide var(--sp-base) linear infinite}
+.tile.lg{width:20px;height:20px;border-radius:6px;padding:1.5px}.tile.lg>i{border-radius:4.5px}.tile.lg svg{width:14px;height:14px;stroke-width:2.2}
+.tone-info{--tone:var(--info);--tone-bg:var(--info-bg);--tone-spec:var(--spec-info)}
+.tone-warn{--tone:var(--warn);--tone-bg:var(--warn-bg);--tone-spec:var(--spec-warn)}
+.tone-ok{--tone:var(--ok);--tone-bg:var(--ok-bg);--tone-spec:var(--spec-ok)}
+
+/* ---------- 看板页骨架 ---------- */
+.kb{display:grid;grid-template-columns:104px 1fr;grid-template-rows:40px 1fr;height:100%;min-height:560px;background:var(--bg);color:var(--text)}
+.kb-top{grid-column:1/-1;display:flex;align-items:center;gap:var(--s3);padding:0 var(--s3);background:var(--surface);border-bottom:1px solid var(--line);font-size:var(--fs-sm)}
+.kb-top b{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm)}
+.kb-top .sel{padding:2px 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);font-size:var(--fs-xs)}
+.kb-top .sp{flex:1}
+.kb-top .bell{position:relative;color:var(--warn)}
+.kb-top .bell i{position:absolute;top:-7px;right:-9px;padding:0 4px;border-radius:4px;background:var(--warn-bg);color:var(--warn);font-family:var(--mono);font-size:10px;font-style:normal;line-height:1.5}
+.kb-nav{padding:var(--s2);background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.kb-nav span{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:var(--r);color:var(--text-2);font-size:var(--fs-xs)}
+.kb-nav span.on{background:var(--surface-3);color:var(--text)}
+.kb-main{position:relative;display:flex;flex-direction:column;gap:var(--s3);padding:var(--s3);min-width:0;overflow:hidden}
+.kb-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s2)}
+.kb-head h1{font-size:var(--fs-lg);letter-spacing:-.01em}
+.kb-head p{margin:2px 0 0;color:var(--text-3);font-size:var(--fs-xs)}
+.kb-head .pv{font-family:var(--mono);font-size:var(--fs-md)}
+.lanes{display:flex;gap:var(--s2);flex:1;min-height:0;align-items:flex-start;position:relative;padding-top:12px}
+.lane{position:relative;flex:1 0 0;display:flex;flex-direction:column;gap:6px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.lane-h{display:flex;align-items:center;justify-content:space-between;padding:2px 4px}
+.lane-h .badge{display:inline-flex;align-items:center;gap:4px;padding-left:3px}
+.lane-b{display:grid;gap:6px}
+.tc{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:5px;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);cursor:pointer;transition:transform .14s ease,border-color .14s ease}
+.tc:hover{transform:translateY(-1px);border-color:var(--line-strong)}
+.tc .h{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs)}
+.tc .h .tid{color:var(--text-2);font-family:var(--mono);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc .t{font-size:var(--fs-sm);line-height:1.4}
+.tc .pw{display:flex;align-items:center;gap:6px}
+.tc .pw .glow-rail{flex:1;height:4px}
+.tc .pw .pct{color:var(--text-3);font-family:var(--mono);font-size:10px;min-width:26px;text-align:right}
+.tc.building{padding-left:12px}
+.tc.land{animation:landcard .5s ease-out}
+@keyframes landcard{from{transform:translateY(-10px) scale(.96);opacity:0;box-shadow:0 0 0 6px var(--ok-bg)}}
+/* 飞卡：完工那张卡的分身，飞向楼里那扇窗 */
+.flyer{position:fixed;z-index:50;pointer-events:none;border-radius:var(--r);background:var(--surface-2);border:1px solid var(--line-strong);box-shadow:0 0 0 2px var(--ok-bg),0 0 24px -4px var(--w2);overflow:hidden;padding:8px 10px;color:var(--text);font-size:var(--fs-sm)}
+.trail{position:fixed;z-index:49;width:6px;height:6px;border-radius:50%;pointer-events:none;background:var(--w2);box-shadow:0 0 8px var(--w2);animation:trail .7s ease-out forwards}
+@keyframes trail{to{opacity:0;transform:scale(.2)}}
+
+/* ---------- 光轨 ---------- */
+.rail-wrap{position:absolute;left:0;right:0;top:4px;height:14px;pointer-events:none;z-index:1}
+.rail-wrap svg{width:100%;height:100%;overflow:visible}
+.rail{fill:none;stroke:var(--w2);stroke-width:2;stroke-linecap:round;opacity:.35}
+.rail-dash{fill:none;stroke:var(--w3);stroke-width:2;stroke-dasharray:3 26;stroke-linecap:round;animation:raildash 2.6s linear infinite;opacity:.9}
+@keyframes raildash{to{stroke-dashoffset:-29}}
+.bead{fill:#fff;filter:drop-shadow(0 0 5px var(--w2)) drop-shadow(0 0 10px var(--w3))}
+.lane .st{position:absolute;top:-8px;left:50%;width:8px;height:8px;border-radius:50%;background:var(--surface);border:2px solid var(--w2);transform:translateX(-50%);z-index:2}
+
+/* ---------- 追光 / 盖章 ---------- */
+.spot{--mx:50%;--my:50%}
+.spot::after{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:radial-gradient(120px 120px at var(--mx) var(--my),var(--w2),transparent 70%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .25s ease;pointer-events:none}
+.spot:hover::after{opacity:1}
+
+/* ============================================================
+   城与天（SVG）
+   ============================================================ */
+.sky{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:var(--sky-2);isolation:isolate}
+.sky svg.scene{display:block;width:100%;height:100%}
+.sky.tall{height:260px}
+.sky.compact{height:132px}
+.rain{position:absolute;inset:0;opacity:0;transition:opacity 1s ease;background:repeating-linear-gradient(100deg,transparent 0 13px,color-mix(in srgb,var(--text-2) 40%,transparent) 13px 14px);background-size:140px 100%;mask-image:linear-gradient(180deg,transparent 6%,#000 26%,#000 88%,transparent);animation:rainfall .5s linear infinite;pointer-events:none;z-index:3}
+.sky.rainy .rain{opacity:.55}
+@keyframes rainfall{to{background-position:-18px 70px}}
+.fw{position:absolute;inset:0;pointer-events:none;z-index:4}
+/* 星星 */
+.star{fill:var(--star);animation:twinkle 3.6s ease-in-out infinite}
+.star:nth-child(3n){animation-delay:-1.2s}.star:nth-child(3n+1){animation-delay:-2.4s}
+@keyframes twinkle{0%,100%{opacity:.35}50%{opacity:1}}
+.shoot{stroke:var(--star);stroke-width:1;stroke-linecap:round;opacity:0;animation:shoot 13s linear infinite}
+@keyframes shoot{0%,88%{opacity:0;transform:translate(0,0)}89%{opacity:.9}94%{opacity:0;transform:translate(-90px,42px)}100%{opacity:0}}
+.moon{fill:var(--moon)}.moon-glow{fill:var(--moon);opacity:.14}
+.sun{fill:var(--sun);opacity:.85}.sun-glow{fill:var(--sun);opacity:.25}
+.bird{fill:none;stroke:#6b7686;stroke-width:1;opacity:.55;animation:birds 28s linear infinite}
+.pane.dark .bird{display:none}
+@keyframes birds{from{transform:translate(1100px,0)}to{transform:translate(-160px,-10px)}}
+/* 极光：三条丝带，形状慢慢起伏 */
+.aurora{opacity:0;transition:opacity 1.4s ease;filter:url(#blur6)}
+.sky.clear .aurora{opacity:.55}
+.pane:not(.dark) .sky.clear .aurora{opacity:.22}
+.aurora path{fill:none;stroke-width:16;stroke-linecap:round;stroke:url(#specg)}
+.aurora path:nth-child(2){stroke-width:10;opacity:.7}
+.aurora path:nth-child(3){stroke-width:6;opacity:.5}
+/* 云：几团圆叠出来的，有明暗两层 */
+.cloud{opacity:0;transition:opacity 1s ease,transform 1s ease;transform:translateY(-12px)}
+.cloud.on{opacity:1;transform:translateY(0)}
+.cloud .c1{fill:var(--cloud-1)}.cloud .c2{fill:var(--cloud-2)}
+.cloud{animation:drift var(--cd,40s) linear infinite}
+@keyframes drift{from{margin-left:0;translate:0 0}to{translate:70px 0}}
+/* 闪电 */
+.flash{fill:#f0b429;opacity:0}
+.bolt-line{fill:none;stroke:#ffd77a;stroke-width:1.6;stroke-linejoin:round;opacity:0;filter:drop-shadow(0 0 4px #f0b429)}
+.sky.struck .flash{animation:skyflash .8s ease-out}
+.sky.struck .bolt-line{animation:boltflash .8s ease-out}
+@keyframes skyflash{0%{opacity:0}10%{opacity:.35}25%{opacity:.05}35%{opacity:.28}100%{opacity:0}}
+@keyframes boltflash{0%{opacity:0}10%{opacity:1}22%{opacity:.2}32%{opacity:1}60%{opacity:0}100%{opacity:0}}
+/* 远景剪影 */
+.far{fill:var(--far)}.far-win{fill:var(--far-win);opacity:.5}
+/* 楼 */
+.bld{cursor:pointer}
+.bld:hover .face{filter:brightness(1.06)}
+/* 当前项目不画选框：用景深说话——别的楼罩一层薄雾、招牌不亮；当前楼招牌亮着、门口有灯光洒在地上 */
+.haze{fill:var(--sky-3);opacity:.34;pointer-events:none}
+.pane.dark .haze{opacity:.42}
+.bld:not(.cur) .sign-t{opacity:.45;filter:none}
+.bld:not(.cur) .sign{opacity:.7}
+.spill{fill:var(--win-on);opacity:.16}
+.pane.dark .spill{opacity:.32;filter:blur(1.5px)}
+.face{fill:url(#facade)}.face-l{stroke:var(--bld-line);stroke-width:.6;fill:none}
+.side{fill:var(--bld-side)}.top{fill:var(--bld-top)}
+.ledge{stroke:var(--bld-line);stroke-width:.8}
+.w{stroke:var(--win-frame);stroke-width:.5}
+.w.s-off{fill:var(--win-off)}
+.w.s-done{fill:var(--win-on)}.w.s-done.alt{fill:var(--win-on-2)}
+.pane.dark .w.s-done{filter:drop-shadow(0 0 2px var(--win-glow))}
+.w.s-build{animation:winflow calc(var(--sp-base) * 1.2) linear infinite;filter:drop-shadow(0 0 3px var(--w2))}
+.w.s-build.d2{animation-delay:-.9s}.w.s-build.d3{animation-delay:-1.8s}
+@keyframes winflow{0%{fill:var(--w1)}25%{fill:var(--w2)}50%{fill:var(--w3)}75%{fill:var(--w4)}100%{fill:var(--w1)}}
+.w.s-pend{fill:#f0b429;animation:blink 1.4s ease-in-out infinite;filter:drop-shadow(0 0 3px #f0b429)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.w.s-blocked{fill:#e0736a;animation:blink 2.4s ease-in-out infinite;filter:drop-shadow(0 0 3px #e0736a)}
+.w.s-parked{fill:#8a2f27;opacity:.75}
+.w.flash{animation:winflash 1s ease-out}
+@keyframes winflash{0%{fill:#fff;filter:drop-shadow(0 0 10px #fff)}100%{fill:var(--win-on)}}
+.door{fill:var(--win-on);opacity:.9}.awning{fill:var(--bld-dark)}
+.tank{fill:var(--bld-2);stroke:var(--bld-line);stroke-width:.6}.ac{fill:var(--bld-2);stroke:var(--bld-line);stroke-width:.5}
+.ant{stroke:var(--bld-line);stroke-width:.8}
+.beacon{fill:transparent}
+.beacon.warn{fill:#f0b429;animation:blink 1.2s ease-in-out infinite;filter:drop-shadow(0 0 4px #f0b429)}
+.beacon.bad{fill:#ff4d3d;animation:blink .7s ease-in-out infinite;filter:drop-shadow(0 0 4px #ff4d3d)}
+.beacon.avi{fill:#ff4d3d;opacity:.6;animation:blink 2.2s ease-in-out infinite}
+.sign{fill:var(--bld-dark)}.sign-t{font-family:var(--mono);font-size:6px;font-weight:600;letter-spacing:.06em}
+.pane.dark .sign-t{filter:drop-shadow(0 0 3px currentColor)}
+.spire{stroke:var(--win-on);stroke-width:1.2;opacity:0;transition:opacity .6s ease;filter:drop-shadow(0 0 4px var(--win-on))}
+.spire-tip{fill:#fff;opacity:0;transition:opacity .6s ease}
+.bld.full .spire,.bld.full .spire-tip{opacity:1}
+/* 地面 */
+.walk{fill:var(--walk)}.road{fill:var(--road)}.road-line{stroke:var(--road-line);stroke-width:.8;stroke-dasharray:6 6;opacity:.6}
+.lamp-pole{stroke:var(--lamp);stroke-width:1}.lamp-head{fill:var(--lamp)}
+.lamp-cone{fill:url(#lampcone);opacity:0}.pane.dark .lamp-cone{opacity:.5}
+.lamp-bulb{fill:var(--lamp-glow)}
+.tree{fill:var(--tree)}.trunk{stroke:var(--trunk);stroke-width:1}
+.car{animation:carL var(--cd,16s) linear infinite}
+.car.r{animation-name:carR}
+.car .body{fill:var(--car)}.car .hl{fill:var(--head)}.car .tl{fill:var(--tail)}
+.pane.dark .car .hl{filter:drop-shadow(0 0 3px var(--head))}
+@keyframes carL{from{transform:translateX(var(--cw,1040px))}to{transform:translateX(-60px)}}
+@keyframes carR{from{transform:translateX(-60px)}to{transform:translateX(var(--cw,1040px))}}
+.refl{opacity:0;transition:opacity .8s ease}
+.sky.rainy .refl{opacity:.22}
+.splash{fill:none;stroke:var(--foam);stroke-width:.6;opacity:0}
+.sky.rainy .splash{animation:splash 1.1s ease-out infinite}
+.splash:nth-child(2n){animation-delay:-.4s}.splash:nth-child(3n){animation-delay:-.8s}
+@keyframes splash{0%{opacity:.7;transform:scale(.2)}100%{opacity:0;transform:scale(1.6)}}
+/* 塔吊 */
+.crane line,.crane path{stroke:var(--crane,#c9a227);stroke-width:.9;fill:none;stroke-linecap:round}
+.pane.dark .crane line,.pane.dark .crane path{--crane:#e0b52e}
+.crane .lattice{stroke-width:.45;opacity:.85}
+.crane .cab{fill:var(--bld-dark);stroke:none}.crane .cab-w{fill:var(--win-on);stroke:none}
+.crane .cw{fill:#6b6f7a;stroke:none}
+.crane .trolley{animation:trolley 9s ease-in-out infinite}
+@keyframes trolley{0%,100%{transform:translateX(0)}50%{transform:translateX(34px)}}
+.crane .cable{transform-box:fill-box;transform-origin:50% 0;animation:cable 9s ease-in-out infinite}
+@keyframes cable{0%,100%{transform:scaleY(.45)}50%{transform:scaleY(1.15)}}
+.crane .load{animation:load 9s ease-in-out infinite}
+@keyframes load{0%,100%{transform:translateY(9px) rotate(-2deg)}50%{transform:translateY(23px) rotate(2deg)}}
+.crane .load rect{fill:#7a6a3a;stroke:none}
+.crane .hook{stroke-width:.8}
+.crane .warn{fill:#ff4d3d;animation:blink 1.6s ease-in-out infinite}
+.crane .tie{stroke-width:.4;opacity:.7}
+
+/* ============================================================
+   光之河（SVG）
+   ============================================================ */
+.river{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r);background:var(--water-2)}
+.river svg{display:block;width:100%;height:100%}
+.river.tall{height:88px}.river.compact{height:56px}
+.wave{animation:wave var(--wd,12s) linear infinite}
+@keyframes wave{to{transform:translateX(-240px)}}
+.wave.w1{fill:var(--water-1);opacity:.55}
+.wave.w2{fill:var(--water-3);opacity:.6}
+.wave.w3{fill:none;stroke:var(--foam);stroke-width:.8;opacity:.45}
+.refl-bar{animation:shim 5s ease-in-out infinite}
+.refl-bar:nth-child(2n){animation-delay:-1.7s}.refl-bar:nth-child(3n){animation-delay:-3.1s}
+@keyframes shim{0%,100%{opacity:.10;transform:skewX(-2deg)}50%{opacity:.3;transform:skewX(2deg)}}
+.bubble{fill:var(--foam);opacity:.5;animation:bubble 6s linear infinite}
+.bubble:nth-child(2n){animation-delay:-2s}.bubble:nth-child(3n){animation-delay:-4s}
+@keyframes bubble{from{transform:translateY(0);opacity:.5}to{transform:translateY(-40px);opacity:0}}
+.fish{cursor:pointer}
+.fish .swim{animation:swim var(--dur,24s) linear forwards}
+@keyframes swim{from{transform:translateX(var(--rw,1060px))}to{transform:translateX(-90px)}}
+.fish .bob{animation:bob 2.6s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(2.4px)}}
+.fish .tail{transform-box:fill-box;transform-origin:0 50%;animation:wag .6s ease-in-out infinite alternate}
+@keyframes wag{from{transform:rotate(-14deg)}to{transform:rotate(14deg)}}
+.fish .fin{transform-box:fill-box;transform-origin:50% 0;animation:wag .9s ease-in-out infinite alternate}
+.fish .lbl{opacity:0;transition:opacity .2s ease}
+.fish:hover .lbl{opacity:1}
+.fish:hover .swim{animation-play-state:paused}
+.fish:hover .bob{animation-play-state:paused}
+.lbl rect{fill:var(--surface);stroke:var(--line-strong);stroke-width:.6}
+.lbl text{fill:var(--text);font-family:var(--mono);font-size:8px}
+.fish .body{stroke:rgba(0,0,0,.18);stroke-width:.5}
+.fish .eye{fill:#111}.fish .eye-h{fill:#fff}
+.fish .scale{fill:none;stroke:rgba(255,255,255,.35);stroke-width:.5}
+.k-claim .body,.k-claim .tail path,.k-claim .fin{fill:#4a9eff}
+.k-pend .body,.k-pend .tail path,.k-pend .fin{fill:#f0b429}
+.k-block .body,.k-block .tail path,.k-block .fin{fill:#e0736a}
+.k-done .body{fill:#fbf7ee}.k-done .tail path,.k-done .fin{fill:#ff8a3d}.k-done .patch{fill:#ff8a3d}.k-done .cap{fill:#e8402a}
+.k-block .spike{stroke:#a63d33;stroke-width:.8}
+.jumper{animation:jump 1.25s cubic-bezier(.3,.6,.4,1) forwards}
+@keyframes jump{0%{transform:translate(0,0) rotate(-24deg)}50%{transform:translate(-46px,-34px) rotate(0deg)}100%{transform:translate(-92px,2px) rotate(26deg)}}
+.drop{fill:var(--foam);opacity:0;animation:droplet .7s ease-out forwards}
+@keyframes droplet{0%{opacity:.9;transform:translate(0,0)}100%{opacity:0;transform:translate(var(--dx),var(--dy))}}
+.ring{fill:none;stroke:var(--foam);stroke-width:.8;opacity:0;animation:ring 1s ease-out forwards;transform-box:fill-box;transform-origin:center}
+@keyframes ring{0%{opacity:.8;transform:scale(.2)}100%{opacity:0;transform:scale(1.8)}}
+/* 塔吊放大观察 */
+.crane-zoom{display:block;width:100%;height:220px}
+.crane-zoom .lbl-t{font-family:var(--mono);font-size:3.2px;fill:var(--text-2)}
+.crane-zoom .lbl-l{stroke:var(--text-3);stroke-width:.25;stroke-dasharray:.8 .8}
+</style>
+</head>
+<body>
+<svg style="display:none" aria-hidden="true">
+<symbol id="i-kanban" viewBox="0 0 24 24"><rect class="tint" x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="9.25" y="4" width="5.5" height="11" rx="1.2"/><rect x="15.5" y="4" width="5.5" height="7" rx="1.2"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path class="tint" d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path class="tint" d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9z"/><path d="M6.5 9a5.5 5.5 0 0 1 11 0c0 6 2.5 7.5 2.5 7.5H4S6.5 15 6.5 9"/><path d="M10.3 20.5a1.9 1.9 0 0 0 3.4 0"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect class="tint" x="3" y="10" width="18" height="11" rx="1.5"/><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+<symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+<symbol id="i-network" viewBox="0 0 24 24"><circle class="tint" cx="18" cy="5" r="2.6"/><circle class="tint" cx="6" cy="12" r="2.6"/><circle class="tint" cx="18" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.4 13.3 7.2 4.2M15.6 6.5 8.4 10.7"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><circle class="tint" cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path class="tint" d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+<symbol id="i-checks" viewBox="0 0 24 24"><path d="m3 7 2 2 4-4"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></symbol>
+<symbol id="i-hand" viewBox="0 0 24 24"><path class="tint" d="M6 14V6a2 2 0 0 1 4 0v4a2 2 0 0 1 4 0V6a2 2 0 0 1 4 0v2a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3 16.5a2 2 0 0 1 3-2.6z"/><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3 16.5a2 2 0 0 1 3-2.6L8 16"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle class="tint" cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path class="tint" d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="m12 4 1.8 4.7 4.7 1.8-4.7 1.8L12 17l-1.8-4.7L5.5 10.5l4.7-1.8z"/><path d="M4.5 3.5v3M3 5h3M19.5 16.5v3M18 18h3"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+</svg>
+
+<div class="doc">
+
+<div class="doc-head">
+  <div>
+    <h1>看板 · 城与天细节稿 v3</h1>
+    <p>按你三条意见重画：<b>楼和塔吊要有真细节</b>（退台、女儿墙、水箱、空调机、天线航空灯、屋顶招牌、门厅雨棚、路灯、行道树、车流、雨天地面倒影、远景剪影、月亮和流星）；
+      <b>河要像河</b>（三层波浪、灯光倒影、气泡、浪花线），河里漂的东西<b>换成鱼</b>（完工是锦鲤，会跳出水面）；
+      <b>完工的卡直接销卡</b>——从泳道里抬起来飞进楼里，变成一扇亮起来的窗，不落进任何泳道。组合按你定的：城与天 + 光之河 + 光轨 + 追光 + 盖章 + 飞卡。</p>
+    <p class="meta">任务卡 AUD-FUN-WORKFLOOR · 2026-09-07 · 全部矢量（SVG）手绘，放大不糊；无外部依赖；图标只用看板现有那套；不用 emoji</p>
+  </div>
+  <div class="modes">
+    <button class="on" data-doc-theme="light" type="button">浅色</button>
+    <button data-doc-theme="dark" type="button">深色</button>
+    <button data-doc-theme="both" type="button">并排看</button>
+    <button data-spec-cycle type="button" title="换一套灯条配色，流光窗、极光、河面倒影都跟着变">换配色</button>
+  </div>
+</div>
+
+<section class="sec">
+<h2><span class="no">01</span>整体：看板页上的一整天</h2>
+<p>顶上是城，泳道上有光轨，底下是河。下面这排按钮把整条链路串起来看：<b>「完工一张」会让施工中那张卡抬起来飞进楼里、窗户亮起，接着河里跳出一条锦鲤</b>；
+  「来一条待拍板」云会飘来、天上打一道闪、河里游来一条琥珀色的鱼；「卡住一张」开始下雨、游来一条红河豚。</p>
+<div class="stackp">
+  <div class="pane tight" data-label="看板页 · 白天" style="height:620px"><div class="kb" data-board="light"></div></div>
+  <div class="sim" data-board-sim="light">
+    <button class="btn btn-sm" data-act="claim" type="button"><svg class="ic s14"><use href="#i-hand"/></svg> 认领一张</button>
+    <button class="btn btn-sm" data-act="done" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张（销卡飞进楼）</button>
+    <button class="btn btn-sm" data-act="pend" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 来一条待拍板</button>
+    <button class="btn btn-sm" data-act="decide" type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍掉一条</button>
+    <button class="btn btn-sm" data-act="block" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 卡住一张</button>
+    <button class="btn btn-sm" data-act="unblock" type="button">解除阻塞</button>
+    <button class="btn btn-sm" data-act="full" type="button"><svg class="ic s14"><use href="#i-sparkles"/></svg> 全部完工</button>
+    <button class="btn btn-sm quiet" data-act="reset" type="button">恢复</button>
+  </div>
+  <div class="pane tight dark" data-label="看板页 · 夜里" style="height:620px"><div class="kb" data-board="dark"></div></div>
+  <div class="sim" data-board-sim="dark">
+    <button class="btn btn-sm" data-act="claim" type="button"><svg class="ic s14"><use href="#i-hand"/></svg> 认领一张</button>
+    <button class="btn btn-sm" data-act="done" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张（销卡飞进楼）</button>
+    <button class="btn btn-sm" data-act="pend" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 来一条待拍板</button>
+    <button class="btn btn-sm" data-act="decide" type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍掉一条</button>
+    <button class="btn btn-sm" data-act="block" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 卡住一张</button>
+    <button class="btn btn-sm" data-act="unblock" type="button">解除阻塞</button>
+    <button class="btn btn-sm" data-act="full" type="button"><svg class="ic s14"><use href="#i-sparkles"/></svg> 全部完工</button>
+    <button class="btn btn-sm quiet" data-act="reset" type="button">恢复</button>
+  </div>
+</div>
+<div class="note"><b>销卡是这样的。</b>看板页本来就不显示收官泳道（默认收起）。所以完工那一下不再是「落进某一列」，而是<b>卡抬起来、缩小、拖着一道光飞进它所属的那栋楼，对应的窗白光一闪然后亮成暖黄</b>——卡没了，楼高了一格。泳道里的空位由下面的卡补上来。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">02</span>城，放大看</h2>
+<p>同一座城的放大版。楼是按数据长出来的：窗数 = 卡数，超过九层自动退台成两截（下宽上窄），所以每栋楼的轮廓都不一样。
+  点楼切项目——不画任何选框：当前项目的楼是清楚的、招牌亮着、门口有灯光洒在地上；别的楼退到一层薄雾后面、招牌不亮，像远处的街区。这里的按钮只影响这一块。</p>
+<div class="pair">
+  <div class="pane" data-label="白天">
+    <div class="sky tall" data-sky="light"></div>
+    <div class="sim" data-sim="light">
+      <button class="btn btn-sm" data-act="pend" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 来一条待拍板</button>
+      <button class="btn btn-sm" data-act="decide" type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍掉一条</button>
+      <button class="btn btn-sm" data-act="block" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 卡住一张</button>
+      <button class="btn btn-sm" data-act="unblock" type="button">解除</button>
+      <button class="btn btn-sm" data-act="done" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button>
+      <button class="btn btn-sm" data-act="full" type="button"><svg class="ic s14"><use href="#i-sparkles"/></svg> 全部完工</button>
+      <button class="btn btn-sm quiet" data-act="reset" type="button">恢复</button>
+    </div>
+  </div>
+  <div class="pane dark" data-label="夜里">
+    <div class="sky tall" data-sky="dark"></div>
+    <div class="sim" data-sim="dark">
+      <button class="btn btn-sm" data-act="pend" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 来一条待拍板</button>
+      <button class="btn btn-sm" data-act="decide" type="button"><svg class="ic s14"><use href="#i-check"/></svg> 拍掉一条</button>
+      <button class="btn btn-sm" data-act="block" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 卡住一张</button>
+      <button class="btn btn-sm" data-act="unblock" type="button">解除</button>
+      <button class="btn btn-sm" data-act="done" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工一张</button>
+      <button class="btn btn-sm" data-act="full" type="button"><svg class="ic s14"><use href="#i-sparkles"/></svg> 全部完工</button>
+      <button class="btn btn-sm quiet" data-act="reset" type="button">恢复</button>
+    </div>
+  </div>
+</div>
+<div class="detail-list">
+  <div><b>楼身</b>正面有明暗渐变，右侧一条暗面、顶上一条亮面，看得出是个立体的块；超过九层退台成两截；每扇窗有窗框和窗台线，完工的窗有两种暖度随机交错，不是一片死黄。</div>
+  <div><b>屋顶</b>女儿墙、左边水箱（带支脚）、右边空调外机（带格栅）、天线（顶上一颗航空灯：平时暗红慢闪，有待拍板变琥珀、有阻塞变红快闪）、屋顶招牌写着项目名（用项目色，夜里发光）。</div>
+  <div><b>门厅</b>底楼正中一扇亮着的门，上面一片雨棚。</div>
+  <div><b>塔吊</b>楼上有施工中的卡才立：格构塔身、起重臂、平衡臂和配重块、司机室（亮着灯）、小车沿臂来回走、吊索随之收放、吊着一根钢梁轻轻晃、塔顶警示灯。第 03 节有放大图。</div>
+  <div><b>地面</b>人行道、马路（虚线车道线）、来往的车（夜里只剩车头灯和尾灯的光）、路灯（夜里有光锥）、行道树。</div>
+  <div><b>天</b>白天：太阳的柔光、飞鸟、白云带阴影。夜里：星星眨眼、月亮和月晕、每十几秒一颗流星、极光丝带（三条，形状慢慢起伏，用你选的配色）。</div>
+  <div><b>天气</b>待拍板 = 云来（越多越厚）+ 新来一条时一道枝状闪电劈向那栋楼；阻塞 = 下雨，地上有水花，湿地面映出楼的倒影；全清 = 极光。</div>
+  <div><b>远景</b>楼后面一排更远、更暗的剪影楼，零星几点小灯，把画面拉出纵深。</div>
+  <div><b>100%</b>尖塔亮起、塔尖一颗白星，楼顶放三轮烟花（只放一次）。</div>
+</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">03</span>塔吊，放大看</h2>
+<p>放大八倍的那台塔吊，各部件标了名字。它是活的：小车沿起重臂来回走，吊索跟着收放，吊着的钢梁轻轻晃，塔顶警示灯慢闪。</p>
+<div class="pair">
+  <div class="pane" data-label="白天"><svg class="crane-zoom" data-crane-zoom viewBox="0 0 120 60"></svg></div>
+  <div class="pane dark" data-label="夜里"><svg class="crane-zoom" data-crane-zoom viewBox="0 0 120 60"></svg></div>
+</div>
+<div class="note"><b>为什么能画这么细而不卡。</b>全是矢量线条，一台塔吊二十来根线；一座城三四栋楼、一两百扇窗、一台塔吊，浏览器画起来跟一段文字差不多重。动的部分（小车、吊索、闪烁）都是 CSS 动画，不占脚本。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">04</span>光之河，重画</h2>
+<p>上一稿的河只是一条会闪的色带，不像水。这一稿：<b>三层波浪</b>各自以不同速度往左流、最上面一条白色浪花线；水面映着楼的灯光（竖向的彩色倒影，用你选的配色，慢慢晃）；偶尔冒气泡。
+  河里游的不再是标签，是<b>鱼</b>：认领来一条蓝鱼，待拍板来一条琥珀色的，阻塞来一条红河豚（带刺），<b>完工来一条锦鲤，并且会跳出水面</b>。鼠标放上去鱼停下来、显示它是哪张卡；点它开卡。</p>
+<div class="pair">
+  <div class="pane" data-label="白天">
+    <div class="river tall" data-river="a"></div>
+    <div class="sim">
+      <button class="btn btn-sm" data-fish="claim" data-river-id="a" type="button"><svg class="ic s14"><use href="#i-hand"/></svg> 认领</button>
+      <button class="btn btn-sm" data-fish="pend" data-river-id="a" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 待拍板</button>
+      <button class="btn btn-sm" data-fish="block" data-river-id="a" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 阻塞</button>
+      <button class="btn btn-sm" data-fish="done" data-river-id="a" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工（锦鲤跳）</button>
+    </div>
+  </div>
+  <div class="pane dark" data-label="夜里">
+    <div class="river tall" data-river="b"></div>
+    <div class="sim">
+      <button class="btn btn-sm" data-fish="claim" data-river-id="b" type="button"><svg class="ic s14"><use href="#i-hand"/></svg> 认领</button>
+      <button class="btn btn-sm" data-fish="pend" data-river-id="b" type="button"><svg class="ic s14"><use href="#i-bell"/></svg> 待拍板</button>
+      <button class="btn btn-sm" data-fish="block" data-river-id="b" type="button"><svg class="ic s14"><use href="#i-ban"/></svg> 阻塞</button>
+      <button class="btn btn-sm" data-fish="done" data-river-id="b" type="button"><svg class="ic s14"><use href="#i-checks"/></svg> 完工（锦鲤跳）</button>
+    </div>
+  </div>
+</div>
+<div class="note"><b>为什么是鱼而不是别的。</b>你提了鱼，我比较过河灯和纸船：河灯只有「亮 / 不亮」一种表情，纸船分不出四种事；鱼有颜色、有体型、还能跳，四种事一眼分开，完工那一跳正好接住楼那边的窗户亮起。
+  要是想要更安静的版本，鱼可以换成河灯只在完工时放一盏——一行配置的事。</div>
+</section>
+
+<section class="sec">
+<h2><span class="no">05</span>光轨与销卡</h2>
+<p>泳道头之间那条霓虹轨道保留：常年有细碎的光往前流；「认领」时一颗光珠从待开工跑到施工中，卡在那儿落下。
+  「完工」<b>不再往右跑</b>——卡直接抬起，拖着光飞进顶上的楼。第 01 节的两个按钮就是这两个动作，这里不重复画。</p>
+</section>
+
+<section class="sec">
+<h2><span class="no">06</span>你问的额度：日常一分不多花</h2>
+<p><b>这些东西不花 AI 额度。</b>它们全是浏览器里画的画，吃的数据就是看板已经有的那份（哪张卡什么状态、什么时候完工），
+  没有任何一步要问模型、不多打一个接口、服务端一行不用改。会话在干活时和现在完全一样，多的只是你屏幕上多了一座城。</p>
+<table class="spec">
+  <tr><th style="width:26%">开销在哪</th><th>多少</th></tr>
+  <tr><td class="k">日常 AI 额度</td><td>零。看板画面和会话干活是两条线，互不相干。</td></tr>
+  <tr><td class="k">做出来的一次性成本</td><td>施工那几天的模型额度。按你说的，施工派给外部模型（GPT / Codex）干，我负责定规格和验收，不烧我这边的额度。</td></tr>
+  <tr><td class="k">你电脑的开销</td><td>一座城 + 一条河大约相当于多开一个轻量网页标签；全是 CSS 动画和矢量，不是逐帧视频。看板页不在前台时动画自动停。每一样都有开关；系统「减少动效」打开时整体静止只留颜色。</td></tr>
+</table>
+</section>
+
+<section class="sec">
+<h2><span class="no">07</span>怎么施工：派单给外部模型，我验收</h2>
+<p>你提到之前有「派单给别的模型施工、我来验收」的流程——是的，那套规矩在（施工方默认派 Codex，本方定契约、派单、亲自重跑验收、销卡）。
+  这个项目之前没走它，是因为项目自己的开工须知里没写「施工默认派单」，各对话就按「自己干」来了。<b>这张卡起我按派单走</b>：
+  设计稿点头后，我把它拆成带验收断言的工单（施工面、禁区、非目标、机器可跑的验收清单），派出去；收回来的东西我自己重跑验收，不信对方自述；不达标退回改。你指定的模型（GPT 新款）能不能从这台机器的派单器直接调，我开工前先探一下，探不到就用现有的 Codex 通道并告诉你。</p>
+</section>
+
+<section class="sec">
+<h2><span class="no">08</span>这一稿要你点的</h2>
+<table class="spec">
+  <tr><th style="width:22%">问题</th><th>我的做法</th><th style="width:30%">你要是不满意</th></tr>
+  <tr><td class="k">楼和塔吊的精细度</td><td>按第 02 / 03 节这个程度做进产品，矢量、放大不糊。</td><td>说想再加什么细节，我加进稿子再做</td></tr>
+  <tr><td class="k">河里的东西</td><td>鱼：蓝鱼 / 琥珀鱼 / 红河豚 / 锦鲤（完工，会跳）。</td><td>可换河灯、纸船，或者只在完工时来一条锦鲤</td></tr>
+  <tr><td class="k">销卡</td><td>完工的卡飞进楼里变成窗，不落泳道。</td><td>—</td></tr>
+  <tr><td class="k">施工方式</td><td>派单给外部模型，我定契约和验收。</td><td>想我自己写也行，说一声</td></tr>
+</table>
+<div class="note ask"><b>点头的话回我一句「按 v3 开工」。</b>之后的顺序：先把第一批六样（外观中心那批，已点头）做完并入主干，紧接着做城与天这批；两批各一个 PR。</div>
+</section>
+
+<p style="margin-top:48px;color:#8e8e89;font-size:13px;text-align:center">看板 · AUD-FUN-WORKFLOOR · 城与天细节稿 v3 · 2026-09-07</p>
+</div><!-- /.doc -->
+<script>
+/* ============================================================
+   本页交互只为「让你点着看」。数据是编的；画法就是产品里要用的画法（SVG + CSS 动画）。
+   ============================================================ */
+const root = document.documentElement
+const $ = (sel, el = document) => el.querySelector(sel)
+const $$ = (sel, el = document) => [...el.querySelectorAll(sel)]
+const ico = (name, cls = 'ic s14') => `<svg class="${cls}"><use href="#i-${name}"/></svg>`
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+let uidN = 0
+const uid = () => 'u' + (++uidN)
+
+/* ---------- 顶部：浅 / 深 / 并排、换配色 ---------- */
+$$('.pane').forEach(p => { p.dataset.origDark = p.classList.contains('dark') ? '1' : '0' })
+$$('[data-doc-theme]').forEach(btn => btn.addEventListener('click', () => {
+  $$('.modes button[data-doc-theme]').forEach(b => b.classList.remove('on'))
+  btn.classList.add('on')
+  const mode = btn.dataset.docTheme
+  $$('.pane').forEach(p => {
+    const dark = mode === 'dark' ? true : mode === 'light' ? false : p.dataset.origDark === '1'
+    p.classList.toggle('dark', dark)
+  })
+}))
+const SPECS = ['cool', 'aurora', 'sunset', 'cyber', 'warm']
+let specIdx = 0
+$('[data-spec-cycle]').addEventListener('click', () => {
+  specIdx = (specIdx + 1) % SPECS.length
+  root.setAttribute('data-spectrum', SPECS[specIdx])
+  sampleSpectrum()
+})
+function splitStops(raw) {
+  const out = []; let depth = 0, cur = ''
+  for (const ch of raw) {
+    if (ch === '(') depth++; else if (ch === ')') depth--
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = '' } else cur += ch
+  }
+  out.push(cur.trim()); return out.filter(Boolean)
+}
+function sampleSpectrum() {
+  const stops = splitStops(getComputedStyle(root).getPropertyValue('--spec-active'))
+  const list = stops.length > 1 ? stops.slice(0, -1) : stops
+  for (let i = 0; i < 4; i++) root.style.setProperty(`--w${i + 1}`, list[i % list.length] || '#4a9eff')
+}
+root.setAttribute('data-spectrum', 'cool')
+sampleSpectrum()
+const wcol = i => getComputedStyle(root).getPropertyValue(`--w${i}`).trim()
+
+/* ---------- 编的数据 ---------- */
+const PROJECTS = [
+  { id: 'dashboard', name: '看板', color: '#4a9eff', total: 65, done: 56, build: 1, pend: 2, block: 0, park: 0 },
+  { id: 'astock', name: 'A股', color: '#3ddc97', total: 69, done: 41, build: 3, pend: 1, block: 1, park: 1 },
+  { id: 'notes', name: '笔记', color: '#f0b429', total: 20, done: 6, build: 1, pend: 0, block: 0, park: 0 },
+]
+const cloneProjects = () => PROJECTS.map(p => ({ ...p }))
+/** 可重复的伪随机：同一座城每次画出来一样，不会刷新一下星星就换地方。 */
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 } }
+
+/* ============================================================
+   ① 城与天：画楼
+   ============================================================ */
+const WX = 7, WY = 8, WW = 5, WH = 6, M = 6, D = 5, DY = 3
+
+function buildingSpec(p) {
+  const cols = clamp(Math.round(Math.sqrt(p.total) / 1.5), 3, 7)
+  const rows = Math.ceil(p.total / cols)
+  const rowsL = Math.min(rows, 9)
+  const nL = Math.min(p.total, rowsL * cols)
+  const rem = p.total - nL
+  const colsU = rem > 0 ? Math.max(2, cols - 2) : 0
+  const rowsU = rem > 0 ? Math.ceil(rem / colsU) : 0
+  const wL = cols * WX + 2 * M - 2, wU = colsU * WX + 2 * M - 2
+  const hL = rowsL * WY + 8 + 8, hU = rowsU * WY + 8 + 4
+  return { cols, rowsL, nL, rem, colsU, rowsU, wL, wU, hL, hU, h: hL + (rem > 0 ? hU : 0) }
+}
+function windowsSeq(p) {
+  const off = Math.max(0, p.total - p.done - p.build - p.pend - p.block - p.park)
+  return [...Array(p.done).fill('done'), ...Array(p.build).fill('build'), ...Array(p.pend).fill('pend'),
+    ...Array(p.block).fill('blocked'), ...Array(p.park).fill('parked'), ...Array(off).fill('off')]
+}
+
+/** 一台塔吊。mx/my 是塔身左下角；返回 SVG 字符串。 */
+function craneSvg(mx, my) {
+  const H = 46, JL = 62, CJ = 20, top = my - H
+  let s = `<g class="crane">`
+  // 塔身两根主弦 + 格构斜撑 + 横撑
+  s += `<line x1="${mx}" y1="${my}" x2="${mx}" y2="${top}"/><line x1="${mx + 5}" y1="${my}" x2="${mx + 5}" y2="${top}"/>`
+  let lat = `M${mx} ${my}`
+  for (let y = my, k = 0; y > top + 4; y -= 5, k++) lat += ` L${k % 2 ? mx : mx + 5} ${y - 5}`
+  s += `<path class="lattice" d="${lat}"/>`
+  for (let y = my - 10; y > top; y -= 10) s += `<line class="lattice" x1="${mx}" y1="${y}" x2="${mx + 5}" y2="${y}"/>`
+  // 回转平台、塔顶、拉索
+  s += `<rect x="${mx - 1.5}" y="${top - 3}" width="8" height="3" fill="var(--bld-dark)" stroke="none"/>`
+  s += `<line x1="${mx + 2.5}" y1="${top - 3}" x2="${mx + 2.5}" y2="${top - 18}"/>`
+  s += `<line class="tie" x1="${mx + 2.5}" y1="${top - 18}" x2="${mx + 5 + JL - 3}" y2="${top - 4}"/><line class="tie" x1="${mx + 2.5}" y1="${top - 18}" x2="${mx - CJ + 2}" y2="${top - 4}"/>`
+  // 起重臂：上下弦 + 格构，末端收尖
+  s += `<line x1="${mx + 5}" y1="${top - 6}" x2="${mx + 5 + JL}" y2="${top - 3.5}"/><line x1="${mx + 5}" y1="${top - 1.5}" x2="${mx + 5 + JL}" y2="${top - 1.5}"/>`
+  let jl = `M${mx + 5} ${top - 1.5}`
+  for (let x = mx + 5, k = 0; x < mx + 5 + JL - 4; x += 4, k++) { const yy = top - 6 + (x - mx - 5) / JL * 2.5; jl += ` L${x + 4} ${k % 2 ? top - 1.5 : yy}` }
+  s += `<path class="lattice" d="${jl}"/>`
+  // 平衡臂 + 配重块
+  s += `<line x1="${mx}" y1="${top - 1.5}" x2="${mx - CJ}" y2="${top - 1.5}"/><line x1="${mx}" y1="${top - 5}" x2="${mx - CJ}" y2="${top - 4}"/>`
+  s += `<path class="lattice" d="M${mx} ${top - 1.5} L${mx - 4} ${top - 5} L${mx - 8} ${top - 1.5} L${mx - 12} ${top - 4.5} L${mx - 16} ${top - 1.5} L${mx - 20} ${top - 4}"/>`
+  s += `<rect class="cw" x="${mx - CJ + 1}" y="${top - 1}" width="6" height="4"/><rect class="cw" x="${mx - CJ + 1}" y="${top + 3.5}" width="6" height="4"/>`
+  // 司机室（亮着灯）
+  s += `<rect class="cab" x="${mx + 5.5}" y="${top - 1}" width="6.5" height="6" rx=".6"/><rect class="cab-w" x="${mx + 7}" y="${top + .2}" width="3.2" height="2.4"/>`
+  // 小车 + 吊索 + 吊钩 + 钢梁（三个动画同步：小车走、索收放、梁随索）
+  s += `<g class="trolley"><rect x="${mx + 14}" y="${top - 1.8}" width="5" height="2.8" fill="var(--bld-dark)" stroke="none"/>`
+  s += `<rect class="cable" x="${mx + 16.2}" y="${top + 1}" width=".6" height="20" fill="var(--crane,#c9a227)" stroke="none"/>`
+  s += `<g class="load"><path class="hook" d="M${mx + 16.5} ${top + 1} v2.2 a1.4 1.4 0 1 0 -1.4 1.4"/>`
+  s += `<line class="lattice" x1="${mx + 16.5}" y1="${top + 3.4}" x2="${mx + 12}" y2="${top + 7}"/><line class="lattice" x1="${mx + 16.5}" y1="${top + 3.4}" x2="${mx + 21}" y2="${top + 7}"/>`
+  s += `<rect x="${mx + 11}" y="${top + 7}" width="11" height="2.2" rx=".4"/></g></g>`
+  s += `<circle class="warn" cx="${mx + 2.5}" cy="${top - 19}" r="1"/>`
+  return s + `</g>`
+}
+
+/** 一栋楼。返回 { svg, w }；x 是左下角，gy 是地面线。 */
+function buildingSvg(p, x, gy, isCur, id) {
+  const sp = buildingSpec(p)
+  const seq = windowsSeq(p)
+  const yL = gy - sp.hL
+  const xU = x + Math.round((sp.wL - sp.wU) / 2), yU = yL - sp.hU
+  const hasU = sp.rem > 0
+  const topX = hasU ? xU : x, topY = hasU ? yU : yL, topW = hasU ? sp.wU : sp.wL
+  let s = `<g class="bld${isCur ? ' cur' : ''}${p.done === p.total ? ' full' : ''}" data-proj="${p.id}">`
+  const block = (bx, by, bw, bh) => `<polygon class="side" points="${bx + bw},${by} ${bx + bw + D},${by - DY} ${bx + bw + D},${by + bh - DY} ${bx + bw},${by + bh}"/>`
+    + `<polygon class="top" points="${bx},${by} ${bx + D},${by - DY} ${bx + bw + D},${by - DY} ${bx + bw},${by}"/>`
+    + `<rect class="face" x="${bx}" y="${by}" width="${bw}" height="${bh}"/><rect class="face-l" x="${bx}" y="${by}" width="${bw}" height="${bh}"/>`
+    + `<line class="ledge" x1="${bx}" y1="${by + 1.5}" x2="${bx + bw}" y2="${by + 1.5}"/>`
+  s += block(x, yL, sp.wL, sp.hL)
+  if (hasU) s += block(xU, yU, sp.wU, sp.hU)
+  // 窗：从下往上、从左往右铺；下截铺满再铺上截
+  let alt = 0
+  seq.forEach((st, i) => {
+    let wx, wy
+    if (i < sp.nL) { const r = Math.floor(i / sp.cols), c = i % sp.cols; wx = x + M + c * WX; wy = gy - 8 - (r + 1) * WY + 1 }
+    else { const j = i - sp.nL, r = Math.floor(j / sp.colsU), c = j % sp.colsU; wx = xU + M + c * WX; wy = yL - 4 - (r + 1) * WY + 1 }
+    const extra = st === 'done' ? ((alt++ % 3) === 1 ? ' alt' : '') : st === 'build' ? ' d' + (1 + i % 3) : ''
+    s += `<rect class="w s-${st}${extra}" data-i="${i}" x="${wx}" y="${wy}" width="${WW}" height="${WH}" rx=".4"/>`
+    s += `<line class="ledge" x1="${wx - .5}" y1="${wy + WH + .6}" x2="${wx + WW + .5}" y2="${wy + WH + .6}" style="stroke-width:.35;opacity:.6"/>`
+  })
+  // 门厅 + 雨棚
+  const dx = x + sp.wL / 2 - 5
+  s += `<rect class="door" x="${dx}" y="${gy - 8}" width="10" height="8"/><polygon class="awning" points="${dx - 2},${gy - 8.5} ${dx + 12},${gy - 8.5} ${dx + 11},${gy - 10.5} ${dx - 1},${gy - 10.5}"/>`
+  // 屋顶：水箱、空调、天线（航空灯）、招牌
+  const beacon = p.block ? 'bad' : p.pend ? 'warn' : 'avi'
+  if (topW >= 40) {
+    s += `<rect class="tank" x="${topX + 4}" y="${topY - 9}" width="7" height="7" rx="1.2"/><line class="ant" x1="${topX + 5}" y1="${topY - 2}" x2="${topX + 5}" y2="${topY}"/><line class="ant" x1="${topX + 10}" y1="${topY - 2}" x2="${topX + 10}" y2="${topY}"/>`
+    s += `<rect class="ac" x="${topX + topW - 14}" y="${topY - 5}" width="7" height="4.5" rx=".5"/><line class="ant" x1="${topX + topW - 12.5}" y1="${topY - 3.5}" x2="${topX + topW - 8.5}" y2="${topY - 3.5}" style="stroke-width:.4"/><line class="ant" x1="${topX + topW - 12.5}" y1="${topY - 2}" x2="${topX + topW - 8.5}" y2="${topY - 2}" style="stroke-width:.4"/>`
+  }
+  const ax = topX + topW - 4
+  s += `<line class="ant" x1="${ax}" y1="${topY}" x2="${ax}" y2="${topY - 14}"/><circle class="beacon ${beacon}" cx="${ax}" cy="${topY - 15}" r="1.3"/>`
+  s += `<line class="spire" x1="${ax}" y1="${topY - 14}" x2="${ax}" y2="${topY - 42}"/><circle class="spire-tip" cx="${ax}" cy="${topY - 43}" r="1.6"/>`
+  const sw = Math.min(28, topW - 8), sx = topX + (topW - sw) / 2
+  s += `<line class="ant" x1="${sx + 3}" y1="${topY}" x2="${sx + 3}" y2="${topY - 6}"/><line class="ant" x1="${sx + sw - 3}" y1="${topY}" x2="${sx + sw - 3}" y2="${topY - 6}"/>`
+  s += `<rect class="sign" x="${sx}" y="${topY - 14.5}" width="${sw}" height="8.5" rx="1"/><text class="sign-t" x="${sx + sw / 2}" y="${topY - 8.2}" text-anchor="middle" fill="${p.color}">${p.name}</text>`
+  if (p.build) s += craneSvg(topX + 9, topY - DY)
+  if (isCur) s += `<ellipse class="spill" cx="${x + sp.wL / 2}" cy="${gy + 2.5}" rx="15" ry="2.6"/>`
+  else s += `<rect class="haze" x="${x - 1}" y="${topY - 70}" width="${sp.wL + D + 2}" height="${gy - topY + 70}"/>`
+  return { svg: s + `</g>`, w: sp.wL + D, top: topY - 22 }
+}
+
+/** 整幅城与天。opts.compact = 看板页顶上的压缩版。 */
+function renderSky(el, st, opts = {}) {
+  const compact = !!opts.compact
+  el.classList.toggle('compact', compact); el.classList.toggle('tall', !compact)
+  el._st = st; el._opts = opts
+  const id = el.dataset.uid || (el.dataset.uid = uid())
+  const W = Math.max(640, el.clientWidth || 1000), H = compact ? 132 : 260, GY = compact ? 116 : 236, SCENE_GY = 236, K = .54
+  el.dataset.w = W
+  const cur = st.projects.find(p => p.id === st.current)
+  const r = rng(7)
+  let s = `<svg class="scene" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="--cw:${W + 40}px">`
+  s += `<defs>
+    <linearGradient id="skyg-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--sky-1)"/><stop offset=".62" style="stop-color:var(--sky-2)"/><stop offset="1" style="stop-color:var(--sky-3)"/></linearGradient>
+    <linearGradient id="facade" x1="0" y1="0" x2="1" y2="0"><stop offset="0" style="stop-color:var(--bld-1)"/><stop offset="1" style="stop-color:var(--bld-2)"/></linearGradient>
+    <linearGradient id="specg" x1="0" x2="1"><stop offset="0" stop-color="var(--w1)"/><stop offset=".35" stop-color="var(--w2)"/><stop offset=".7" stop-color="var(--w3)"/><stop offset="1" stop-color="var(--w4)"/></linearGradient>
+    <linearGradient id="lampcone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--lamp-glow)" stop-opacity=".6"/><stop offset="1" stop-color="var(--lamp-glow)" stop-opacity="0"/></linearGradient>
+    <filter id="blur6" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="blur2" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="1.4"/></filter>
+    <clipPath id="below-${id}"><rect x="0" y="${GY}" width="${W}" height="${H - GY}"/></clipPath>
+  </defs>`
+  s += `<rect width="${W}" height="${H}" fill="url(#skyg-${id})"/>`
+  // 星、流星、月亮 / 太阳、飞鸟
+  for (let i = 0; i < 46; i++) s += `<circle class="star" cx="${(r() * W).toFixed(0)}" cy="${(r() * H * .55).toFixed(0)}" r="${(.4 + r() * .9).toFixed(2)}"/>`
+  s += `<line class="shoot" x1="${W - 180}" y1="${H * .1}" x2="${W - 154}" y2="${H * .05}"/>`
+  s += `<circle class="moon-glow" cx="${W - 120}" cy="${H * .2}" r="${compact ? 12 : 19}"/><circle class="moon" cx="${W - 120}" cy="${H * .2}" r="${compact ? 7 : 10.5}"/><circle cx="${W - 124}" cy="${H * .2 - 3}" r="1.6" fill="rgba(0,0,0,.08)"/><circle cx="${W - 116}" cy="${H * .2 + 2}" r="2.2" fill="rgba(0,0,0,.08)"/>`
+  s += `<circle class="sun-glow" cx="${W - 120}" cy="${H * .2}" r="${compact ? 14 : 24}"/><circle class="sun" cx="${W - 120}" cy="${H * .2}" r="${compact ? 8 : 12}"/>`
+  s += `<g class="bird"><path d="M0 ${H * .16} q3 -3 6 0 q3 -3 6 0"/><path d="M14 ${H * .13} q2.5 -2.5 5 0 q2.5 -2.5 5 0"/><path d="M-10 ${H * .19} q2.5 -2.5 5 0 q2.5 -2.5 5 0"/></g>`
+  // 极光：三条丝带慢慢起伏
+  const ay = compact ? 8 : 24
+  const rib = (k, off) => { const d1 = `M-60 ${ay + off} C${W * .16} ${ay + off - 22} ${W * .3} ${ay + off + 26} ${W * .52} ${ay + off} S${W * .86} ${ay + off - 18} ${W + 60} ${ay + off + 10}`, d2 = `M-60 ${ay + off + 12} C${W * .16} ${ay + off + 18} ${W * .3} ${ay + off - 20} ${W * .52} ${ay + off + 8} S${W * .86} ${ay + off + 22} ${W + 60} ${ay + off - 8}`
+    return `<path d="${d1}"><animate attributeName="d" values="${d1};${d2};${d1}" dur="${11 + k * 2}s" repeatCount="indefinite"/></path>` }
+  s += `<g class="aurora">${rib(0, 6)}${rib(1, 22)}${rib(2, 36)}</g>`
+  // 远景剪影
+  s += `<g transform="${compact ? `translate(${W / 2},${GY}) scale(${K}) translate(-${W / 2},-${SCENE_GY})` : ''}">`
+  let fx = -20
+  while (fx < W + 20) { const fw = 26 + r() * 40, fh = 28 + r() * 70; s += `<rect class="far" x="${fx.toFixed(0)}" y="${SCENE_GY - fh}" width="${fw.toFixed(0)}" height="${fh.toFixed(0)}"/>`
+    for (let k = 0; k < 3; k++) s += `<rect class="far-win" x="${(fx + 4 + r() * (fw - 8)).toFixed(0)}" y="${(SCENE_GY - fh + 6 + r() * (fh - 12)).toFixed(0)}" width="2" height="2.5"/>`
+    fx += fw + 6 + r() * 14 }
+  // 楼：算总宽居中摆
+  const specs = st.projects.map(p => buildingSpec(p))
+  const GAP = 44
+  const totalW = specs.reduce((a, sp) => a + sp.wL + D, 0) + GAP * (specs.length - 1)
+  let bx = W / 2 - totalW / 2
+  let blds = '', deco = ''
+  const pos = []
+  st.projects.forEach((p, i) => {
+    const b = buildingSvg(p, bx, SCENE_GY, p.id === st.current, id)
+    blds += b.svg; pos.push({ x: bx, w: b.w, top: b.top, p })
+    // 楼边的树、楼之间的路灯
+    deco += `<line class="trunk" x1="${bx - 9}" y1="${SCENE_GY}" x2="${bx - 9}" y2="${SCENE_GY - 7}"/><circle class="tree" cx="${bx - 9}" cy="${SCENE_GY - 10}" r="4.6"/>`
+    if (i < st.projects.length - 1) { const lx = bx + b.w + GAP / 2 + 4
+      deco += `<polygon class="lamp-cone" points="${lx - 1.5},${SCENE_GY - 17} ${lx - 11},${SCENE_GY} ${lx + 8},${SCENE_GY}"/><line class="lamp-pole" x1="${lx}" y1="${SCENE_GY}" x2="${lx}" y2="${SCENE_GY - 18}"/><line class="lamp-pole" x1="${lx}" y1="${SCENE_GY - 18}" x2="${lx - 3}" y2="${SCENE_GY - 18}"/><rect class="lamp-head" x="${lx - 5}" y="${SCENE_GY - 19.5}" width="3.5" height="1.6" rx=".5"/><circle class="lamp-bulb" cx="${lx - 3.2}" cy="${SCENE_GY - 17.6}" r="1.1"/>` }
+    bx += b.w + GAP
+  })
+  s += `<g id="bldg-${id}">${blds}</g>${deco}`
+  // 闪电：从云劈向当前项目那栋楼
+  const cp = pos.find(q => q.p.id === st.current)
+  const tx = cp.x + cp.w / 2, ty = cp.top + 6, cy0 = compact ? -40 : 30
+  s += `<polyline class="bolt-line" points="${tx - 26},${cy0} ${tx - 12},${cy0 + (ty - cy0) * .35} ${tx - 20},${cy0 + (ty - cy0) * .45} ${tx - 4},${cy0 + (ty - cy0) * .72} ${tx - 10},${cy0 + (ty - cy0) * .8} ${tx},${ty}"/>`
+  s += `</g>`
+  // 地面：人行道、马路、车道线、雨天倒影与水花
+  s += `<rect class="walk" x="0" y="${GY}" width="${W}" height="${compact ? 3 : 4}"/><rect class="road" x="0" y="${GY + (compact ? 3 : 4)}" width="${W}" height="${H - GY}"/>`
+  s += `<line class="road-line" x1="0" y1="${GY + (H - GY) / 2 + 1}" x2="${W}" y2="${GY + (H - GY) / 2 + 1}"/>`
+  if (!compact) s += `<g class="refl" clip-path="url(#below-${id})"><use href="#bldg-${id}" transform="translate(0,${2 * SCENE_GY}) scale(1,-1)" filter="url(#blur2)"/></g>`
+  for (let i = 0; i < 12; i++) s += `<ellipse class="splash" cx="${(20 + i * (W - 40) / 12 + r() * 30).toFixed(0)}" cy="${GY + 2}" rx="2.2" ry=".7"/>`
+  // 车：上车道往左，下车道往右
+  const carS = compact ? .7 : 1
+  const car = (y, cls, cd) => `<g class="car ${cls}" style="--cd:${cd}s"><g transform="scale(${carS})"><rect class="body" x="0" y="${y / carS}" width="15" height="5" rx="1.5"/><rect class="body" x="4" y="${y / carS - 3}" width="7" height="3.5" rx="1"/><circle class="${cls === 'r' ? 'tl' : 'hl'}" cx="0" cy="${y / carS + 2.5}" r="1"/><circle class="${cls === 'r' ? 'hl' : 'tl'}" cx="15" cy="${y / carS + 2.5}" r="1"/></g></g>`
+  s += car(GY + (compact ? 4 : 6), 'l', 17) + car(GY + (compact ? 4 : 6), 'l', 26) + car(GY + (compact ? 9 : 14), 'r', 21)
+  s += `<rect class="flash" width="${W}" height="${H}"/>`
+  s += `</svg><div class="rain"></div><canvas class="fw"></canvas>`
+  el.innerHTML = s
+  // 云：待拍板越多越多
+  const svg = $('svg', el)
+  const cloudsG = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+  ;[[.11, .18, 40], [.39, .26, 52], [.64, .14, 46], [.86, .3, 38]].forEach(([fx0, fy, cd], i) => {
+    const cx = W * fx0, cy = H * fy, on = i < Math.min(cur.pend, 4)
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    g.setAttribute('class', 'cloud' + (on ? ' on' : '')); g.style.setProperty('--cd', cd + 's')
+    const k = compact ? .6 : 1
+    g.innerHTML = `<ellipse class="c2" cx="${cx}" cy="${cy + 7 * k}" rx="${30 * k}" ry="${6 * k}"/><circle class="c1" cx="${cx - 16 * k}" cy="${cy + 2 * k}" r="${9 * k}"/><circle class="c1" cx="${cx}" cy="${cy - 4 * k}" r="${13 * k}"/><circle class="c1" cx="${cx + 17 * k}" cy="${cy + 1 * k}" r="${10 * k}"/><rect class="c1" x="${cx - 16 * k}" y="${cy}" width="${33 * k}" height="${9 * k}"/>`
+    cloudsG.appendChild(g)
+  })
+  $('.aurora', svg).after(cloudsG)
+  // 楼可点：切项目
+  $$('.bld', el).forEach(b => b.addEventListener('click', () => { st.current = b.dataset.proj; renderSky(el, st, opts) }))
+  el.classList.toggle('clear', cur.pend === 0 && cur.block === 0)
+  el.classList.toggle('rainy', cur.block > 0)
+}
+
+/** 当前项目最新那扇完工窗（销卡飞进去的目标 / 白光一闪的那扇）。 */
+function newestWindow(el, st) {
+  const cur = st.projects.find(p => p.id === st.current)
+  return $(`.bld[data-proj="${cur.id}"] .w[data-i="${cur.done - 1}"]`, el)
+}
+function fireworks(el) {
+  const cv = $('.fw', el); const box = el.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  cv.width = box.width * dpr; cv.height = box.height * dpr
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr)
+  const colors = [1, 2, 3, 4].map(wcol).concat(['#ffe08a', '#ffffff'])
+  const bursts = []
+  const spawn = () => bursts.push({ t0: performance.now(), x: box.width * (.28 + Math.random() * .44), y: box.height * (.12 + Math.random() * .3),
+    ps: Array.from({ length: 64 }, (_, i) => ({ a: i / 64 * Math.PI * 2 + Math.random() * .1, v: 1.4 + Math.random() * 1.9, c: colors[i % colors.length], tr: [] })) })
+  spawn(); setTimeout(spawn, 520); setTimeout(spawn, 1080)
+  ;(function frame(now) {
+    ctx.clearRect(0, 0, box.width, box.height)
+    let alive = false
+    for (const b of bursts) {
+      const t = (now - b.t0) / 1000; if (t > 1.7) continue
+      alive = true
+      for (const p of b.ps) {
+        const d = p.v * t * 44 * (1 - t * .3)
+        const x = b.x + Math.cos(p.a) * d, y = b.y + Math.sin(p.a) * d + t * t * 34
+        p.tr.push([x, y]); if (p.tr.length > 6) p.tr.shift()
+        ctx.strokeStyle = p.c; ctx.globalAlpha = Math.max(0, 1 - t / 1.7) * .8; ctx.lineWidth = 1.2
+        ctx.beginPath(); p.tr.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.stroke()
+        ctx.globalAlpha = Math.max(0, 1 - t / 1.7); ctx.fillStyle = p.c
+        ctx.beginPath(); ctx.arc(x, y, 1.5, 0, 7); ctx.fill()
+      }
+    }
+    if (alive) requestAnimationFrame(frame); else ctx.clearRect(0, 0, box.width, box.height)
+  })(performance.now())
+}
+// 闪电只闪这一次：类名到点就摘掉，否则之后任何一次重画（完工、拍板）都会把整片天再闪一遍——那就是负责人看到的「黄色闪烁」。
+function strike(el) { el.classList.remove('struck'); void el.offsetWidth; el.classList.add('struck'); setTimeout(() => el.classList.remove('struck'), 900) }
+
+/** 天气 / 楼的模拟动作；返回是否真的改了什么。 */
+function skyAct(el, st, act, opts) {
+  const p = st.projects.find(x => x.id === st.current)
+  const off = () => p.total - p.done - p.build - p.pend - p.block - p.park
+  if (act === 'pend') { if (off() <= 0) return false; p.pend++; renderSky(el, st, opts); strike(el); return true }
+  if (act === 'decide') { if (!p.pend) return false; p.pend--; p.build++ }
+  if (act === 'block') { if (p.build > 0) p.build--; else if (off() <= 0) return false; p.block++ }
+  if (act === 'unblock') { if (!p.block) return false; p.block--; p.build++ }
+  if (act === 'done') { if (p.build > 0) p.build--; else if (off() <= 0) return false; p.done++ }
+  if (act === 'full') Object.assign(p, { done: p.total, build: 0, pend: 0, block: 0, park: 0 })
+  if (act === 'reset') st.projects = cloneProjects()
+  renderSky(el, st, opts)
+  if (act === 'done') newestWindow(el, st)?.classList.add('flash')
+  if (act === 'full') fireworks(el)
+  return true
+}
+$$('[data-sky]').forEach(el => {
+  const st = { projects: cloneProjects(), current: 'dashboard' }
+  renderSky(el, st)
+  $$('[data-act]', el.parentElement.querySelector('[data-sim]')).forEach(b => b.addEventListener('click', () => skyAct(el, st, b.dataset.act)))
+})
+
+/* ---------- 塔吊放大图 ---------- */
+$$('[data-crane-zoom]').forEach(svg => {
+  svg.setAttribute('viewBox', '0 0 120 72')
+  const L = (x1, y1, x2, y2, t, tx, ty, anchor = 'start') => `<line class="lbl-l" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/><text class="lbl-t" x="${tx}" y="${ty}" text-anchor="${anchor}">${t}</text>`
+  svg.innerHTML = `<rect x="14" y="66" width="34" height="6" fill="var(--bld-2)"/>` + craneSvg(30, 66)
+    + L(32.5, 6, 46, 4, '塔顶警示灯 · 慢闪', 47, 5.5) + L(40, 12, 58, 10, '拉索', 59, 11.5)
+    + L(60, 14, 74, 8, '起重臂 · 上下弦 + 格构', 75, 9.5) + L(16, 15, 6, 8, '平衡臂 + 配重块', 2, 6.5)
+    + L(39, 24, 54, 26, '司机室（亮灯）', 55, 27.5) + L(47, 20, 62, 20, '小车 · 沿臂来回走', 63, 21.5)
+    + L(47, 40, 62, 40, '吊索 · 随小车收放', 63, 41.5) + L(46, 46, 62, 50, '吊钩 + 钢梁 · 轻晃', 63, 51.5)
+    + L(30, 50, 14, 52, '塔身格构', 2, 53.5)
+})
+
+/* ============================================================
+   ② 光之河：三层浪 + 灯光倒影 + 气泡 + 鱼
+   ============================================================ */
+function wavePath(y0, amp, period, H, fill, W) {
+  let d = `M-240 ${y0}`
+  for (let x = -240; x < W + 240; x += period) d += ` Q${x + period / 4} ${y0 - amp} ${x + period / 2} ${y0} Q${x + period * 3 / 4} ${y0 + amp} ${x + period} ${y0}`
+  return fill ? d + ` L${W + 240} ${H} L-240 ${H} Z` : d
+}
+function renderRiver(el, opts = {}) {
+  const compact = !!opts.compact
+  el.classList.toggle('compact', compact); el.classList.toggle('tall', !compact)
+  const H = compact ? 56 : 88
+  const W = Math.max(640, el.clientWidth || 1000)
+  el.dataset.w = W; el._opts = opts
+  const r = rng(11)
+  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="--rw:${W + 60}px"><rect width="${W}" height="${H}" fill="var(--water-2)"/>`
+  for (let i = 0; i < 16; i++) s += `<rect class="refl-bar" x="${(r() * W).toFixed(0)}" y="0" width="${(4 + r() * 9).toFixed(1)}" height="${H}" fill="var(--w${1 + i % 4})"/>`
+  s += `<path class="wave w1" style="--wd:18s" d="${wavePath(H * .28, 3, 60, H, true, W)}"/>`
+  s += `<path class="wave w2" style="--wd:12s" d="${wavePath(H * .48, 2.6, 48, H, true, W)}"/>`
+  s += `<path class="wave w3" style="--wd:8s" d="${wavePath(H * .2, 1.8, 40, H, false, W)}"/>`
+  s += `<path class="wave w3" style="--wd:10s;opacity:.25" d="${wavePath(H * .62, 1.4, 52, H, false, W)}"/>`
+  for (let i = 0; i < 6; i++) s += `<circle class="bubble" cx="${(r() * W).toFixed(0)}" cy="${H - 4}" r="${(.8 + r()).toFixed(1)}" style="animation-delay:-${(r() * 6).toFixed(1)}s"/>`
+  s += `<g class="fishes"></g></svg>`
+  el.innerHTML = s
+  el.dataset.h = H
+}
+const FISH_TEXT = {
+  claim: ['认领 AUD-HOOKS-DEDUP-COST', '认领 P07-BOT-LONGRUN', '进度 62% · 外观中心'],
+  pend: ['待拍板 · 进度环上不上项目色', '待拍板 · 连击怎么数'],
+  block: ['阻塞 AUD-PERF-BOARD-API-SLIM', '阻塞 N12-EXPORT'],
+  done: ['完工 AUD-UI-LAYOUT-FULLWIDTH', '完工 AUD-FUN-PERSONALIZATION', '完工 P07-BOT-LONGRUN'],
+}
+/** 一条鱼的身子（朝左）。kind 决定颜色与体型。 */
+function fishBody(kind, text) {
+  const koi = kind === 'done', puf = kind === 'block'
+  const sc = koi ? 1.35 : puf ? 1.15 : 1
+  let b = `<g transform="scale(${sc})">`
+  b += `<g class="tail"><path d="M13 0 L23 -7 L20 0 L23 7 Z"/></g>`
+  b += puf ? `<path class="body" d="M-13 0 C-8 -10 8 -10 13 0 C8 10 -8 10 -13 0 Z"/>` : `<path class="body" d="M-16 0 C-10 -8 6 -9 14 0 C6 9 -10 8 -16 0 Z"/>`
+  if (puf) for (let a = 0; a < 12; a++) { const t = a / 12 * Math.PI * 2, x = Math.cos(t) * 12, y = Math.sin(t) * 9; b += `<line class="spike" x1="${x.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(x * 1.28).toFixed(1)}" y2="${(y * 1.3).toFixed(1)}"/>` }
+  b += `<path class="fin" d="M-2 -6.5 L3 -12 L8 -6 Z"/><path class="fin" d="M-5 4 L-2 9 L3 5 Z" style="animation-delay:-.35s"/>`
+  b += `<path class="scale" d="M-8 -3 q2 2 0 4 M-4 -4 q2 2 0 4 M0 -4 q2 2 0 4 M4 -3 q2 2 0 4"/>`
+  if (koi) b += `<path class="patch" d="M-6 -5 C-1 -8 4 -6 5 -2 C1 1 -5 0 -6 -5Z"/><path class="patch" d="M2 3 C6 1 10 3 9 5 C6 6 3 5 2 3Z"/><circle class="cap" cx="-10" cy="-3.5" r="2.2"/>`
+  b += `<circle class="eye" cx="-10.5" cy="-1.5" r="1.7"/><circle class="eye-h" cx="-11" cy="-2" r=".6"/>`
+  b += `</g><g class="lbl"><rect x="-44" y="${-26 * sc}" width="88" height="12" rx="3"/><text x="0" y="${-26 * sc + 8.5}" text-anchor="middle">${text}</text></g>`
+  return b
+}
+function spawnFish(river, kind, text) {
+  const H = Number(river.dataset.h), g = $('.fishes', river)
+  const t = text || FISH_TEXT[kind][(Math.random() * FISH_TEXT[kind].length) | 0]
+  const y = H * (.38 + Math.random() * .34)
+  const f = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+  f.setAttribute('class', `fish k-${kind}`)
+  f.innerHTML = `<g transform="translate(0,${y.toFixed(1)})"><g class="swim" style="--dur:${(20 + Math.random() * 12).toFixed(0)}s"><g class="bob" style="animation-delay:-${(Math.random() * 2.6).toFixed(1)}s">${fishBody(kind, t)}</g></g></g>`
+  $('.swim', f).addEventListener('animationend', () => f.remove())
+  g.appendChild(f)
+  return f
+}
+/** 完工：锦鲤从水里跃出、落回、接着往前游；入水出水各一圈涟漪和几滴水珠。 */
+function koiJump(river, text) {
+  const H = Number(river.dataset.h), g = $('.fishes', river)
+  const W = Number(river.dataset.w) || 1000, x = W * .5 + Math.random() * W * .2, y = H * .55
+  const t = text || FISH_TEXT.done[(Math.random() * 3) | 0]
+  const wrap = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+  wrap.innerHTML = `<g transform="translate(${x},${y})"><g class="jumper"><g class="fish k-done">${fishBody('done', t)}</g></g></g>`
+  const splash = (sx) => { let s = `<circle class="ring" cx="${sx}" cy="${y}" r="9"/>`; for (let i = 0; i < 7; i++) s += `<circle class="drop" cx="${sx}" cy="${y - 2}" r="${(.8 + Math.random()).toFixed(1)}" style="--dx:${((Math.random() - .5) * 30).toFixed(0)}px;--dy:${(-8 - Math.random() * 18).toFixed(0)}px;animation-delay:${(Math.random() * .1).toFixed(2)}s"/>`; return s }
+  const sp1 = document.createElementNS('http://www.w3.org/2000/svg', 'g'); sp1.innerHTML = splash(x)
+  g.appendChild(sp1); g.appendChild(wrap)
+  setTimeout(() => { const sp2 = document.createElementNS('http://www.w3.org/2000/svg', 'g'); sp2.innerHTML = splash(x - 92); g.appendChild(sp2); setTimeout(() => sp2.remove(), 1100) }, 1150)
+  setTimeout(() => sp1.remove(), 1100)
+  setTimeout(() => {
+    wrap.remove()
+    const f = spawnFish(river, 'done', t)
+    // 接着从落水点往前游：把起点从河右边挪到落水点
+    $('.swim', f).style.animation = 'none'; void f.offsetWidth
+    $('.swim', f).style.transform = `translateX(${x - 92}px)`
+    $('.swim', f).animate([{ transform: `translateX(${x - 92}px)` }, { transform: 'translateX(-90px)' }], { duration: (x - 92 + 90) / 1150 * 26000, easing: 'linear', fill: 'forwards' }).onfinish = () => f.remove()
+  }, 1250)
+}
+$$('.river[data-river]').forEach(rv => {
+  renderRiver(rv)
+  spawnFish(rv, 'claim'); setTimeout(() => spawnFish(rv, 'done'), 2400); setTimeout(() => spawnFish(rv, 'pend'), 5200)
+  setInterval(() => { if (Math.random() < .55) spawnFish(rv, ['claim', 'claim', 'done', 'pend', 'block'][(Math.random() * 5) | 0]) }, 5600)
+})
+$$('[data-fish]').forEach(b => b.addEventListener('click', () => {
+  const rv = $(`.river[data-river="${b.dataset.riverId}"]`)
+  b.dataset.fish === 'done' ? koiJump(rv) : spawnFish(rv, b.dataset.fish)
+}))
+
+/* ============================================================
+   ③ 看板页整体：泳道 + 光轨 + 销卡飞进楼
+   ============================================================ */
+const CARDS = {
+  '待开工': [['AUD-PROTOCOL-SINGLE-SOURCE', 'AI 看的规矩有三份且互相打架'], ['AUD-HOOKS-DEDUP-COST', '每次更新待办要跑两遍同步'], ['AUD-OSS-READINESS', '要开源了，还没有许可证']],
+  '施工中': [['AUD-FUN-PERSONALIZATION', '外观设置再加几样好玩又有用的', 62], ['AUD-PERF-BOARD-API-SLIM', '一改卡就重拉六兆数据', 35]],
+  '待拍板': [['AUD-UI-KANBAN-FLOW', '看板看不出谁拖了多久', 0, 1]],
+}
+const TONE = { '待开工': 'info', '施工中': 'info', '待拍板': 'warn' }
+const GLYPH = { '待开工': 'zap', '施工中': 'zap', '待拍板': 'bell' }
+function cardHtml(status, [id, title, pct, pend]) {
+  const building = status === '施工中'
+  return `<article class="tc spot ${building ? 'building' : ''}" data-card>
+    ${building ? '<span class="glow-edge"></span>' : ''}
+    <div class="h"><span class="tile spec tone-${TONE[status]}"><i><svg viewBox="0 0 24 24"><use href="#i-${GLYPH[status]}"/></svg></i></span>
+      <span class="tid">${id}</span>${pend ? `<span class="badge warn" style="margin-left:auto;padding:0 5px">${pend}</span>` : ''}</div>
+    <div class="t">${title}</div>
+    ${building ? `<div class="pw"><div class="glow-rail"><i style="width:${pct || 0}%"></i></div><span class="pct">${pct || 0}%</span></div>` : ''}
+  </article>`
+}
+function laneHtml(status, cards) {
+  return `<section class="lane" data-lane="${status}"><span class="st"></span>
+    <header class="lane-h"><span class="badge ${TONE[status]}"><span class="tile lg spec tone-${TONE[status]}"><i><svg viewBox="0 0 24 24"><use href="#i-${GLYPH[status]}"/></svg></i></span>${status}</span><span class="badge n">${cards.length}</span></header>
+    <div class="lane-b">${cards.map(c => cardHtml(status, c)).join('')}</div></section>`
+}
+const LANES = () => [['待开工', CARDS['待开工'].map(c => c.slice())], ['施工中', CARDS['施工中'].map(c => c.slice())], ['待拍板', CARDS['待拍板'].map(c => c.slice())]]
+function renderRails(el, lanesDef) {
+  el.innerHTML = lanesDef.map(([s, cards]) => laneHtml(s, cards)).join('')
+    + `<div class="rail-wrap"><svg><path class="rail"/><path class="rail-dash"/></svg></div>`
+  layoutRail(el)
+}
+function laneX(el, lane) { const a = el.getBoundingClientRect(), b = lane.getBoundingClientRect(); return b.left - a.left + b.width / 2 }
+function layoutRail(el) {
+  const lanes = $$('.lane', el); if (lanes.length < 2) return
+  const d = `M${laneX(el, lanes[0])} 7 H${laneX(el, lanes[lanes.length - 1])}`
+  $('.rail', el).setAttribute('d', d); $('.rail-dash', el).setAttribute('d', d)
+}
+function refreshCounts(el) { $$('.lane', el).forEach(l => { $('.lane-h .badge.n', l).textContent = $$('[data-card]', l).length }) }
+/** 认领：光珠沿轨道从待开工跑到施工中，卡在那儿落下。 */
+function claimCard(el) {
+  const laneA = $('[data-lane="待开工"]', el), laneB = $('[data-lane="施工中"]', el)
+  const card = $('[data-card]', laneA); if (!card) return
+  const xa = laneX(el, laneA), xb = laneX(el, laneB)
+  card.style.transition = 'opacity .25s ease, transform .25s ease'; card.style.opacity = '0'; card.style.transform = 'translateY(-10px)'
+  const svg = $('.rail-wrap svg', el)
+  const bead = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+  bead.setAttribute('class', 'bead'); bead.setAttribute('r', 4); bead.setAttribute('cy', 7); bead.setAttribute('cx', xa); svg.appendChild(bead)
+  const t0 = performance.now()
+  ;(function f(now) {
+    const k = Math.min(1, (now - t0) / 700), e = 1 - Math.pow(1 - k, 3)
+    bead.setAttribute('cx', xa + (xb - xa) * e)
+    if (k < 1) return requestAnimationFrame(f)
+    bead.remove()
+    const id = $('.tid', card).textContent, t = $('.t', card).textContent; card.remove()
+    $('.lane-b', laneB).insertAdjacentHTML('afterbegin', cardHtml('施工中', [id, t, 0]))
+    $('[data-card]', laneB).classList.add('land'); refreshCounts(el)
+  })(t0)
+}
+/** 完工 = 销卡：卡的分身从泳道飞进楼里那扇窗，窗亮起来，河里锦鲤跳一下。 */
+function finishCard(kb, st) {
+  const lanes = $('.lanes', kb), sky = $('.sky', kb), river = $('.river', kb)
+  const card = $('[data-lane="施工中"] [data-card]', lanes); if (!card) return
+  if (!skyAct(sky, st, 'done', { compact: true })) return
+  const win = newestWindow(sky, st); if (!win) return
+  const cr = card.getBoundingClientRect(), wr = win.getBoundingClientRect()
+  const fl = document.createElement('div'); fl.className = 'flyer'
+  fl.style.cssText += `left:${cr.left}px;top:${cr.top}px;width:${cr.width}px;height:${cr.height}px`
+  fl.innerHTML = card.innerHTML; $('.glow-edge', fl)?.remove(); document.body.appendChild(fl)
+  card.style.transition = 'opacity .2s ease'; card.style.opacity = '0'
+  const tx = wr.left + wr.width / 2 - (cr.left + cr.width / 2), ty = wr.top + wr.height / 2 - (cr.top + cr.height / 2)
+  const anim = fl.animate([
+    { transform: 'translate(0,0) scale(1)', opacity: 1, offset: 0 },
+    { transform: `translate(${tx * .15}px, ${-28}px) scale(.92)`, opacity: 1, offset: .22 },
+    { transform: `translate(${tx}px, ${ty}px) scale(.04)`, opacity: .9, offset: .96 },
+    { transform: `translate(${tx}px, ${ty}px) scale(.02)`, opacity: 0, offset: 1 },
+  ], { duration: 950, easing: 'cubic-bezier(.5,0,.3,1)', fill: 'forwards' })
+  const trailT = setInterval(() => { const r = fl.getBoundingClientRect(); const d = document.createElement('span'); d.className = 'trail'; d.style.left = (r.left + r.width / 2) + 'px'; d.style.top = (r.top + r.height / 2) + 'px'; document.body.appendChild(d); setTimeout(() => d.remove(), 700) }, 45)
+  anim.onfinish = () => {
+    clearInterval(trailT); fl.remove(); card.remove(); refreshCounts(lanes)
+    win.classList.add('flash')
+    koiJump(river, '完工 ' + $('.tid', fl).textContent)
+  }
+}
+$$('[data-board]').forEach(kb => {
+  kb.innerHTML = `
+    <div class="kb-top"><b>${ico('kanban', 'ic s16')} 项目看板</b><span class="sel">看板（多项目管理工具） ${ico('chevron', 'ic s14')}</span><span class="sp"></span>
+      <span class="dim">${ico('settings')} 外观</span><span class="bell">${ico('bell', 'ic s16')}<i>3</i></span></div>
+    <nav class="kb-nav"><span>${ico('home')}总览</span><span class="on">${ico('kanban')}看板</span><span>${ico('bell')}待拍板</span><span>${ico('calendar')}每日成果</span><span>${ico('activity')}活动流</span><span>${ico('network')}依赖</span></nav>
+    <main class="kb-main">
+      <div class="kb-head"><div><h1>看板（多项目管理工具）</h1><p>按状态查看任务；已完工泳道默认收起。</p></div><div><span class="badge info">56/65 完工</span> <span class="pv">86%</span></div></div>
+      <div class="sky compact" data-board-sky></div>
+      <div class="lanes"></div>
+      <div class="river compact" data-board-river></div>
+    </main>`
+  const st = { projects: cloneProjects(), current: 'dashboard' }
+  const sky = $('.sky', kb), lanes = $('.lanes', kb), river = $('.river', kb)
+  renderSky(sky, st, { compact: true }); renderRails(lanes, LANES()); renderRiver(river, { compact: true })
+  spawnFish(river, 'claim'); setTimeout(() => spawnFish(river, 'done'), 3000)
+  setInterval(() => { if (Math.random() < .5) spawnFish(river, ['claim', 'done', 'pend'][(Math.random() * 3) | 0]) }, 6500)
+  const sim = document.querySelector(`[data-board-sim="${kb.dataset.board}"]`)
+  $$('[data-act]', sim).forEach(b => b.addEventListener('click', () => {
+    const act = b.dataset.act
+    if (act === 'claim') return claimCard(lanes)
+    if (act === 'done') return finishCard(kb, st)
+    if (act === 'reset') { skyAct(sky, st, 'reset', { compact: true }); renderRails(lanes, LANES()); return }
+    const ok = skyAct(sky, st, act, { compact: true })
+    if (ok && act === 'pend') spawnFish(river, 'pend')
+    if (ok && act === 'block') spawnFish(river, 'block')
+  }))
+})
+window.addEventListener('resize', () => $$('.lanes').forEach(layoutRail))
+
+/* ---------- 容器变宽就按新宽度重画（1:1 像素，不拉伸） ---------- */
+const ro = new ResizeObserver(entries => {
+  for (const e of entries) {
+    const el = e.target, w = Math.max(640, el.clientWidth)
+    if (Math.abs(w - Number(el.dataset.w)) < 40) continue
+    if (el.classList.contains('sky') && el._st) renderSky(el, el._st, el._opts)
+    else if (el.classList.contains('river')) renderRiver(el, el._opts || {})
+  }
+})
+$$('.sky, .river').forEach(el => ro.observe(el))
+
+/* ---------- 追光 ---------- */
+document.addEventListener('pointermove', e => {
+  const c = e.target.closest?.('.spot'); if (!c) return
+  const r = c.getBoundingClientRect()
+  c.style.setProperty('--mx', (e.clientX - r.left) + 'px'); c.style.setProperty('--my', (e.clientY - r.top) + 'px')
+})
+</script>
+<style>
+.refl-bar{transform-box:fill-box;transform-origin:center}
+.rain{z-index:3}
+</style>
+</body>
+</html>

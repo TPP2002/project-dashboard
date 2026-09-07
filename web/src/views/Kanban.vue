@@ -8,6 +8,7 @@ import * as derive from '@/utils/derive'
 import { DONE_STATUSES } from '@/api/schema'
 import TaskCard from '@/components/TaskCard.vue'
 import DoneToggle from '@/components/DoneToggle.vue'
+import WorkFloor from '@/components/WorkFloor.vue'
 
 const store = useBoardStore()
 const board = computed(() => store.currentBoard)
@@ -48,6 +49,8 @@ function statusTone(status: string) {
         <i :style="{ width: progress.percent + '%' }" />
       </div>
     </header>
+
+    <WorkFloor v-if="board" :board="board" :project-id="pid" />
 
     <div v-if="store.loading && !board" class="loading-board" aria-label="正在加载看板">
       <div v-for="index in 3" :key="index" class="card loading-column">

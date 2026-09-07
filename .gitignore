@@ -12,6 +12,9 @@ data/costUsageCache.json
 data/reader/
 /registry.json
 
+# Codex 派单器的工单目录与隔离工作区（运行副产品，只留本机）
+.codex/
+
 # 本仓自己也装了看板同步钩子(DASHBOARD-SELF-HOOK-MISSING),而 hooks-install 会顺手写下面两个
 # 文件,它们里面焊的是【这台机器上发布副本的绝对路径】。本仓是公开仓,提交进去等于把用户名与
 # 目录结构贴出去(会被 test/noLocalIdentifiers.test.cjs 当场拦下)。所以它们只留在本机:

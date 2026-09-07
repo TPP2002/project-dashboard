@@ -1,0 +1,4 @@
+{
+  "//": "派单器是 ESM（顶层 await、import.meta.url），而仓库根默认是 CommonJS；就近声明模块类型，不动根 package.json。",
+  "type": "module"
+}

@@ -152,18 +152,18 @@ onBeforeUnmount(() => {
 .status-tile.spec.playing {
   background-image: linear-gradient(90deg, var(--tone-spec));
   background-size: 200% 100%;
-  animation: slide 3.4s linear infinite;
+  animation: slide calc(3.4s * var(--sp-k)) linear infinite;
 }
-.status-tile.spec.playing.sp-fast { animation-duration: 2.4s; }
-.status-tile.spec.playing.sp-slow { animation-duration: 5s; }
-.status-tile.spec.playing.sp-ember { animation-duration: 6.4s; }
+.status-tile.spec.playing.sp-fast { animation-duration: calc(2.4s * var(--sp-k)); }
+.status-tile.spec.playing.sp-slow { animation-duration: calc(5s * var(--sp-k)); }
+.status-tile.spec.playing.sp-ember { animation-duration: calc(6.4s * var(--sp-k)); }
 /* 可复工：光倒着流，像把进度往回推给你接手。 */
 .status-tile.spec.playing.rev { animation-direction: reverse; }
 /* 灰谱平时不流（未开工 / 已作废本来就没人碰），只在鼠标停上去时走一圈，算个「还活着」的回应。 */
 .status-tile.tone-n.playing:hover {
   background-image: linear-gradient(90deg, var(--tone-spec));
   background-size: 200% 100%;
-  animation: slide 3.4s linear;
+  animation: slide calc(3.4s * var(--sp-k)) linear;
 }
 </style>
 

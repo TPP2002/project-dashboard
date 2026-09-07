@@ -23,7 +23,7 @@ const DASH_ROOT = path.resolve(__dirname, '..');
 const realTmp = (p) => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-const randomPort = () => 20000 + Math.floor(Math.random() * 40000);
+const freePort = require('../scripts/free-port.cjs');
 
 /** 照发布副本的样子做一份运行期代码:core/cli/server/package.json + RELEASE.json 印章。 */
 function makeReleaseCopy(commit, registryPath) {
@@ -84,7 +84,7 @@ const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { retu
 test('health 报家门:身份 / 代码根 / 发布提交 一个都不少', async () => {
   const reg = path.join(realTmp('srvreg-'), 'registry.json');
   const A = makeReleaseCopy('a'.repeat(40), reg);
-  const port = randomPort();
+  const port = await freePort();
   const s = await startServer(A, port, reg);
   try {
     const h = await getJson(port);
@@ -98,7 +98,7 @@ test('health 报家门:身份 / 代码根 / 发布提交 一个都不少', async
 test('再起一次:同一份代码 → 复用旧实例,不折腾', async () => {
   const reg = path.join(realTmp('srvreg-'), 'registry.json');
   const A = makeReleaseCopy('b'.repeat(40), reg);
-  const port = randomPort();
+  const port = await freePort();
   const s = await startServer(A, port, reg);
   try {
     const first = (await getJson(port)).pid;
@@ -113,7 +113,7 @@ test('版本不一样 → 关掉旧的、接管同一个端口,新实例报新�
   const reg = path.join(realTmp('srvreg-'), 'registry.json');
   const A = makeReleaseCopy('1'.repeat(40), reg);
   const B = makeReleaseCopy('2'.repeat(40), reg);
-  const port = randomPort();
+  const port = await freePort();
   const s = await startServer(A, port, reg);
   let taker = null;
   try {
@@ -139,7 +139,7 @@ test('DASHBOARD_NO_RESTART=1:不动旧的,但必须明说"你看到的仍是旧�
   const reg = path.join(realTmp('srvreg-'), 'registry.json');
   const A = makeReleaseCopy('3'.repeat(40), reg);
   const B = makeReleaseCopy('4'.repeat(40), reg);
-  const port = randomPort();
+  const port = await freePort();
   const s = await startServer(A, port, reg);
   try {
     const oldPid = (await getJson(port)).pid;

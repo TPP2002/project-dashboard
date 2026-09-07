@@ -1,6 +1,6 @@
 /* ============================================================
    看板设计系统 · 令牌层
-   深浅两套 + 四种光谱，组件只使用语义变量。
+   深浅两套 + 八种光谱，组件只使用语义变量。
    ============================================================ */
 :root {
   /* —— 浅色（默认） —— */
@@ -28,9 +28,14 @@
 
   /* —— 尺度（深浅共用） —— */
   --r-sm: 4px; --r: 6px; --r-lg: 8px;
-  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
-  --fs-xs: 11px; --fs-sm: 12.5px; --fs-base: 14px; --fs-md: 15px; --fs-lg: 18px;
-  --fs-xl: 22px; --fs-2xl: 28px;
+  --dens: 1;
+  --s1: calc(4px * var(--dens)); --s2: calc(8px * var(--dens)); --s3: calc(12px * var(--dens));
+  --s4: calc(16px * var(--dens)); --s5: calc(24px * var(--dens)); --s6: calc(32px * var(--dens)); --s7: calc(48px * var(--dens));
+  /* 使用精确比例而非三位小数：默认 14px 时，原有 11/12.5/15 等字号一个像素也不变。 */
+  --fs: 14px;
+  --fs-xs: calc(var(--fs) / 14 * 11); --fs-sm: calc(var(--fs) / 14 * 12.5); --fs-base: var(--fs);
+  --fs-md: calc(var(--fs) / 14 * 15); --fs-lg: calc(var(--fs) / 14 * 18);
+  --fs-xl: calc(var(--fs) / 14 * 22); --fs-2xl: calc(var(--fs) * 2);
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
   --cn: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans SC", system-ui, sans-serif;
 
@@ -41,6 +46,33 @@
   --spec-warm: #f0b429, #f5825b, #e8619d, #a86fd8, #f0b429;
   --spec-full: #ff5f6d, #ffc371, #7ee8a2, #4a9eff, #a86fd8, #ff5f6d;
   --spec-duo: #4ad9c4, #6d8cff, #4ad9c4;
+  --spec-aurora: #3ddc97, #22d3ee, #6d8cff, #a86fd8, #3ddc97;
+  --spec-sunset: #ff8a5b, #ffb26b, #ff5f8d, #a05ac0, #ff8a5b;
+  --spec-cyber: #00e5ff, #ff2fb9, #7b46ff, #00e5ff;
+  --spec-mono: var(--text-3), var(--line-strong), var(--text-3);
+
+  /* 项目颜色面板的六个色站；本单只用于设置预览，不给业务卡片着色。 */
+  --project-blue: #4a9eff; --project-green: #3ddc97; --project-amber: #f0b429;
+  --project-pink: #e8619d; --project-purple: #a86fd8; --project-gray: #8e8e89;
+
+  /* 施工现场夜景与特效色站；测试台和可复用特效只引用变量，不另藏字面量。 */
+  --wf-sky: #070b16; --wf-sky-mid: #101a2e; --wf-horizon: #2a3142;
+  --wf-stage: #0b0f18; --wf-floor: #161c28; --wf-line: #344057;
+  --wf-text: #c9d1dd; --wf-muted: #8c9bb6; --wf-ink: #0e121c;
+  --wf-paper: #ffffff; --wf-warm: #fff6d6; --wf-lamp: #ffe9a8;
+  --wf-fire-red: #ff6a1a; --wf-fire-orange: #ff8a3c; --wf-fire-gold: #ffd977; --wf-fire-warm: #ffc07a;
+  --wf-cloud-light: #f4f6fa; --wf-cloud-body: #c9d1dd; --wf-cloud-mid: #aab3c3;
+  --wf-cloud-shade: #6d778f; --wf-cloud-dark: #454d66; --wf-cloud-deep: #2e3448;
+  --wf-moon: #bcd3ff; --wf-moon-blue: #8fb0ff;
+  --wf-ice: #e6f0ff; --wf-ice-edge: #cfe0ff; --wf-ice-shade: #9db8ea;
+  --wf-metal: #c9d0da; --wf-metal-light: #e8ecf2; --wf-metal-mid: #6c7484;
+  --wf-metal-dark: #3a4150; --wf-rubber: #171c27;
+  --wf-project: var(--project-blue);
+
+  --sp-k: 1;
+  --sp-base: calc(3.4s * var(--sp-k));
+  --gl-k: 1; --gl-op: 1;
+  --gl-top: calc(2px * var(--gl-k)); --gl-rail: calc(6px * var(--gl-k)); --gl-edge: calc(2px * var(--gl-k));
 
   /* —— 语义色站：状态瓦片的灯条按「五档语义色」各走一条，不与全站流光共用一套 ——
      全站流光讲的是「系统在动」，语义谱讲的是「这件事处在什么状态」，两件事必须能分头调。
@@ -105,6 +137,9 @@
     --spec-ok: #6fbf82, #3f9a5c, #a8e6b9, #6fbf82;
     --spec-bad: #e0736a, #a63d33, #f2a59d, #e0736a;
     --spec-n: #4a4a4e, #6a6a6f, #343437, #4a4a4e;
+    --spec-aurora: #4ee6a8, #3ce0f5, #8aa0ff, #c08ce8, #4ee6a8;
+    --spec-sunset: #ff9d72, #ffc285, #ff77a0, #b46fd0, #ff9d72;
+    --spec-cyber: #00c8e0, #e02aa2, #6b3ce0, #00c8e0;
   }
 }
 
@@ -128,12 +163,19 @@
   --spec-ok: #6fbf82, #3f9a5c, #a8e6b9, #6fbf82;
   --spec-bad: #e0736a, #a63d33, #f2a59d, #e0736a;
   --spec-n: #4a4a4e, #6a6a6f, #343437, #4a4a4e;
+  --spec-aurora: #4ee6a8, #3ce0f5, #8aa0ff, #c08ce8, #4ee6a8;
+  --spec-sunset: #ff9d72, #ffc285, #ff77a0, #b46fd0, #ff9d72;
+  --spec-cyber: #00c8e0, #e02aa2, #6b3ce0, #00c8e0;
 }
 
 /* 预设光谱切换：只换「全站生效色站」，所有灯条与进度环跟着走。 */
 [data-spectrum="warm"] { --spec-active: var(--spec-warm); }
 [data-spectrum="full"] { --spec-active: var(--spec-full); }
 [data-spectrum="duo"] { --spec-active: var(--spec-duo); }
+[data-spectrum="aurora"] { --spec-active: var(--spec-aurora); }
+[data-spectrum="sunset"] { --spec-active: var(--spec-sunset); }
+[data-spectrum="cyber"] { --spec-active: var(--spec-cyber); }
+[data-spectrum="mono"] { --spec-active: var(--spec-mono); }
 
 /* ============================================================
    Reset 与全局排版
@@ -268,21 +310,28 @@ tbody tr:hover { background: var(--surface-2); }
    注意 background-position 的百分比不是「图宽的百分比」，而是按「元素宽 − 图宽」折算：
    图宽 200% 时推到 -200% 恰好等于 1 张图（复原），而旧写法的 220% / -220% 推的是 1.2 张图，
    跑完一轮画面对不上，于是每轮结束都硬跳一下。配合色站首尾同色，肉眼就再也找不到接缝。 */
-.glow { position: relative; background-image: linear-gradient(90deg, var(--spec-top)); background-size: 200% 100%; animation: slide 3.4s linear infinite; }
-.glow-top { height: 2px; border-radius: 1px; }
-.glow-rail, .progress { height: 6px; overflow: hidden; border-radius: 3px; background-color: var(--surface-3); }
-.glow-rail > i, .progress > i { display: block; height: 100%; border-radius: 3px; background-image: linear-gradient(90deg, var(--spec-bar)); background-size: 200% 100%; animation: slide 3.4s linear infinite; transition: width .14s ease; }
+.glow { position: relative; background-image: linear-gradient(90deg, var(--spec-top)); background-size: 200% 100%; animation: slide var(--sp-base) linear infinite; opacity: var(--gl-op); }
+.glow-top { height: var(--gl-top); border-radius: calc(var(--gl-top) / 2); }
+.glow-rail, .progress { height: var(--gl-rail); overflow: hidden; border-radius: calc(var(--gl-rail) / 2); background-color: var(--surface-3); }
+.glow-rail > i, .progress > i { display: block; height: 100%; border-radius: calc(var(--gl-rail) / 2); background-image: linear-gradient(90deg, var(--spec-bar)); background-size: 200% 100%; animation: slide var(--sp-base) linear infinite; transition: width .14s ease; opacity: var(--gl-op); }
 .glow-rail.quota-rail > i { background-image: linear-gradient(90deg, var(--spec-quota)); }
-.glow-edge { position: absolute; inset: 0 auto 0 0; width: 2px; background-image: linear-gradient(180deg, var(--spec-edge)); background-size: 100% 200%; animation: slideY 3.4s linear infinite; }
+.glow-edge { position: absolute; inset: 0 auto 0 0; width: var(--gl-edge); background-image: linear-gradient(180deg, var(--spec-edge)); background-size: 100% 200%; animation: slideY var(--sp-base) linear infinite; opacity: var(--gl-op); }
+[data-edge="breathe"] .glow-edge { background-size: 100% 100%; animation: edge-breathe calc(var(--sp-base) * 1.15) ease-in-out infinite; }
+@keyframes edge-breathe { 0%, 100% { opacity: calc(var(--gl-op) * .26); } 50% { opacity: var(--gl-op); } }
 @keyframes slide { to { background-position: -200% 0; } }
 @keyframes slideY { to { background-position: 0 -200%; } }
 
 /* 顶栏光谱预览：颜色一律取自色站变量，组件内不出现颜色字面量。 */
-.spectrum-swatch { width: 44px; height: 14px; padding: 0; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
+.spectrum-swatch { width: 44px; height: 14px; padding: 0; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; background-size: 200% 100%; }
+.spectrum-swatch:hover, .spectrum-swatch:focus-visible { animation: slide var(--sp-base) linear infinite; }
 .spectrum-swatch[data-spectrum-choice="cool"] { background-image: linear-gradient(90deg, var(--spec-cool)); }
 .spectrum-swatch[data-spectrum-choice="warm"] { background-image: linear-gradient(90deg, var(--spec-warm)); }
 .spectrum-swatch[data-spectrum-choice="full"] { background-image: linear-gradient(90deg, var(--spec-full)); }
 .spectrum-swatch[data-spectrum-choice="duo"] { background-image: linear-gradient(90deg, var(--spec-duo)); }
+.spectrum-swatch[data-spectrum-choice="aurora"] { background-image: linear-gradient(90deg, var(--spec-aurora)); }
+.spectrum-swatch[data-spectrum-choice="sunset"] { background-image: linear-gradient(90deg, var(--spec-sunset)); }
+.spectrum-swatch[data-spectrum-choice="cyber"] { background-image: linear-gradient(90deg, var(--spec-cyber)); }
+.spectrum-swatch[data-spectrum-choice="mono"] { background-image: linear-gradient(90deg, var(--spec-mono)); }
 .spectrum-swatch[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
 
 /* 外观面板的分组骨架：顶栏（主题）与灯条配色两个组件共用，故放在全局层。 */
@@ -302,6 +351,37 @@ tbody tr:hover { background: var(--surface-2); }
 }
 .appearance-choice:hover,
 .appearance-choice[aria-pressed="true"] { background: var(--surface-3); border-color: var(--line-strong); color: var(--text); }
+
+/* 外观中心七类内容共用的控件，限制在面板内，不改变现有业务页面的排版。 */
+.appearance-center .ac-h { margin: 0 0 var(--s2); font-size: var(--fs-md); }
+.appearance-center .ac-h:not(:first-child) { margin-top: var(--s5); padding-top: var(--s4); border-top: 1px solid var(--line); }
+.appearance-center .ac-p { margin: 0 0 var(--s3); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; }
+.appearance-center .ac-hint { margin: var(--s2) 0 0; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.5; }
+.appearance-center .ac-line { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); padding: var(--s2) 0; }
+.appearance-center .ac-line + .ac-line { border-top: 1px solid var(--line); }
+.appearance-center .ac-text { flex: 1; min-width: 150px; }
+.appearance-center .ac-text b { display: block; color: var(--text); font-size: var(--fs-base); font-weight: 500; }
+.appearance-center .ac-text span { color: var(--text-3); font-size: var(--fs-xs); line-height: 1.5; }
+.appearance-center .ac-options { display: grid; gap: var(--s1); grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 340px; }
+.appearance-center .ac-options.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.appearance-center .ac-switch { position: relative; display: inline-flex; align-items: center; gap: var(--s2); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
+.appearance-center .ac-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.appearance-center .ac-track { width: 34px; height: 19px; border-radius: 10px; background: var(--surface-3); border: 1px solid var(--line-strong); transition: background .16s ease, border-color .16s ease; flex: none; }
+.appearance-center .ac-track::after { content: ''; display: block; width: 13px; height: 13px; margin: 2px; border-radius: 50%; background: var(--text-3); transition: transform .16s ease, background .16s ease; }
+.appearance-center .ac-switch input:checked + .ac-track { background: var(--info-bg); border-color: var(--info); }
+.appearance-center .ac-switch input:checked + .ac-track::after { transform: translateX(15px); background: var(--info); }
+.appearance-center .ac-switch input:focus-visible + .ac-track { outline: 2px solid var(--info); outline-offset: 1px; }
+.appearance-center .ac-range { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s3); max-width: 340px; }
+.appearance-center input[type="range"] { width: 100%; min-width: 0; accent-color: var(--info); }
+.appearance-center .ac-value { min-width: 60px; color: var(--text-2); font-family: var(--mono); font-size: var(--fs-sm); text-align: right; }
+.appearance-center .ac-live { margin-top: var(--s5); padding: var(--s4); background: var(--surface-2); border: 1px dashed var(--line-strong); border-radius: var(--r); }
+.appearance-center .ac-live-title { margin-bottom: var(--s3); color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .12em; }
+.appearance-center .ac-demo-card { position: relative; overflow: hidden; padding: var(--s3) var(--s4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+.appearance-center .ac-demo-card + .ac-demo-card { margin-top: var(--s2); }
+.appearance-center .ac-demo-id { color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.appearance-center .ac-demo-title { margin: var(--s1) 0 var(--s2); color: var(--text); font-size: var(--fs-base); line-height: 1.45; }
+.appearance-center .ac-demo-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); color: var(--text-3); font-size: var(--fs-xs); }
+.appearance-center .ac-code { margin: var(--s2) 0 0; padding: var(--s3); overflow-x: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.7; }
 
 /* 旧页面仍在引用的基础工具类。 */
 .pill { display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-3); color: var(--text-2); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.25; white-space: nowrap; }
