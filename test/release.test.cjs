@@ -8,7 +8,8 @@
  *   · 导出不碰来源仓的索引与工作区;
  *   · 目录级换名,连发两次不留 .new/.old 残渣,印章 RELEASE.json 记来源 commit;
  *   · 安装版/发布副本(代码根没有 .git)跑 release 友好跳过;
- *   · hook 的 CLI 根取值规则「永不指进 git 检出」:环境变量 > 自身非检出 > 发布副本 > 拒装。
+ *   · hook 的 CLI 根取值规则「永不指进 git 检出」:环境变量 > 自身非检出 > 发布副本 > 拒装;
+ *   · 副本根带 board/kb 短别名垫片,displayCliCommand 有垫片就用短名(AUD-CLI-BATCH-AND-AUTOPROJECT ④/审计 A11)。
  *
  * 【0906 口径变更】release 默认会现场构建前端(SERVER-RUNS-ON-LIVE-CHECKOUT d1=A)。本文件的临时仓没有前端源码,
  * 关心的也不是界面,所以调用一律显式加 `skip-web`——不是绕过闸门,是这些用例本来就只验后台那半边。
@@ -174,5 +175,53 @@ test('resolveHookCliRoot:环境变量 > 自身非检出 > 发布副本 > 拒装(
   fs.mkdirSync(path.join(rel, 'cli'), { recursive: true }); fs.writeFileSync(path.join(rel, 'cli', 'index.cjs'), '');
   const r = rt.resolveHookCliRoot({ env: {}, codeRoot: checkout, releaseHome: rel });
   assert.equal(r.root, rel); assert.equal(r.why, 'release');
+  clean(dir);
+});
+
+test('release:副本根写出 board/kb 短别名垫片,印章记下来,垫片真能当命令跑(A11)', () => {
+  const t = setup();
+  const out = release({ source: t.work, dest: t.dest, 'no-fetch': true, 'skip-web': true });
+  assert.deepEqual(out.stamp.shims, ['board.cmd', 'board.sh', 'kb.cmd', 'kb.sh']);
+  for (const f of out.stamp.shims) assert.ok(fs.existsSync(path.join(t.dest, f)), `缺垫片 ${f}`);
+  // 内容必须指向【本目录】的 cli/index.cjs —— 写死绝对路径的话,副本一挪就废
+  assert.match(read(path.join(t.dest, 'board.cmd')), /%~dp0cli/);
+  assert.match(read(path.join(t.dest, 'kb.sh')), /dirname "\$0"/);
+
+  // 真跑一遍:垫片转发参数、退出码照传(种子仓的 cli/index.cjs 只 console.log 一行)
+  const shim = path.join(t.dest, process.platform === 'win32' ? 'board.cmd' : 'board.sh');
+  // Windows 上 .cmd 得由 cmd.exe 起(execFileSync 直接跑 .cmd 会 ENOEXEC);别用 shell:true,那是拼字符串
+  const ran = process.platform === 'win32'
+    ? execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', shim, 'whatever'], { encoding: 'utf8', windowsHide: true })
+    : execFileSync(shim, ['whatever'], { encoding: 'utf8', windowsHide: true });
+  assert.match(ran, /cli v1/);
+  clean(t.dir);
+});
+
+test('displayCliCommand:有垫片就用短名,没垫片回落 node 长写法,路径带空白一律不用垫片', () => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'shim-')));
+  const checkout = path.join(dir, 'checkout'); fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });
+  const rel = path.join(dir, 'rel');
+  fs.mkdirSync(path.join(rel, 'cli'), { recursive: true }); fs.writeFileSync(path.join(rel, 'cli', 'index.cjs'), '');
+  const opts = { env: {}, codeRoot: checkout, releaseHome: rel };
+
+  // 没垫片 → 老的 node 长写法一字不变(旧副本、安装版都还是这个形态)
+  assert.equal(rt.displayCliCommand(opts), `node ${rel.replace(/\\/g, '/')}/cli/index.cjs`);
+  assert.equal(rt.findCliShim(rel), null);
+
+  // 有垫片 → 短名(平台各认各的后缀)
+  fs.writeFileSync(path.join(rel, 'board.cmd'), '');
+  fs.writeFileSync(path.join(rel, 'board.sh'), '');
+  const ext = process.platform === 'win32' ? '.cmd' : '.sh';
+  assert.equal(rt.shimExt(), ext);
+  assert.equal(rt.displayCliCommand(opts), `${rel.replace(/\\/g, '/')}/board${ext}`);
+  assert.equal(rt.shimExt('linux'), '.sh');
+  assert.equal(rt.shimExt('win32'), '.cmd');
+
+  // 路径带空白 → 宁可长也不给一个"PowerShell 里粘不动"的命令(引号包起来就成了字符串,不是命令)
+  const spaced = path.join(dir, 'My Stuff');
+  fs.mkdirSync(path.join(spaced, 'cli'), { recursive: true }); fs.writeFileSync(path.join(spaced, 'cli', 'index.cjs'), '');
+  fs.writeFileSync(path.join(spaced, 'board.cmd'), ''); fs.writeFileSync(path.join(spaced, 'board.sh'), '');
+  assert.equal(rt.displayCliCommand({ env: {}, codeRoot: checkout, releaseHome: spaced }),
+    `node "${spaced.replace(/\\/g, '/')}/cli/index.cjs"`);
   clean(dir);
 });

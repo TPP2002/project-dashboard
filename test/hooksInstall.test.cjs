@@ -81,8 +81,15 @@ test('CLAUDE.md 协议段里手敲命令的 CLI 路径与 git hook 焊的一致,
 
   const claudeMd = read(path.join(t.repo, 'CLAUDE.md'));
   assert.doesNotMatch(claudeMd, /~\/\.claude\/dashboard\/cli\/index\.cjs/, '不许再写死指向"活检出"的路径(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT 同族问题)');
-  assert.ok(claudeMd.includes(`node "${cliPath}" add <任务id>`), 'add 示例应与 hook 焊的是同一份 CLI,而不是另外硬编码一条路径');
-  assert.ok(claudeMd.includes(`node "${cliPath}" claim <任务id>`), 'claim 示例同理');
+  // 锚段的写法由 runtimeRoot.displayCliCommand 决定:副本里有短别名垫片就用 `<根>/board.cmd`,
+  // 没有就回落 `node <根>/cli/index.cjs`(路径带空白才加引号)。所以这里不钉死字面量,
+  // 只钉死本条要守的那件事——【与 hook 焊的是同一个 CLI 根】,而不是另外硬编码一条路径。
+  const cliRoot = cliPath.slice(0, cliPath.length - '/cli/index.cjs'.length);
+  for (const sub of ['add', 'claim']) {
+    const line = claudeMd.split('\n').find((l) => l.includes(`${sub} <任务id>`));
+    assert.ok(line, `锚段里应有 ${sub} 示例`);
+    assert.ok(line.includes(cliRoot), `${sub} 示例应与 hook 焊的是同一份 CLI(同一个根)`);
+  }
   clean(t.dir);
 });
 
