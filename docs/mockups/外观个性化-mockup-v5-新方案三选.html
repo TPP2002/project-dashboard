@@ -205,7 +205,7 @@ class Stage {
   }
   tick() {
     this.t++
-    this.timers = this.timers.filter(tm => { if (this.t >= tm.at) { tm.fn(); return false } return true })
+    const due = this.timers.filter(tm => this.t >= tm.at); this.timers = this.timers.filter(tm => this.t < tm.at); due.forEach(tm => tm.fn())
     this.c.clearRect(0, 0, this.W, this.H); this.g.clearRect(0, 0, this.W, this.H)
     this.draw(this)
     this.out.imageSmoothingEnabled = false; this.out.clearRect(0, 0, this.cv.width, this.cv.height); this.out.drawImage(this.off, 0, 0, this.cv.width, this.cv.height)
