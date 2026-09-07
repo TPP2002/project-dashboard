@@ -70,6 +70,17 @@ export const buildResumeArgs = (threadId: string, message: string, sandbox: stri
   'sandbox_mode="' + sandbox + '"',
 ]
 
+/** 续聊要回到这单原来的工作目录：--worktree 派出去的单在隔离工作区里干活，若在主工位里 resume，Codex 沙箱会把工作区当「项目外目录」拒写。 */
+const cwdFromMeta = (metaPath: string): string | null => {
+  if (!existsSync(metaPath)) return null
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { cwd?: unknown }
+    return typeof meta.cwd === 'string' && meta.cwd.length > 0 && existsSync(meta.cwd) ? meta.cwd : null
+  } catch {
+    return null
+  }
+}
+
 const threadIdFromState = (statePath: string): string | null => {
   if (!existsSync(statePath)) return null
   try {
@@ -116,7 +127,7 @@ export const sayToJob = (
   }
 
   const result = spawnSync(codexBin, buildResumeArgs(threadId, message, opts?.sandbox ?? 'read-only'), {
-    cwd: REPO_ROOT,
+    cwd: cwdFromMeta(paths.meta) ?? REPO_ROOT,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     windowsHide: true,
