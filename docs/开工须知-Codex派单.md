@@ -54,3 +54,10 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 3. `CLAUDE.md` 在本仓库是 gitignore 的（含本机绝对路径），worktree 里没有；所以指令只指路 `AGENTS.md`。
 4. 派单器自己的单测（来源仓 有 40 条 vitest）**没有随同移植**——本仓库用 `node --test`，移植测试是另一张卡；这次的验收是一单只读探活单真派真收。
 5. **续聊（say）的两个坑**：①消息里不能带换行——Windows 下 `npx` 的 cmd 垫片会把参数在第一个换行处截断，多行消息一律写进文件用 `--message-file`；②续聊在**这单自己的工作区**里跑（`meta.json` 的 cwd），`--worktree` 派出去的单才能在续聊里改文件，在主工位里 resume 会被 Codex 沙箱以「项目外目录」拒写（2026-09-08 已修）。
+
+6. **禁区 glob 不能盖住施工面**（0908 wf-bottom 实踩）：`forbiddenPaths` 写了 `web/src/components/Appearance*.vue`，而 `allowedPaths` 里显式列了 `AppearanceWorkfloor.vue`——判决按「碰禁区」直接 rejected，哪怕机器验收全绿。禁区用具体文件名列，别用能盖住施工面的通配。
+7. **契约漏写一个文件 = 整单停工**（0908 aud-ui-unlanded 实踩）：虚拟模块的类型声明在 `web/env.d.ts`，契约只允许 `web/src/**/*.d.ts`，Codex 按零决策停工重派。写契约前把「要改的每个文件」用 grep 核一遍真实位置。
+8. **新测试文件三条硬约束**（0908 三单各踩一次）：① 夹具里不能出现字面量本机盘符路径（`test/noLocalIdentifiers.test.cjs` 扫全部被跟踪文件，`C:/abs/x` 这种要写成 `'C' + ':/abs/x'` 或用白名单 `C:\path\to\…`）；② 读全局设置的测试要用 `DASHBOARD_GLOBAL_SETTINGS` 指到临时文件（本机 `~/.claude/settings.json` 装着全局钩子，会改变 hooksInstall 的行为）；③ 派单器 collect 时新文件还是未跟踪状态、卫生扫描不看它，落地 commit 后才会红——收单后先本地跑一次 `npm test` 再合主干。
+9. **`say` 续聊后判决不刷新**：续聊的新结论只打在 stdout，`last-message.json` 还是续聊前那份，`collect` 会继续按旧自述判 blocked（机器验收那几项是真的重跑了）。续聊后以机器验收 + 自审 diff 为准，别被判决行吓住；治本卡 AD-20260908-CODEX-SAY-REPORT。
+10. **派单器命令必须在仓库根跑**这一条会被对话的 cwd 悄悄破坏：一次 `cd` 进 worktree 后，后续所有命令的 cwd 都留在那里，`say` 会报「找不到会话号」、`dispatch` 会报「工单文件不存在」。每条派单器命令前显式 `cd /f/project-dashboard`。
+11. **一张卡多单并行的落地顺序**：同一批派出去的单先落地改动小、改文件少的；两单都碰同一文件（如 `server/server.cjs`）时，后落地的那单在自己的工作区 `git merge origin/master` 后必须重跑全部验收再 push——派单器只在 collect 时跑过一次，不知道主干又动了。
