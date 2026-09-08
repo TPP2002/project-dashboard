@@ -11,7 +11,7 @@ npx tsx scripts/codex/codex-dispatch.ts template --slug my-task > .codex/jobs/my
 npx tsx scripts/codex/codex-dispatch.ts dispatch --task .codex/jobs/my-task.json   # 派单，立刻返回
 npx tsx scripts/codex/codex-dispatch.ts status                      # 看谁在跑、谁待收
 npx tsx scripts/codex/codex-dispatch.ts collect my-task             # 收结论：派单器自己重跑验收后才出判决
-npx tsx scripts/codex/codex-dispatch.ts say my-task "补一句" --sandbox workspace-write   # 续聊（默认只读；要它改代码加 --sandbox workspace-write；多行消息用 --message-file 文件）
+npx tsx scripts/codex/codex-dispatch.ts say my-task "补一句" --sandbox workspace-write   # 续聊（默认只读；要它改代码加 --sandbox workspace-write；多行消息用 --message-file 文件；回话里带结论 JSON 就会刷新自述，见第 6 节第 9 条）
 npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：摘依赖链接、删隔离工作区
 ```
 
@@ -59,7 +59,7 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 6. **禁区 glob 不能盖住施工面**（0908 wf-bottom 实踩）：`forbiddenPaths` 写了 `web/src/components/Appearance*.vue`，而 `allowedPaths` 里显式列了 `AppearanceWorkfloor.vue`——判决按「碰禁区」直接 rejected，哪怕机器验收全绿。禁区用具体文件名列，别用能盖住施工面的通配。
 7. **契约漏写一个文件 = 整单停工**（0908 aud-ui-unlanded 实踩）：虚拟模块的类型声明在 `web/env.d.ts`，契约只允许 `web/src/**/*.d.ts`，Codex 按零决策停工重派。写契约前把「要改的每个文件」用 grep 核一遍真实位置。
 8. **新测试文件三条硬约束**（0908 三单各踩一次）：① 夹具里不能出现字面量本机盘符路径（`test/noLocalIdentifiers.test.cjs` 扫全部被跟踪文件，夹具里的绝对路径只许用白名单占位形态 `C:/path/to/x`，或把盘符与其余部分拼接（如 `'C' + ':/x'`））；② 读全局设置的测试要用 `DASHBOARD_GLOBAL_SETTINGS` 指到临时文件（本机 `~/.claude/settings.json` 装着全局钩子，会改变 hooksInstall 的行为）；③ 派单器 collect 时新文件还是未跟踪状态、卫生扫描不看它，落地 commit 后才会红——收单后先本地跑一次 `npm test` 再合主干。
-9. **`say` 续聊后判决不刷新**：续聊的新结论只打在 stdout，`last-message.json` 还是续聊前那份，`collect` 会继续按旧自述判 blocked（机器验收那几项是真的重跑了）。续聊后以机器验收 + 自审 diff 为准，别被判决行吓住；治本卡 AD-20260908-CODEX-SAY-REPORT。
+9. **续聊后要让它把结论重发一遍**（0908 wf-zoom / aud-hooks-dedup 实踩，AD-20260908-CODEX-SAY-REPORT 已治本）：`collect` 判卷读的是 `last-message.json`，而 `resume` 不接 `--output-schema`，新结论只落在 stdout。现在 `say` 会在回话里认一份**符合结论格式的 JSON**：认到就覆盖 `last-message.json` 并在 `state.json` 记下 `resumedAt` / `selfReportUpdatedAt`，`collect` 自然按最新的判、并印一行「自述来源：续聊后刷新过」；认不到就一个字都不改（宁可用旧自述，也不拿散文把结论文件糊掉），`say` 当场打一行 ⚠，`collect` 也会警告「这份自述是续聊之前的」。所以**让它补做完之后，记得再 say 一句「把最终结论按 output schema 原样输出成一个 JSON 对象，不要别的话」**，再 `collect`。
 10. **派单器命令必须在仓库根跑**这一条会被对话的 cwd 悄悄破坏：一次 `cd` 进 worktree 后，后续所有命令的 cwd 都留在那里，`say` 会报「找不到会话号」、`dispatch` 会报「工单文件不存在」。每条派单器命令前显式 `cd /f/project-dashboard`。
 11. **一张卡多单并行的落地顺序**：同一批派出去的单先落地改动小、改文件少的；两单都碰同一文件（如 `server/server.cjs`）时，后落地的那单在自己的工作区 `git merge origin/master` 后必须重跑全部验收再 push——派单器只在 collect 时跑过一次，不知道主干又动了。
 12. **被裸 tsx 子进程导入的模块，契约里别让它引 Vite 虚拟模块或 `@/api/schema`**：test/ageLevel.test.cjs 这类单测用 `node --import tsx` 直接导入 web/src/utils 下的纯模块，没有路径别名也没有虚拟模块加载器；schema.ts 牵着 `virtual:board-schema`，一引就 ERR_UNSUPPORTED_ESM_URL_SCHEME（aud-kanban-flow-build 开工 4 分钟即因此停工）。写契约时先 `grep -l "web/src/utils" test/*.cjs` 看哪些模块被裸导入，这些模块只许做形状校验，状态名之类的枚举校验放到组件里。

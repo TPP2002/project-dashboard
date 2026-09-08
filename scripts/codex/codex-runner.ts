@@ -127,6 +127,10 @@ export interface JobState {
   timedOut: boolean
   /** codex exec 事件流里的会话号;老工单或启动失败时为 null。 */
   threadId: string | null
+  /** 最近一次 say 续聊的时刻(由 codex-say 补记);没续聊过就没有这两个字段。 */
+  resumedAt?: string | null
+  /** 最近一次「续聊回话刷新了自述结论」的时刻。缺、或比 resumedAt 旧 = 那几轮续聊没带回结论 JSON。 */
+  selfReportUpdatedAt?: string | null
 }
 
 const writeJson = (path: string, value: unknown): void => {
@@ -320,7 +324,10 @@ export const supervise = async (slug: string): Promise<void> => {
   closeSync(logFd)
 
   const prev = readJson<JobState>(paths.state)
+  // 摊开 prev 再覆盖:续聊补记的 resumedAt / selfReportUpdatedAt 是 codex-say 写进来的,
+  // 逐字段重建会把它们悄悄抹掉(say 打在还没跑完的单上时就会撞上)。
   writeJson(paths.state, {
+    ...prev,
     pid: prev?.pid ?? null,
     startedAt: prev?.startedAt ?? new Date().toISOString(),
     finishedAt: new Date().toISOString(),

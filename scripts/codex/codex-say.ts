@@ -7,18 +7,27 @@
  *
  * 【安全默认】续聊默认 read-only。插话最常见的是追问和补充说明；需要让会话继续写代码时，
  * 调用方必须显式传 sandbox，不能因为原工单可写就悄悄继承写权限。
+ *
+ * 【为什么续聊要回写 last-message.json】resume 不接 --output-schema 也不接 -o，新结论只落在 stdout；
+ * 而 collect 判卷读的是 last-message.json。不回写的后果是「续聊补做完了、机器验收全绿，判决却还停在
+ * 续聊前那句 blocked 和那批旧 openQuestions」（0908 wf-zoom / aud-hooks-dedup 两单实测）。
+ * 所以这里在回话里认一份**符合 verdict schema 的 JSON**，认到才覆盖，认不到一个字都不动 ——
+ * 宁可继续用旧自述（现状，人已经知道要怎么读），也不能拿一段散文把结论文件糊掉。
  */
-import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { isValidSlug } from './codex-contract'
 import { jobPaths, REPO_ROOT } from './codex-paths'
 import { resolveCodexBin } from './codex-runner'
+import { VERDICT_SCHEMA } from './codex-verdict'
 
 interface SayResult {
   ok: boolean
   threadId: string | null
   reply: string | null
   exitCode: number | null
+  /** 这次回话有没有刷新工单的自述结论(last-message.json)。false = collect 还会按续聊前那份判。 */
+  reportRefreshed: boolean
   error?: string
 }
 
@@ -123,6 +132,106 @@ export const cwdFromMeta = (metaPath: string): string | null => {
   }
 }
 
+
+/**
+ * 把一段文本里所有**括号配平**的顶层 `{...}` 片段切出来,按出现顺序返回。
+ *
+ * 【为什么不能照抄 parseSelfReport 的"第一个 { 到最后一个 }"】那招在 `-o` 写出的
+ * last-message.json 上够用(整份文件基本就是一个 JSON);但 resume 的 stdout 是给人看的:
+ * 前面有版本号/工作目录/沙箱模式的表头,中间原样回显我们发过去的那句话,后面还有 token 计数。
+ * 只要这些噪音里出现一个花括号,"掐头去尾"就会切出一段废字符串,结论当场认不出来。
+ * 逐字符扫描配平(且跳过字符串字面量里的括号)是这里唯一稳的做法。
+ */
+export const jsonObjectSlices = (raw: string): string[] => {
+  const out: string[] = []
+  let depth = 0
+  let start = -1
+  let inString = false
+  let escaped = false
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i] as string
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') { inString = true; continue }
+    if (ch === '{') {
+      if (depth === 0) start = i
+      depth += 1
+      continue
+    }
+    if (ch === '}' && depth > 0) {
+      depth -= 1
+      if (depth === 0 && start >= 0) {
+        out.push(raw.slice(start, i + 1))
+        start = -1
+      }
+    }
+  }
+  return out
+}
+
+/** 结论 JSON 的必填字段与状态枚举,直接取自下发给 Codex 的那份 schema —— 只有一处口径。 */
+const VERDICT_REQUIRED_KEYS: readonly string[] = VERDICT_SCHEMA.required
+const VERDICT_STATUSES: readonly string[] = VERDICT_SCHEMA.properties.status.enum
+
+/** 判它是不是一份**完整**的结论,而不是回话里碰巧出现的某个 JSON 片段。 */
+const isVerdictShaped = (value: unknown): boolean => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const obj = value as Record<string, unknown>
+  if (!VERDICT_REQUIRED_KEYS.every((key) => key in obj)) return false
+  if (typeof obj.status !== 'string' || !VERDICT_STATUSES.includes(obj.status)) return false
+  if (typeof obj.summary !== 'string') return false
+  return ['changedFiles', 'acceptanceResults', 'openQuestions', 'blockers'].every((key) => Array.isArray(obj[key]))
+}
+
+/**
+ * 从续聊回话里认出那份新结论,认到就把原文片段交出来(不重新序列化 —— 结论是证据,留它自己的字)。
+ *
+ * 【为什么卡这么严】认错的代价是不对称的:漏认一次,collect 继续按旧自述判,人早就知道要怎么读
+ * (开工须知里写着);认错一次,却是拿一段散文把工单唯一的结论文件覆盖掉,证据就没了。
+ * 所以必填字段少一个、status 不在枚举里、数组字段不是数组 —— 一律不算,当没认出来。
+ * 从后往前找:回话最后那份才是它这一轮的最终结论,前面可能还回顾了上一轮的结论。
+ */
+export const extractVerdictJson = (raw: string): string | null => {
+  if (!raw || !raw.trim()) return null
+  const candidates = [raw.trim(), ...jsonObjectSlices(raw)]
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const candidate = (candidates[i] as string).trim()
+    try {
+      if (isVerdictShaped(JSON.parse(candidate))) return candidate
+    } catch {
+      // 不是 JSON 就换下一个候选,回话里夹的散文本来就解析不了。
+    }
+  }
+  return null
+}
+
+/**
+ * 在 state.json 上补记续聊时刻。state.json 读不出来就不写 —— 它装着 pid / 退出码 / 超时,
+ * 判决要靠它区分"崩了"和"跑完没打标记";为了记一个时间戳把这些覆盖成空,得不偿失。
+ * 少一条时间戳只是 collect 少印一行来源,结论本身照样是最新的。
+ */
+const recordResume = (statePath: string, at: string, reportRefreshed: boolean): void => {
+  if (!existsSync(statePath)) return
+  let prev: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(statePath, 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return
+    prev = parsed as Record<string, unknown>
+  } catch {
+    return
+  }
+  const next = {
+    ...prev,
+    resumedAt: at,
+    selfReportUpdatedAt: reportRefreshed ? at : (prev.selfReportUpdatedAt ?? null),
+  }
+  writeFileSync(statePath, JSON.stringify(next, null, 2) + '\n', 'utf8')
+}
+
 const threadIdFromState = (statePath: string): string | null => {
   if (!existsSync(statePath)) return null
   try {
@@ -141,16 +250,13 @@ const appendExchange = (chatLogPath: string, message: string, reply: string): vo
   appendFileSync(chatLogPath, lines.map((line) => JSON.stringify(line)).join('\n') + '\n', 'utf8')
 }
 
-export const sayToJob = (
-  slug: string,
-  message: string,
-  opts?: { sandbox?: string },
-): { ok: boolean; threadId: string | null; reply: string | null; exitCode: number | null; error?: string } => {
+export const sayToJob = (slug: string, message: string, opts?: { sandbox?: string }): SayResult => {
   const rejected = (error: string): SayResult => ({
     ok: false,
     threadId: null,
     reply: null,
     exitCode: null,
+    reportRefreshed: false,
     error,
   })
 
@@ -178,7 +284,7 @@ export const sayToJob = (
   const reply = result.stdout ?? ''
 
   if (result.error) {
-    return { ok: false, threadId, reply: null, exitCode, error: result.error.message }
+    return { ok: false, threadId, reply: null, exitCode, reportRefreshed: false, error: result.error.message }
   }
 
   try {
@@ -189,6 +295,7 @@ export const sayToJob = (
       threadId,
       reply,
       exitCode,
+      reportRefreshed: false,
       error: '续聊进程已返回,但 chat.jsonl 落盘失败:' + (err as Error).message,
     }
   }
@@ -200,9 +307,32 @@ export const sayToJob = (
       threadId,
       reply,
       exitCode,
+      reportRefreshed: false,
       error: stderr || 'codex exec resume 退出码 ' + String(exitCode),
     }
   }
 
-  return { ok: true, threadId, reply, exitCode }
+  // 只有跑成功的这一轮才有资格改结论:退出码非零时那段 stdout 是半截话,不能拿它当新自述。
+  const fresh = extractVerdictJson(reply)
+  const at = new Date().toISOString()
+  if (fresh) {
+    try {
+      writeFileSync(paths.lastMessage, fresh + '\n', 'utf8')
+    } catch (err) {
+      recordResume(paths.state, at, false)
+      return {
+        ok: false,
+        threadId,
+        reply,
+        exitCode,
+        reportRefreshed: false,
+        error:
+          '续聊拿到了新结论,但 last-message.json 写不进去:' + (err as Error).message +
+          ' —— 不处理的话 collect 还会按续聊前那份判。',
+      }
+    }
+  }
+  recordResume(paths.state, at, Boolean(fresh))
+
+  return { ok: true, threadId, reply, exitCode, reportRefreshed: Boolean(fresh) }
 }
