@@ -54,5 +54,11 @@ jobs:
       - name: 根目录依赖(只有 tsx,按 lock 装)
         run: npm ci --no-audit --no-fund
 
+      # 单测里的 tsx 子进程会引到 web/src 下带 vue 的模块(如 appearance.ts 的 normalizeAppearance),
+      # 没装前端依赖就 ERR_MODULE_NOT_FOUND(PR #57 首跑那一红)。
+      - name: 前端依赖(按 lock 装,给引到 web/src 的单测用)
+        run: npm ci --no-audit --no-fund
+        working-directory: web
+
       - name: node --test(全量)
         run: npm test

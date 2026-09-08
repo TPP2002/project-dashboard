@@ -1,6 +1,7 @@
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import { fetchHealth, type HealthInfo } from '@/api/client'
 import ConnDot from './ConnDot.vue'
 import Icon from './Icon.vue'
 import { setTheme, theme, THEMES } from '@/utils/theme'
@@ -19,6 +20,71 @@ export default defineComponent({
     const appearanceOpen = ref(false)
     const centerOpen = ref(false)
     const appearanceRoot = ref<HTMLElement | null>(null)
+    const health = ref<HealthInfo | null>(null)
+    const dismissedCommit = ref<string | null>(null)
+    const copyMessage = ref('')
+    const dismissKey = 'board-release-dismissed-commit'
+    let healthTimer: ReturnType<typeof setInterval> | null = null
+    let healthInFlight = false
+    let disposed = false
+    const bannerVisible = computed(() => health.value?.mode === 'release'
+      && health.value.releaseBehind === true && !!health.value.latestReleaseCommit
+      && dismissedCommit.value !== health.value.latestReleaseCommit)
+
+    async function refreshHealth() {
+      if (healthInFlight || disposed) return
+      healthInFlight = true
+      try {
+        const next = await fetchHealth()
+        if (!disposed) {
+          if (health.value?.latestReleaseCommit !== next.latestReleaseCommit) copyMessage.value = ''
+          health.value = next
+        }
+      } catch (error) {
+        if (!disposed) health.value = null
+        console.warn('版本信息读取失败，等待下次检查', error)
+      } finally {
+        healthInFlight = false
+      }
+    }
+
+    function onVisibilityChange() {
+      if (!document.hidden) void refreshHealth()
+    }
+
+    function dismissRelease() {
+      const commit = health.value?.latestReleaseCommit
+      if (!commit) return
+      dismissedCommit.value = commit
+      try { sessionStorage.setItem(dismissKey, commit) }
+      catch (_) { /* 站点存储不可用时，本页面仍记住关闭操作。 */ }
+    }
+
+    async function copyLaunchHint() {
+      const hint = health.value?.launchHint
+      if (!hint) return
+      try {
+        try { await navigator.clipboard.writeText(hint) }
+        catch (_) {
+          const input = document.createElement('textarea')
+          const focused = document.activeElement
+          input.value = hint
+          input.readOnly = true
+          input.style.position = 'fixed'
+          document.body.appendChild(input)
+          try {
+            input.select()
+            if (!document.execCommand('copy')) throw new Error('浏览器未允许复制')
+          } finally {
+            input.remove()
+            if (focused instanceof HTMLElement) focused.focus()
+          }
+        }
+        copyMessage.value = '已复制'
+      } catch (_) {
+        copyMessage.value = `复制未成功，请手动复制：${hint}`
+      }
+    }
 
     function onProject(event: Event) {
       store.selectProject((event.target as HTMLSelectElement).value)
@@ -40,10 +106,20 @@ export default defineComponent({
     }
 
     onMounted(() => {
+      try {
+        const saved = sessionStorage.getItem(dismissKey)
+        dismissedCommit.value = saved && saved.trim() ? saved : null
+      } catch (_) { dismissedCommit.value = null /* 存储受限时只保留本页面关闭状态。 */ }
+      void refreshHealth()
+      healthTimer = setInterval(refreshHealth, 60_000)
+      document.addEventListener('visibilitychange', onVisibilityChange)
       document.addEventListener('pointerdown', onDocumentPointerDown)
       document.addEventListener('keydown', onDocumentKeyDown)
     })
     onBeforeUnmount(() => {
+      disposed = true
+      if (healthTimer !== null) clearInterval(healthTimer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       document.removeEventListener('pointerdown', onDocumentPointerDown)
       document.removeEventListener('keydown', onDocumentKeyDown)
     })
@@ -52,12 +128,14 @@ export default defineComponent({
       store, appearanceOpen, appearanceRoot, centerOpen, theme, themes: THEMES,
       appearance, projectColor, projectIconName, projectLetter,
       onProject, chooseTheme: setTheme, openCenter,
+      health, bannerVisible, copyMessage, copyLaunchHint, dismissRelease,
     }
   },
 })
 </script>
 
 <template>
+  <div class="topbar-area">
   <header class="topbar">
     <div class="brand"><Icon name="kanban" :size="20" /><b>项目看板</b></div>
     <div v-if="store.projectList.length" class="proj" :class="{ projected: !!projectColor }">
@@ -124,9 +202,17 @@ export default defineComponent({
     </router-link>
     <AppearanceCenter :open="centerOpen" :projects="store.projectList" @close="centerOpen = false" />
   </header>
+  <div v-if="bannerVisible" class="banner" role="status">
+    <span>看板有新版本（{{ health?.latestReleaseCommit?.slice(0, 7) }}），重启启动器换新</span>
+    <button class="btn btn-sm quiet" type="button" :disabled="!health?.launchHint" @click="copyLaunchHint">复制启动命令</button>
+    <span v-if="copyMessage" class="copy-message">{{ copyMessage }}</span>
+    <button class="btn btn-sm quiet dismiss" type="button" @click="dismissRelease">知道了</button>
+  </div>
+  </div>
 </template>
 
 <style scoped>
+.topbar-area { min-width: 0; }
 .topbar {
   display: flex;
   align-items: center;
@@ -134,7 +220,12 @@ export default defineComponent({
   padding: 0 var(--s4);
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+  min-height: 52px;
+  box-sizing: border-box;
 }
+.banner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); padding: var(--s2) var(--s4); background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid var(--warn); font-size: var(--fs-sm); }
+.banner .dismiss { margin-left: auto; }
+.copy-message { overflow-wrap: anywhere; }
 .brand { display: flex; align-items: center; gap: var(--s2); color: var(--text); font-size: var(--fs-md); white-space: nowrap; }
 .proj { min-width: 0; }
 .proj.projected { display: flex; align-items: center; gap: var(--s2); }

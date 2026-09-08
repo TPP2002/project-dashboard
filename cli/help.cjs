@@ -27,7 +27,7 @@ const EXIT_CODES = [
 
 /** 全局 help 的分组:先给天天用的,装机维护的沉到后面。 */
 const GROUPS = [
-  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note', 'request-info']],
+  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
   ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
@@ -131,6 +131,17 @@ const COMMANDS = {
     ],
     examples: ['decide FEAT-12 --project myproj --did d1 --answer "锁"'],
     notes: ['默认会推进状态：全部决策都答完且卡正挂在「待拍板」时自动转「已拍板」。'],
+  },
+  undecide: {
+    summary: '撤销尚未落地的拍板，清空答案并保留撤销记录',
+    usage: 'undecide <卡号> --project <id> --did <dN> [--reason <文本>]',
+    args: [
+      ['--did <dN>', '要撤销的决策；不存在、未答或已落地时拒绝'],
+      ['--reason <文本>', '可选，说明为什么撤销，写进活动流'],
+    ],
+    examples: ['undecide FEAT-12 --project myproj --did d1 --reason "需要重新确认"'],
+    notes: ['卡正处于「已拍板」时退回「待拍板」；施工中等其它状态与进度保持不变。',
+      '命令行不限制撤销时间；网页只显示本页面刚拍板五分钟内的撤销入口。已落地请先查看落地情况。'],
   },
   done: {
     summary: '收官：卡转已完工，登记 PR 与提交号',

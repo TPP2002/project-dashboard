@@ -3,7 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import type { Board, ProjectSummary, Task } from '@/types'
-import { fetchProjects, fetchBoard, postDecide } from '@/api/client'
+import { fetchProjects, fetchBoard, postDecide, postUndecide } from '@/api/client'
 import { BoardStream, type ConnState } from '@/api/sse'
 import * as derive from '@/utils/derive'
 import { emitBoardEvent, type BoardEventKind } from '@/utils/boardEvents'
@@ -25,6 +25,8 @@ export const useBoardStore = defineStore('board', () => {
   // 中心/聚合视图（待拍板 / 待落地 / 拍板历史 / 风险）的项目范围：
   // false = 只看顶栏当前项目（跟随项目切换，默认）；true = 跨全部项目聚合。
   const centerScopeAll = ref(false)
+  // 只记本页面成功拍板的时刻；刷新页面后自然清空，不从日期或历史活动猜时间。
+  const decidedRecently = reactive(new Map<string, number>())
 
   let stream: BoardStream | null = null
   let loadGeneration = 0
@@ -194,7 +196,15 @@ export const useBoardStore = defineStore('board', () => {
   }
   async function decide(pid: string, taskId: string, did: string, answer: string, author?: string) {
     const r = await postDecide(pid, taskId, { did, answer, author })
+    decidedRecently.set(`${pid}:${taskId}:${did}`, Date.now())
     // 主动重拉即时反馈（SSE 广播会再刷一次，幂等无害）
+    await loadBoard(pid, { detect: true })
+    return r
+  }
+
+  async function undecide(pid: string, taskId: string, did: string) {
+    const r = await postUndecide(pid, taskId, { did })
+    decidedRecently.delete(`${pid}:${taskId}:${did}`)
     await loadBoard(pid, { detect: true })
     return r
   }
@@ -235,11 +245,11 @@ export const useBoardStore = defineStore('board', () => {
 
   return {
     projects, boards, etags, activityComplete, currentProjectId, selectedTaskId, selectedTaskProjectId,
-    conn, loading, error, initialized, centerScopeAll,
+    conn, loading, error, initialized, centerScopeAll, decidedRecently,
     projectList, allBoards, currentBoard, currentTasks, currentStatusCounts,
     currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, presumedLandedByTask, globalActivity, todayDoneCount, selectedBoard, selectedTask,
     isPulsing,
     init, loadProjects, loadBoard, loadAllBoards, ensureFullActivity, selectProject,
-    openTask, closeTask, decide, startStream, stopStream, refresh,
+    openTask, closeTask, decide, undecide, startStream, stopStream, refresh,
   }
 })

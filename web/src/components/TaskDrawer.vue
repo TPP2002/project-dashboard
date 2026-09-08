@@ -8,6 +8,8 @@ import { fmtDateTime, relTime } from '@/utils/format'
 import Icon from './Icon.vue'
 import StatusBadge from './StatusBadge.vue'
 import { humanTitle, specText, missingPlainTitle, plainTitleFixCommand } from '@/utils/taskTitle'
+import { appearance } from '@/utils/appearance'
+import { ageLevel, ageTone } from '@/utils/ageLevel'
 import type { DocRef, Status } from '@/types'
 
 /**
@@ -28,11 +30,12 @@ watch(() => [store.selectedTaskId, pid.value, store.loading, store.activityCompl
     store.error = e instanceof Error ? e.message : String(e)
   })
 }, { immediate: true })
-// 施工中任务进度戳超 30 分钟没动 = 陈旧
-const progStale = computed(() => {
+const now = ref(Date.now())
+let freshnessTimer: ReturnType<typeof setInterval> | null = null
+const progressAge = computed(() => {
   const lp = (task.value as any)?.lastProgressAt
-  if (!lp || task.value?.status !== '施工中') return false
-  return Date.now() - new Date(lp).getTime() > 30 * 60 * 1000
+  if (!lp || task.value?.status !== '施工中') return 0
+  return ageLevel(now.value - new Date(lp).getTime(), appearance.ageThresholds)
 })
 
 const hasArr = (a: unknown): a is unknown[] => Array.isArray(a) && a.length > 0
@@ -71,6 +74,27 @@ async function decide(did: string, options: string[], recommended: string) {
   } finally {
     submitting[did] = false
   }
+}
+
+const undoing = reactive<Record<string, boolean>>({})
+const undoErrors = reactive<Record<string, string>>({})
+const decisionKey = (did: string) => `${pid.value}:${task.value?.id}:${did}`
+function canUndo(did: string, at = Math.max(now.value, Date.now())) {
+  const decidedAt = store.decidedRecently.get(decisionKey(did))
+  return decidedAt !== undefined && at >= decidedAt && at - decidedAt < 5 * 60_000
+}
+async function undoDecision(did: string) {
+  const current = task.value
+  const projectId = pid.value
+  const key = decisionKey(did)
+  if (!current || undoing[key] || !canUndo(did, Date.now())) return
+  if (!confirm(`确认撤销 ${current.id} 的这条拍板？答案将清空，施工方会重新看到待拍板问题。`)) return
+  if (!canUndo(did, Date.now())) return
+  undoing[key] = true
+  delete undoErrors[key]
+  try { await store.undecide(projectId, current.id, did) }
+  catch (error) { undoErrors[key] = error instanceof Error ? error.message : String(error) }
+  finally { undoing[key] = false }
 }
 
 // ---- 负责人操作：两种抽屉外壳共用，状态迁移仍交 CLI 判断 ----
@@ -178,8 +202,13 @@ watch([task, () => props.docked], ([t, docked]) => {
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape' && store.selectedTask) store.closeTask()
 }
-onMounted(() => window.addEventListener('keydown', onKey))
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  now.value = Date.now()
+  freshnessTimer = setInterval(() => { now.value = Date.now() }, 30_000)
+})
 onUnmounted(() => {
+  if (freshnessTimer !== null) clearInterval(freshnessTimer)
   window.removeEventListener('keydown', onKey)
   document.body.style.overflow = ''
 })
@@ -220,8 +249,8 @@ onUnmounted(() => {
             <div class="d-prog">
               <div class="glow-rail"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
               <span class="pct mono">{{ task.percent || 0 }}%</span>
-              <span v-if="task.status === '施工中' && (task as any).lastProgressAt" class="prog-time" :class="{ stale: progStale }">
-                <Icon v-if="progStale" name="alertTri" :size="14" />{{ progStale ? '进度' : '进度更新于' }} {{ relTime((task as any).lastProgressAt) }}
+              <span v-if="task.status === '施工中' && (task as any).lastProgressAt" class="prog-time" :class="ageTone(progressAge)">
+                <Icon v-if="progressAge >= 2" name="alertTri" :size="14" />{{ progressAge >= 2 ? '进度' : '进度更新于' }} {{ relTime((task as any).lastProgressAt) }}
               </span>
             </div>
 
@@ -311,7 +340,13 @@ onUnmounted(() => {
                     </button>
                   </div>
                 </template>
-                <div v-else class="dec-done"><Icon name="check" :size="14" />已拍板：<b>{{ d.answer }}</b><span v-if="d.decidedAt" class="mono"> · {{ d.decidedAt }}</span></div>
+                <div v-else class="dec-done">
+                  <Icon name="check" :size="14" />已拍板：<b>{{ d.answer }}</b><span v-if="d.decidedAt" class="mono"> · {{ d.decidedAt }}</span>
+                  <button v-if="canUndo(d.id)" class="btn btn-sm quiet" type="button" :disabled="undoing[decisionKey(d.id)]" @click="undoDecision(d.id)">
+                    <Icon name="rotateCcw" :size="14" />{{ undoing[decisionKey(d.id)] ? '撤销中…' : '撤销' }}
+                  </button>
+                  <span v-if="undoErrors[decisionKey(d.id)]" class="err" role="alert">{{ undoErrors[decisionKey(d.id)] }}</span>
+                </div>
               </div>
             </section>
 
@@ -398,7 +433,9 @@ onUnmounted(() => {
 .d-prog .glow-rail { flex: 1; }
 .d-prog .pct { color: var(--text-2); font-size: var(--fs-sm); }
 .d-prog .prog-time { display: inline-flex; align-items: center; gap: var(--s1); margin-left: var(--s1); color: var(--text-3); font-size: var(--fs-xs); }
-.d-prog .prog-time.stale { color: var(--warn); }
+.d-prog .prog-time.info { color: var(--info); }
+.d-prog .prog-time.warn { color: var(--warn); }
+.d-prog .prog-time.bad { color: var(--bad); }
 .d-desc { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.6; white-space: pre-wrap; }
 .sec { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
 .sec.block { flex-direction: column; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); }
@@ -429,7 +466,7 @@ onUnmounted(() => {
 /* 选项前的圆点自己画：选中实心、未选空心，比塞一枚图标更贴合单选的语感。 */
 .pick { width: 10px; height: 10px; flex: none; margin-right: var(--s2); border: 1.6px solid var(--text-3); border-radius: 50%; }
 .opt.on .pick { border-color: var(--info); box-shadow: inset 0 0 0 2.4px var(--info-bg); background: var(--info); }
-.dec-done { display: flex; align-items: center; gap: var(--s1); color: var(--ok); font-size: var(--fs-base); }
+.dec-done { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); color: var(--ok); font-size: var(--fs-base); }
 .err { color: var(--bad); font-size: var(--fs-sm); }
 .err.with-icon { display: inline-flex; align-items: center; gap: var(--s1); }
 /* 徽章基类是 inline-block，塞进图标后要改成 flex 才对得齐。 */
