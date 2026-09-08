@@ -85,12 +85,30 @@ test('CLAUDE.md 协议段里手敲命令的 CLI 路径与 git hook 焊的一致,
   // 没有就回落 `node <根>/cli/index.cjs`(路径带空白才加引号)。所以这里不钉死字面量,
   // 只钉死本条要守的那件事——【与 hook 焊的是同一个 CLI 根】,而不是另外硬编码一条路径。
   const cliRoot = cliPath.slice(0, cliPath.length - '/cli/index.cjs'.length);
-  for (const sub of ['add', 'claim']) {
-    const line = claudeMd.split('\n').find((l) => l.includes(`${sub} <任务id>`));
-    assert.ok(line, `锚段里应有 ${sub} 示例`);
-    assert.ok(line.includes(cliRoot), `${sub} 示例应与 hook 焊的是同一份 CLI(同一个根)`);
-  }
+  const line = claudeMd.split('\n').find((l) => l.includes('protocol --project t'));
+  assert.ok(line, '锚段里应有 protocol 入口');
+  assert.ok(line.includes(cliRoot), 'protocol 入口应与 hook 焊的是同一份 CLI(同一个根)');
   clean(t.dir);
+});
+
+test('CLAUDE.md 锚段含首尾不超过 25 行，只指向 protocol 并保留三条硬规则', () => {
+  const t = setup();
+  try {
+    hooksInstall({ ...t.P });
+    const text = read(path.join(t.repo, 'CLAUDE.md'));
+    const block = text.match(/<!-- dashboard-protocol:t begin -->[\s\S]*?<!-- dashboard-protocol:t end -->/);
+    assert.ok(block, '保留按项目分段的首尾锚');
+    assert.ok(block[0].split(/\r?\n/).length <= 25);
+    assert.match(block[0], /protocol --project t/);
+    assert.match(block[0], /先 claim 再改代码/);
+    assert.match(block[0], /--model 与 --plain-title/);
+    assert.match(block[0], /pending --json-file.*background.*optionPros.*recommendReason/);
+    assert.match(block[0], /done --pr --commit/);
+    assert.match(block[0], /progress \/ park \/ block \/ note/);
+    assert.doesNotMatch(block[0], /\p{Extended_Pictographic}/u);
+    hooksInstall({ ...t.P });
+    assert.equal(read(path.join(t.repo, 'CLAUDE.md')), text, '重装后锚段及周围内容完全相同');
+  } finally { clean(t.dir); }
 });
 
 test('幂等：装两次不重复锚块 / 不重复 settings 条目', () => {

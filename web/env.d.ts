@@ -84,6 +84,18 @@ declare module 'virtual:task-signal' {
   export function hasAcceptanceEvidence(tasks: Task[]): boolean
 }
 
+// 决策落地判据的单一真相源 = core/decisionLanding.cjs。
+declare module 'virtual:decision-landing' {
+  import type { Task, Decision } from '@/types'
+
+  export function isAnswered(decision: Decision | null | undefined): boolean
+  export function isTerminal(task: Task | null | undefined): boolean
+  export function isUnlanded(task: Task, decision: Decision): boolean
+  export function isPresumedLanded(task: Task, decision: Decision): boolean
+  export function unlandedOf(task: Task | null | undefined): Decision[]
+  export function presumedLandedOf(task: Task | null | undefined): Decision[]
+}
+
 declare module 'virtual:board-schema' {
   export const SCHEMA_VERSION: string
   export const STATUS: string[]

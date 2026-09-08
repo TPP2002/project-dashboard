@@ -1,9 +1,11 @@
 <script lang="ts">
-import { defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ConnDot from './ConnDot.vue'
 import Icon from './Icon.vue'
 import { setTheme, theme, THEMES } from '@/utils/theme'
+import { appearance } from '@/utils/appearance'
+import { projectColorCss, projectIconName, projectLetter } from '@/utils/projectPresentation'
 import IconMotionSettings from './IconMotionSettings.vue'
 import SpectrumSettings from './SpectrumSettings.vue'
 import AppearanceDensity from './AppearanceDensity.vue'
@@ -13,6 +15,7 @@ export default defineComponent({
   components: { ConnDot, Icon, IconMotionSettings, SpectrumSettings, AppearanceDensity, AppearanceCenter },
   setup() {
     const store = useBoardStore()
+    const projectColor = computed(() => store.currentProjectId ? projectColorCss(store.currentProjectId) : null)
     const appearanceOpen = ref(false)
     const centerOpen = ref(false)
     const appearanceRoot = ref<HTMLElement | null>(null)
@@ -47,6 +50,7 @@ export default defineComponent({
 
     return {
       store, appearanceOpen, appearanceRoot, centerOpen, theme, themes: THEMES,
+      appearance, projectColor, projectIconName, projectLetter,
       onProject, chooseTheme: setTheme, openCenter,
     }
   },
@@ -56,8 +60,12 @@ export default defineComponent({
 <template>
   <header class="topbar">
     <div class="brand"><Icon name="kanban" :size="20" /><b>项目看板</b></div>
-    <div v-if="store.projectList.length" class="proj">
+    <div v-if="store.projectList.length" class="proj" :class="{ projected: !!projectColor }">
       <label class="sr-only" for="project-select">当前项目</label>
+      <span v-if="projectColor" class="proj-mark" :style="{ '--proj': projectColor }" aria-hidden="true">
+        <Icon v-if="appearance.projectMark === 'icon'" :name="projectIconName(store.currentProjectId ?? '')" :size="14" />
+        <span v-else>{{ projectLetter(store.currentProjectId ?? '') }}</span>
+      </span>
       <select id="project-select" :value="store.currentProjectId ?? ''" @change="onProject">
         <option v-for="project in store.projectList" :key="project.id" :value="project.id">{{ project.name }}</option>
       </select>
@@ -129,6 +137,8 @@ export default defineComponent({
 }
 .brand { display: flex; align-items: center; gap: var(--s2); color: var(--text); font-size: var(--fs-md); white-space: nowrap; }
 .proj { min-width: 0; }
+.proj.projected { display: flex; align-items: center; gap: var(--s2); }
+.proj-mark { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 6px; color: var(--proj); background: color-mix(in srgb, var(--proj) 18%, transparent); }
 .proj select {
   max-width: 240px;
   padding: var(--s1) var(--s2);

@@ -125,10 +125,12 @@ export interface Board {
   activity?: Activity[]
 }
 
-// GET /api/projects 的清单项（前端只依赖 id/name；统计一律从 board 读时派生）
+// GET /api/projects 的清单项（含可选项目色/图标；统计一律从 board 读时派生）
 export interface ProjectSummary {
   id: string
   name: string
+  color?: string
+  icon?: string
   mainRepo?: string
   updatedAt?: string
 }

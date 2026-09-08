@@ -2,6 +2,7 @@
 // store getter 与视图共用，board.json 永不持久化任何派生字段。
 import type { Board, Task, Activity, Decision } from '@/types'
 import { STATUS_ORDER, DONE_STATUSES, VOID_STATUSES } from '@/api/schema'
+import { isUnlanded, isPresumedLanded } from 'virtual:decision-landing'
 
 export type StatusCounts = Record<string, number>
 
@@ -106,16 +107,16 @@ export function collectDecided(boards: Board[]): PendingItem[] {
   return out
 }
 
-/** 收集"已拍板但未落地"的决策——需要新对话去执行 */
+/** 收集非终态卡上"已拍板但未落地"的决策——需要新对话去执行 */
 export function collectUnlanded(boards: Board[]): PendingItem[] {
-  return collectDecided(boards).filter((it) => !(it.decision as any).landed)
+  return collectDecided(boards).filter((it) => isUnlanded(it.task, it.decision))
 }
 
 export interface UnlandedTask {
   projectId: string
   projectName: string
   task: Task
-  decisions: Decision[] // 该任务下所有"已拍板未落地"的决策
+  decisions: Decision[] // 该任务下所筛选的已拍板决策（待落地或推定落地）
 }
 
 /**
@@ -127,9 +128,21 @@ export function collectUnlandedByTask(boards: Board[]): UnlandedTask[] {
   const out: UnlandedTask[] = []
   for (const b of boards) {
     for (const t of b.tasks ?? []) {
-      const ds = (t.decisions ?? []).filter(
-        (d) => d.answer !== null && d.answer !== undefined && !(d as any).landed,
-      )
+      const ds = (t.decisions ?? []).filter((d) => isUnlanded(t, d))
+      if (ds.length) {
+        out.push({ projectId: b.project.id, projectName: b.project.name, task: t, decisions: ds })
+      }
+    }
+  }
+  return out
+}
+
+/** 终态卡上未显式标记的已拍板决策，供历史展示与批量确认使用。 */
+export function collectPresumedLandedByTask(boards: Board[]): UnlandedTask[] {
+  const out: UnlandedTask[] = []
+  for (const b of boards) {
+    for (const t of b.tasks ?? []) {
+      const ds = (t.decisions ?? []).filter((d) => isPresumedLanded(t, d))
       if (ds.length) {
         out.push({ projectId: b.project.id, projectName: b.project.name, task: t, decisions: ds })
       }

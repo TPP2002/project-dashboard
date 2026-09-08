@@ -17,6 +17,8 @@ import { statusTone } from '@/api/schema'
 import { overviewSignal } from 'virtual:task-signal'
 import * as derive from '@/utils/derive'
 import { relTime } from '@/utils/format'
+import { appearance } from '@/utils/appearance'
+import { projectColorCss, projectHex, projectIconName, projectLetter } from '@/utils/projectPresentation'
 
 import ProgressRing from '@/components/ProgressRing.vue'
 import { humanTitle } from '@/utils/taskTitle'
@@ -312,6 +314,8 @@ function openTask(item: { projectId: string; task: { id: string } }) {
             v-for="board in boards"
             :key="board.project.id"
             class="project-card card"
+            :class="{ projected: !!projectColorCss(board.project.id) }"
+            :style="{ '--proj': projectColorCss(board.project.id) ?? undefined }"
             role="button"
             tabindex="0"
             @click="openBoard(board)"
@@ -319,9 +323,14 @@ function openTask(item: { projectId: string; task: { id: string } }) {
             @keydown.space.prevent="openBoard(board)"
           >
             <div class="project-top">
-              <ProgressRing :percent="progressOf(board).percent" :size="86" :sub="progressOf(board).done + '/' + progressOf(board).total" />
+              <ProgressRing :percent="progressOf(board).percent" :size="86" :sub="progressOf(board).done + '/' + progressOf(board).total"
+                :project-color="projectHex(board.project.id)" :ring-mode="appearance.projectRing" />
               <div class="project-info">
                 <div class="project-name">
+                  <span v-if="projectColorCss(board.project.id)" class="proj-mark" aria-hidden="true">
+                    <Icon v-if="appearance.projectMark === 'icon'" :name="projectIconName(board.project.id)" :size="14" />
+                    <span v-else>{{ projectLetter(board.project.id) }}</span>
+                  </span>
                   {{ board.project.name }}
                   <span v-if="todayOf(board)" class="badge ok">今日 +{{ todayOf(board) }}</span>
                 </div>
@@ -401,9 +410,11 @@ function openTask(item: { projectId: string; task: { id: string } }) {
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--s3); }
 .project-card { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); cursor: pointer; background: var(--surface); transition: border-color .14s ease, transform .14s ease; }
 .project-card:hover, .project-card:focus-visible { border-color: var(--line-strong); transform: translateY(-1px); }
+.project-card.projected { border-left: 3px solid var(--proj); }
 .project-top { display: flex; align-items: center; gap: var(--s3); }
 .project-info { flex: 1; min-width: 0; }
 .project-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); font-size: var(--fs-lg); font-weight: 600; }
+.proj-mark { display: grid; place-items: center; width: 18px; height: 18px; flex: none; border-radius: 6px; color: var(--proj); background: color-mix(in srgb, var(--proj) 18%, transparent); }
 .project-repo { overflow: hidden; margin-top: var(--s1); color: var(--text-2); font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .project-alert { margin-top: var(--s2); }
 /* 徽章基类是 inline-block，装了色点就得换 flex。 */
