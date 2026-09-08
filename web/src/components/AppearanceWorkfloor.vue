@@ -7,6 +7,8 @@ const times = [{ id: 'theme', label: '跟随主题' }, { id: 'night', label: '�
 const details = [{ id: 'standard', label: '标准' }, { id: 'ultra', label: '极致' }] as const
 const heights = [{ id: 'standard', label: '标准' }, { id: 'compact', label: '紧凑' }] as const
 const positions = [{ id: 'bottom', label: '任务卡下方' }, { id: 'top', label: '任务卡上方' }] as const
+const zooms = [{ id: 1, label: '1×' }, { id: 1.25, label: '1.25×' }, { id: 1.5, label: '1.5×' }, { id: 1.75, label: '1.75×' }, { id: 2, label: '2×' }] as const
+const cameras = [{ id: 'fixed', label: '固定' }, { id: 'pan', label: '缓慢横移' }] as const
 
 function choose<K extends keyof WorkfloorSettings>(key: K, value: WorkfloorSettings[K]) {
   setAppearance('workfloor', { ...appearance.workfloor, [key]: value })
@@ -49,6 +51,20 @@ function choose<K extends keyof WorkfloorSettings>(key: K, value: WorkfloorSetti
     <div class="ac-options two" role="group" aria-labelledby="wf-position">
       <button v-for="option in positions" :key="option.id" class="appearance-choice" type="button"
         :aria-pressed="appearance.workfloor.position === option.id" @click="choose('position', option.id)">{{ option.label }}</button>
+    </div>
+  </div>
+  <div class="ac-line">
+    <div class="ac-text"><b id="wf-zoom">缩放</b><span>放大后底边对齐、两侧和天空裁掉，占地不变</span></div>
+    <div class="ac-options" role="group" aria-labelledby="wf-zoom">
+      <button v-for="option in zooms" :key="option.id" class="appearance-choice" type="button"
+        :aria-pressed="appearance.workfloor.zoom === option.id" @click="choose('zoom', option.id)">{{ option.label }}</button>
+    </div>
+  </div>
+  <div class="ac-line">
+    <div class="ac-text"><b id="wf-camera">镜头</b><span>放大后画面比横幅宽时，镜头在两端之间慢慢来回；系统减少动效时不动</span></div>
+    <div class="ac-options two" role="group" aria-labelledby="wf-camera">
+      <button v-for="option in cameras" :key="option.id" class="appearance-choice" type="button"
+        :aria-pressed="appearance.workfloor.camera === option.id" @click="choose('camera', option.id)">{{ option.label }}</button>
     </div>
   </div>
   <div class="ac-line">
