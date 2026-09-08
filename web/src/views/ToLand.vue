@@ -16,6 +16,12 @@ const PAGE_SIZE = 8
 const tasks = computed(() =>
   store.unlandedByTask.filter((task) => store.centerScopeAll || task.projectId === store.currentProjectId),
 )
+const presumedTasks = computed(() =>
+  store.presumedLandedByTask.filter((task) => store.centerScopeAll || task.projectId === store.currentProjectId),
+)
+const presumedCount = computed(() => presumedTasks.value.reduce((sum, task) => sum + task.decisions.length, 0))
+const confirmingPresumed = ref(false)
+const presumedProgress = ref({ done: 0, total: 0 })
 // 按项目再分组:{ pid: {name, tasks: [...] } }。
 const grouped = computed(() => {
   const groups: Record<string, { name: string; tasks: UnlandedTask[] }> = {}
@@ -150,6 +156,38 @@ async function markTaskLanded(task: UnlandedTask) {
     marking.value[key] = false
   }
 }
+
+async function confirmPresumedLanded() {
+  if (confirmingPresumed.value) return
+  // 固定二次确认时的范围，刷新推送或切换项目不能改变正在执行的批次。
+  const targets = [...presumedTasks.value]
+  const total = decCountOf(targets)
+  if (!total || !confirm(`确认将这 ${total} 条推定随卡落地的拍板标记为已落地？`)) return
+  confirmingPresumed.value = true
+  presumedProgress.value = { done: 0, total }
+  try {
+    for (const task of targets) {
+      const response = await fetch(`/api/mark-landed/${task.projectId}/${task.task.id}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ all: true, author: '看板' }),
+      })
+      const data = await response.json()
+      if (!response.ok || !data.ok) throw new Error(data.error || '确认失败')
+      presumedProgress.value.done += task.decisions.length
+    }
+  } catch (error) {
+    alert('确认失败，已停止：' + (error instanceof Error ? error.message : String(error)))
+  } finally {
+    // 失败前可能已有卡成功，仍需刷新已写入的结果。
+    try {
+      await store.refresh()
+    } catch (error) {
+      alert('刷新失败：' + (error instanceof Error ? error.message : String(error)))
+    } finally {
+      confirmingPresumed.value = false
+    }
+  }
+}
 </script>
 
 <template>
@@ -171,6 +209,13 @@ async function markTaskLanded(task: UnlandedTask) {
     </div>
 
     <template v-else>
+      <div v-if="presumedCount || confirmingPresumed" class="card presumed">
+        <span>有 {{ presumedCount }} 条拍板挂在已完工或已作废的卡上，按规矩视为随卡落地，可一键确认</span>
+        <button class="btn" :disabled="confirmingPresumed" @click="confirmPresumedLanded">
+          <Icon name="check" :size="14" />{{ confirmingPresumed ? `确认中 ${presumedProgress.done} / ${presumedProgress.total}` : `确认 ${presumedCount} 条推定落地` }}
+        </button>
+      </div>
+
       <div v-if="tasks.length" class="howto card">
         <span class="glow glow-top howto-glow" />
         <b>怎么派单(可靠做法):</b> 点任务卡上的 <span class="kbd"><Icon name="copy" :size="14" />复制接单指令</span> → 在 Claude Code
@@ -257,6 +302,8 @@ async function markTaskLanded(task: UnlandedTask) {
 .skel.medium { width: 44%; }
 .skel.wide { width: 84%; }
 .skel.row-skel { height: 52px; }
+.presumed { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); color: var(--text-2); }
+.presumed .btn { flex-shrink: 0; }
 .howto { position: relative; padding-top: var(--s4); background: var(--surface); font-size: var(--fs-base); line-height: 1.7; }
 .howto-glow { position: absolute; inset: 0 0 auto; }
 .kbd, code { padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font-family: var(--mono); font-size: var(--fs-sm); }

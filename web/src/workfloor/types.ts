@@ -10,6 +10,7 @@ export interface WorkfloorSettings {
   dayNight: 'theme' | 'night' | 'clock'
   detail: Detail
   height: Height
+  position: 'top' | 'bottom'
   soundLink: boolean
 }
 

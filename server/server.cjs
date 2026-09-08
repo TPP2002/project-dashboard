@@ -42,6 +42,7 @@ const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require(
 const { readStamp, runtimeMode, displayCliCommand } = require('../core/runtimeRoot.cjs');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { VOID_STATUSES } = require('../core/boardSchema.cjs');
+const { isUnlanded } = require('../core/decisionLanding.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
@@ -650,11 +651,11 @@ function handleDispatchProject(req, res) {
     try { board = JSON.parse(fs.readFileSync(proj.board, 'utf8')); }
     catch (_) { return sendJson(res, 404, { ok: false, error: `${pid} 的 board.json 读不出` }); }
 
-    // 收集所有 unlanded decisions（answer !== null 且 !landed）
+    // 待落地口径与前端、接单命令一致；终态卡的未标记决策视为随卡落地。
     const items = [];
     for (const t of (board.tasks || [])) {
       for (const d of (t.decisions || [])) {
-        if (d.answer !== null && d.answer !== undefined && !d.landed) {
+        if (isUnlanded(t, d)) {
           items.push({ task: t, decision: d });
         }
       }
@@ -710,7 +711,7 @@ function handleDispatchTask(req, res) {
     if (!task) return sendJson(res, 404, { ok: false, error: `任务 ${tid} 不存在` });
 
     const decisions = (task.decisions || []).filter(
-      (d) => d.answer !== null && d.answer !== undefined && !d.landed,
+      (d) => isUnlanded(task, d),
     );
     if (!decisions.length) return sendJson(res, 400, { ok: false, error: `任务 ${tid} 没有待落地决策` });
 
@@ -859,10 +860,11 @@ function handleMarkLanded(req, res, projectId, taskId) {
     try { body = raw ? JSON.parse(raw) : {}; }
     catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
     const did = typeof body.did === 'string' ? body.did.trim() : '';
+    const all = body.all === true;
     const author = (typeof body.author === 'string' && body.author.trim()) ? body.author.trim() : '看板';
-    if (!did) return sendJson(res, 400, { ok: false, error: '缺 did' });
+    if (!did && !all) return sendJson(res, 400, { ok: false, error: '缺 did 或 all: true' });
 
-    const args = [CLI_INDEX, 'mark-landed', '--project', projectId, taskId, '--did', did, '--author', author, '--json'];
+    const args = [CLI_INDEX, 'mark-landed', taskId, ...(all ? ['--all'] : ['--did', did]), '--project', projectId, '--author', author, '--json'];
     if (REGISTRY !== REGISTRY_PATH) { args.push('--registry', REGISTRY); }
     execFile(process.execPath, args, {
       cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
