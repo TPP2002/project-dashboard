@@ -71,6 +71,9 @@ function stopServer(child) {
 async function receiver() {
   const received = [];
   const server = http.createServer((req, res) => {
+    // 只收看板发来的 POST /events：全量并行跑测试时别的测试起的 server 会按 DASHBOARD_PORT 起往上探 9 个端口的
+    // GET /api/health，撞上这个接收器就会被记成一条「推送」，让「初始基线不补发」偶红（0908 两次实踩，AD-20260908-WEBHOOK-TEST-FLAKE）。
+    if (req.method !== 'POST' || req.url !== '/events') { req.resume(); res.writeHead(404); res.end(); return; }
     let raw = '';
     req.setEncoding('utf8');
     req.on('data', (chunk) => { raw += chunk; });
