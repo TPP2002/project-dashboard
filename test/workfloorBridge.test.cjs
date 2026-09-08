@@ -8,9 +8,12 @@ const { STATUS } = require('../core/boardSchema.cjs')
 const ROOT = resolve(__dirname, '..')
 // 只补 Vite 的模块解析，不替换被测 bridge、derive 或 schema 的实现。
 const schemaUrl = 'data:text/javascript,' + encodeURIComponent('export const STATUS = ' + JSON.stringify(STATUS))
+// derive.ts 还引 virtual:decision-landing（决策落地口径，AUD-UI-UNLANDED-DERIVE），同样只补解析、不替换实现。
+const landingUrl = 'data:text/javascript,' + encodeURIComponent(require('../core/decisionLanding.cjs').toEsmSource())
 const loaderUrl = 'data:text/javascript,' + encodeURIComponent(`
   export async function resolve(specifier, context, nextResolve) {
     if (specifier === 'virtual:board-schema') return { url: ${JSON.stringify(schemaUrl)}, shortCircuit: true }
+    if (specifier === 'virtual:decision-landing') return { url: ${JSON.stringify(landingUrl)}, shortCircuit: true }
     return nextResolve(specifier, context)
   }
 `)

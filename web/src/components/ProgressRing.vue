@@ -4,10 +4,14 @@
 // 所以循环天然无缝，不会出现「播到头再从头开始」的断点。传了 color 就当普通实色环用。
 import { computed, onBeforeUnmount, ref, useId } from 'vue'
 import { partColors, spectrumRevision } from '@/utils/spectrum'
+import { marqueeStops } from '@/utils/projectColor'
 
 const props = withDefaults(
-  defineProps<{ percent: number; size?: number; stroke?: number; color?: string; sub?: string; spin?: number }>(),
-  { size: 92, stroke: 9, color: '', sub: '', spin: 4.2 },
+  defineProps<{
+    percent: number; size?: number; stroke?: number; color?: string; sub?: string; spin?: number
+    projectColor?: string | null; ringMode?: 'project-glow' | 'project' | 'spectrum'
+  }>(),
+  { size: 92, stroke: 9, color: '', sub: '', spin: 4.2, projectColor: null, ringMode: 'spectrum' },
 )
 const clamped = computed(() => Math.max(0, Math.min(100, props.percent || 0)))
 const r = computed(() => (props.size - props.stroke) / 2)
@@ -17,6 +21,7 @@ const mid = computed(() => props.size / 2)
 
 // 同一页有多个环，渐变 id 必须各不相同，否则后挂载的会抢走前面的描边。
 const gradientId = `ring-spec-${useId()}`
+const outerGradientId = `ring-outer-${useId()}`
 
 // 关掉动画偏好时不给 SMIL 动画——CSS 的 prefers-reduced-motion 规则管不到 SVG 动画元素。
 const reduceMotion = ref(false)
@@ -29,19 +34,30 @@ if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
 }
 
 // 颜色从生效的色站变量回读，配色一改（spectrumRevision 变了）就重算。
-const stops = computed(() => {
+const spectrumStops = computed(() => {
   void spectrumRevision.value
   const colors = partColors('ring')
   return colors.length >= 2 ? colors : []
 })
-const useGradient = computed(() => !props.color && stops.value.length > 0)
-const arcStroke = computed(() => (useGradient.value ? `url(#${gradientId})` : props.color || 'var(--info)'))
+const projectColor = computed(() => props.color ? null : props.projectColor)
+const stops = computed(() => projectColor.value && props.ringMode === 'project-glow'
+  ? marqueeStops(projectColor.value) : spectrumStops.value)
+const solidProject = computed(() => !!projectColor.value && props.ringMode === 'project')
+const useGradient = computed(() => !props.color && !solidProject.value && stops.value.length > 0)
+const arcStroke = computed(() => {
+  if (props.color) return props.color
+  if (projectColor.value && props.ringMode === 'project') return projectColor.value
+  return useGradient.value ? `url(#${gradientId})` : 'var(--info)'
+})
+const outerRing = computed(() => !!projectColor.value && props.ringMode === 'project-glow')
+const baseStyle = computed(() => projectColor.value && props.ringMode === 'spectrum'
+  ? { stroke: `color-mix(in srgb, ${projectColor.value} 30%, var(--surface-3))` } : undefined)
 </script>
 
 <template>
-  <svg :width="size" :height="size" :viewBox="`0 0 ${size} ${size}`" role="img" :aria-label="`完成 ${Math.round(clamped)}%`">
-    <defs v-if="useGradient">
-      <linearGradient :id="gradientId" gradientUnits="userSpaceOnUse" :x1="0" :y1="mid" :x2="size" :y2="mid">
+  <svg :width="size" :height="size" :viewBox="`0 0 ${size} ${size}`" :class="{ 'project-glow': outerRing }" role="img" :aria-label="`完成 ${Math.round(clamped)}%`">
+    <defs v-if="useGradient || outerRing">
+      <linearGradient v-if="useGradient" :id="gradientId" gradientUnits="userSpaceOnUse" :x1="0" :y1="mid" :x2="size" :y2="mid">
         <stop
           v-for="(color, index) in stops"
           :key="index"
@@ -58,8 +74,26 @@ const arcStroke = computed(() => (useGradient.value ? `url(#${gradientId})` : pr
           repeatCount="indefinite"
         />
       </linearGradient>
+      <linearGradient v-if="outerRing" :id="outerGradientId" gradientUnits="userSpaceOnUse" :x1="0" :y1="mid" :x2="size" :y2="mid">
+        <stop
+          v-for="(color, index) in spectrumStops"
+          :key="index"
+          :offset="`${(index / (spectrumStops.length - 1)) * 100}%`"
+          :stop-color="color"
+        />
+        <animateTransform
+          v-if="!reduceMotion"
+          attributeName="gradientTransform"
+          type="rotate"
+          :from="`0 ${mid} ${mid}`"
+          :to="`360 ${mid} ${mid}`"
+          :dur="`${spin}s`"
+          repeatCount="indefinite"
+        />
+      </linearGradient>
     </defs>
-    <circle :cx="mid" :cy="mid" :r="r" :stroke-width="stroke" fill="none" stroke="var(--surface-3)" />
+    <circle v-if="outerRing" :cx="mid" :cy="mid" :r="r + stroke / 2 + 3" stroke-width="1.5" opacity=".6" fill="none" :stroke="`url(#${outerGradientId})`" />
+    <circle :cx="mid" :cy="mid" :r="r" :stroke-width="stroke" fill="none" stroke="var(--surface-3)" :style="baseStyle" />
     <circle
       :cx="mid" :cy="mid" :r="r" :stroke-width="stroke" fill="none" :stroke="arcStroke"
       stroke-linecap="round" :stroke-dasharray="circ" :stroke-dashoffset="offset"
@@ -73,6 +107,8 @@ const arcStroke = computed(() => (useGradient.value ? `url(#${gradientId})` : pr
 </template>
 
 <style scoped>
+/* 外圈伸出原视口；仅此模式放开裁切，环的尺寸和文字坐标保持不变。 */
+.project-glow { overflow: visible; }
 .arc { transition: stroke-dashoffset 0.6s ease; }
 .pct { fill: var(--text); font-size: var(--fs-lg); font-weight: 700; }
 .sub { fill: var(--text-2); font-size: var(--fs-xs); }

@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Task } from '@/types'
 import { useBoardStore } from '@/stores/board'
 import { relTime } from '@/utils/format'
 import { registerCardElement, unregisterCardElement } from '@/utils/boardEvents'
+import { projectColorCss } from '@/utils/projectPresentation'
 import Icon from './Icon.vue'
 import StatusTile from './StatusTile.vue'
 
 const props = defineProps<{ task: Task; projectId: string }>()
+const projectColor = computed(() => projectColorCss(props.projectId))
 const root = ref<HTMLElement | null>(null)
 let registeredKey = ''
 function registerRoot() {
@@ -38,7 +40,8 @@ const stale = () => {
   <article
     ref="root"
     class="tcard card"
-    :class="{ pulsing: store.isPulsing(projectId, task.id) }"
+    :class="{ pulsing: store.isPulsing(projectId, task.id), projected: !!projectColor }"
+    :style="projectColor ? { '--proj': projectColor } : undefined"
     role="button"
     tabindex="0"
     @click="store.openTask(task.id, projectId)"
@@ -83,6 +86,7 @@ const stale = () => {
  */
 .tcard { flex: none; display: flex; flex-direction: column; gap: var(--s2); cursor: pointer; transition: transform .14s ease, border-color .14s ease; }
 .tcard:hover { transform: translateY(-1px); border-color: var(--line-strong); }
+.tcard.projected { border-left: 3px solid var(--proj); }
 .tcard-head, .tcard-meta, .prog-wrap { display: flex; align-items: center; gap: var(--s2); }
 .tcard-head { font-size: var(--fs-sm); }
 .tcard-meta { flex-wrap: wrap; }

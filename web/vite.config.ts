@@ -70,6 +70,23 @@ function taskSignalVirtualPlugin(): Plugin {
   }
 }
 
+// 决策落地判据与 CLI / server 同源，终态卡的未标记决策只作推定落地展示。
+function decisionLandingVirtualPlugin(): Plugin {
+  const VID = 'virtual:decision-landing'
+  const RESOLVED = '\0' + VID
+  return {
+    name: 'virtual-decision-landing',
+    resolveId(id) {
+      if (id === VID) return RESOLVED
+    },
+    load(id) {
+      if (id !== RESOLVED) return
+      const require = createRequire(import.meta.url)
+      return require('../core/decisionLanding.cjs').toEsmSource()
+    },
+  }
+}
+
 // base './'：dist 可被 server 从任意子路径静态托管。
 // 默认 dev：/api 代理到真 server(127.0.0.1:6060)。
 // mode=mock（npm run dev:mock）：改用内置 mock 中间件联调，业务代码无 mock 分支。
@@ -77,7 +94,7 @@ export default defineConfig(({ mode }) => {
   const useMock = mode === 'mock'
   return {
     base: './',
-    plugins: [vue(), boardSchemaVirtualPlugin(), generatedArtifactsVirtualPlugin(), taskSignalVirtualPlugin(), ...(useMock ? [mockApiPlugin()] : [])],
+    plugins: [vue(), boardSchemaVirtualPlugin(), generatedArtifactsVirtualPlugin(), taskSignalVirtualPlugin(), decisionLandingVirtualPlugin(), ...(useMock ? [mockApiPlugin()] : [])],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
