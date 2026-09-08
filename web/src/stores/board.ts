@@ -12,6 +12,8 @@ export const useBoardStore = defineStore('board', () => {
   // ---------- state ----------
   const projects = ref<ProjectSummary[]>([])
   const boards = ref<Record<string, Board>>({})
+  const etags = ref<Record<string, string>>({})
+  const activityComplete = ref<Record<string, boolean>>({})
   const currentProjectId = ref<string | null>(null)
   const selectedTaskId = ref<string | null>(null)
   const selectedTaskProjectId = ref<string | null>(null)
@@ -25,6 +27,9 @@ export const useBoardStore = defineStore('board', () => {
   const centerScopeAll = ref(false)
 
   let stream: BoardStream | null = null
+  let loadGeneration = 0
+  const boardRequests = new Map<string, Promise<unknown>>()
+  const pendingActivity = new Map<string, Promise<void>>()
 
   // ---------- getters（读时派生） ----------
   const projectList = computed(() => projects.value)
@@ -42,7 +47,7 @@ export const useBoardStore = defineStore('board', () => {
   const unlandedCount = computed(() => unlandedDecisions.value.length)
   const unlandedByTask = computed(() => derive.collectUnlandedByTask(allBoards.value))
   const presumedLandedByTask = computed(() => derive.collectPresumedLandedByTask(allBoards.value))
-  // 全量派生（不截断）：活动流页要"先筛选再分页"，截断会让筛选漏旧记录（体检 B1）
+  // 对缓存不再截断；历史页面先 ensureFullActivity，再做筛选与显示分页。
   const globalActivity = computed(() => derive.mergeActivity(allBoards.value, 0))
   // 今日（本地时区）完工卡数：侧栏「每日成果」徽章 + 总览「今日完成」卡
   const todayDoneCount = computed(() => {
@@ -83,12 +88,69 @@ export const useBoardStore = defineStore('board', () => {
   async function loadProjects() {
     projects.value = await fetchProjects()
   }
-  async function loadBoard(id: string, opts: { detect?: boolean } = {}) {
+
+  // 同项目请求串行，防止“补全历史”与 SSE 重拉相互覆盖；前一次失败不阻止下一次刷新。
+  function queueBoardRead<T>(id: string, run: () => Promise<T>): Promise<T> {
+    const previous = boardRequests.get(id) ?? Promise.resolve()
+    const request = previous.catch(() => undefined).then(run).finally(() => {
+      if (boardRequests.get(id) === request) boardRequests.delete(id)
+    })
+    boardRequests.set(id, request)
+    return request
+  }
+  function rememberEtag(key: string, etag: string | null) {
+    if (etag) etags.value[key] = etag
+    else delete etags.value[key]
+  }
+  async function readBoard(id: string, detect: boolean, generation: number): Promise<Board | null> {
+    if (generation !== loadGeneration) return null
     const old = boards.value[id]
-    const b = await fetchBoard(id)
+    const complete = activityComplete.value[id] === true
+    const key = `${id}:${complete ? 'all' : 'recent'}`
+    const result = await fetchBoard(id, {
+      fields: 'all', activityLimit: complete ? undefined : 200,
+      etag: old ? etags.value[key] : undefined,
+    })
+    if (generation !== loadGeneration || result.notModified) return null
+    const b = result.board
+    if (!b) throw new Error('看板响应缺少数据')
+    rememberEtag(key, result.etag)
     boards.value = { ...boards.value, [id]: b }
-    if (opts.detect) diffPulse(id, old, b)
+    activityComplete.value[id] = complete
+    if (detect) diffPulse(id, old, b)
     return b
+  }
+  function loadBoard(id: string, opts: { detect?: boolean } = {}) {
+    const generation = loadGeneration
+    return queueBoardRead(id, () => readBoard(id, opts.detect === true, generation))
+  }
+
+  /** 全量历史只替换 activity，不触发增量事件；同项目并发调用共用一个 Promise。 */
+  function ensureFullActivity(pid: string): Promise<void> {
+    if (activityComplete.value[pid]) return Promise.resolve()
+    const pending = pendingActivity.get(pid)
+    if (pending) return pending
+    const generation = loadGeneration
+    const request = queueBoardRead(pid, async () => {
+      if (generation !== loadGeneration || activityComplete.value[pid]) return
+      if (!boards.value[pid]) await readBoard(pid, false, generation)
+      if (generation !== loadGeneration) return
+      const key = `${pid}:activity`
+      const result = await fetchBoard(pid, { fields: 'activity', etag: etags.value[key] })
+      if (generation !== loadGeneration) return
+      if (!result.notModified) {
+        if (!result.board) throw new Error('活动响应缺少数据')
+        const board = boards.value[pid]
+        if (!board) throw new Error('项目任务清单尚未加载')
+        boards.value = { ...boards.value, [pid]: { ...board, activity: result.board.activity ?? [] } }
+        rememberEtag(key, result.etag)
+      }
+      activityComplete.value[pid] = true
+    }).finally(() => {
+      if (pendingActivity.get(pid) === request) pendingActivity.delete(pid)
+    })
+    pendingActivity.set(pid, request)
+    return request
   }
   async function loadAllBoards() {
     const results = await Promise.allSettled(projects.value.map((p) => loadBoard(p.id)))
@@ -134,7 +196,6 @@ export const useBoardStore = defineStore('board', () => {
     const r = await postDecide(pid, taskId, { did, answer, author })
     // 主动重拉即时反馈（SSE 广播会再刷一次，幂等无害）
     await loadBoard(pid, { detect: true })
-    await loadProjects().catch(() => {})
     return r
   }
 
@@ -145,7 +206,6 @@ export const useBoardStore = defineStore('board', () => {
         .catch(() => {})
       return
     }
-    loadProjects().catch(() => {})
     loadBoard(pid, { detect: true }).catch(() => {})
   }
   function startStream() {
@@ -158,17 +218,28 @@ export const useBoardStore = defineStore('board', () => {
     stream = null
   }
   async function refresh() {
-    await loadProjects()
-    await loadAllBoards()
+    // 旧请求仍会排空，但不能写回新一轮缓存；页面观察 loading，刷新后再补自身需要的历史。
+    loadGeneration++
+    etags.value = {}
+    activityComplete.value = {}
+    pendingActivity.clear()
+    loading.value = true
+    error.value = null
+    try {
+      await loadProjects()
+      await loadAllBoards()
+    } finally {
+      loading.value = false
+    }
   }
 
   return {
-    projects, boards, currentProjectId, selectedTaskId, selectedTaskProjectId,
+    projects, boards, etags, activityComplete, currentProjectId, selectedTaskId, selectedTaskProjectId,
     conn, loading, error, initialized, centerScopeAll,
     projectList, allBoards, currentBoard, currentTasks, currentStatusCounts,
     currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, presumedLandedByTask, globalActivity, todayDoneCount, selectedBoard, selectedTask,
     isPulsing,
-    init, loadProjects, loadBoard, loadAllBoards, selectProject,
+    init, loadProjects, loadBoard, loadAllBoards, ensureFullActivity, selectProject,
     openTask, closeTask, decide, startStream, stopStream, refresh,
   }
 })

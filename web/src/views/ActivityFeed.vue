@@ -15,6 +15,13 @@ const fProj = ref('')
 const PAGE = 100
 const shown = ref(PAGE)
 
+watch(() => store.loading ? [] : (fProj.value ? [fProj.value] : store.projectList.map((p) => p.id))
+  .filter((pid) => !store.activityComplete[pid]), (pids) => {
+  for (const pid of pids) store.ensureFullActivity(pid).catch((e) => {
+    store.error = e instanceof Error ? e.message : String(e)
+  })
+}, { immediate: true })
+
 const types = computed(() => [...new Set(store.globalActivity.map((a) => a.type).filter(Boolean))] as string[])
 const filtered = computed(() =>
   store.globalActivity.filter(
