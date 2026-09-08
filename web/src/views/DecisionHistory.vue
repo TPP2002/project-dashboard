@@ -6,6 +6,7 @@ import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
 import { humanTitle } from '@/utils/taskTitle'
+import { isUnlanded, isPresumedLanded } from 'virtual:decision-landing'
 
 const store = useBoardStore()
 const search = ref('')
@@ -18,7 +19,7 @@ const base = computed(() =>
 
 const items = computed(() => {
   let arr = base.value
-  if (!showLanded.value) arr = arr.filter((it) => !(it.decision as any).landed)
+  if (!showLanded.value) arr = arr.filter((it) => isUnlanded(it.task, it.decision))
   const s = search.value.trim().toLowerCase()
   if (s) arr = arr.filter((it) =>
     it.task.id.toLowerCase().includes(s) ||
@@ -31,8 +32,9 @@ const items = computed(() => {
 })
 const stats = computed(() => {
   const all = base.value
-  const landed = all.filter((it) => (it.decision as any).landed).length
-  return { total: all.length, landed, unlanded: all.length - landed }
+  const unlanded = all.filter((it) => isUnlanded(it.task, it.decision)).length
+  const presumed = all.filter((it) => isPresumedLanded(it.task, it.decision)).length
+  return { total: all.length, unlanded, presumed, landed: all.length - unlanded - presumed }
 })
 </script>
 
@@ -44,7 +46,7 @@ const stats = computed(() => {
         <p>拍过的每一条都留档：什么时候拍的、拍了什么、当时为什么这么推荐。</p>
       </div>
       <div class="head-actions">
-        <span class="pill">{{ stats.total }} 条 · 待落地 {{ stats.unlanded }} · 已落地 {{ stats.landed }}</span>
+        <span class="pill">{{ stats.total }} 条 · 待落地 {{ stats.unlanded }} · 推定落地 {{ stats.presumed }} · 已落地 {{ stats.landed }}</span>
         <ScopeToggle />
         <label class="toggle">
           <input type="checkbox" v-model="showLanded" />
@@ -67,8 +69,14 @@ const stats = computed(() => {
           <span class="ttitle">{{ humanTitle(it.task) }}</span>
           <span class="did mono">#{{ it.decision.id }}</span>
           <span class="date">{{ it.decision.decidedAt || '—' }}</span>
-          <span class="badge icon-badge" :class="(it.decision as any).landed ? 'ok' : 'warn'">
-            <Icon :name="(it.decision as any).landed ? 'check' : 'toland'" :size="14" />{{ (it.decision as any).landed ? '已落地' : '待落地' }}
+          <span v-if="isPresumedLanded(it.task, it.decision)" class="badge n icon-badge">
+            <Icon name="check" :size="14" />随卡完工
+          </span>
+          <span v-else-if="isUnlanded(it.task, it.decision)" class="badge warn icon-badge">
+            <Icon name="toland" :size="14" />待落地
+          </span>
+          <span v-else class="badge ok icon-badge">
+            <Icon name="check" :size="14" />已落地
           </span>
         </div>
         <div class="q">{{ it.decision.question }}</div>

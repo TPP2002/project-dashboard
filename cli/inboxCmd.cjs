@@ -13,6 +13,7 @@ const { resolveProject } = require('../core/resolveProject.cjs');
 const { buildTaskDispatchPrompt } = require('./dispatchPrompt.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 const { humanTitle } = require('../core/taskTitle.cjs');
+const { unlandedOf, presumedLandedOf } = require('../core/decisionLanding.cjs');
 
 function need(v, msg) { if (v === undefined || v === true || v === '') throw new Error(msg); return v; }
 
@@ -21,16 +22,11 @@ function getRegistryPath(flags) {
   return flags.registry ? require('node:path').resolve(flags.registry) : REGISTRY_PATH;
 }
 
-function unlandedOf(task) {
-  return (task.decisions || []).filter((d) => d.answer !== null && d.answer !== undefined && !d.landed);
-}
-
 /**
  * 列表态默认只列这么多张(AUD-CLI-BRIEF-AND-HELP,审计 §4-A4)。
  * 【为什么要封顶】列表态的用途只是"挑一张接手"。实测某项目待落地 171 张 = 25KB≈14k token,
  * 一屏根本挑不动,还每次都烧一整轮额度。封顶 + `--all` 兜底,和 `list` 默认藏已完工同一个契约。
- * 注意:哪些决策算"待落地"是另一张卡的口径(AUD-UI-UNLANDED-DERIVE,还挂着待拍板),这里不碰,
- * 只管一次给多少行。
+ * 待落地口径由 core/decisionLanding.cjs 统一；这里仅控制列表一次给多少行。
  */
 const DEFAULT_LIST_LIMIT = 30;
 
@@ -92,6 +88,10 @@ function inbox(flags) {
   if (!found) {
     const t = (board.tasks || []).find((x) => x.id === tid);
     if (!t) throw new Error(`任务 ${tid} 不存在于项目 ${id}`);
+    const presumed = presumedLandedOf(t);
+    if (presumed.length) {
+      return { ok: true, text: `✅ 任务 ${tid} ${t.status}，其 ${presumed.length} 条未标记的拍板视为随卡落地，无需接手。` };
+    }
     return { ok: true, text: `✅ 任务 ${tid} 没有待落地决策(可能都已落地)。无需接手。` };
   }
   const prompt = buildTaskDispatchPrompt(id, projName, found.task, found.decisions, board);
