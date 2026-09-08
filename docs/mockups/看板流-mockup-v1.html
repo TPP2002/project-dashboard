@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板流 v1 · 待负责人点头</title>
+<style>
+/* 令牌镜像：复用图标体系 v3 的 :root/.light/.dark；六色盘来自 base.css。
+   本稿离线自包含，颜色字面量仅存在于这一块，界面与示意图均引用变量。 */
+:root,.light{--bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;--line:#e4e4e2;--line-strong:#d2d2cf;--text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;--ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;--bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;--n:#8e8e89;--n-bg:#eeeeed;
+ --r-sm:4px;--r:6px;--r-lg:8px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+ --fs-xs:11px;--fs-sm:12.5px;--fs-base:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;--fs-2xl:28px;
+ --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+ --spec-active:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4;
+ --spec-info:#4a9eff,#4ad9c4,#6d8cff,#4a9eff;--spec-warn:#f0b429,#f5825b,#f6d365,#f0b429;
+ --spec-ok:#6fbf82,#2c7a45,#a8e6b9,#6fbf82;--spec-bad:#e0736a,#8a2f27,#f2a59d,#e0736a;--spec-n:#c9c9c6,#8e8e89,#e4e4e2,#c9c9c6;
+ --project-blue:#4a9eff;--project-green:#3ddc97;--project-amber:#f0b429;--project-pink:#e8619d;--project-purple:#a86fd8;--project-gray:#8e8e89}
+.dark{--bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;--line:#242426;--line-strong:#343437;--text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;--ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;--bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;--n:#8e8e8e;--n-bg:#232326;
+ --spec-ok:#6fbf82,#3f9a5c,#a8e6b9,#6fbf82;--spec-bad:#e0736a,#a63d33,#f2a59d,#e0736a;--spec-n:#4a4a4e,#6a6a6f,#343437,#4a4a4e}
+*{box-sizing:border-box}html{scroll-padding-top:84px}html,body{margin:0}
+body{background:var(--surface-3);color:var(--text);font-family:var(--cn);font-size:var(--fs-md);line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}h1,h2,h3,h4{font-weight:600}button,input{font:inherit;color:inherit}button{cursor:pointer}
+button:focus-visible,input:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--info);outline-offset:3px}
+button,input{border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface)}
+button{padding:5px 10px;font-size:var(--fs-sm)}button:hover{background:var(--surface-3)}button[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}
+a{color:var(--info);text-decoration:none}a:hover{text-decoration:underline}
+.mono,.tid,.pct{font-family:var(--mono);font-variant-numeric:tabular-nums}.muted{color:var(--text-2)}.small{font-size:var(--fs-sm)}
+.doc{max-width:2240px;margin:0 auto;padding:var(--s6) var(--s5) 80px}
+.doc-head{display:flex;justify-content:space-between;gap:var(--s5);align-items:flex-start;flex-wrap:wrap;padding:var(--s5);border:1px solid var(--line-strong);border-radius:var(--r-lg);background:var(--bg)}
+.doc-head h1{font-size:34px;letter-spacing:-.035em;line-height:1.3;margin:10px 0}
+.doc-head p{color:var(--text-2);max-width:900px}.eyebrow{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;color:var(--text-2)}
+.doc-meta{display:grid;gap:var(--s2);min-width:240px;font-size:var(--fs-sm);color:var(--text-2)}.doc-meta strong{color:var(--text)}
+.tag,.badge,.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border:1px solid transparent;border-radius:var(--r-sm);font-size:var(--fs-xs);line-height:1.6;white-space:nowrap}
+.tag{background:var(--warn-bg);color:var(--warn)}.badge{font-family:var(--mono)}
+.badge.n{background:var(--surface-3);color:var(--text-2)}.badge.info{background:var(--info-bg);color:var(--info)}.badge.warn{background:var(--warn-bg);color:var(--warn)}.badge.bad{background:var(--bad-bg);color:var(--bad)}.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.pill{border-color:var(--line);background:var(--surface-2);color:var(--text-2)}.spacer{flex:1}
+.toolbar{display:flex;gap:var(--s3);align-items:center;justify-content:space-between;position:sticky;top:0;z-index:30;background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--r);margin-top:var(--s4);padding:var(--s2) var(--s3)}
+.section-nav{display:flex;gap:var(--s3);flex-wrap:wrap;font-size:var(--fs-sm)}.section-nav a{color:var(--text-2)}
+.modes{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r);overflow:hidden;background:var(--surface);position:sticky;top:12px;flex:none}
+.modes button{border:0;border-right:1px solid var(--line);border-radius:0;padding:6px 14px}.modes button:last-child{border-right:0}
+.sec{margin-top:44px}.sec>h2{font-size:var(--fs-xl);letter-spacing:-.01em}.sec>h2 .no{color:var(--text-2);font-family:var(--mono);font-size:var(--fs-md);margin-right:var(--s3)}
+.sec>p{margin:var(--s2) 0 var(--s4);color:var(--text-2);max-width:1150px}.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s4)}
+.pane{background:var(--bg);color:var(--text);border:1px solid var(--line-strong);border-radius:var(--r-lg);padding:36px var(--s4) var(--s4);position:relative;min-width:0;container-type:inline-size}
+.pane.dark{border-color:var(--line-strong)}.pane::before{content:attr(data-label);position:absolute;top:9px;right:14px;color:var(--text-2);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.08em}
+body[data-mode="light"] .pane.dark,body[data-mode="dark"] .pane.light{display:none}body:not([data-mode="pair"]) .pair{grid-template-columns:minmax(0,1fr)}
+body:not([data-mode="pair"]) .doc{max-width:1580px}
+.comparison{display:grid;grid-template-columns:minmax(215px,.72fr) minmax(280px,1fr);gap:var(--s3);align-items:start;min-width:0}
+.comparison.wide{grid-template-columns:minmax(185px,.52fr) minmax(330px,1fr)}
+.comparison>div{min-width:0}.compare-title{display:flex;align-items:center;gap:var(--s2);font-size:var(--fs-base);margin-bottom:var(--s2)}
+.compare-title em{font-style:normal;font-size:var(--fs-xs);font-weight:400;color:var(--text-2)}
+.screen{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r);background:var(--surface);min-width:0}
+.screen-head{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-weight:600;font-size:var(--fs-sm);margin-bottom:var(--s3)}
+.screen-head .pill{font-weight:400}.caption{color:var(--text-2);font-size:var(--fs-xs);margin-top:var(--s2);line-height:1.7}
+.why{margin-top:var(--s3)!important;border-left:2px solid var(--info);padding:var(--s2) var(--s3);font-size:var(--fs-sm)}
+.annotation{padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);font-size:var(--fs-sm);color:var(--text-2);margin-top:var(--s3)}
+.keyline{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;margin:var(--s3) 0;font-size:var(--fs-xs);color:var(--text-2)}
+.ic{width:1em;height:1em;display:inline-block;vertical-align:-.15em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;overflow:visible}
+.ic.s14{width:14px;height:14px}.ic.s16{width:16px;height:16px}.ic.s20{width:20px;height:20px}.ic .tint{fill:currentColor;stroke:none;opacity:.18}
+/* 状态瓦片与记号复用 v3 定稿 / StatusTile；不把功能图标改造成状态。 */
+.tile{display:inline-grid;place-items:center;width:20px;height:20px;padding:1.5px;border-radius:6px;background:var(--line);vertical-align:-.25em;flex:none;position:relative}
+.tile>i{display:grid;place-items:center;width:100%;height:100%;border-radius:4.5px;background:var(--tone-bg,var(--surface))}
+.tile svg{width:14px;height:14px;fill:none;stroke:var(--tone,var(--text-2));stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+.tile.fill>i{background:var(--tone)}.tile.fill svg{stroke:var(--bg)}.tile.dim{opacity:.5}
+.tile.lg{width:26px;height:26px;border-radius:7px;padding:1.75px}.tile.lg>i{border-radius:5.5px}.tile.lg svg{width:18px;height:18px}
+.tile.sm{width:16px;height:16px;border-radius:5px;padding:1px}.tile.sm>i{border-radius:4px}.tile.sm svg{width:11px;height:11px;stroke-width:2.4}
+.tile.spec{background-image:linear-gradient(90deg,var(--tone-spec,var(--spec-active)));background-size:200% 100%;animation:slide 3.4s linear infinite}
+.tile.sp-fast{animation-duration:2.4s}.tile.sp-slow{animation-duration:5s}.tile.sp-ember{animation-duration:6.4s}.tile.sp-rev{animation-direction:reverse}
+.tone-n{--tone:var(--n);--tone-bg:var(--n-bg);--tone-spec:var(--spec-n)}.tone-info{--tone:var(--info);--tone-bg:var(--info-bg);--tone-spec:var(--spec-info)}.tone-warn{--tone:var(--warn);--tone-bg:var(--warn-bg);--tone-spec:var(--spec-warn)}.tone-ok{--tone:var(--ok);--tone-bg:var(--ok-bg);--tone-spec:var(--spec-ok)}.tone-bad{--tone:var(--bad);--tone-bg:var(--bad-bg);--tone-spec:var(--spec-bad)}
+.a-b1,.a-b2,.a-b3{animation:build 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:bottom center}.a-b2{animation-delay:.25s}.a-b3{animation-delay:.5s}
+.a-pulse{animation:pulse 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}.a-breathe{animation:pulse 4s ease-in-out infinite}
+.a-dot1,.a-dot2,.a-dot3{animation:dots 1.6s ease-in-out infinite}.a-dot2{animation-delay:.2s}.a-dot3{animation-delay:.4s}
+@keyframes build{0%,15%{transform:scaleY(.25)}55%,75%{transform:scaleY(1)}100%{transform:scaleY(.25)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}@keyframes dots{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-1.6px)}}
+@keyframes slide{to{background-position:-200% 0}}@keyframes slideY{to{background-position:0 -200%}}
+.glow-rail{height:6px;overflow:hidden;border-radius:3px;background:var(--surface-3);flex:1;min-width:25px}
+.glow-rail>i{display:block;height:100%;border-radius:3px;background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide 3.4s linear infinite}
+.glow-edge{position:absolute;inset:0 auto 0 0;width:3px;background-image:linear-gradient(180deg,var(--spec-info));background-size:100% 200%;animation:slideY 3.4s linear infinite}
+.board-scroll{display:flex;gap:var(--s2);overflow-x:auto;align-items:flex-start;padding-bottom:var(--s2)}
+.column{flex:1 0 250px;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s2)}
+.column-head{display:flex;align-items:center;gap:var(--s2);padding:var(--s1);margin-bottom:var(--s2)}
+.column-head .name{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);white-space:nowrap}.column-head .count-badge{margin-left:auto;font-size:var(--fs-sm);font-weight:600}
+.column-head .limit{font-family:var(--mono);font-size:var(--fs-xs);color:var(--text-2);white-space:nowrap}
+.column-body{display:grid;gap:var(--s2);align-items:start}.lane-note{font-size:var(--fs-xs);color:var(--text-2);padding:0 var(--s1) var(--s2)}
+.tcard{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:var(--s2);padding:var(--s3);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r)}
+.tcard-head{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs)}.tid{color:var(--text-2);font-weight:600}.ttitle{font-size:var(--fs-base);line-height:1.45;font-weight:500}
+.tdesc{color:var(--text-2);font-size:var(--fs-xs);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:3em}
+.prog-wrap{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}.pct{font-size:var(--fs-xs);color:var(--text-2)}.prog-time{display:flex;align-items:center;gap:4px;font-size:var(--fs-xs);color:var(--text-2)}.prog-time.stale{color:var(--warn)}
+.tcard-meta{display:flex;align-items:center;gap:var(--s1);flex-wrap:wrap}.age{margin-left:auto;font-size:var(--fs-xs);padding:1px 6px}.age b{font-weight:600}.lane-mini{display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s3)}
+.controls{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-size:var(--fs-xs);margin:var(--s2) 0}
+.search-field{display:flex;align-items:center;gap:6px;flex:1;min-width:155px;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface-2);padding:4px 8px}
+.search-field input{min-width:0;width:100%;border:0;background:transparent;padding:3px;font-size:var(--fs-sm)}
+.switch{display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:var(--fs-xs);white-space:nowrap}.switch input{accent-color:var(--info);width:15px;height:15px;cursor:pointer}
+.graph-scroll{overflow:auto;border:1px solid var(--line);border-radius:var(--r);max-height:590px;background:var(--bg)}
+.graph{display:block;width:100%;min-width:548px}.graph text{font-family:var(--cn);fill:var(--text);font-size:11px}.graph .node-id{font-family:var(--mono);font-size:10px;fill:var(--text-2)}
+.graph .layer-title{font-size:12px;fill:var(--text-2);font-weight:600}.graph .layer-fill{fill:var(--surface-2)}
+.graph .node rect{fill:var(--surface);stroke:var(--tone);stroke-width:1.3}.graph .node .status-mark{fill:var(--tone);stroke:none}
+.graph .node{cursor:pointer;transition:opacity .2s ease}.graph .node:hover rect{stroke-width:2.5}.graph .node.focused rect{fill:var(--tone-bg);stroke:var(--info);stroke-width:2.8}
+.graph .node:focus-visible{outline:none}.graph .node:focus-visible rect{stroke:var(--info);stroke-width:3}
+.graph .edge{fill:none;stroke:var(--info);stroke-width:1.4;transition:opacity .2s ease}.graph .edge.blocked{stroke:var(--bad);stroke-dasharray:5 3}.graph .edge.highlight{stroke-width:2.3}
+.graph .faded{opacity:.16}.graph .node.faded{opacity:.25}.edge-legend{display:inline-block;width:24px;border-top:2px solid var(--info)}.edge-legend.blocked{border-color:var(--bad);border-top-style:dashed}
+.old-graph{width:100%;height:430px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg)}.old-graph text{fill:var(--text-2);font:10px var(--mono)}.old-graph line{stroke:var(--info);stroke-width:.8;opacity:.45}.old-graph circle{fill:var(--tone);stroke:var(--surface);stroke-width:.7}
+.status-message{min-height:2.7em;font-size:var(--fs-xs);color:var(--text-2);margin:var(--s2) 0}
+.gantt-scroll{overflow:auto;max-height:685px;border:1px solid var(--line);border-radius:var(--r)}.timeline{min-width:620px;font-size:var(--fs-xs);background:var(--bg)}
+.time-head,.gantt-row,.wave-band{display:grid;grid-template-columns:220px minmax(0,1fr)}.time-head{position:sticky;top:0;z-index:4;background:var(--surface);border-bottom:1px solid var(--line-strong);height:53px}
+.time-head>.time-label{padding:var(--s3);font-weight:600}.time-axis{position:relative;border-left:1px solid var(--line);margin-right:12px}
+.tick{position:absolute;top:8px;font:10px var(--mono);color:var(--text-2);transform:translateX(-50%);white-space:nowrap}.tick.first{transform:none}.tick.last{transform:translateX(-100%)}
+.today-label{position:absolute;bottom:4px;transform:translateX(-100%);color:var(--bad);font-size:10px;white-space:nowrap;font-weight:600}
+.gantt-row{min-height:36px;border-bottom:1px solid var(--line)}.gantt-label{padding:8px;display:flex;gap:6px;align-items:center;min-width:0}.gantt-label .title{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.gantt-label .tid{font-size:10px;flex:none}
+.gantt-track{position:relative;border-left:1px solid var(--line);margin-right:12px;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(25% - 1px),var(--line) calc(25% - 1px),var(--line) 25%)}
+.today-line{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);z-index:2;pointer-events:none}
+.gantt-bar{position:absolute;top:11px;height:13px;min-width:3px;border-radius:3px;background:var(--wave-color);border:1px solid var(--wave-color)}
+.gantt-bar.ended{opacity:.65}.gantt-bar.clipped{border-left:3px solid var(--text-2);border-top-left-radius:0;border-bottom-left-radius:0}
+.wave-band{background:var(--surface-2);color:var(--text-2);min-height:29px}.wave-band>span{padding:4px 8px;font-weight:600}.wave-band .band-track{position:relative;border-left:1px solid var(--line);padding:0;margin-right:12px}
+.wave-0{--wave-color:var(--project-blue)}.wave-1{--wave-color:var(--project-purple)}.wave-2{--wave-color:var(--project-amber)}
+.wave-dot{width:8px;height:8px;background:var(--wave-color);display:inline-block;border-radius:50%;flex:none}
+.no-start{padding:8px;display:flex;gap:var(--s2);border-bottom:1px solid var(--line);align-items:center;color:var(--text-2)}.no-start .title{flex:1}.no-start .badge{margin-left:auto}.outside{font-size:10px;color:var(--text-2);position:absolute;top:9px;left:8px}
+.old-gantt{border:1px solid var(--line);padding:var(--s2);border-radius:var(--r)}.old-axis{text-align:center;color:var(--text-2);font-size:var(--fs-xs);padding:var(--s2);border-bottom:1px solid var(--line)}
+.old-gantt-row{padding:var(--s3) 0;display:grid;grid-template-columns:58px 1fr;gap:6px;align-items:center;border-bottom:1px solid var(--line);font-size:10px}.old-track{height:13px;background:var(--surface-3);border:1px solid var(--line-strong);position:relative}.old-track>i{display:block;height:100%;background:var(--info);min-width:2px}.old-track span{position:absolute;right:3px;top:-3px;font-size:10px;color:var(--text-2)}
+.waves{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3);align-items:start}.waves-old{display:grid;gap:var(--s3)}
+.wave{display:flex;flex-direction:column;gap:var(--s2);padding:var(--s3);border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.w-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.w-title{font-size:var(--fs-base);font-weight:600}.w-pct{margin-left:auto;font:var(--fs-xs) var(--mono);color:var(--text-2)}
+.w-tasks{display:flex;flex-direction:column;gap:var(--s1);margin-top:var(--s1)}.wt{position:relative;display:flex;gap:6px;align-items:center;padding:6px 5px;overflow:hidden;border-radius:var(--r-sm);background:var(--surface-2);font-size:var(--fs-xs)}
+.wt .tt{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.wt .tid{font-size:10px}.wt .blocked-title{color:var(--bad)}.wave-caption{color:var(--text-2);font-size:var(--fs-xs)}
+.waves-compare{display:grid;grid-template-columns:minmax(175px,.52fr) minmax(330px,1fr);gap:var(--s3)}.waves-compare>div{min-width:0}
+.appearance-center{border:1px solid var(--line);border-radius:var(--r);padding:var(--s4);background:var(--surface)}
+.appearance-center .ac-h{margin:var(--s3) 0 var(--s1);font-size:var(--fs-md)}.appearance-center .ac-h:first-child{margin-top:0}
+.appearance-center .ac-p{margin:0 0 var(--s3);color:var(--text-2);font-size:var(--fs-sm);line-height:1.6}.appearance-center .ac-hint{margin:var(--s2) 0 0;color:var(--text-2);font-size:var(--fs-xs);line-height:1.5}
+.appearance-center .ac-line{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--s3);padding:var(--s2) 0}
+.appearance-center .ac-line+.ac-line{border-top:1px solid var(--line)}.appearance-center .ac-text{flex:1;min-width:150px}.appearance-center .ac-text b{display:block;color:var(--text);font-size:var(--fs-base);font-weight:500}.appearance-center .ac-text span{color:var(--text-2);font-size:var(--fs-xs);line-height:1.5}
+.appearance-center .ac-options{display:flex;gap:var(--s1);align-items:center;font-size:var(--fs-xs);color:var(--text-2)}.ac-options input{width:77px;padding:5px 7px;font-family:var(--mono);color:var(--text)}
+.appearance-center details{margin:var(--s2) 0}.appearance-center summary{cursor:pointer;font-size:var(--fs-sm);color:var(--text-2)}.settings-state{margin-top:var(--s3);font-size:var(--fs-xs);color:var(--info)}
+.decisions{display:grid;gap:var(--s3)}.decision{padding:var(--s4);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.decision h3{font-size:var(--fs-md);display:flex;align-items:baseline;gap:var(--s2)}.decision .qno{font:var(--fs-xs) var(--mono);color:var(--text-2)}
+.options{list-style:none;padding:0;margin:var(--s3) 0;display:grid;gap:var(--s2)}.options li{padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r);font-size:var(--fs-sm)}.options li.recommended{border-color:var(--info);background:var(--info-bg)}
+.options b{font-weight:500}.options span{display:block;color:var(--text-2);font-size:var(--fs-xs);margin-top:3px}.recommendation{font-size:var(--fs-sm);color:var(--text-2)}
+.footer{margin-top:var(--s6);padding-top:var(--s4);border-top:1px solid var(--line-strong);color:var(--text-2);font-size:var(--fs-xs)}.footer details{margin-top:var(--s3)}.footer summary{cursor:pointer}.footer ul{padding-left:20px}
+.reduced-note{display:none}.storage-note{font-size:var(--fs-xs);color:var(--text-2);margin-top:var(--s2)}
+@container (max-width:680px){.comparison,.comparison.wide,.waves-compare{grid-template-columns:minmax(190px,.65fr) minmax(280px,1fr);overflow-x:auto;padding-bottom:var(--s2)}.waves{grid-template-columns:minmax(150px,1fr) minmax(150px,1fr);overflow-x:auto}.pane .screen{padding:var(--s2)}.column{flex-basis:225px}}
+@media(max-width:1120px){.pair{grid-template-columns:minmax(0,1fr)}.doc{padding:var(--s4) var(--s3) 60px}.section-nav{gap:var(--s2)}}
+@media(max-width:620px){.doc-head{padding:var(--s4)}.doc-head h1{font-size:28px}.toolbar{align-items:flex-start;gap:var(--s2)}.section-nav{max-width:190px;font-size:var(--fs-xs)}.modes button{padding:6px 9px}.pane{padding-inline:var(--s2)}.waves{grid-template-columns:1fr}.sec>h2{font-size:20px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}.reduced-note{display:inline}.motion-note{display:none}}
+@media print{.toolbar{position:static}.doc{padding:0}.pair{grid-template-columns:1fr}.pane{break-inside:avoid}.graph-scroll,.gantt-scroll{max-height:none}.sec{break-before:page}*{animation:none!important}}
+</style>
+</head>
+<body data-mode="pair">
+<svg width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden"><defs>
+<symbol id="ic-kanban" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><rect class="tint" x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="3" y="4" width="5.5" height="16" rx="1.2"/><rect x="9.25" y="4" width="5.5" height="11" rx="1.2"/><rect x="15.5" y="4" width="5.5" height="7" rx="1.2"/></symbol>
+<symbol id="ic-layers" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><path class="tint" d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m12 3 9 4.8-9 4.8-9-4.8z"/><path d="m3 12.4 9 4.8 9-4.8"/><path d="m3 17 9 4.8 9-4.8"/></symbol>
+<symbol id="ic-gantt" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><path class="tint" d="M4 4.5h8a1.5 1.5 0 0 1 0 3H4zM8 10.5h9a1.5 1.5 0 0 1 0 3H8zM12 16.5h8a1.5 1.5 0 0 1 0 3h-8z"/><path d="M4 6h8M8 12h9M12 18h8"/></symbol>
+<symbol id="ic-network" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><circle class="tint" cx="18" cy="5" r="2.6"/><circle class="tint" cx="6" cy="12" r="2.6"/><circle class="tint" cx="18" cy="19" r="2.6"/><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.4 13.3 7.2 4.2M15.6 6.5 8.4 10.7"/></symbol>
+<symbol id="ic-search" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><circle class="tint" cx="11" cy="11" r="6.5"/><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/></symbol>
+<symbol id="ic-alertTri" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><path class="tint" d="M12 3.5 2.9 19a1.2 1.2 0 0 0 1 1.8h16.2a1.2 1.2 0 0 0 1-1.8z"/><path d="M12 3.5 2.9 19a1.2 1.2 0 0 0 1 1.8h16.2a1.2 1.2 0 0 0 1-1.8z"/><path d="M12 9.5v4.5M12 17.5h.01"/></symbol>
+<symbol id="ic-settings" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><circle class="tint" cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></symbol>
+<symbol id="ic-chevron" viewBox="0 0 24 24" data-source="web/src/icons/paths.ts"><path d="m7 10 5 5 5-5"/></symbol>
+<symbol id="st-none" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><circle class="a-ring" cx="12" cy="12" r="4.6" stroke-dasharray="2.3 2.3"/></symbol>
+<symbol id="st-queued" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><circle class="a-dot1" cx="6.5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle class="a-dot2" cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle class="a-dot3" cx="17.5" cy="12" r="1.7" fill="currentColor" stroke="none"/></symbol>
+<symbol id="st-ask" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><g class="a-pulse"><path d="M9.4 9.3a2.7 2.7 0 1 1 3.9 2.3c-1 .5-1.3 1.1-1.3 2.1"/><path d="M12 17.4h.01" stroke-width="2.8"/></g></symbol>
+<symbol id="st-decided" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><path class="a-draw" d="m7 12.6 3.2 3.2 6.8-7.4"/><path d="M7 18.5h10" style="opacity:.45"/></symbol>
+<symbol id="st-building" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><path d="M5.5 19h13" style="opacity:.45"/><path class="a-b1" d="M7.5 16.5v-3.5"/><path class="a-b2" d="M12 16.5v-7"/><path class="a-b3" d="M16.5 16.5v-10.5"/></symbol>
+<symbol id="st-resume" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><g class="a-spin"><path d="M7 12.6a5 5 0 1 0 1.6-3.7"/><path d="M6.4 6.2v3.4h3.4"/></g></symbol>
+<symbol id="st-wrap" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><path d="M8 19V5.5"/><g class="a-wave"><path d="M8 6h8.6l-1.7 3 1.7 3H8"/></g></symbol>
+<symbol id="st-done" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><path class="a-draw" d="m7 12.4 3.3 3.3 6.7-7.4"/></symbol>
+<symbol id="st-parked" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><g class="a-breathe"><path d="M9.4 8.3v7.4M14.6 8.3v7.4"/></g></symbol>
+<symbol id="st-finale" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><g class="a-twinkle"><path d="m12 5.8 1.9 3.9 4.3.6-3.1 3 .7 4.3L12 15.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z"/></g></symbol>
+<symbol id="st-void" viewBox="0 0 24 24" data-source="web/src/icons/statusGlyphs.ts"><path d="m8.5 8.5 7 7M15.5 8.5l-7 7"/></symbol>
+</defs></svg>
+<div class="doc">
+  <header class="doc-head">
+    <div>
+      <div class="eyebrow">AUD-UI-KANBAN-FLOW / DESIGN REVIEW 01</div>
+      <h1>让停滞、前后关系与工期<br>一眼看得见。</h1>
+      <p>保留熟悉的卡片，把「开了多久」「谁等着谁」「哪一波被挡住」放到扫一眼就能找到的位置。四块改动，逐项对照今天与新版。</p>
+    </div>
+    <div class="doc-meta">
+      <div><span class="tag">待负责人点头</span></div>
+      <div><strong>版本</strong> v1　<strong>日期</strong> 2026-09-08</div>
+      <div><strong>审计对应</strong> §4-B10 / B11、§2.2</div>
+      <div><strong>样例</strong> 30 张卡 · 3 个波次 · 18 条依赖</div>
+      <div><strong>固定演示时刻</strong> 09 月 08 日 12:00（北京时间）</div>
+      <div>本页是外观设计稿；选择题尚未批准。</div>
+    </div>
+  </header>
+  <div class="toolbar">
+    <nav class="section-nav" aria-label="设计稿章节">
+      <a href="#kanban">01 泳道</a><a href="#dependency">02 依赖</a><a href="#gantt">03 时间轴</a><a href="#waves">04 波次</a><a href="#settings">05 设置</a><a href="#decisions">06 拍板点</a>
+    </nav>
+    <div class="modes" role="group" aria-label="主题展示方式">
+      <button type="button" data-mode="light" aria-pressed="false">浅</button><button type="button" data-mode="dark" aria-pressed="false">深</button><button type="button" data-mode="pair" aria-pressed="true">并排</button>
+    </div>
+  </div>
+  <p class="storage-note" id="storage-note" role="status">可操作：主题、依赖搜索与范围、日期缩放、设置数字。修改只用于本地预览，不代表拍板。</p>
+  <noscript><p class="annotation">请允许此离线文档运行内联脚本，以显示两套主题与示例图。文档不联网，不需要安装依赖。</p></noscript>
+
+  <section class="sec" id="kanban" aria-labelledby="kanban-title">
+    <h2 id="kanban-title"><span class="no">01</span>先看最久没动的活，再看已经开了多久</h2>
+    <p>同样五张施工卡，今天只有「超过 30 分钟没更新」这一种警示。新版把更新时间与卡龄分开：排序看前者，右上角数字看后者。</p>
+    <div class="pair" id="kanban-pair"></div>
+    <p class="why"><b>为什么这么画：</b>编号、标题、两行说明、进度条的位置不变，负责人继续按原来的习惯读卡。超限只改变泳道头的计数徽章，施工状态瓦片和左侧蓝色流光仍表示「正在做」。</p>
+  </section>
+  <section class="sec" id="dependency" aria-labelledby="dependency-title">
+    <h2 id="dependency-title"><span class="no">02</span>把一团关系，排成有先后的三层</h2>
+    <p>左边是审计中拥挤状态的压力示意，右边用同一套样例卡按波次分层。默认 12 个节点；试搜「登录」或点节点，沿它的上下游读关系。</p>
+    <div class="pair" id="dependency-pair"></div>
+    <p class="why"><b>为什么这么画：</b>固定层级比拖来拖去的节点更容易认路；保留一跳邻居，前置任务即使已完工也不会突然失踪。聚焦用实色描边，其他节点淡化，关系线的原有含义保留。</p>
+  </section>
+  <section class="sec" id="gantt" aria-labelledby="gantt-title">
+    <h2 id="gantt-title"><span class="no">03</span>让每条横条，真正代表一段时间</h2>
+    <p>横条从开工日画到完工日，没完工就画到今天。按波次分组、按日期量长度；还没有开工日的卡在最下方单列，既不消失，也不硬塞一个日期。</p>
+    <div class="pair" id="gantt-pair"></div>
+    <p class="why"><b>为什么这么画：</b>进度为零也可能已经耗了几天，时间轴能把这件事显出来。三个波次只借用现有色盘辨认分组，今天的竖线提供统一参照；七天看细节，九十天看跨度。</p>
+  </section>
+  <section class="sec" id="waves" aria-labelledby="waves-title">
+    <h2 id="waves-title"><span class="no">04</span>两栏扫过每一波，先看到被挡住的数量</h2>
+    <p>继续保留「波次标题、完成数、进度条、任务列表」的骨架。每波补一枚「阻塞 N」，只数被挡的卡，多个阻塞原因不会重复计数；零时不占位置。</p>
+    <div class="pair" id="waves-pair"></div>
+    <p class="why"><b>为什么这么画：</b>两栏同时露出更多波次，标题里的阻塞数帮助负责人先决定看哪一波。本样例第二波有两张、第三波有三张被挡，第一波没有阻塞徽章。</p>
+  </section>
+  <section class="sec" id="settings" aria-labelledby="settings-title">
+    <h2 id="settings-title"><span class="no">05</span>把上限和提醒节奏，放回外观中心</h2>
+    <p>沿用现有行式结构：左边说清含义，右边改数字。可直接改动预览，深浅两边同步；这不是对真实看板的设置，也不是负责人已选定的默认值。</p>
+    <div class="pair" id="settings-pair"></div>
+    <p class="why"><b>为什么这么画：</b>一条泳道一个上限，避免「全部限制成一样」的误解；三档阈值集中放在同一处，读卡与提醒就能遵循同一套时间刻度。</p>
+  </section>
+  <section class="sec" id="decisions" aria-labelledby="decisions-title">
+    <h2 id="decisions-title"><span class="no">06</span>请负责人看完稿，再决定这五件事</h2>
+    <p>蓝底仅标推荐，不代表选中。此页没有提交或批准动作；本轮交付到设计稿为止，负责人点头后另单实现。</p>
+    <div class="pair" id="decisions-pair"></div>
+    <p class="why"><b>为什么这么画：</b>把影响工作习惯的默认值单独摆出来，负责人可以看过实际效果后逐题选择，施工方不代做决定。</p>
+  </section>
+  <footer class="footer">
+    <p>稿件状态：待负责人点头 · v1 · 2026-09-08。<span class="motion-note">灯条持续流动，彩色流光仅点缀进度与状态边缘。</span><span class="reduced-note">已跟随系统「减少动效」，所有流光保持静止。</span></p>
+    <details><summary>对照来源与演示口径</summary>
+      <ul>
+        <li>审计出处：docs/审计报告-20260907-看板全景审计.md §4-B10 / B11、§2.2；「今天」压力图与零进度图是审计痛点示意，不冒充实时项目截图。</li>
+        <li>骨架对照：Kanban.vue、TaskCard.vue、DependencyGraph.vue、Gantt.vue、Waves.vue、StatusTile.vue、AppearanceWorkfloor.vue；令牌与流光对照 base.css、图标体系 v3 定稿。</li>
+        <li>功能符号从 web/src/icons/paths.ts 原样内联；状态瓦片记号复用 v3 定稿对应的 statusGlyphs.ts，未设计新图标。全部样例为虚构中文工作项。</li>
+        <li>演示固定在北京时间 2026-09-08 12:00，卡龄、更新时间与日期窗口不随打开日期漂移。近 30 天为 08-10 至 09-08；显示全部将展开 30 张样例卡，默认关系子图为 12 张。</li>
+        <li>本地预览使用独立 localStorage 键；读回逐字段校验，非法字段回到演示值。数据缺失不推算开工日、不补完工日。波次计数按卡去重。</li>
+      </ul>
+    </details>
+  </footer>
+</div>
+<script>
+'use strict';
+// 同一份固定样例贯穿四个视图。小时/日期均为北京时间，避免打开当天改变稿件含义。
+const NOW = Date.parse('2026-09-08T12:00:00+08:00');
+const DAY = 86400000;
+const HOUR = 3600000;
+const STATUSES = ['未开工','待开工','待拍板','已拍板','施工中','可复工','收官','已完工','暂缓','压轴','已作废'];
+const STATUS_META = {
+  '未开工':['none','n'], '待开工':['queued','info'], '待拍板':['ask','warn'],
+  '已拍板':['decided','ok'], '施工中':['building','info'], '可复工':['resume','info'],
+  '收官':['wrap','ok'], '已完工':['done','ok'], '暂缓':['parked','bad'],
+  '压轴':['finale','warn'], '已作废':['void','n']
+};
+const WAVE_NAMES = ['基础与同步','账户与可靠性','日常体验'];
+// 元组：编号、人话标题、技术说明、状态、开工距今小时、完工距今天数、进度、最后更新距今分钟。
+const TASK_ROWS = [
+  [1,'每次更新待办要跑两遍同步','合并重复同步入口，保留失败回执与重试记录。相同更新只处理一次。','施工中',216,null,35,4320],
+  [2,'重新打开也记得上次选的项目','持久化项目选择，读取时验证注册表中仍存在对应项目。','已完工',624,19,100,27360],
+  [3,'保存失败要让人看得见','失败回执显示在当前卡片，保留输入并给出明确重试入口。','施工中',6,null,60,300],
+  [4,'任务编号复制后能直接开工','复制内容保留完整编号，与任务书入口使用同一个标识。','已完工',576,13,100,18720],
+  [5,'切换项目后别串进上一张卡','切换项目时清理旧卡定位，只在当前项目中恢复选中项。','已完工',504,10,100,14400],
+  [6,'空项目也能知道下一步做什么','补齐空状态说明，展示创建任务与选择项目的现有入口。','收官',120,null,90,80],
+  [7,'刷新后保留刚选的筛选条件','校验本地筛选项的字段和值，失效项恢复项目默认状态。','待开工',null,null,0,null],
+  [8,'搜不到任务时给一句说明','保留搜索词并显示空结果提示，不把空列表误显示为加载中。','未开工',null,null,0,null],
+  [9,'任务列表按约定顺序排列','统一列表排序字段，保留同值任务的稳定顺序。','已拍板',null,null,0,null],
+  [10,'让长标题完整出现在详情里','列表保持省略样式，详情展示完整人话标题与技术说明。','压轴',null,null,0,null],
+  [11,'断网以后再连上不丢修改','保存尚未同步的更新，连接恢复后按原顺序处理回执。','待开工',null,null,0,null],
+  [12,'登录失败连续五次要锁一会儿','累计连续失败次数，锁定到期后恢复登录。保留清楚的错误提示。','施工中',48,null,55,1560],
+  [13,'敏感操作前说清会影响什么','确认文案展示影响范围，取消时完整保留当前工作现场。','待拍板',72,null,20,2880],
+  [14,'导出报表别漏掉最后一天','按用户选择的日期边界汇总数据，统一显示时区与结束日。','施工中',3,null,20,120],
+  [15,'退出账户后清掉本地身份','退出时清理身份缓存，保留与身份无关的个人外观设置。','已完工',384,9,100,12960],
+  [16,'失效链接给出返回项目入口','链接过期时展示可理解的原因，保留返回当前项目的路径。','收官',168,null,95,35],
+  [17,'导出中断后可以重新开始','记录导出失败原因，重新操作时生成独立文件。','可复工',192,null,40,75],
+  [18,'多人同时更新别覆盖对方','按修订版本校验变更，冲突时展示双方最新内容。','未开工',null,null,0,null],
+  [19,'找回账户的步骤再短一点','核对现有找回入口的提示文本，减少重复确认。','待开工',null,null,0,null],
+  [20,'把操作记录按时间排好','记录展示按事件发生时间排序，缺时间的条目单列。','已完工',336,6,100,8640],
+  [21,'负责人留言后提醒施工方','在留言回执完成后发出站内提醒，避免重复通知。','待开工',null,null,0,null],
+  [22,'周报里先列被挡住的工作','按任务聚合阻塞原因，同一任务只在摘要中计数一次。','暂缓',96,null,10,3600],
+  [23,'关闭弹窗后回到刚才的位置','关闭详情后恢复列表滚动位置与焦点，不跳回第一张卡。','施工中',25/60,null,5,8],
+  [24,'手机上也能读全任务标题','窄屏保留编号与标题层次，长说明放入详情。','待开工',null,null,0,null],
+  [25,'每天的完成数量一眼能看到','汇总当天完工时间，明确展示统计时区与卡片数量。','已完工',240,2,100,2880],
+  [26,'搜索也能找到旧的任务编号','保留历史编号检索索引，结果跳转到当前任务。','收官',96,null,80,50],
+  [27,'待办太多时先看当前这一波','沿用已有波次筛选，记住用户当前选择。','未开工',null,null,0,null],
+  [28,'给暂时搁置的工作留个说明','暂缓原因在任务详情展示，恢复后保留历史记录。','暂缓',144,null,15,2160],
+  [29,'一键回到今天的工作记录','时间列表提供今天定位，避免反复滚动翻页。','可复工',72,null,50,90],
+  [30,'把新手说明放到容易找到的地方','首页保留帮助入口，说明内容按实际功能分段。','压轴',null,null,0,null]
+];
+const DEPENDS = {11:[1,2],12:[2,4],13:[1,3],14:[3,4],21:[11,12],22:[11,12,13],23:[12,14],24:[13,14,4]};
+const BLOCKED = {11:[1],13:[3],21:[11],22:[12,13],24:[13]};
+const tasks = TASK_ROWS.map(([n,plainTitle,title,status,startHours,doneDays,percent,lastMinutes]) => ({
+  id:`FLOW-${String(n).padStart(2,'0')}`, n, plainTitle,title,status,percent,wave:Math.floor((n-1)/10),
+  dates:{start:startHours===null?null:NOW-startHours*HOUR,done:doneDays===null?null:NOW-doneDays*DAY},
+  lastProgressAt:lastMinutes===null?null:NOW-lastMinutes*60000,
+  deps:{dependsOn:DEPENDS[n]||[],blockedBy:BLOCKED[n]||[]}
+}));
+const byNumber = new Map(tasks.map(t=>[t.n,t]));
+const edges = tasks.flatMap(t=>t.deps.dependsOn.map(n=>({from:n,to:t.n,blocked:t.deps.blockedBy.includes(n)})));
+const DEMO_DEFAULTS = {mode:'pair',limits:Object.fromEntries(STATUSES.map(s=>[s,s==='施工中'?4:0])),thresholds:[60,240,1440],graphAll:false,ganttDays:30,ganttDone:true,wavesDone:true};
+const STORAGE_KEY = 'aud-ui-kanban-flow-mockup-v1';
+let storageMessage = '';
+let settingsMessage = '演示值：施工中上限 4，其余不限；默认值仍待负责人选择。';
+function isObject(v){return v!==null && typeof v==='object' && !Array.isArray(v);}
+function validInteger(v,min,max){return Number.isInteger(v)&&v>=min&&v<=max;}
+function freshDefaults(){return {...DEMO_DEFAULTS,limits:{...DEMO_DEFAULTS.limits},thresholds:[...DEMO_DEFAULTS.thresholds]};}
+function readPreferences(){
+  const clean=freshDefaults();
+  let raw;
+  try{raw=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');}
+  catch(error){storageMessage='本地预览记录无法读取，已使用演示值；本页仍可操作。';return clean;}
+  if(raw===null)return clean;
+  if(!isObject(raw)){storageMessage='本地预览记录格式无效，已回到演示值。';return clean;}
+  let rejected=false;
+  for(const key of ['graphAll','ganttDone','wavesDone']){
+    if(typeof raw[key]==='boolean')clean[key]=raw[key];else if(key in raw)rejected=true;
+  }
+  if(['light','dark','pair'].includes(raw.mode))clean.mode=raw.mode;else if('mode' in raw)rejected=true;
+  if([7,30,90].includes(raw.ganttDays))clean.ganttDays=raw.ganttDays;else if('ganttDays' in raw)rejected=true;
+  if(isObject(raw.limits)){
+    for(const status of STATUSES){if(validInteger(raw.limits[status],0,999))clean.limits[status]=raw.limits[status];else if(status in raw.limits)rejected=true;}
+  }else if('limits' in raw)rejected=true;
+  if(Array.isArray(raw.thresholds)){
+    for(let i=0;i<3;i++){if(validInteger(raw.thresholds[i],1,525600))clean.thresholds[i]=raw.thresholds[i];else rejected=true;}
+    if(!(clean.thresholds[0]<clean.thresholds[1]&&clean.thresholds[1]<clean.thresholds[2])){clean.thresholds=[...DEMO_DEFAULTS.thresholds];rejected=true;}
+  }else if('thresholds' in raw)rejected=true;
+  if(rejected)storageMessage='已逐字段检查本地预览记录，无效字段已回到演示值。';
+  return clean;
+}
+let preferences=readPreferences();
+let graphQuery='FLOW-12';
+let focusNumber=12;
+function savePreferences(){
+  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(preferences));storageMessage='本地预览已保存；不改变真实看板，不代表批准方案。';}
+  catch(error){storageMessage='浏览器不允许保存本地预览；本次页面仍可操作，重新打开将恢复演示值。';}
+  document.getElementById('storage-note').textContent=storageMessage;
+}
+const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon=(name,size=16)=>`<svg class="ic s${size}" viewBox="0 0 24 24" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
+function statusTone(status){return (STATUS_META[status]||STATUS_META['未开工'])[1];}
+function tile(status,size=''){
+  const [key,tone]=STATUS_META[status]||STATUS_META['未开工'];
+  const spec=['ask','decided','building','resume','wrap','parked'].includes(key);
+  const speed=key==='ask'?'sp-fast':key==='parked'?'sp-ember':['decided','wrap'].includes(key)?'sp-slow':'';
+  return `<span class="tile ${size} tone-${tone} ${spec?'spec':''} ${speed} ${key==='done'?'fill':''} ${key==='void'?'dim':''} ${key==='resume'?'sp-rev':''}" title="${status}" role="img" aria-label="${status}"><i><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#st-${key}"/></svg></i></span>`;
+}
+function badge(tone,text){return `<span class="badge ${tone}">${text}</span>`;}
+function duration(ms){if(ms>=DAY)return `${Math.floor(ms/DAY)}d`;if(ms>=HOUR)return `${Math.floor(ms/HOUR)}h`;return `${Math.max(0,Math.floor(ms/60000))}m`;}
+function elapsedLabel(ms){if(ms>=DAY)return `${Math.floor(ms/DAY)} 天`;if(ms>=HOUR)return `${Math.floor(ms/HOUR)} 小时`;return `${Math.max(0,Math.floor(ms/60000))} 分钟`;}
+// 稿件中的同名演示函数；后续两张应用施工卡共用 utils 中唯一的 ageLevel()，此处不改应用。
+function ageLevel(ageMinutes,thresholds){
+  if(!Number.isFinite(ageMinutes)||ageMinutes<0)return 'n';
+  if(ageMinutes>thresholds[2])return 'bad';
+  if(ageMinutes>thresholds[1])return 'warn';
+  if(ageMinutes>thresholds[0])return 'info';
+  return 'n';
+}
+function formatDate(ms){return new Date(ms+8*HOUR).toISOString().slice(5,10).replace('-','/');}
+function dateTime(ms){return new Date(ms+8*HOUR).toISOString().slice(0,16).replace('T',' ');}
+function progressBar(percent){return `<div class="glow-rail" role="img" aria-label="完成 ${percent}%"><i style="width:${percent}%"></i></div>`;}
+function renderPair(id,renderer){document.getElementById(id).innerHTML=['light','dark'].map(theme=>`<div class="pane ${theme}" data-label="${theme==='light'?'浅色主题':'深色主题'}">${renderer(theme)}</div>`).join('');}
+function taskCard(t,modern){
+  const age=t.dates.start===null?null:NOW-t.dates.start;
+  const level=ageLevel(age===null?NaN:age/60000,preferences.thresholds);
+  const sinceUpdate=t.lastProgressAt===null?null:NOW-t.lastProgressAt;
+  const ageBadge=modern?`<span class="badge age ${level}" title="${age===null?'没有开工日':`开工：${dateTime(t.dates.start)}；从开工至演示时刻计算`}">卡龄 <b>${age===null?'未知':duration(age)}</b></span>`:'';
+  const timeText=sinceUpdate===null?'没有更新记录':`${elapsedLabel(sinceUpdate)}未更新`;
+  return `<article class="tcard" data-task="${t.id}">
+    ${t.status==='施工中'?'<span class="glow-edge" aria-hidden="true"></span>':''}
+    <div class="tcard-head">${tile(t.status,'sm')}<span class="tid">${t.id}</span>${ageBadge}</div>
+    <div class="ttitle">${t.plainTitle}</div><div class="tdesc" title="${esc(t.title)}">${t.title}</div>
+    <div class="prog-wrap">${progressBar(t.percent)}<span class="pct">${t.percent}%</span></div>
+    <div class="prog-time ${!modern&&sinceUpdate>30*60000?'stale':''}">${!modern&&sinceUpdate>30*60000?icon('alertTri',14):''}${timeText}</div>
+    <div class="tcard-meta"><span class="pill">${icon('layers',14)}第 ${t.wave+1} 波</span><span class="pill">开工 ${formatDate(t.dates.start)}</span></div>
+  </article>`;
+}
+function columnHead(status,count,modern){
+  const limit=preferences.limits[status];
+  const tone=modern&&limit>0&&count>limit?'warn':'n';
+  return `<header class="column-head"><span class="name">${tile(status)}${status}</span><span class="badge ${tone} count-badge" title="${modern&&limit>0&&count>limit?`在制 ${count}，超过上限 ${limit}`:`${count} 张卡`}">${count}</span>${modern?`<span class="limit">/ ${limit||'不限'}</span>`:''}</header>`;
+}
+function kanbanPane(){
+  const building=tasks.filter(t=>t.status==='施工中');
+  const ordered=[...building].sort((a,b)=>a.lastProgressAt-b.lastProgressAt);
+  const legend=[['n',`新鲜 ≤ ${elapsedLabel(preferences.thresholds[0]*60000)}`],['info',`超过 ${elapsedLabel(preferences.thresholds[0]*60000)}`],['warn',`超过 ${elapsedLabel(preferences.thresholds[1]*60000)}`],['bad',`超过 ${elapsedLabel(preferences.thresholds[2]*60000)}`]];
+  const screen=(modern,list)=>`<div><h3 class="compare-title">${badge(modern?'info':'n',modern?'新版':'今天')}<em>${modern?'久未更新的卡在最上面':'保留原有列表顺序'}</em></h3>
+    <div class="screen"><div class="screen-head">${icon('kanban',16)}项目看板<span class="spacer"></span><span class="pill">6 / 30 完工</span></div>${progressBar(20)}
+    <div class="keyline">${modern?`施工中上限 <b>${preferences.limits['施工中']||'不限'}</b> · 演示值`:'超过 30 分钟未更新，统一标黄'}</div>
+    <div class="board-scroll"><section class="column">${columnHead('施工中',5,modern)}<p class="lane-note">${modern?'排序：最后更新从早到晚':'只显示数量，没有在制上限'}</p>
+      <div class="column-body">${list.map(t=>taskCard(t,modern)).join('')}</div></section></div>
+    <div class="lane-mini">${['待开工','待拍板'].map(status=>`<span class="pill">${tile(status,'sm')}${status} ${tasks.filter(t=>t.status===status).length}${modern?` / ${preferences.limits[status]||'不限'}`:''}</span>`).join('')}</div>
+    </div></div>`;
+  return `<div class="comparison">${screen(false,building)}${screen(true,ordered)}</div>
+    <div class="keyline">卡龄分级 ${legend.map(([tone,label])=>badge(tone,label)).join('')}</div>
+    <div class="annotation"><b>两把尺，分开读。</b>「3 天未更新」决定排在最上方；「卡龄 9d」表示从开工到现在已经九天。刷新进度不会把卡龄清零。绿色仍留给已拍板、收官与完工状态。</div>
+    <p class="caption">相邻泳道以头部摘要示意；已完工仍可按原来的入口展开。上限 4 用于展示 5 张卡超限，最终默认值见第 06 节。可在第 05 节调数字，回来看颜色与计数。</p>`;
+}
+function renderKanban(){renderPair('kanban-pair',kanbanPane);}
+
+// 72 节点仅复刻拥挤压力，不是额外任务。固定种子使两主题、每次打开的位置一致。
+function oldGraph(){
+  let seed=20260908;
+  const random=()=>{seed=(Math.imul(1664525,seed)+1013904223)>>>0;return seed/4294967296;};
+  const points=Array.from({length:72},(_,i)=>({x:25+random()*242,y:40+random()*348,n:i%30+1}));
+  let lines='';
+  for(let i=0;i<126;i++){
+    const a=points[i%72],b=points[(i*17+23)%72];
+    lines+=`<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}"/>`;
+  }
+  return `<svg class="old-graph" viewBox="0 0 300 430" role="img" aria-label="今天的拥挤压力示意：72 个散布节点、交叉连线与重叠标签">${lines}${points.map(p=>`<g class="tone-${statusTone(byNumber.get(p.n).status)}"><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="7"/><text x="${(p.x-9).toFixed(1)}" y="${(p.y+3).toFixed(1)}">${byNumber.get(p.n).id}</text></g>`).join('')}</svg>`;
+}
+function scopedTasks(){
+  if(preferences.graphAll)return tasks;
+  const activeWithDeps=tasks.filter(t=>!['已完工','已作废'].includes(t.status)&&t.deps.dependsOn.length>0);
+  const selected=new Set(activeWithDeps.map(t=>t.n));
+  const roots=new Set(selected);
+  for(const edge of edges){if(roots.has(edge.from)||roots.has(edge.to)){selected.add(edge.from);selected.add(edge.to);}}
+  return tasks.filter(t=>selected.has(t.n));
+}
+function relatives(n){
+  const walk=direction=>{
+    const visited=new Set([n]),queue=[n];
+    for(let cursor=0;cursor<queue.length;cursor++){
+      for(const edge of edges){
+        const source=direction==='up'?edge.to:edge.from,target=direction==='up'?edge.from:edge.to;
+        if(source===queue[cursor]&&!visited.has(target)){visited.add(target);queue.push(target);}
+      }
+    }
+    return visited;
+  };
+  return {up:walk('up'),down:walk('down')};
+}
+function matchingTasks(){const query=graphQuery.trim().toLowerCase();return scopedTasks().filter(t=>t.id.toLowerCase().includes(query)||t.plainTitle.includes(query));}
+function resolveGraphFocus(){const matches=matchingTasks();focusNumber=graphQuery.trim()?matches[0]?.n||null:null;}
+function graphSVG(theme){
+  const list=scopedTasks();
+  const maxCount=Math.max(...[0,1,2].map(w=>list.filter(t=>t.wave===w).length));
+  const height=70+maxCount*83;
+  const positions=new Map();
+  for(let w=0;w<3;w++){
+    const group=list.filter(t=>t.wave===w);
+    group.forEach((t,i)=>positions.set(t.n,{x:24+w*200,y:51+(i+.5)*((height-65)/group.length)-31}));
+  }
+  const groups=focusNumber?relatives(focusNumber):null;
+  const relevant=new Set(groups?[...groups.up,...groups.down]:list.map(t=>t.n));
+  const edgeActive=e=>!groups||(groups.up.has(e.from)&&groups.up.has(e.to))||(groups.down.has(e.from)&&groups.down.has(e.to));
+  const marker=(kind,tone)=>`<marker id="arrow-${theme}-${kind}" viewBox="0 0 24 24" refX="15" refY="12" markerWidth="8" markerHeight="8" orient="auto"><use href="#ic-chevron" transform="rotate(-90 12 12)" fill="none" stroke="var(--${tone})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></marker>`;
+  const linkSVG=edges.filter(e=>positions.has(e.from)&&positions.has(e.to)).map(e=>{
+    const a=positions.get(e.from),b=positions.get(e.to),x1=a.x+160,x2=b.x,y1=a.y+31,y2=b.y+31;
+    const middle=x1+(x2-x1)/2;
+    return `<path class="edge ${e.blocked?'blocked':''} ${edgeActive(e)?'highlight':'faded'}" d="M${x1} ${y1} C${middle} ${y1} ${middle} ${y2} ${x2-2} ${y2}" marker-end="url(#arrow-${theme}-${e.blocked?'bad':'info'})"><title>${byNumber.get(e.from).id} → ${byNumber.get(e.to).id}：${e.blocked?'阻塞':'依赖'}</title></path>`;
+  }).join('');
+  const nodes=list.map(t=>{
+    const pos=positions.get(t.n),chars=Array.from(t.plainTitle),line1=chars.slice(0,12).join(''),line2=chars.slice(12).join('');
+    return `<g class="node tone-${statusTone(t.status)} ${relevant.has(t.n)?'':'faded'} ${focusNumber===t.n?'focused':''}" transform="translate(${pos.x} ${pos.y})" role="button" tabindex="0" aria-label="聚焦 ${t.id}，${t.plainTitle}，${t.status}" data-focus="${t.n}">
+      <title>${t.id} ${t.plainTitle} · ${t.status}${t.deps.blockedBy.length?' · 被挡住':''}</title><rect width="160" height="62" rx="6"/><circle class="status-mark" cx="146" cy="13" r="3.5"/>
+      <text class="node-id" x="10" y="17">${t.id}</text><text x="10" y="35">${line1}</text><text x="10" y="51">${line2}</text></g>`;
+  }).join('');
+  return `<svg class="graph" viewBox="0 0 610 ${height}" role="group" aria-label="新版依赖图：${list.length} 个节点，按三个波次从左到右分层"><defs>${marker('info','info')}${marker('bad','bad')}</defs>
+    ${[0,1,2].map(w=>`<rect class="layer-fill" x="${12+w*200}" y="31" width="184" height="${height-37}" rx="7"/><text class="layer-title" x="${24+w*200}" y="20">第 ${w+1} 波 · ${WAVE_NAMES[w]}</text>`).join('')}${linkSVG}${nodes}</svg>`;
+}
+function graphStatus(){
+  const count=scopedTasks().length;
+  if(!graphQuery.trim())return `当前 ${count} / 30 张卡。未聚焦；颜色表示状态，箭头从前置任务指向后续任务。`;
+  const matches=matchingTasks();
+  if(!matches.length)return `当前范围未找到「${esc(graphQuery)}」。可清空搜索${preferences.graphAll?'':'，或打开「显示全部」查找独立卡'}。`;
+  const t=byNumber.get(focusNumber);
+  return `当前 ${count} / 30 张卡 · 匹配 ${matches.length} 张，聚焦 ${t.id}「${t.plainTitle}」及其上下游。其余淡化。`;
+}
+function dependencyPane(theme){return `<div class="comparison wide">
+  <div><h3 class="compare-title">${badge('n','今天')}<em>力导向毛线团</em></h3><div class="screen"><div class="screen-head">${icon('network')}依赖关系图</div>${oldGraph()}<p class="caption">72 个散布节点，126 条交叉线。为展示百张卡时的拥挤感，使用 30 张样例的重复标签；这张图是压力示意。</p></div></div>
+  <div><h3 class="compare-title">${badge('info','新版')}<em>默认仅关系子图</em></h3><div class="screen"><div class="screen-head">${icon('network')}依赖关系图<span class="pill">按波次分层</span></div>
+    <div class="controls"><label class="search-field">${icon('search',14)}<input type="search" data-graph-search aria-label="${theme==='light'?'浅色':'深色'}依赖图搜索卡号或标题" value="${esc(graphQuery)}" placeholder="搜索卡号 / 人话标题" maxlength="80"></label><button type="button" data-clear-graph>清空</button></div>
+    <div class="controls"><label class="switch"><input type="checkbox" data-graph-all ${preferences.graphAll?'checked':''}>显示全部</label><span class="muted">含独立卡与已完工邻居</span></div>
+    <p class="status-message" data-graph-status aria-live="polite">${graphStatus()}</p><div class="graph-scroll" data-graph-mount="${theme}">${graphSVG(theme)}</div>
+    <div class="keyline"><span class="edge-legend"></span>依赖 <span class="edge-legend blocked"></span>阻塞</div>
+    <div class="keyline">${[['info','施工 / 待开工'],['warn','待拍板'],['ok','已完工 / 收官'],['bad','暂缓'],['n','未开工']].map(([tone,label])=>badge(tone,label)).join('')}</div>
+    <p class="caption">默认：有依赖的活跃卡 + 一跳邻居。横向是波次，同层纵向均匀排列；打开全部后仍按层排列。面板较窄时可在图内横向滚动。</p>
+  </div></div></div>`;}
+function paintGraph(){
+  document.querySelectorAll('[data-graph-mount]').forEach(el=>{el.innerHTML=graphSVG(el.dataset.graphMount);});
+  document.querySelectorAll('[data-graph-status]').forEach(el=>{el.innerHTML=graphStatus();});
+  document.querySelectorAll('[data-graph-search]').forEach(el=>{if(el.value!==graphQuery)el.value=graphQuery;});
+  document.querySelectorAll('[data-graph-all]').forEach(el=>{el.checked=preferences.graphAll;});
+}
+function timelineWindow(){
+  const end=Date.parse('2026-09-09T00:00:00+08:00');
+  return {start:end-preferences.ganttDays*DAY,end};
+}
+function timelineHTML(){
+  const {start,end}=timelineWindow(),span=end-start,today=(NOW-start)/span*100;
+  const list=tasks.filter(t=>preferences.ganttDone||t.status!=='已完工');
+  const scheduled=list.filter(t=>t.dates.start!==null),unscheduled=list.filter(t=>t.dates.start===null);
+  const todayLine=`<span class="today-line" style="left:${today}%" aria-hidden="true"></span>`;
+  const ticks=Array.from({length:5},(_,i)=>{
+    const stamp=i===4?end-DAY:start+Math.floor((preferences.ganttDays-1)*i/4)*DAY;
+    const left=(stamp-start)/span*100;
+    return `<span class="tick ${i===0?'first':i===4?'last':''}" style="left:${left}%">${formatDate(stamp)}</span>`;
+  }).join('');
+  const groupRows=[0,1,2].map(w=>{
+    const group=scheduled.filter(t=>t.wave===w);
+    const rows=group.map(t=>{
+      const finish=t.dates.done===null?NOW:t.dates.done;
+      const clippedStart=Math.max(t.dates.start,start),clippedEnd=Math.min(finish,end);
+      const before=t.dates.start<start;
+      const tooltip=`${t.id} ${t.plainTitle}；${dateTime(t.dates.start)} → ${t.dates.done===null?'今天 09/08 12:00':dateTime(t.dates.done)}${before?'；开工早于当前窗口':''}`;
+      const bar=clippedEnd>=clippedStart?`<span class="gantt-bar ${t.dates.done===null?'':'ended'} ${before?'clipped':''}" style="left:${(clippedStart-start)/span*100}%;width:${Math.max(0,(clippedEnd-clippedStart)/span*100)}%" title="${esc(tooltip)}" role="img" aria-label="${esc(tooltip)}"></span>`:'<span class="outside">在当前窗口之前已完工</span>';
+      return `<div class="gantt-row wave-${w}"><div class="gantt-label" title="${esc(tooltip)}"><span class="tid">${t.id}</span><span class="title">${t.plainTitle}</span></div><div class="gantt-track">${bar}${todayLine}</div></div>`;
+    }).join('');
+    return `<div class="wave-band wave-${w}"><span><i class="wave-dot"></i> 第 ${w+1} 波 · ${WAVE_NAMES[w]} · ${group.length} 张</span><div class="band-track">${todayLine}</div></div>${rows}`;
+  }).join('');
+  return `<div class="timeline"><div class="time-head"><div class="time-label">任务 / 实际起止</div><div class="time-axis">${ticks}<span class="today-label" style="left:${today}%">今天 09/08</span>${todayLine}</div></div>${groupRows}
+    <div class="wave-band"><span>没有开工日 · ${unscheduled.length} 张</span><span>不画时间条</span></div>
+    ${unscheduled.map(t=>`<div class="no-start"><span class="tid">${t.id}</span><span class="title">${t.plainTitle}</span><span class="pill">第 ${t.wave+1} 波</span>${badge('n','未记录开工日')}</div>`).join('')}</div>`;
+}
+function oldGantt(){
+  const numbers=[1,3,7,8,9,10,11,12,14,18,19,21];
+  return `<div class="old-gantt"><div class="old-axis">第 0 波</div>${numbers.map((n,i)=>`<div class="old-gantt-row"><span class="mono">${byNumber.get(n).id}</span><div class="old-track"><i style="width:${i===7?10:0}%"></i><span>${i===7?10:0}%</span></div></div>`).join('')}<div class="old-axis">横轴：施工波次</div></div>`;
+}
+function ganttPane(theme){
+  const {start,end}=timelineWindow();
+  return `<div class="comparison wide"><div><h3 class="compare-title">${badge('n','今天')}<em>波次 + 完成度</em></h3><div class="screen"><div class="screen-head">${icon('gantt')}施工波次甘特</div>${oldGantt()}<p class="caption">审计时典型截面：几乎全是 0% 的进度条，横轴只见「第 0 波」。这张旧态示意保留原有画法，不代表新版样例的实时进度。</p></div></div>
+  <div><h3 class="compare-title">${badge('info','新版')}<em>日期 + 实际跨度</em></h3><div class="screen"><div class="screen-head">${icon('gantt')}时间轴甘特</div>
+    <div class="controls" role="group" aria-label="${theme==='light'?'浅色':'深色'}甘特时间窗口">${[7,30,90].map(days=>`<button type="button" data-days="${days}" aria-pressed="${preferences.ganttDays===days}">${days} 天</button>`).join('')}<span class="spacer"></span><label class="switch"><input type="checkbox" data-gantt-done ${preferences.ganttDone?'checked':''}>显示已完工</label></div>
+    <div class="status-message" data-gantt-window>近 ${preferences.ganttDays} 天 · ${formatDate(start)}—${formatDate(end-DAY)} · 2026 年</div>
+    <div class="gantt-scroll" data-timeline>${timelineHTML()}</div>
+    <div class="keyline">${[0,1,2].map(w=>`<span class="pill wave-${w}"><i class="wave-dot"></i>第 ${w+1} 波</span>`).join('')}<span>淡条：已完工</span></div>
+    <p class="caption">条长 = 开工日到完工日或今天，与百分比无关。为比较终点，本稿初始展开已完工；可关闭。跨窗口条在左端截断并留实色端线，悬停可读实际起止。</p>
+    <p class="caption">最短的一张在今天 11:35 开工，仍保留最小可见条；没有开工日的 ${tasks.filter(t=>t.dates.start===null).length} 张卡单独列在底部。图内可横向与纵向滚动。</p>
+  </div></div></div>`;
+}
+function paintTimeline(){
+  const {start,end}=timelineWindow();
+  document.querySelectorAll('[data-timeline]').forEach(el=>{el.innerHTML=timelineHTML();});
+  document.querySelectorAll('[data-gantt-window]').forEach(el=>{el.textContent=`近 ${preferences.ganttDays} 天 · ${formatDate(start)}—${formatDate(end-DAY)} · 2026 年`;});
+  document.querySelectorAll('[data-days]').forEach(el=>{el.setAttribute('aria-pressed',String(Number(el.dataset.days)===preferences.ganttDays));});
+  document.querySelectorAll('[data-gantt-done]').forEach(el=>{el.checked=preferences.ganttDone;});
+}
+function waveCard(w,modern){
+  const group=tasks.filter(t=>t.wave===w),done=group.filter(t=>t.status==='已完工').length;
+  const blockedCount=group.filter(t=>t.deps.blockedBy.length>0).length;
+  const visible=group.filter(t=>preferences.wavesDone||t.status!=='已完工');
+  const percent=done/group.length*100;
+  return `<section class="wave"><div class="w-head"><h4 class="w-title">第 ${w+1} 波</h4><span class="pill">${done}/${group.length}</span>${modern&&blockedCount?badge('bad',`阻塞 ${blockedCount}`):''}<span class="w-pct">${percent}%</span></div>
+    <p class="wave-caption">${WAVE_NAMES[w]}</p>${progressBar(percent)}<div class="w-tasks">${visible.map(t=>`<div class="wt" title="${esc(`${t.id} ${t.plainTitle} · ${t.status}${t.deps.blockedBy.length?`；被 ${t.deps.blockedBy.map(n=>byNumber.get(n).id).join('、')} 阻塞`:''}`)}">
+      ${t.status==='施工中'?'<span class="glow-edge" aria-hidden="true"></span>':''}${tile(t.status,'sm')}<span class="tid">${t.id}</span><span class="tt ${modern&&t.deps.blockedBy.length?'blocked-title':''}">${t.plainTitle}</span><span class="pct">${t.percent}%</span></div>`).join('')}</div></section>`;
+}
+function wavesPane(){return `<div class="screen-head">${icon('layers')}波次视图<span class="spacer"></span><label class="switch"><input type="checkbox" data-waves-done ${preferences.wavesDone?'checked':''}>显示已完工</label></div>
+  <div class="waves-compare"><div><h3 class="compare-title">${badge('n','今天')}<em>无阻塞汇总</em></h3><div class="waves-old">${[0,1,2].map(w=>waveCard(w,false)).join('')}</div><p class="caption">现有最小列宽 620，同样宽度下容易排成一长列；更宽的屏幕也可能出现三列。</p></div>
+  <div><h3 class="compare-title">${badge('info','新版')}<em>自适应两栏</em></h3><div class="waves">${[0,1,2].map(w=>waveCard(w,true)).join('')}</div><div class="annotation">第一波 <b>0</b> 张被挡，不显示徽章。第二波 <b>2</b> 张；第三波 <b>3</b> 张。FLOW-22 有两个阻塞来源，仍只计为一张卡。</div><p class="caption">示例展开全部 30 张卡；切换「显示已完工」只影响列表，完成数和分母仍按全量计算。窄屏降成单栏，标题太长时悬停可读全。</p></div></div>`;}
+function limitLine(status,theme){
+  const id=`limit-${theme}-${STATUSES.indexOf(status)}`;
+  return `<div class="ac-line"><div class="ac-text"><b id="${id}">${status}</b><span>在制上限；0 表示不限</span></div><div class="ac-options"><input type="number" min="0" max="999" step="1" inputmode="numeric" value="${preferences.limits[status]}" data-limit="${status}" aria-labelledby="${id}"><span>张</span></div></div>`;
+}
+function settingsPane(theme){
+  const common=['施工中','待开工','收官'];
+  return `<div class="appearance-center"><div class="screen-head">${icon('settings')}外观中心<span class="pill">新增行 · 可试改</span></div>
+    <h3 class="ac-h">在制上限</h3><p class="ac-p">每条泳道分别设置。超过上限时，泳道头的数量变为警示色。</p>
+    ${common.map(s=>limitLine(s,theme)).join('')}<details><summary>其余 8 条泳道的上限</summary>${STATUSES.filter(s=>!common.includes(s)).map(s=>limitLine(s,theme)).join('')}</details>
+    <h3 class="ac-h">卡龄阈值</h3><p class="ac-p">按从开工到现在的时长分级。三档必须递增；等于阈值时仍留在前一档。</p>
+    ${[['info','第一档','超过后用信息色'],['warn','第二档','超过后用警示色'],['bad','第三档','超过后用风险色']].map(([tone,name,hint],i)=>`<div class="ac-line"><div class="ac-text"><b id="age-${theme}-${i}">${badge(tone,name)} ${elapsedLabel(preferences.thresholds[i]*60000)}</b><span>${hint}；演示默认 ${[60,240,1440][i]} 分钟</span></div><div class="ac-options"><input type="number" min="1" max="525600" step="1" inputmode="numeric" value="${preferences.thresholds[i]}" data-threshold="${i}" aria-labelledby="age-${theme}-${i}"><span>分钟</span></div></div>`).join('')}
+    <p class="ac-hint">默认示意：1 小时 / 4 小时 / 1 天。无开工日显示「未知」，不冒充新鲜卡；本页的未知示例见时间轴底部。</p>
+    <div class="ac-line"><div class="ac-text"><b>仅保存本地预览</b><span>试改不表示批准；不影响真实项目</span></div><div class="ac-options"><button type="button" data-reset-settings>恢复演示值</button></div></div>
+    <p class="settings-state" role="status" data-settings-state>${settingsMessage}</p>
+  </div>
+  <div class="annotation"><b>施工交接：</b>阈值设置项由 <span class="mono">AUD-UI-NOTIFY-FRESHNESS</span> 卡负责。两卡共用 <span class="mono">utils</span> 中同一个 <span class="mono">ageLevel()</span> 函数；此页只是效果演示，不写入应用。</div>
+  <p class="caption">读回按字段校验数值、主题和开关；无效字段回默认，阈值顺序无效时整组回默认。系统选择「减少动效」后，灯条静止但仍保留语义色。</p>`;
+}
+const DECISIONS = [
+  {question:'卡龄从多久开始升级提醒？',options:[
+    ['A','1 小时 / 4 小时 / 1 天','适合几小时完成一张卡的节奏，一天以上会明显露出。'],
+    ['B','2 小时 / 8 小时 / 2 天','提示更克制，半天内的停留不易升到警示档。'],
+    ['C','30 分钟 / 2 小时 / 12 小时','反馈更早，短暂等待也更容易进入有色档。']],recommend:'A',reason:'本稿按这一组示范，既能区分小时级工作，又能单独凸显跨天卡；仍允许在设置里调整。'},
+  {question:'在制上限默认用多少？',options:[
+    ['A','不限','保持现有接活习惯，数量可见，但默认没有超限提示。'],
+    ['B','所有泳道统一 5 张','容易记住，待开工和收官也沿用相同的提醒门槛。'],
+    ['C','按泳道分别设置','建议施工中先用 5，其余不限；以后按实际并行规模调整。']],recommend:'C',reason:'施工中的积压最值得先提醒，其他泳道可以保留各自节奏。本稿的 4 只是为了展示 5 张卡超限，不是拟定默认值。'},
+  {question:'打开依赖图，先显示哪些卡？',options:[
+    ['A','有依赖的活跃卡 + 一跳邻居','先看到能解释前后关系的卡；保留必要的已完工前置任务。'],
+    ['B','全部活跃卡','独立任务也在首屏，节点数量会更多。']],recommend:'A',reason:'优先回答「谁等谁」，避免没有关系的节点挤占首屏；需要全局检查时用「显示全部」展开。'},
+  {question:'甘特默认看多长的时间？',options:[
+    ['A','近 30 天','每次打开都有相同的时间尺度，跨波次也能比较。'],
+    ['B','本波次','围绕当前一波的起止日期展开，窗口长短随波次变化。']],recommend:'A',reason:'固定一个月更容易建立工期感觉；七天和九十天按钮仍可按需要缩放。'},
+  {question:'「最久没动在最上」适用于哪些泳道？',options:[
+    ['A','只对施工中生效','优先捞起正在做却没动静的卡；其他泳道保持现有顺序。'],
+    ['B','所有活跃泳道都生效','各状态都先看到久未更新的卡，原来的排列习惯会改变。']],recommend:'A',reason:'这次先解决施工中停滞难发现的问题；已完工仍保留现有「最近完工在最上」的顺序。'}
+];
+function decisionsPane(){return `<div class="decisions">${DECISIONS.map((q,i)=>`<article class="decision"><h3><span class="qno">Q${i+1}</span>${q.question}</h3><ul class="options">${q.options.map(([key,label,detail])=>`<li class="${key===q.recommend?'recommended':''}"><b>${key} · ${label}</b>${key===q.recommend?' <small>推荐，未批准</small>':''}<span>${detail}</span></li>`).join('')}</ul><p class="recommendation"><b>推荐 ${q.recommend}：</b>${q.reason}</p></article>`).join('')}</div>`;}
+function applyMode(){
+  document.body.dataset.mode=preferences.mode;
+  document.body.classList.toggle('dark',preferences.mode==='dark');
+  document.querySelectorAll('.modes button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.mode===preferences.mode)));
+}
+function settingsFeedback(message){
+  settingsMessage=message;
+  document.querySelectorAll('[data-settings-state]').forEach(el=>{el.textContent=message;});
+}
+function reflectSettings(){
+  document.querySelectorAll('[data-limit]').forEach(el=>{el.value=preferences.limits[el.dataset.limit];});
+  document.querySelectorAll('[data-threshold]').forEach(el=>{
+    const i=Number(el.dataset.threshold),value=preferences.thresholds[i];el.value=value;
+    const label=document.getElementById(el.getAttribute('aria-labelledby'));
+    label.innerHTML=`${badge(['info','warn','bad'][i],['第一档','第二档','第三档'][i])} ${elapsedLabel(value*60000)}`;
+  });
+}
+function acceptSetting(input){
+  const value=input.value.trim()===''?NaN:Number(input.value);
+  if(input.hasAttribute('data-limit')){
+    if(!validInteger(value,0,999)){input.value=preferences.limits[input.dataset.limit];settingsFeedback('上限需为 0—999 的整数；已保留原值，0 表示不限。');return;}
+    preferences.limits[input.dataset.limit]=value;
+  }else{
+    const index=Number(input.dataset.threshold),next=[...preferences.thresholds];next[index]=value;
+    if(!validInteger(value,1,525600)||!(next[0]<next[1]&&next[1]<next[2])){
+      input.value=preferences.thresholds[index];settingsFeedback('阈值需为正整数分钟，且第一档 < 第二档 < 第三档；已保留原值。');return;
+    }
+    preferences.thresholds=next;
+  }
+  reflectSettings();renderKanban();savePreferences();settingsFeedback('两套主题已同步，泳道预览已更新；这只是演示设置，不代表拍板。');
+}
+document.addEventListener('click',event=>{
+  const target=event.target.closest('button,[data-focus]');if(!target)return;
+  if(target.matches('.modes button')){preferences.mode=target.dataset.mode;applyMode();savePreferences();}
+  else if(target.hasAttribute('data-clear-graph')){graphQuery='';focusNumber=null;paintGraph();}
+  else if(target.hasAttribute('data-focus')){focusNumber=Number(target.dataset.focus);graphQuery=byNumber.get(focusNumber).id;paintGraph();}
+  else if(target.hasAttribute('data-days')){preferences.ganttDays=Number(target.dataset.days);paintTimeline();savePreferences();}
+  else if(target.hasAttribute('data-reset-settings')){
+    preferences.limits={...DEMO_DEFAULTS.limits};preferences.thresholds=[...DEMO_DEFAULTS.thresholds];reflectSettings();renderKanban();savePreferences();settingsFeedback('已恢复演示值：施工中 4 张，其余不限；阈值 1 小时 / 4 小时 / 1 天。');
+  }
+});
+document.addEventListener('keydown',event=>{
+  const node=event.target.closest('[data-focus]');
+  if(node&&(event.key==='Enter'||event.key===' ')){event.preventDefault();const n=Number(node.dataset.focus);focusNumber=n;graphQuery=byNumber.get(n).id;const theme=node.closest('[data-graph-mount]').dataset.graphMount;paintGraph();document.querySelector(`[data-graph-mount="${theme}"] [data-focus="${n}"]`).focus();}
+});
+document.addEventListener('input',event=>{
+  if(event.target.matches('[data-graph-search]')){graphQuery=event.target.value.slice(0,80);resolveGraphFocus();paintGraph();}
+});
+document.addEventListener('change',event=>{
+  const input=event.target;
+  if(input.matches('[data-graph-all]')){preferences.graphAll=input.checked;resolveGraphFocus();paintGraph();savePreferences();}
+  else if(input.matches('[data-gantt-done]')){preferences.ganttDone=input.checked;paintTimeline();savePreferences();}
+  else if(input.matches('[data-waves-done]')){preferences.wavesDone=input.checked;renderPair('waves-pair',wavesPane);savePreferences();}
+  else if(input.matches('[data-limit],[data-threshold]'))acceptSetting(input);
+});
+applyMode();
+renderKanban();
+renderPair('dependency-pair',dependencyPane);
+renderPair('gantt-pair',ganttPane);
+renderPair('waves-pair',wavesPane);
+renderPair('settings-pair',settingsPane);
+renderPair('decisions-pair',decisionsPane);
+if(storageMessage)document.getElementById('storage-note').textContent=storageMessage;
+</script>
+</body>
+</html>
