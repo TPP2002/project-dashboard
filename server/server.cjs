@@ -421,13 +421,17 @@ function handleProjects(req, res) {
   const list = [];
   for (const id of Object.keys(entries)) {
     const proj = resolveProjectSafe(id);
-    const name = (entries[id] && entries[id].name) || (proj && proj.name) || id;
-    if (!proj) { list.push({ id, name, summary: emptySummary(), error: '项目解析失败' }); continue; }
+    const entry = entries[id] || {};
+    const name = entry.name || (proj && proj.name) || id;
+    const item = { id, name };
+    if (typeof entry.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(entry.color)) item.color = entry.color;
+    if (typeof entry.icon === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(entry.icon)) item.icon = entry.icon;
+    if (!proj) { list.push({ ...item, summary: emptySummary(), error: '项目解析失败' }); continue; }
     let board;
     try { board = readBoardFile(proj.board); }
-    catch (_) { list.push({ id, name, summary: emptySummary(), error: 'board.json 解析失败' }); continue; }
-    if (!board) { list.push({ id, name, summary: emptySummary(), error: 'board.json 不存在' }); continue; }
-    list.push({ id, name, summary: deriveSummary(board) });
+    catch (_) { list.push({ ...item, summary: emptySummary(), error: 'board.json 解析失败' }); continue; }
+    if (!board) { list.push({ ...item, summary: emptySummary(), error: 'board.json 不存在' }); continue; }
+    list.push({ ...item, summary: deriveSummary(board) });
   }
   sendJson(res, 200, { ok: true, projects: list });
 }
