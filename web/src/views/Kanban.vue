@@ -118,6 +118,10 @@ function statusTone(status: string) {
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  /* 行高必须按卡片内容定：泳道限高 + 泳道体是滚动容器时，auto 行会把可用高度平分给所有行，
+     14 张卡各分到二三十像素，卡片被裁得只剩卡号一行（负责人说的「遮起来」）；max-content 行
+     让每张卡完整撑开，放不下的部分交给泳道体自己滚。 */
+  grid-auto-rows: max-content;
   align-content: start;
   align-items: start;
   gap: var(--s2);
