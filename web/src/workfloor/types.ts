@@ -11,6 +11,8 @@ export interface WorkfloorSettings {
   detail: Detail
   height: Height
   position: 'top' | 'bottom'
+  zoom: 1 | 1.25 | 1.5 | 1.75 | 2
+  camera: 'fixed' | 'pan'
   soundLink: boolean
 }
 

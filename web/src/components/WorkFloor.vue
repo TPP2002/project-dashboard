@@ -15,6 +15,8 @@ import Icon from './Icon.vue'
 const props = defineProps<{ board: Board; projectId: string }>()
 const store = useBoardStore()
 const host = ref<SVGSVGElement | null>(null)
+const stage = ref<HTMLDivElement | null>(null)
+const panPx = ref(0)
 const collapsed = ref(loadCollapsed())
 const error = ref(false)
 const hour = ref(new Date().getHours())
@@ -62,6 +64,31 @@ let unsubscribe: (() => void) | undefined
 let clockTimer: number | undefined
 const clockChanged = () => { hour.value = new Date().getHours() }
 const themeChanged = () => { systemDark.value = dark.matches }
+let stageObserver: ResizeObserver | undefined
+let viewBoxObserver: MutationObserver | undefined
+
+function updatePan() {
+  if (collapsed.value || !stage.value || !host.value) return
+  const { width, height } = stage.value.getBoundingClientRect()
+  const parsedHeight = Number(host.value.getAttribute('viewBox')?.trim().split(/[\s,]+/)[3])
+  const viewBoxHeight = Number.isFinite(parsedHeight) && parsedHeight > 0 ? parsedHeight : 520
+  const renderedWidth = Math.min(width, height * 1400 / viewBoxHeight)
+  // translateX 在 scale 左侧，位移单位是屏幕 CSS 像素，不再除以缩放倍率。
+  panPx.value = Math.max(0, (renderedWidth * appearance.workfloor.zoom - width) / 2)
+}
+
+watch([stage, host, collapsed], () => {
+  stageObserver?.disconnect()
+  viewBoxObserver?.disconnect()
+  if (collapsed.value || !stage.value || !host.value) return
+  stageObserver ??= new ResizeObserver(updatePan)
+  stageObserver.observe(stage.value)
+  // 世界异步加载后才设置 viewBox；只跟随该属性，场景内容与逐帧动画不触发重算。
+  viewBoxObserver ??= new MutationObserver(updatePan)
+  viewBoxObserver.observe(host.value, { attributes: true, attributeFilter: ['viewBox'] })
+  updatePan()
+}, { flush: 'post' })
+watch(() => [appearance.workfloor.zoom, appearance.workfloor.height], updatePan, { flush: 'post' })
 
 function toggle() { collapsed.value = !collapsed.value; saveCollapsed(collapsed.value) }
 watch(host, value => {
@@ -103,6 +130,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  stageObserver?.disconnect()
+  viewBoxObserver?.disconnect()
   unsubscribe?.()
   handle?.destroy()
   window.clearInterval(clockTimer)
@@ -115,8 +144,11 @@ onBeforeUnmount(() => {
   <section v-if="enabled" class="workfloor" :data-height="appearance.workfloor.height" :data-collapsed="collapsed"
     :style="{ '--wf-project': color }" aria-label="施工现场">
     <p v-if="collapsed" class="workfloor-summary">{{ summary }}</p>
-    <svg v-show="!collapsed" ref="host" class="workfloor-canvas" xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 1400 520" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="aria" />
+    <div v-show="!collapsed" ref="stage" class="workfloor-stage" :data-camera="appearance.workfloor.camera"
+      :style="{ '--wf-zoom': appearance.workfloor.zoom, '--wf-pan': panPx + 'px' }">
+      <svg ref="host" class="workfloor-canvas" xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 1400 520" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="aria" />
+    </div>
     <p v-if="error" class="workfloor-error" role="status">施工现场暂时无法加载。</p>
     <button class="btn btn-sm quiet workfloor-toggle" type="button" :aria-expanded="!collapsed"
       :aria-label="collapsed ? '展开施工现场' : '折叠施工现场'" @click="toggle">
@@ -127,8 +159,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .workfloor { position: relative; flex: none; width: 100%; min-width: 0; overflow: hidden; contain: content; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--wf-stage); }
-.workfloor-canvas { display: block; width: 100%; height: auto; aspect-ratio: 1400 / 520; max-height: min(32vh, 380px); }
-.workfloor[data-height="compact"] .workfloor-canvas { aspect-ratio: 1400 / 360; max-height: min(24vh, 280px); }
+.workfloor-stage { position: relative; width: 100%; aspect-ratio: 1400 / 520; max-height: min(32vh, 380px); overflow: hidden; }
+.workfloor[data-height="compact"] .workfloor-stage { aspect-ratio: 1400 / 360; max-height: min(24vh, 280px); }
+.workfloor-canvas { display: block; width: 100%; height: 100%; transform-origin: 50% 100%; transform: scale(var(--wf-zoom, 1)); }
+.workfloor-stage[data-camera="pan"] .workfloor-canvas { animation: wf-pan 24s ease-in-out infinite alternate; }
+@keyframes wf-pan {
+  from { transform: translateX(var(--wf-pan)) scale(var(--wf-zoom, 1)); }
+  to { transform: translateX(calc(-1 * var(--wf-pan))) scale(var(--wf-zoom, 1)); }
+}
 .workfloor[data-collapsed="true"] { height: 36px; background: var(--surface); }
 .workfloor-summary { margin: 0; padding: 0 var(--s3); padding-right: var(--s7); line-height: 34px; font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workfloor-toggle { position: absolute; top: var(--s1); right: var(--s1); padding: var(--s1); color: var(--wf-text); background: var(--wf-floor); border-color: var(--wf-line); }
