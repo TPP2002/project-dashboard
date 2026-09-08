@@ -33,7 +33,8 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
+const os = require('node:os');
+const { resolveProject, readRegistry, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { atomicWriteFileSync, atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { CODE_ROOT, isGitCheckout, resolveHookCliRoot, displayCliCommand } = require('../core/runtimeRoot.cjs');
 const { detectTrunk } = require('./release.cjs');
@@ -280,13 +281,40 @@ function todoWriteCommandGlobal() {
   return `node -e "${prog}" || true`;
 }
 
+// 环境变量只供测试隔离；检测与安装必须读同一个全局文件。
+function globalSettingsPath() {
+  return process.env.DASHBOARD_GLOBAL_SETTINGS || path.join(os.homedir(), '.claude', 'settings.json');
+}
+function isProgressHook(hook) {
+  return hook && looksLikeOurs(hook.command) && hook.command.includes('sync-progress');
+}
+function hasProgressHook(entries) {
+  return Array.isArray(entries) && entries.some((entry) =>
+    entry && Array.isArray(entry.hooks) && entry.hooks.some(isProgressHook));
+}
+/** 同一 matcher 里可能混有用户命令，只摘我方进度命令，保留其余命令与配置。 */
+function removeProgressHooks(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) => {
+    if (!entry || !Array.isArray(entry.hooks)) return [entry];
+    const hooks = entry.hooks.filter((hook) => !isProgressHook(hook));
+    if (hooks.length === entry.hooks.length) return [entry];
+    return hooks.length ? [{ ...entry, hooks }] : [];
+  });
+}
+function globalProgressHookInstalled() {
+  try {
+    const settings = JSON.parse(fs.readFileSync(globalSettingsPath(), 'utf8'));
+    return hasProgressHook(settings?.hooks?.PostToolUse);
+  } catch { return false; } // 无法读出全局条目时，仍安装项目自己的同步钩子。
+}
+
 /**
- * 装全局自动进度钩子到 ~/.claude/settings.json（对所有 CC 对话生效，含 worktree）。
- * 幂等：只剔除本工具此前装的同类条目再插新块，不动用户其它 hook。
+ * 装全局自动进度钩子，并从登记项目中摘掉重复的项目级进度命令。
+ * 幂等；缺失或 JSON 损坏的项目设置跳过，其余写入失败交给调用方报告。
  */
-function installGlobalProgressHook() {
-  const os = require('node:os');
-  const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+function installGlobalProgressHook(registryPath = REGISTRY_PATH) {
+  const settingsPath = globalSettingsPath();
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
   let settings = {};
   if (fs.existsSync(settingsPath)) {
@@ -297,24 +325,38 @@ function installGlobalProgressHook() {
     }
   }
   settings.hooks = settings.hooks || {};
-  const isMineProgress = (entry) => entry && Array.isArray(entry.hooks)
-    && entry.hooks.some((h) => h && typeof h.command === 'string'
-      && looksLikeOurs(h.command) && h.command.includes('sync-progress'));
-  const keepOthers = (arr) => (Array.isArray(arr) ? arr.filter((e) => !isMineProgress(e)) : []);
-  settings.hooks.PostToolUse = keepOthers(settings.hooks.PostToolUse);
+  settings.hooks.PostToolUse = removeProgressHooks(settings.hooks.PostToolUse);
   settings.hooks.PostToolUse.push({
     matcher: 'TodoWrite',
     hooks: [{ type: 'command', command: todoWriteCommandGlobal() }],
   });
   atomicWriteJsonSync(settingsPath, settings);
-  return { settingsPath };
+  const removed = [];
+  const registry = readRegistry(registryPath);
+  for (const [projectId, entry] of Object.entries(registry.projects || {})) {
+    const codeRepo = entry && (entry.codeRepo || entry.mainRepo);
+    if (typeof codeRepo !== 'string' || !codeRepo) continue;
+    const projectPath = path.join(codeRepo, '.claude', 'settings.json');
+    let projectSettings;
+    try { projectSettings = JSON.parse(fs.readFileSync(projectPath, 'utf8')); }
+    catch (e) {
+      if (e.code === 'ENOENT' || e instanceof SyntaxError) continue;
+      throw e;
+    }
+    if (!hasProgressHook(projectSettings?.hooks?.PostToolUse)) continue;
+    projectSettings.hooks.PostToolUse = removeProgressHooks(projectSettings.hooks.PostToolUse);
+    atomicWriteJsonSync(projectPath, projectSettings);
+    removed.push({ projectId, path: projectPath });
+  }
+  return { settingsPath, removed };
 }
 
-function hooksGlobal(_flags) {
+function hooksGlobal(flags = {}) {
   ensureCli();
-  const r = installGlobalProgressHook();
-  return { ok: true, text:
+  const r = installGlobalProgressHook(flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH);
+  return { ok: true, ...r, text:
     `✔ 全局自动进度钩子已装 → ${r.settingsPath}\n` +
+    `  已摘掉 ${r.removed.length} 处项目级重复待办同步钩子。\n` +
     '  从此所有 CC 对话(含 worktree 平行会话)更新待办清单时,\n' +
     '  自动按当前 git 仓认出看板项目 + 按分支找施工中任务 + 同步进度。\n' +
     '  非看板项目里会静默跳过,不影响。' };
@@ -347,7 +389,7 @@ function installCcSettings(codeRepo, id, registryFwd) {
 
   settings.hooks.Stop = keepOthers(settings.hooks.Stop);
   settings.hooks.Stop.push({
-    hooks: [{ type: 'command', command: cliLine('doctor', id, registryFwd, '--quiet') }],
+    hooks: [{ type: 'command', command: cliLine('doctor', id, registryFwd, '--quick --quiet') }],
   });
 
   settings.hooks.PostToolUse = keepOthers(settings.hooks.PostToolUse);
@@ -355,13 +397,16 @@ function installCcSettings(codeRepo, id, registryFwd) {
     matcher: 'Bash',
     hooks: [{ type: 'command', command: postToolUseCommand(id, registryFwd) }],
   });
-  settings.hooks.PostToolUse.push({
-    matcher: 'TodoWrite',
-    hooks: [{ type: 'command', command: todoWriteCommand(id, registryFwd) }],
-  });
+  const skippedTodoWrite = globalProgressHookInstalled();
+  if (!skippedTodoWrite) {
+    settings.hooks.PostToolUse.push({
+      matcher: 'TodoWrite',
+      hooks: [{ type: 'command', command: todoWriteCommand(id, registryFwd) }],
+    });
+  }
 
   atomicWriteJsonSync(settingsPath, settings);
-  return { settingsPath };
+  return { settingsPath, skippedTodoWrite };
 }
 
 /**
@@ -446,9 +491,11 @@ function hooksInstall(flags) {
     `✔ 已装同步 hook @ ${proj.name}（${proj.codeRepo}）\n` +
     `  · git hooks：${git.written.join(', ')} → ${git.hooksDir}\n` +
     `  · CC settings：Stop(doctor 兜底) + PostToolUse(Bash·git commit→sync) → ${cc.settingsPath}\n` +
+    (cc.skippedTodoWrite ? '  全局已装待办同步钩子，本项目不再重复装\n' : '') +
     `  · CLAUDE.md 看板协议锚段：${cmd.action} → ${cmd.path}\n` +
     '  提示：所有调用 || true 结尾，绝不阻断 commit/对话；再次运行本命令幂等更新。';
-  return { ok: true, text, gitHooks: git.written, hooksDir: git.hooksDir, settings: cc.settingsPath, claudeMd: cmd };
+  return { ok: true, text, gitHooks: git.written, hooksDir: git.hooksDir, settings: cc.settingsPath,
+    skippedTodoWrite: cc.skippedTodoWrite, claudeMd: cmd };
 }
 
 // ───────── hooks-trunk-guard：看板主工位切离主干的提醒钩子（治法②那一小块保险，负责人 0906 拍板：只提醒不拦）─────────
