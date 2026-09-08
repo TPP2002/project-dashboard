@@ -19,8 +19,23 @@ export const REPO_ROOT = resolve(join(dirname(fileURLToPath(import.meta.url)), '
 /** 所有工单的根目录。整棵树都不进 git(见 .gitignore)。 */
 export const JOBS_ROOT = join(REPO_ROOT, '.codex', 'jobs')
 
-/** Codex 派出去的独立工作区放这里,沿用 2026-07 就有的老约定。 */
-export const CODEX_WORKTREES_ROOT = join(REPO_ROOT, '.codex', 'worktrees')
+/**
+ * Codex 派出去的独立工作区放这里。
+ *
+ * 【为什么不再放 .codex 下面】Codex 沙箱把「工作目录里的 .codex」当自己的配置目录,
+ * 启动时给沙箱用户在这个目录上加一条 DENY(W,D) 的显式 ACE,而且是 (OI)(CI) 向下继承的。
+ * 工作区一旦建在它底下,并行派出去的第二单一起来,第一单就在**自己的工作区里**写不进文件
+ * (0908 aud-notify-fresh 实踩:三个测试文件落不了盘,现象像 Codex 偷懒没写,其实是被自己锁住)。
+ * 换一个不叫 .codex 的兄弟目录就绕开了。
+ *
+ * 【为什么仍然留在仓库根下】看板的 Codex 会话面板靠「cwd 在不在项目根底下」认这条会话属于哪个
+ * 项目(server/codexSessionData.cjs 的 inferProjectName)。挪到仓库外面的兄弟目录,派出去的单
+ * 会集体掉进「其它」。
+ */
+export const CODEX_WORKTREES_ROOT = join(REPO_ROOT, '.codex-worktrees')
+
+/** 2026-09-09 之前建在 .codex/worktrees 下的老工作区。只有 end 命令还认它,好让改根之前派出去的单收得掉。 */
+export const LEGACY_CODEX_WORKTREES_ROOT = join(REPO_ROOT, '.codex', 'worktrees')
 
 export interface JobPaths {
   /** 工单根目录 */
@@ -66,3 +81,6 @@ export const worktreeFor = (slug: string): { path: string; branch: string } => (
   path: join(CODEX_WORKTREES_ROOT, slug),
   branch: 'codex/' + slug,
 })
+
+/** 老根下的工作区路径(分支名没变过)。收工时先看新根、没有再看这里。 */
+export const legacyWorktreePathFor = (slug: string): string => join(LEGACY_CODEX_WORKTREES_ROOT, slug)

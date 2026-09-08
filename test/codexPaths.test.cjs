@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { spawnSync } = require('node:child_process')
-const { join, resolve } = require('node:path')
+const { join, resolve, sep } = require('node:path')
 
 const REPO_ROOT = resolve(__dirname, '..')
 
@@ -35,12 +35,29 @@ test('jobPaths：所有产物落在工单目录且文件名固定，包括续聊
   for (const [key, filename] of Object.entries(names)) assert.equal(resolve(out.paths[key]), join(dir, filename), key)
 })
 
-test('worktreeFor：工作区使用统一根目录，分支固定为 codex/<slug>', () => {
+// 工作区根**不许**再落在 .codex 底下：Codex 沙箱把「工作目录里的 .codex」当自己的配置目录，
+// 给沙箱用户加一条继承式拒写 ACE，工作区建在它底下会被自己锁住（0908 aud-notify-fresh 实踩）。
+// 这条断言就是那根钉子：谁把根挪回 .codex 里，这里当场红。
+test('worktreeFor：工作区根在 .codex 之外、仍在仓库根下，分支固定为 codex/<slug>', () => {
   const out = runTs(`
     import { CODEX_WORKTREES_ROOT, worktreeFor } from './scripts/codex/codex-paths.ts'
     console.log(JSON.stringify({ root: CODEX_WORKTREES_ROOT, worktree: worktreeFor('paths-unit-test') }))
   `)
-  assert.equal(resolve(out.root), join(REPO_ROOT, '.codex', 'worktrees'))
-  assert.equal(resolve(out.worktree.path), join(REPO_ROOT, '.codex', 'worktrees', 'paths-unit-test'))
+  assert.equal(resolve(out.root), join(REPO_ROOT, '.codex-worktrees'))
+  assert.equal(resolve(out.worktree.path), join(REPO_ROOT, '.codex-worktrees', 'paths-unit-test'))
   assert.equal(out.worktree.branch, 'codex/paths-unit-test')
+
+  const dotCodex = join(REPO_ROOT, '.codex')
+  assert.ok(!resolve(out.root).startsWith(dotCodex + sep), '工作区根不许在 .codex 底下：' + out.root)
+  // 仍要留在仓库根下，否则看板的 Codex 会话面板认不出这条会话属于哪个项目。
+  assert.ok(resolve(out.root).startsWith(REPO_ROOT + sep), '工作区根要留在仓库根下：' + out.root)
+})
+
+test('legacyWorktreePathFor：老根下的路径还认得出来，好让改根之前派出去的单收得掉', () => {
+  const out = runTs(`
+    import { LEGACY_CODEX_WORKTREES_ROOT, legacyWorktreePathFor } from './scripts/codex/codex-paths.ts'
+    console.log(JSON.stringify({ root: LEGACY_CODEX_WORKTREES_ROOT, path: legacyWorktreePathFor('paths-unit-test') }))
+  `)
+  assert.equal(resolve(out.root), join(REPO_ROOT, '.codex', 'worktrees'))
+  assert.equal(resolve(out.path), join(REPO_ROOT, '.codex', 'worktrees', 'paths-unit-test'))
 })

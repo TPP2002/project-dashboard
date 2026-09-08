@@ -43,7 +43,7 @@ import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from '
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { parseTask, acceptanceKindMenu, type CodexTask } from './codex-contract'
-import { jobPaths, worktreeFor, JOBS_ROOT, REPO_ROOT } from './codex-paths'
+import { jobPaths, worktreeFor, legacyWorktreePathFor, JOBS_ROOT, REPO_ROOT } from './codex-paths'
 import {
   dispatch as runDispatch,
   isAlive,
@@ -195,6 +195,12 @@ const collect = (slug: string, rerun: boolean): number => {
   })
   writeFileSync(paths.verdict, JSON.stringify(verdict, null, 2) + '\n', 'utf8')
 
+  // 自述的**来龄**要露出来:判决是按 last-message.json 出的,而那份文件可能是续聊后刷新的,
+  // 也可能是「续聊过但那轮没带回结论」的旧货 —— 后一种正是 0908 误收两单的那个坑。
+  const resumedAt = state?.resumedAt ?? null
+  const reportAt = state?.selfReportUpdatedAt ?? null
+  const stamp = (iso: string): string => iso.slice(0, 16).replace('T', ' ')
+
   const icon = { accepted: '✔', rejected: '✖', blocked: '⏸', crashed: '💥' }[verdict.finalStatus]
   const lines = [
     icon + ' ' + slug + ' → ' + verdict.finalStatus + '   (卡 ' + meta.taskId + ')',
@@ -207,6 +213,14 @@ const collect = (slug: string, rerun: boolean): number => {
             .join(' ')
         : '无'),
   ]
+  if (reportAt) lines.push('  自述来源:续聊后刷新过(' + stamp(reportAt) + ')')
+  if (resumedAt && (!reportAt || reportAt < resumedAt)) {
+    lines.push(
+      '  ⚠ 这单 ' + stamp(resumedAt) + ' 续聊过,但那轮回话没带回结论 JSON —— 上面这份自述是续聊之前的,\n' +
+        '     下面的判决也是照它出的。续聊里补做过东西的话别信这行判决:让它把结论按 output schema\n' +
+        '     重发一遍(say 一句就行),再 collect。',
+    )
+  }
   if (verdict.openQuestions.length) lines.push('  ❓待拍板:' + verdict.openQuestions.map((q) => '\n     · ' + q).join(''))
   if (verdict.reasons.length) lines.push('  判据:' + verdict.reasons.map((r) => '\n     · ' + r).join(''))
   if (verdict.warnings.length) lines.push('  提醒:' + verdict.warnings.map((w) => '\n     · ' + w).join(''))
@@ -260,9 +274,15 @@ switch (command) {
       process.stderr.write('✖ 续聊失败 ' + slug + ':' + (result.error ?? '未知错误') + '\n')
       process.exit(1)
     }
+    // 刷没刷新必须当场说:0908 就是因为「续聊补做完了、判决还停在旧自述」没人看得出来,
+    // 白白按 blocked 收了两单(wf-zoom / aud-hooks-dedup)。
     process.stdout.write(
       '✔ 已续聊 ' + slug + '(thread ' + String(result.threadId) + ')\n' +
-        (result.reply || '(Codex 没有输出文字)') + '\n',
+        (result.reply || '(Codex 没有输出文字)') + '\n' +
+        (result.reportRefreshed
+          ? '↻ 这次回话带回了结论,自述已刷新 —— collect 会按最新的判。\n'
+          : '⚠ 这次回话里没有成形的结论 JSON,自述还是续聊前那份 —— collect 仍会按旧的判。\n' +
+            '  要刷新:再 say 一句「把最终结论按 output schema 原样输出成一个 JSON 对象,不要别的话」。\n'),
     )
     break
   }
@@ -326,7 +346,10 @@ switch (command) {
   case 'end': {
     const slug = positional(1)
     if (!slug) die('用法:end <slug>')
-    const { path, branch } = worktreeFor(slug)
+    const { path: current, branch } = worktreeFor(slug)
+    // 工作区根在 2026-09-09 从 .codex/worktrees 挪到了 .codex-worktrees(理由见 codex-paths 头注)。
+    // 挪之前派出去、还没收的单躺在老根里,这里得认得出来,否则它们再也收不掉,只能手工 git worktree remove。
+    const path = existsSync(current) ? current : legacyWorktreePathFor(slug)
     if (!existsSync(path)) {
       process.stdout.write('没有 worktree 要收(这一单没用 --worktree,或已收过)。\n')
       break
