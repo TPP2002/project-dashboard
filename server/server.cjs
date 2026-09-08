@@ -54,7 +54,7 @@ const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
-const { readSettings, writeSettings, normalizeWebhookEvents } = require('../core/settings.cjs');
+const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules } = require('../core/settings.cjs');
 
 // ============ 常量 ============
 
@@ -198,16 +198,11 @@ function dispatchCwd(pid) {
 /**
  * Codex 面板落脚的仓（工单 cwd + `.codex/jobs` 台账根）——同样是「代码的家」codeRepo。
  *
- * SERVER-GIT-CWD-USES-MAINREPO 只扫了三个派单入口，漏了这一处：它把 `projects.rogue.mainRepo`
- * 当成跑 `npx tsx scripts/codex/codex-dispatch.ts` 的 cwd 和 jobs 台账根，而工单要改的代码、
- * jobs 流水都在代码仓，不在板的家。rogue 今天两者同址所以看不出毛病，别的项目接 Codex 面板
- * 时才会踩（SERVER-CODEX-COST-USES-MAINREPO，2026-09-06）。
- *
- * 仍写死 rogue：Codex 面板当前就是单项目的，扩成多项目是另一张卡的事，这里只纠口径。
- * @returns {string|null} 代码仓绝对路径；项目未注册时 null（调用方据此报 404，不许拿去 spawn）。
+ * 按显式项目参数解析，不按服务 cwd 或固定项目猜测；与普通派单共用同一处回落规则。
+ * @returns {string|null} 代码仓绝对路径；缺参或项目未注册时 null，不许拿去 spawn。
  */
-function codexRepo() {
-  return dispatchCwd('rogue');
+function codexRepo(projectId) {
+  return dispatchCwd(projectId);
 }
 
 /** 读 board.json：ENOENT → null；解析失败 → 抛（调用方决定 404 还是 500） */
@@ -505,6 +500,7 @@ function handleHealth(req, res) {
     sseSubscribers: state.subscribers.size,
     distBuilt: fs.existsSync(path.join(DIST_DIR, 'index.html')),
     webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(readSettings().webhookEvents) },
+    modules: resolveModules(),
     // 报家门（SERVER-RUNS-ON-LIVE-CHECKOUT）：谁都能一眼看出"在跑的是哪份代码、哪个提交"，
     // 启动器据此判断要不要换新，体检据此提醒"合了主干还没生效"。
     mode: MODE,
@@ -641,7 +637,7 @@ function readBody(req, maxBytes, cb) {
   req.on('error', (e) => finish(e));
 }
 
-/** 只允许保存推送事件选择；地址始终来自环境变量，不能通过网页改写。 */
+/** 只允许保存推送事件和模块开关；推送地址始终来自环境变量。 */
 function handleSettings(req, res) {
   readBody(req, BODY_MAX, (err, raw) => {
     if (err) return sendJson(res, 413, { ok: false, error: err.message });
@@ -649,21 +645,32 @@ function handleSettings(req, res) {
     try { body = JSON.parse(raw); }
     catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
     const isRecord = (value) => value && typeof value === 'object' && !Array.isArray(value);
-    if (!isRecord(body) || Object.keys(body).some((key) => key !== 'webhookEvents')
-      || !isRecord(body.webhookEvents) || Object.entries(body.webhookEvents)
-        .some(([key, value]) => !['done', 'pending', 'block'].includes(key) || typeof value !== 'boolean')) {
+    if (!isRecord(body) || !Object.keys(body).length
+      || Object.keys(body).some((key) => !['webhookEvents', 'modules'].includes(key))) {
+      return sendJson(res, 400, { ok: false, error: '只能保存 webhookEvents 或 modules，至少提供一项' });
+    }
+    if (Object.hasOwn(body, 'webhookEvents') && (!isRecord(body.webhookEvents) || Object.entries(body.webhookEvents)
+        .some(([key, value]) => !['done', 'pending', 'block'].includes(key) || typeof value !== 'boolean'))) {
       return sendJson(res, 400, { ok: false, error: '只能保存完工、待拍板、阻塞三项开关，值必须是布尔值' });
     }
+    if (Object.hasOwn(body, 'modules') && (!isRecord(body.modules) || Object.entries(body.modules)
+      .some(([key, value]) => !MODULE_IDS.includes(key) || typeof value !== 'boolean'))) {
+      return sendJson(res, 400, { ok: false, error: 'modules 只允许 codex、cost、cpu、reader 四项开关，值必须是布尔值' });
+    }
     try {
-      const webhookEvents = normalizeWebhookEvents(body.webhookEvents);
-      writeSettings({ webhookEvents });
-      return sendJson(res, 200, { ok: true, settings: { webhookEvents } });
-    } catch (_) { return sendJson(res, 500, { ok: false, error: '推送选择保存失败，请稍后再试' }); }
+      const patch = {};
+      if (Object.hasOwn(body, 'webhookEvents')) patch.webhookEvents = normalizeWebhookEvents(body.webhookEvents);
+      if (Object.hasOwn(body, 'modules')) patch.modules = { ...normalizeModules(readSettings().modules), ...body.modules };
+      const settings = writeSettings(patch);
+      return sendJson(res, 200, { ok: true, settings: {
+        webhookEvents: normalizeWebhookEvents(settings.webhookEvents), modules: normalizeModules(settings.modules),
+      } });
+    } catch (_) { return sendJson(res, 500, { ok: false, error: '设置保存失败，请稍后再试' }); }
   });
 }
 
 const codexApi = createCodexApi({
-  resolveRogueRepo: codexRepo,
+  resolveRepo: codexRepo,
   readRegistry: readRegistrySafe,
   dashboardRoot: DASH_ROOT,
   sessionsRoot: process.env.DASHBOARD_CODEX_SESSIONS
@@ -1252,6 +1259,12 @@ const server = http.createServer((req, res) => {
       const segs = rawSegs.map(safeDecode);
       if (segs.some((s) => s === null)) return sendJson(res, 400, { ok: false, error: '非法 URL 编码' });
       const sub = segs[1];
+      const modules = resolveModules();
+
+      if (sub === 'codex' && !modules.codex) return sendJson(res, 404, { ok: false, error: 'Codex 模块未启用（在菜单设置里打开，或 settings.json 的 modules.codex 设为 true）' });
+      if (sub === 'cost' && !modules.cost) return sendJson(res, 404, { ok: false, error: '成本模块未启用（在菜单设置里打开，或 settings.json 的 modules.cost 设为 true）' });
+      if (sub === 'cpu' && !modules.cpu) return sendJson(res, 404, { ok: false, error: '算力模块未启用（在菜单设置里打开，或 settings.json 的 modules.cpu 设为 true）' });
+      if (sub === 'reader' && !modules.reader) return sendJson(res, 404, { ok: false, error: '审阅台模块未启用（在菜单设置里打开，或 settings.json 的 modules.reader 设为 true）' });
 
       if (sub === 'health' && req.method === 'GET') return handleHealth(req, res);
       if (sub === 'settings' && req.method === 'POST') return handleSettings(req, res);

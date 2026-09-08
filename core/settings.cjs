@@ -5,6 +5,7 @@ const { DASHBOARD_HOME } = require('./resolveProject.cjs');
 const { atomicWriteJsonSync } = require('./atomicWrite.cjs');
 
 const SETTINGS_PATH = path.join(DASHBOARD_HOME, 'settings.json');
+const MODULE_IDS = ['codex', 'cost', 'cpu', 'reader'];
 
 /** 设置缺失、损坏或不是对象时回落空设置，不影响服务启动。 */
 function readSettings() {
@@ -32,4 +33,19 @@ function normalizeWebhookEvents(raw) {
   };
 }
 
-module.exports = { SETTINGS_PATH, readSettings, writeSettings, normalizeWebhookEvents };
+/** 仅布尔 true 开启模块；缺失、脏字段和未知字段均不授予开关。 */
+function normalizeModules(raw) {
+  const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  return Object.fromEntries(MODULE_IDS.map((id) => [id, value[id] === true]));
+}
+
+/** 环境变量存在即覆盖文件（空字符串表示全关）；每次读取，保存后立即生效。 */
+function resolveModules() {
+  if (process.env.DASHBOARD_MODULES !== undefined) {
+    const enabled = new Set(process.env.DASHBOARD_MODULES.split(',').map((id) => id.trim()));
+    return Object.fromEntries(MODULE_IDS.map((id) => [id, enabled.has('all') || enabled.has(id)]));
+  }
+  return normalizeModules(readSettings().modules);
+}
+
+module.exports = { SETTINGS_PATH, MODULE_IDS, readSettings, writeSettings, normalizeWebhookEvents, normalizeModules, resolveModules };

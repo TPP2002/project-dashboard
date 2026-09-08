@@ -2,8 +2,10 @@
 import '@/utils/celebrate'
 import '@/utils/soundLink'
 import Icon from '@/components/Icon.vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import router from '@/router'
+import type { ModuleId } from '@/api/client'
 import type { JobSummary } from '@/types/codex'
 import TopBar from '@/components/TopBar.vue'
 import SideNav from '@/components/SideNav.vue'
@@ -35,20 +37,24 @@ let jobsTimer: ReturnType<typeof setInterval> | null = null
 let jobsRequestInFlight = false
 
 async function refreshRunningJobs() {
-  if (document.visibilityState !== 'visible' || jobsRequestInFlight) return
+  const projectId = store.currentProjectId
+  if (!store.modules.codex || !projectId || document.visibilityState !== 'visible' || jobsRequestInFlight) return
   jobsRequestInFlight = true
   try {
-    const response = await fetch('/api/codex/jobs')
+    const response = await fetch(`/api/codex/jobs?project=${encodeURIComponent(projectId)}`)
     if (!response.ok) {
       hasRunningJob.value = false
       return
     }
     const jobs = await response.json() as JobSummary[]
-    hasRunningJob.value = Array.isArray(jobs) && jobs.some(job => job.running === true)
+    if (store.modules.codex && store.currentProjectId === projectId) {
+      hasRunningJob.value = Array.isArray(jobs) && jobs.some(job => job.running === true)
+    }
   } catch (_) {
     hasRunningJob.value = false
   } finally {
     jobsRequestInFlight = false
+    if (store.currentProjectId !== projectId) void refreshRunningJobs()
   }
 }
 
@@ -60,7 +66,7 @@ function stopJobsPolling() {
 
 function startJobsPolling() {
   stopJobsPolling()
-  if (document.visibilityState !== 'visible') return
+  if (!store.modules.codex || !store.currentProjectId || document.visibilityState !== 'visible') return
   void refreshRunningJobs()
   jobsTimer = setInterval(refreshRunningJobs, 60_000)
 }
@@ -69,6 +75,15 @@ function onVisibilityChange() {
   if (document.visibilityState === 'visible') startJobsPolling()
   else stopJobsPolling()
 }
+
+watch(() => [store.modules.codex, store.currentProjectId], () => {
+  hasRunningJob.value = false
+  startJobsPolling()
+})
+watch(() => store.modules, () => {
+  const module = router.currentRoute.value.meta.module as ModuleId | undefined
+  if (module && !store.modules[module]) void router.replace('/overview')
+}, { deep: true })
 
 onMounted(() => {
   store.init()

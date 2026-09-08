@@ -73,7 +73,7 @@ before(async () => {
   fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: { trepo: { name: '测试仓', mainRepo: repo, board: boardPath } } }), 'utf8');
   cmds.register({ id: 'trepo', name: '测试仓', root: repo, registry: reg });
   cmds.add({ _: ['T-1'], project: 'trepo', title: '测试卡', model: 'sonnet·低', registry: reg });
-  const srv = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_HOME: dataRoot, DASHBOARD_PORT: String(await freePort()) });
+  const srv = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_HOME: dataRoot, DASHBOARD_MODULES: 'reader', DASHBOARD_PORT: String(await freePort()) });
   SRV = { ...srv, dir, reg, repo, dataRoot };
 });
 after(async () => { if (SRV) { await stopServer(SRV.child); clean(SRV.dir); clean(SRV.dataRoot); } });

@@ -178,6 +178,8 @@ async function startServer(registry, sessionsRoot) {
         ...process.env,
         DASHBOARD_NO_OPEN: '1',
         DASHBOARD_REGISTRY: registry,
+        DASHBOARD_HOME: path.dirname(registry),
+        DASHBOARD_MODULES: 'codex,cost',
         DASHBOARD_CODEX_SESSIONS: sessionsRoot,
         DASHBOARD_PORT: String(port),
       },
@@ -249,7 +251,7 @@ after(async () => {
 });
 
 test('工单目录不存在时 GET /api/codex/jobs 返回空数组', async () => {
-  const response = await fetch(fixture.base + '/api/codex/jobs');
+  const response = await fetch(fixture.base + '/api/codex/jobs?project=rogue');
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), []);
 });
@@ -266,11 +268,11 @@ test('GET /api/codex/job?tail=0 不返回日志，展开请求才返回', async 
   }));
   fs.writeFileSync(path.join(dir, 'exec.jsonl'), 'only-when-open\n');
 
-  const folded = await (await fetch(fixture.base + '/api/codex/job?slug=detail-job&tail=0')).json();
+  const folded = await (await fetch(fixture.base + '/api/codex/job?project=rogue&slug=detail-job&tail=0')).json();
   assert.equal(folded.tail, '');
   assert.equal(folded.plainSummary, '已经完成。');
   assert.equal(folded.acceptance[0].kind, 'typecheck');
-  const opened = await (await fetch(fixture.base + '/api/codex/job?slug=detail-job&tail=1')).json();
+  const opened = await (await fetch(fixture.base + '/api/codex/job?project=rogue&slug=detail-job&tail=1')).json();
   assert.equal(opened.tail, 'only-when-open\n');
 });
 
@@ -309,7 +311,7 @@ test('详情页读到自己的会话静默证据后,不再对战报已标红的�
     finishedAt: null, pid: fixture.child.pid, startedAt: staleAt, threadId: staleId,
   }));
 
-  const detail = await (await fetch(fixture.base + '/api/codex/job?slug=stale-job&tail=0')).json();
+  const detail = await (await fetch(fixture.base + '/api/codex/job?project=rogue&slug=stale-job&tail=0')).json();
   assert.equal(detail.liveness, 'stalled');
   assert.equal(detail.stalledEvidence, 'silent');
   assert.equal(detail.confirmedDead, false, '软判据只标红给人看，不该顺带放开复派闸');
@@ -349,7 +351,7 @@ test('复派被拦时,能看到和详情页一致的"久无动静"提示,而不�
     finishedAt: null, pid: fixture.child.pid, startedAt: staleAt, threadId: staleId,
   }));
 
-  const response = await fetch(fixture.base + '/api/codex/dispatch', {
+  const response = await fetch(fixture.base + '/api/codex/dispatch?project=rogue', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ slug: 'stale-dispatch-job' }),
   });
@@ -360,14 +362,14 @@ test('复派被拦时,能看到和详情页一致的"久无动静"提示,而不�
 
 test('GET /api/codex/job 拒绝四种非法 slug', async () => {
   for (const slug of ['../evil', 'a/b', '', 'Upper']) {
-    const response = await fetch(fixture.base + '/api/codex/job?slug=' + encodeURIComponent(slug));
+    const response = await fetch(fixture.base + '/api/codex/job?project=rogue&slug=' + encodeURIComponent(slug));
     assert.equal(response.status, 400, slug);
   }
 });
 
 test('三条写 API 都在启动子进程前拒绝非法 slug', async () => {
   for (const endpoint of ['say', 'dispatch', 'collect']) {
-    const response = await fetch(fixture.base + '/api/codex/' + endpoint, {
+    const response = await fetch(fixture.base + '/api/codex/' + endpoint + '?project=rogue', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ slug: '../evil', message: 'hello' }),
     });
@@ -377,7 +379,7 @@ test('三条写 API 都在启动子进程前拒绝非法 slug', async () => {
 
 test('say 拒绝空白消息和超过 8000 字符的消息', async () => {
   for (const message of ['   ', 'x'.repeat(8001)]) {
-    const response = await fetch(fixture.base + '/api/codex/say', {
+    const response = await fetch(fixture.base + '/api/codex/say?project=rogue', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ slug: 'job-one', message }),
     });
@@ -386,19 +388,19 @@ test('say 拒绝空白消息和超过 8000 字符的消息', async () => {
 });
 
 test('会话、详情、额度与成本 API 返回同一份有界扫描结果', async () => {
-  const listResponse = await fetch(fixture.base + '/api/codex/sessions?limit=5');
+  const listResponse = await fetch(fixture.base + '/api/codex/sessions?project=rogue&limit=5');
   assert.equal(listResponse.status, 200);
   const sessions = await listResponse.json();
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].tokensUsed, 321);
   assert.equal(sessions[0].model, 'gpt-test');
 
-  const detailResponse = await fetch(fixture.base + '/api/codex/session?id=' + fixture.sessionId + '&tail=5');
+  const detailResponse = await fetch(fixture.base + '/api/codex/session?project=rogue&id=' + fixture.sessionId + '&tail=5');
   assert.equal(detailResponse.status, 200);
   const detail = await detailResponse.json();
   assert.equal(detail.events.find((event) => event.type === 'message').text, '完成');
 
-  const quotaResponse = await fetch(fixture.base + '/api/codex/quota');
+  const quotaResponse = await fetch(fixture.base + '/api/codex/quota?project=rogue');
   assert.equal(quotaResponse.status, 200);
   assert.equal((await quotaResponse.json()).usedPercent, 59);
 

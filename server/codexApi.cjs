@@ -11,15 +11,20 @@ const { createCodexSessionApi } = require('./codexSessionApi.cjs');
 const MESSAGE_MAX = 8000;
 
 function createCodexApi({
-  resolveRogueRepo, readRegistry, dashboardRoot, sessionsRoot,
+  resolveRepo, readRegistry, dashboardRoot, sessionsRoot,
   readBody, sendJson, sendText, bodyMax,
 }) {
   const activeDispatches = new Set();
 
-  function context(res) {
-    const repo = resolveRogueRepo();
+  function context(res, query) {
+    const projectId = query.project;
+    if (typeof projectId !== 'string' || !projectId.trim()) {
+      sendJson(res, 400, { ok: false, error: '缺 project' });
+      return null;
+    }
+    const repo = resolveRepo(projectId);
     if (!repo) {
-      sendJson(res, 404, { ok: false, error: 'registry.json 中没有可用的 projects.rogue 代码仓(codeRepo/mainRepo 都读不出)' });
+      sendJson(res, 404, { ok: false, error: `项目 ${projectId} 的代码仓读不出` });
       return null;
     }
     return { repo, jobsRoot: path.join(repo, '.codex', 'jobs') };
@@ -59,30 +64,30 @@ function createCodexApi({
     return sendJson(res, 400, { ok: false, error: detail });
   }
 
-  function currentJobs() {
-    const repo = resolveRogueRepo();
+  function currentJobs(repo) {
     if (!repo) return [];
     // 这里没有会话数据,只走「进程没了」「早该收工却没收尾」两条铁证;
     // 「长时间没动静」这条软判据要扫会话文件,留给战报那条路径算。
     return attachLiveness(listJobs(path.join(repo, '.codex', 'jobs')), { nowMs: Date.now() });
   }
 
-  const sessionApi = createCodexSessionApi({
-    readBody, sendJson, sendText, bodyMax, dashboardRoot, sessionsRoot, readRegistry,
-    getJobs: currentJobs, commandError,
-  });
+  // 每个请求绑定自己的仓库，异步续聊也不会被另一个项目的请求改写上下文。
+  function sessionApiFor(repo) {
+    return createCodexSessionApi({
+      readBody, sendJson, sendText, bodyMax, dashboardRoot, sessionsRoot, readRegistry,
+      getJobs: () => currentJobs(repo), commandError,
+    });
+  }
+  // 成本与额度扫描会话文件，不需要工单仓库。
+  const sessionApi = sessionApiFor();
 
-  function handleJobs(res) {
-    const ctx = context(res);
-    if (!ctx) return;
+  function handleJobs(res, ctx) {
     sendJson(res, 200, attachLiveness(listJobs(ctx.jobsRoot), { nowMs: Date.now() }));
   }
 
-  function handleJob(res, query) {
+  function handleJob(res, query, ctx) {
     const slug = validSlug(query.slug, res);
     if (!slug) return;
-    const ctx = context(res);
-    if (!ctx) return;
     const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: query.tail !== '0' });
     if (!detail) return sendJson(res, 404, { ok: false, error: `工单 ${slug} 不存在` });
     // 详情只看这一个工单,查它自己那一份会话文件很便宜,不必像列表那样为了省成本放弃软判据
@@ -92,11 +97,9 @@ function createCodexApi({
     sendJson(res, 200, attachLiveness([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]);
   }
 
-  function handleTask(res, query) {
+  function handleTask(res, query, ctx) {
     const slug = validSlug(query.slug, res);
     if (!slug) return;
-    const ctx = context(res);
-    if (!ctx) return;
     const taskPath = path.join(ctx.repo, '.codex', 'jobs', `${slug}.json`);
     let text;
     try { text = fs.readFileSync(taskPath, 'utf8'); }
@@ -107,7 +110,7 @@ function createCodexApi({
     sendJson(res, 200, { slug, text });
   }
 
-  function handleSay(req, res) {
+  function handleSay(req, res, ctx) {
     jsonBody(req, res, (body) => {
       const slug = validSlug(body.slug, res);
       if (!slug) return;
@@ -117,8 +120,6 @@ function createCodexApi({
       if (body.message.length > MESSAGE_MAX) {
         return sendJson(res, 400, { ok: false, error: `message 不能超过 ${MESSAGE_MAX} 字符` });
       }
-      const ctx = context(res);
-      if (!ctx) return;
       if (!fs.existsSync(path.join(ctx.jobsRoot, slug))) {
         return sendJson(res, 404, { ok: false, error: `工单 ${slug} 不存在` });
       }
@@ -129,12 +130,10 @@ function createCodexApi({
     });
   }
 
-  function handleDispatch(req, res) {
+  function handleDispatch(req, res, ctx) {
     jsonBody(req, res, (body) => {
       const slug = validSlug(body.slug, res);
       if (!slug) return;
-      const ctx = context(res);
-      if (!ctx) return;
       const task = `.codex/jobs/${slug}.json`;
       const taskPath = path.join(ctx.repo, task);
       const detail = getJobDetail(ctx.jobsRoot, slug, { includeTail: false });
@@ -147,7 +146,8 @@ function createCodexApi({
         ? attachLiveness([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]
         : null;
       const state = detail ? { finishedAt: detail.running ? null : 'done' } : { finishedAt: 'new' };
-      const inFlight = activeDispatches.has(slug);
+      const dispatchKey = path.join(ctx.jobsRoot, slug);
+      const inFlight = activeDispatches.has(dispatchKey);
       if (isRedispatchBlocked(state, inFlight, health?.confirmedDead === true)) {
         // 文案要说清「为什么拦」:对失联单只说"仍在运行"是误导 —— 面板明明已经标红说它失联了。
         const reason = inFlight ? '已经有一个派单进程在跑'
@@ -173,14 +173,14 @@ function createCodexApi({
         return sendJson(res, 404, { ok: false, error: `工单文件 ${task} 不存在` });
       }
       let child;
-      activeDispatches.add(slug);
+      activeDispatches.add(dispatchKey);
       try { child = spawnDispatchCli(ctx.repo, ['dispatch', '--task', task], { detached: true, stdio: 'ignore' }); }
       catch (error) {
-        activeDispatches.delete(slug);
+        activeDispatches.delete(dispatchKey);
         return sendJson(res, 500, { ok: false, error: '启动派单器失败：' + error.message });
       }
       let replied = false;
-      child.once('close', () => activeDispatches.delete(slug));
+      child.once('close', () => activeDispatches.delete(dispatchKey));
       child.once('spawn', () => {
         if (replied) return;
         replied = true;
@@ -188,7 +188,7 @@ function createCodexApi({
         sendJson(res, 202, { ok: true, slug });
       });
       child.once('error', (error) => {
-        activeDispatches.delete(slug);
+        activeDispatches.delete(dispatchKey);
         if (replied) return;
         replied = true;
         sendJson(res, 500, { ok: false, error: '启动派单器失败：' + error.message });
@@ -196,12 +196,10 @@ function createCodexApi({
     });
   }
 
-  function handleCollect(req, res) {
+  function handleCollect(req, res, ctx) {
     jsonBody(req, res, (body) => {
       const slug = validSlug(body.slug, res);
       if (!slug) return;
-      const ctx = context(res);
-      if (!ctx) return;
       const dir = path.join(ctx.jobsRoot, slug);
       if (!fs.existsSync(dir)) return sendJson(res, 404, { ok: false, error: `工单 ${slug} 不存在` });
       waitForCodex(ctx.repo, ['collect', slug], (result) => {
@@ -214,13 +212,15 @@ function createCodexApi({
 
   /** 返回 true 表示本模块已接管请求，异步响应也算已接管。 */
   function route(action, req, res, query) {
-    if (sessionApi.route(action, req, res, query)) return true;
-    if (action === 'jobs' && req.method === 'GET') { handleJobs(res); return true; }
-    if (action === 'job' && req.method === 'GET') { handleJob(res, query); return true; }
-    if (action === 'task' && req.method === 'GET') { handleTask(res, query); return true; }
-    if (action === 'say' && req.method === 'POST') { handleSay(req, res); return true; }
-    if (action === 'dispatch' && req.method === 'POST') { handleDispatch(req, res); return true; }
-    if (action === 'collect' && req.method === 'POST') { handleCollect(req, res); return true; }
+    const ctx = context(res, query);
+    if (!ctx) return true;
+    if (sessionApiFor(ctx.repo).route(action, req, res, query)) return true;
+    if (action === 'jobs' && req.method === 'GET') { handleJobs(res, ctx); return true; }
+    if (action === 'job' && req.method === 'GET') { handleJob(res, query, ctx); return true; }
+    if (action === 'task' && req.method === 'GET') { handleTask(res, query, ctx); return true; }
+    if (action === 'say' && req.method === 'POST') { handleSay(req, res, ctx); return true; }
+    if (action === 'dispatch' && req.method === 'POST') { handleDispatch(req, res, ctx); return true; }
+    if (action === 'collect' && req.method === 'POST') { handleCollect(req, res, ctx); return true; }
     return false;
   }
 

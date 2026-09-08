@@ -88,13 +88,15 @@ export function saveNavGroups<T extends string>(storageKey: string, groups: NavG
 
 <script setup lang="ts">
 import Icon from '@/components/Icon.vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { postSettings, type ModuleId } from '@/api/client'
+import { useBoardStore } from '@/stores/board'
 
 interface NavItemPresentation {
   title: string
 }
 
-defineProps<{
+const props = defineProps<{
   open: boolean
   groups: NavGroupConfig[]
   items: Record<string, NavItemPresentation>
@@ -111,6 +113,35 @@ const emit = defineEmits<{
 
 const newGroupName = ref('')
 const dragging = ref<{ groupId: string; itemId: string } | null>(null)
+const store = useBoardStore()
+const moduleOptions: { id: ModuleId; title: string }[] = [
+  { id: 'codex', title: 'Codex 面板' }, { id: 'cost', title: '成本' },
+  { id: 'cpu', title: '算力' }, { id: 'reader', title: '审阅台' },
+]
+const moduleDraft = ref({ ...store.modules })
+const savingModules = ref(false)
+
+watch(() => [props.open, store.modules], () => {
+  moduleDraft.value = { ...store.modules }
+}, { deep: true })
+
+async function setModule(id: ModuleId, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (savingModules.value) { input.checked = moduleDraft.value[id]; return }
+  const previous = { ...store.modules }
+  const enabled = input.checked
+  moduleDraft.value = { ...moduleDraft.value, [id]: enabled }
+  savingModules.value = true
+  try {
+    const result = await postSettings({ modules: { [id]: enabled } })
+    if (!result.ok || !await store.loadModules()) throw new Error('无法确认模块设置')
+    moduleDraft.value = { ...store.modules }
+  } catch (_) {
+    moduleDraft.value = previous
+    input.checked = previous[id]
+    window.alert('扩展模块设置未能确认，开关已恢复，请稍后重试。')
+  } finally { savingModules.value = false }
+}
 
 function renameGroup(groupId: string, event: Event) {
   emit('rename', groupId, (event.target as HTMLInputElement).value)
@@ -158,7 +189,7 @@ function dropAtEnd(event: DragEvent, toGroupId: string) {
         <header class="settings-head">
           <div>
             <h2 id="nav-settings-title">菜单设置</h2>
-            <p>拖动左侧手柄可排序或换组；关闭的菜单仍能从地址直接进入。</p>
+            <p>拖动左侧手柄可排序或换组；隐藏菜单不关闭功能，扩展模块是否启用由下面的开关控制。</p>
           </div>
           <button class="btn btn-sm quiet" type="button" aria-label="关闭菜单设置" @click="emit('close')">×</button>
         </header>
@@ -214,6 +245,17 @@ function dropAtEnd(event: DragEvent, toGroupId: string) {
           <input id="new-group-name" v-model="newGroupName" class="field" maxlength="32" placeholder="新分组名称">
           <button class="btn" type="submit" :disabled="!newGroupName.trim()">新建分组</button>
         </form>
+
+        <section class="module-settings" aria-labelledby="module-settings-title">
+          <h3 id="module-settings-title">扩展模块</h3>
+          <p>这些是负责人个人工作流用的模块，开源发布版默认关闭；打开后侧栏出现对应入口</p>
+          <div class="module-options">
+            <label v-for="option in moduleOptions" :key="option.id" class="visibility-toggle">
+              <input type="checkbox" :checked="moduleDraft[option.id]" :disabled="savingModules" @change="setModule(option.id, $event)">
+              <span>{{ option.title }}</span>
+            </label>
+          </div>
+        </section>
 
         <footer class="settings-actions">
           <button class="btn quiet" type="button" @click="emit('restore')">恢复默认</button>
@@ -281,6 +323,9 @@ function dropAtEnd(event: DragEvent, toGroupId: string) {
 .empty-group { padding: var(--s2); color: var(--text-3); font-size: var(--fs-sm); text-align: center; }
 .add-group { display: grid; grid-template-columns: 1fr auto; gap: var(--s2); margin-top: var(--s4); }
 .settings-actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--line); }
+.module-settings { margin-top: var(--s4); padding-top: var(--s4); border-top: 1px solid var(--line); }
+.module-settings p { color: var(--text-2); font-size: var(--fs-sm); margin-block: var(--s2); }
+.module-options { display: flex; flex-wrap: wrap; gap: var(--s3); }
 
 @media (max-width: 700px) {
   .settings-panel { width: calc(100vw - var(--s4)); max-height: calc(100vh - var(--s4)); padding: var(--s4); }

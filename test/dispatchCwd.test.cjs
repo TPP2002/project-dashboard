@@ -59,30 +59,40 @@ test('派单落脚点:未注册项目返回 null(调用方据此拒绝派单,不
 });
 
 /**
- * 以下三条治 SERVER-CODEX-COST-USES-MAINREPO 的前半截:Codex 面板取仓的那一处漏网。
+ * Codex 面板按显式项目参数取代码仓。
  * 它同时是派单器(codex-dispatch.ts)的 cwd 和 `.codex/jobs` 台账根——两者都在「代码的家」,
  * 板的家里既没有要改的代码也没有 jobs 流水。rogue 今天两址同一,红不了;夹具用 cluster 形状造出分家。
  */
-test('Codex 面板取仓:板与代码分家时,jobs 台账与派单器 cwd 都认「代码的家」', () => {
+test('Codex 面板按显式项目参数取代码仓:不同项目各自认「代码的家」', () => {
   const boardHome = mkdir('codex-board-home');
   const codeRepo = mkdir('codex-code-repo');
+  const clusterRepo = mkdir('codex-cluster-code-repo');
   writeRegistry({
     rogue: {
       name: '示例项目·游戏', mainRepo: boardHome, codeRepo,
       board: path.join(boardHome, '.dashboard', 'board.json'),
     },
+    cluster: { name: '另一个项目', mainRepo: boardHome, codeRepo: clusterRepo },
   });
-  assert.strictEqual(server.codexRepo(), codeRepo,
+  assert.strictEqual(server.codexRepo('rogue'), codeRepo,
     'Codex 面板必须落在 codeRepo;落在 mainRepo 就是本卡要治的病');
+  assert.strictEqual(server.codexRepo('cluster'), clusterRepo, '不能串用另一个项目的代码仓');
 });
 
-test('Codex 面板取仓:没写 codeRepo 的老项目照旧用 mainRepo(零改动)', () => {
+test('Codex 面板按显式项目参数取代码仓:没写 codeRepo 时用 mainRepo', () => {
   const repo = mkdir('codex-rogue-repo');
   writeRegistry({ rogue: { name: '示例项目·游戏', mainRepo: repo } });
-  assert.strictEqual(server.codexRepo(), repo, 'codeRepo 缺省必须回落 mainRepo');
+  assert.strictEqual(server.codexRepo('rogue'), repo, 'codeRepo 缺省必须回落 mainRepo');
 });
 
-test('Codex 面板取仓:rogue 未注册时返回 null(调用方据此报 404,不能拿 undefined 拼 jobs 路径)', () => {
+test('Codex 面板按显式项目参数取代码仓:未注册时返回 null', () => {
   writeRegistry({});
+  assert.strictEqual(server.codexRepo('rogue'), null);
+});
+
+test('Codex 面板按显式项目参数取代码仓:缺参或未知项目返回 null', () => {
+  const repo = mkdir('codex-explicit-repo');
+  writeRegistry({ rogue: { name: '测试项目', mainRepo: repo } });
   assert.strictEqual(server.codexRepo(), null);
+  assert.strictEqual(server.codexRepo('unknown'), null);
 });

@@ -2,6 +2,10 @@
 import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import type { SessionDetail, SessionSummary } from '@/types/codex'
+import { codexUrl } from '@/api/client'
+import { useBoardStore } from '@/stores/board'
+
+const projectId = useBoardStore().currentProjectId
 
 const props = defineProps<{ refreshKey: number; requestedSessionId: string; jumpNonce: number }>()
 const emit = defineEmits<{ openJob: [slug: string] }>()
@@ -54,7 +58,7 @@ async function responseText(response: Response): Promise<string> {
 async function loadDetail(sessionId: string) {
   detailLoading.value = true
   try {
-    const response = await fetch('/api/codex/session?id=' + encodeURIComponent(sessionId) + '&tail=200')
+    const response = await fetch(codexUrl('session?id=' + encodeURIComponent(sessionId) + '&tail=200', projectId))
     const body = JSON.parse(await responseText(response)) as SessionDetail
     if (selectedId.value === sessionId) detail.value = body
     error.value = ''
@@ -67,7 +71,7 @@ async function loadSessions(withDetail = true) {
   if (loading.value) return
   loading.value = true
   try {
-    const response = await fetch('/api/codex/sessions?limit=100')
+    const response = await fetch(codexUrl('sessions?limit=100', projectId))
     sessions.value = JSON.parse(await responseText(response)) as SessionSummary[]
     if (!sessions.value.some((session) => session.sessionId === selectedId.value)) {
       selectedId.value = sessions.value[0]?.sessionId || ''
@@ -94,7 +98,7 @@ async function sendMessage() {
   sending.value = true
   notice.value = ''
   try {
-    const response = await fetch('/api/codex/say-session', {
+    const response = await fetch(codexUrl('say-session', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         sessionId, message: outgoing,

@@ -3,7 +3,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import type { Board, ProjectSummary, Task } from '@/types'
-import { fetchProjects, fetchBoard, postDecide } from '@/api/client'
+import { fetchProjects, fetchBoard, fetchHealth, postDecide, type Modules } from '@/api/client'
 import { BoardStream, type ConnState } from '@/api/sse'
 import * as derive from '@/utils/derive'
 import { emitBoardEvent, type BoardEventKind } from '@/utils/boardEvents'
@@ -11,6 +11,7 @@ import { emitBoardEvent, type BoardEventKind } from '@/utils/boardEvents'
 export const useBoardStore = defineStore('board', () => {
   // ---------- state ----------
   const projects = ref<ProjectSummary[]>([])
+  const modules = ref<Modules>({ codex: false, cost: false, cpu: false, reader: false })
   const boards = ref<Record<string, Board>>({})
   const etags = ref<Record<string, string>>({})
   const activityComplete = ref<Record<string, boolean>>({})
@@ -87,6 +88,21 @@ export const useBoardStore = defineStore('board', () => {
   // ---------- actions ----------
   async function loadProjects() {
     projects.value = await fetchProjects()
+  }
+
+  async function loadModules() {
+    try {
+      const health = await fetchHealth()
+      const raw = health.modules
+      modules.value = {
+        codex: raw?.codex === true, cost: raw?.cost === true,
+        cpu: raw?.cpu === true, reader: raw?.reader === true,
+      }
+      return true
+    } catch (_) {
+      // 启动失败时保持默认全关；设置面板据返回值回滚并提示，不能冒充保存成功。
+      return false
+    }
   }
 
   // 同项目请求串行，防止“补全历史”与 SSE 重拉相互覆盖；前一次失败不阻止下一次刷新。
@@ -166,6 +182,7 @@ export const useBoardStore = defineStore('board', () => {
     error.value = null
     try {
       await loadProjects()
+      await loadModules()
       await loadAllBoards()
       if (!currentProjectId.value && projects.value.length) {
         currentProjectId.value = projects.value[0].id
@@ -234,12 +251,12 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   return {
-    projects, boards, etags, activityComplete, currentProjectId, selectedTaskId, selectedTaskProjectId,
+    projects, modules, boards, etags, activityComplete, currentProjectId, selectedTaskId, selectedTaskProjectId,
     conn, loading, error, initialized, centerScopeAll,
     projectList, allBoards, currentBoard, currentTasks, currentStatusCounts,
     currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, presumedLandedByTask, globalActivity, todayDoneCount, selectedBoard, selectedTask,
     isPulsing,
-    init, loadProjects, loadBoard, loadAllBoards, ensureFullActivity, selectProject,
+    init, loadProjects, loadModules, loadBoard, loadAllBoards, ensureFullActivity, selectProject,
     openTask, closeTask, decide, startStream, stopStream, refresh,
   }
 })

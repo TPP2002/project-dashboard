@@ -143,7 +143,7 @@ test('真实事件推送、初始基线、服务端事件选择与同源设置�
 
     const saved = await json(server, '/api/settings', { webhookEvents: { done: false } });
     assert.equal(saved.status, 200);
-    assert.deepEqual(saved.body, { ok: true, settings: { webhookEvents: { done: false, pending: true, block: true } } });
+    assert.deepEqual(saved.body, { ok: true, settings: { webhookEvents: { done: false, pending: true, block: true }, modules: { codex: false, cost: false, cpu: false, reader: false } } });
     const stored = JSON.parse(fs.readFileSync(path.join(f.dir, 'settings.json'), 'utf8'));
     assert.deepEqual(stored.webhookEvents, saved.body.settings.webhookEvents);
     cmds.add({ ...flags, _: ['T2'], title: '不该推送的完工' });
