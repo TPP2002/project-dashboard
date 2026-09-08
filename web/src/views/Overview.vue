@@ -34,42 +34,47 @@ const scopedBoards = computed<Board[]>(() =>
   store.centerScopeAll ? boards.value : boards.value.filter((b) => b.project.id === store.currentProjectId),
 )
 
-// 当前项目近 30 天成本摘要与全局 Codex 驳回项；接口失败不遮挡看板主数据。
+// 当前项目近 30 天成本摘要与 Codex 驳回项；接口失败不遮挡看板主数据。
 const costSum = ref<{ output: number; actual: number; saved: number } | null>(null)
 const codexReport = ref<CodexReport | null>(null)
 const contextLoading = ref(false)
+let contextRequest = 0
 
 async function loadContext() {
+  const request = ++contextRequest
   const pid = store.currentProjectId
-  if (!pid) return
+  costSum.value = null
+  codexReport.value = null
+  contextLoading.value = false
+  if (!pid || (!store.modules.cost && !store.modules.codex)) return
   contextLoading.value = true
   const [costResult, reportResult] = await Promise.allSettled([
-    fetch(`/api/cost?project=${encodeURIComponent(pid)}&days=30`).then(async (response) => {
+    store.modules.cost ? fetch(`/api/cost?project=${encodeURIComponent(pid)}&days=30`).then(async (response) => {
       const body = await response.json()
       if (!response.ok || !body.ok) throw new Error(body.error || '读取成本失败')
       return body
-    }),
-    fetch('/api/codex/report?days=7').then(async (response) => {
+    }) : Promise.resolve(null),
+    store.modules.codex ? fetch(`/api/codex/report?days=7&project=${encodeURIComponent(pid)}`).then(async (response) => {
       const body = await response.json()
       if (!response.ok) throw new Error(body.error || '读取 Codex 战报失败')
       return body as CodexReport
-    }),
+    }) : Promise.resolve(null),
   ])
-  if (store.currentProjectId === pid) {
-    costSum.value = costResult.status === 'fulfilled'
+  if (request === contextRequest && store.currentProjectId === pid) {
+    costSum.value = store.modules.cost && costResult.status === 'fulfilled' && costResult.value
       ? {
           output: costResult.value.usage.totals.output,
           actual: costResult.value.usage.usd.actual,
           saved: costResult.value.usage.usd.saved,
         }
       : null
-    codexReport.value = reportResult.status === 'fulfilled' ? reportResult.value : null
+    codexReport.value = store.modules.codex && reportResult.status === 'fulfilled' ? reportResult.value : null
     contextLoading.value = false
   }
 }
 
 onMounted(loadContext)
-watch(() => store.currentProjectId, loadContext)
+watch(() => [store.currentProjectId, store.modules.cost, store.modules.codex], loadContext)
 
 const totals = computed(() => {
   let total = 0
@@ -91,7 +96,7 @@ const parkedItems = computed(() => signal.value.parked)
 const buildingCount = computed(() => signal.value.building)
 const stalest = computed(() => signal.value.stalest)
 const pendingItems = computed(() => derive.collectPending(scopedBoards.value))
-const rejectedJobs = computed(() => codexReport.value?.rejectedJobs ?? [])
+const rejectedJobs = computed(() => store.modules.codex ? codexReport.value?.rejectedJobs ?? [] : [])
 // 「搁置中」刻意不进这个和：暂缓是你自己按的暂停键，天天摆在"需要你处理"里只会让这个数字失去意义。
 const actionTotal = computed(() => pendingItems.value.length + blockedItems.value.length + rejectedJobs.value.length)
 
@@ -192,7 +197,7 @@ function openTask(item: { projectId: string; task: { id: string } }) {
         <header class="section-head">
           <div>
             <h2>需要你处理</h2>
-            <p>待拍板、被驳回和真被挡住的事情会先放在这里；自己按了暂停的「搁置中」单列在下面。</p>
+            <p>待拍板、{{ store.modules.codex ? '被驳回和' : '' }}真被挡住的事情会先放在这里；自己按了暂停的「搁置中」单列在下面。</p>
           </div>
           <span class="badge" :class="actionTotal ? 'warn' : 'ok'">{{ actionTotal }} 项</span>
         </header>
@@ -200,9 +205,9 @@ function openTask(item: { projectId: string; task: { id: string } }) {
         <div v-if="actionTotal === 0 && !contextLoading" class="empty card">
           <span class="ic"><Icon name="sparkles" :size="36" /></span>
           现在没有需要立刻处理的事项<br>
-          <span class="empty-help">出现待拍板、Codex 工单被驳回或任务真被挡住时，会自动排到这里。</span>
+          <span class="empty-help">出现待拍板、{{ store.modules.codex ? 'Codex 工单被驳回或' : '' }}任务真被挡住时，会自动排到这里。</span>
         </div>
-        <div v-else class="action-grid">
+        <div v-else class="action-grid" :class="{ 'without-codex': !store.modules.codex }">
           <article class="card action-card">
             <span v-if="pendingItems.length" class="glow glow-top attention-glow" />
             <header><h3>待拍板</h3><span class="badge warn">{{ pendingItems.length }}</span></header>
@@ -221,11 +226,11 @@ function openTask(item: { projectId: string; task: { id: string } }) {
             <button v-if="pendingItems.length > 4" class="btn quiet btn-sm more-button" @click="router.push('/approvals')">查看其余 {{ pendingItems.length - 4 }} 项 →</button>
           </article>
 
-          <article class="card action-card">
+          <article v-if="store.modules.codex" class="card action-card">
             <span v-if="rejectedJobs.length" class="glow glow-top attention-glow" />
             <header>
               <h3>被驳回</h3>
-              <span class="scope-note">全部项目</span>
+              <span class="scope-note">当前项目</span>
               <span class="spacer" />
               <span class="badge bad">{{ rejectedJobs.length }}</span>
             </header>
@@ -295,13 +300,13 @@ function openTask(item: { projectId: string; task: { id: string } }) {
           </div>
         </header>
 
-        <button v-if="costSum" class="card cost-strip" type="button" @click="router.push('/cost')">
+        <button v-if="store.modules.cost && costSum" class="card cost-strip" type="button" @click="router.push('/cost')">
           <span><b>{{ fmtWan(costSum.output) }}</b><small>当前项目近 30 天输出</small></span>
           <span><b>${{ Math.round(costSum.actual).toLocaleString() }}</b><small>API 牌价等价</small></span>
           <span><b>${{ Math.round(costSum.saved).toLocaleString() }}</b><small>缓存净省</small></span>
           <span class="cost-link">查看成本 →</span>
         </button>
-        <div v-else-if="contextLoading" class="card cost-loading"><div class="skel wide" /><div class="skel medium" /></div>
+        <div v-else-if="store.modules.cost && contextLoading" class="card cost-loading"><div class="skel wide" /><div class="skel medium" /></div>
 
         <div v-if="!boards.length" class="empty card">
           <span class="ic"><Icon name="archive" :size="36" /></span>
@@ -384,6 +389,7 @@ function openTask(item: { projectId: string; task: { id: string } }) {
 .section { min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
 .empty-help { font-size: var(--fs-sm); }
 .action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); align-items: start; }
+.action-grid.without-codex { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .action-card { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s4); background: var(--surface); }
 .attention-glow { position: absolute; inset: 0 0 auto; }
 .action-card > header { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s1); }
@@ -431,7 +437,7 @@ function openTask(item: { projectId: string; task: { id: string } }) {
 @media (max-width: 1000px) {
   .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi-wide { grid-column: span 3; }
-  .action-grid { grid-template-columns: 1fr; }
+  .action-grid, .action-grid.without-codex { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
   .page-head, .section-head { flex-direction: column; align-items: stretch; }

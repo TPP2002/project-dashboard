@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import type { ModuleId } from '@/api/client'
 import type { QuotaSnapshot } from '@/types/codex'
 import Icon from './Icon.vue'
 import type { IconName } from '@/icons/paths'
@@ -14,20 +15,20 @@ import NavSettingsPanel, {
 
 type BadgeKind = 'pending' | 'unlanded' | 'today'
 // icon 填的是功能图标名（icons/paths.ts 里的键），与路由表 meta.icon 同一套词汇。
-interface NavItemDefinition { to: string; icon: IconName; title: string; badge?: BadgeKind }
+interface NavItemDefinition { to: string; icon: IconName; title: string; badge?: BadgeKind; module?: ModuleId }
 
 const NAV_ITEMS = {
   overview: { to: '/overview', icon: 'home', title: '总览' },
   approvals: { to: '/approvals', icon: 'bell', title: '待拍板', badge: 'pending' },
-  reader: { to: '/reader', icon: 'book', title: '审阅台' },
-  codex: { to: '/codex', icon: 'bot', title: 'Codex' },
+  reader: { to: '/reader', icon: 'book', title: '审阅台', module: 'reader' },
+  codex: { to: '/codex', icon: 'bot', title: 'Codex', module: 'codex' },
   parallel: { to: '/parallel', icon: 'checks', title: '能同时派几张' },
   daily: { to: '/daily', icon: 'calendar', title: '每日成果', badge: 'today' },
   kanban: { to: '/kanban', icon: 'kanban', title: '看板' },
   toland: { to: '/toland', icon: 'toland', title: '待落地', badge: 'unlanded' },
   history: { to: '/history', icon: 'history', title: '拍板历史' },
-  cost: { to: '/cost', icon: 'coins', title: '成本' },
-  cpu: { to: '/cpu', icon: 'cpu', title: '算力' },
+  cost: { to: '/cost', icon: 'coins', title: '成本', module: 'cost' },
+  cpu: { to: '/cpu', icon: 'cpu', title: '算力', module: 'cpu' },
   insights: { to: '/insights', icon: 'chart', title: '洞察' },
   risk: { to: '/risk', icon: 'alertTri', title: '风险' },
   waves: { to: '/waves', icon: 'layers', title: '波次' },
@@ -43,13 +44,14 @@ const NAV_STORAGE_KEY = 'board-nav-config'
 const KNOWN_NAV_IDS = new Set<NavItemId>(Object.keys(NAV_ITEMS) as NavItemId[])
 const DEFAULT_GROUPS: ReadonlyArray<NavGroupConfig<NavItemId>> = [
   { id: 'daily', name: '每天要看', collapsed: false, items: [
-    { id: 'overview', visible: true }, { id: 'approvals', visible: true }, { id: 'reader', visible: true },
-    { id: 'codex', visible: true }, { id: 'parallel', visible: true }, { id: 'daily', visible: true },
+    { id: 'overview', visible: true }, { id: 'approvals', visible: true },
+    { id: 'kanban', visible: true }, { id: 'daily', visible: true },
   ] },
   { id: 'projects', name: '项目管理', collapsed: false, items: [
-    { id: 'kanban', visible: true }, { id: 'toland', visible: true }, { id: 'history', visible: true },
+    { id: 'toland', visible: true }, { id: 'history', visible: true }, { id: 'parallel', visible: true },
   ] },
-  { id: 'resources', name: '花销与算力', collapsed: false, items: [
+  { id: 'extensions', name: '扩展模块', collapsed: true, items: [
+    { id: 'reader', visible: true }, { id: 'codex', visible: true },
     { id: 'cost', visible: true }, { id: 'cpu', visible: true },
   ] },
   { id: 'analysis', name: '深入分析', collapsed: true, items: [
@@ -121,7 +123,12 @@ function restoreDefaults() {
 }
 
 function hasVisibleItems(group: NavGroupConfig<NavItemId>) {
-  return group.items.some(item => item.visible)
+  return group.items.some(isVisibleItem)
+}
+
+function isVisibleItem(item: NavItemConfig<NavItemId>) {
+  const module = navItem(item.id).module
+  return item.visible && (!module || store.modules[module])
 }
 
 function navItem(itemId: NavItemId): NavItemDefinition {
@@ -129,14 +136,26 @@ function navItem(itemId: NavItemId): NavItemDefinition {
 }
 
 async function loadQuota() {
-  if (document.visibilityState !== 'visible' || quotaLoading.value) return
+  const projectId = store.currentProjectId
+  if (!store.modules.codex || !projectId || document.visibilityState !== 'visible' || quotaLoading.value) return
   quotaLoading.value = true
   try {
-    const response = await fetch('/api/codex/quota')
-    if (response.ok) quota.value = await response.json() as QuotaSnapshot
+    const response = await fetch(`/api/codex/quota?project=${encodeURIComponent(projectId)}`)
+    if (response.ok) {
+      const incoming = await response.json() as QuotaSnapshot
+      if (store.modules.codex && store.currentProjectId === projectId) quota.value = incoming
+    }
   } catch (_) { /* 全局提示条保持“未知”，不干扰其它导航。 */ }
-  finally { quotaLoading.value = false }
+  finally {
+    quotaLoading.value = false
+    if (store.currentProjectId !== projectId) void loadQuota()
+  }
 }
+
+watch(() => [store.modules.codex, store.currentProjectId], () => {
+  quota.value = null
+  void loadQuota()
+})
 
 function onVisibilityChange() {
   if (document.visibilityState === 'visible') loadQuota()
@@ -168,7 +187,7 @@ onUnmounted(() => {
         </button>
         <div v-show="!group.collapsed" class="group-items">
           <router-link
-            v-for="item in group.items.filter(entry => entry.visible)"
+            v-for="item in group.items.filter(isVisibleItem)"
             :key="item.id"
             :to="navItem(item.id).to"
             class="item"
@@ -186,6 +205,7 @@ onUnmounted(() => {
 
     <div class="nav-bottom">
       <router-link
+        v-if="store.modules.codex"
         to="/codex"
         class="quota-strip"
         :title="quota?.band?.label || (quota?.sampledAt ? `上次 Codex 活动快照：${new Date(quota.sampledAt).toLocaleString()}` : '尚无 Codex 额度快照')"

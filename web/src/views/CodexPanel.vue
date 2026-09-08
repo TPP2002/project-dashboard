@@ -4,8 +4,10 @@ import { onMounted, onUnmounted, ref, watch } from 'vue'
 import CodexReport from '@/components/codex/CodexReport.vue'
 import CodexJobsTab from '@/components/codex/CodexJobsTab.vue'
 import CodexSessionsTab from '@/components/codex/CodexSessionsTab.vue'
+import { useBoardStore } from '@/stores/board'
 
 type Tab = 'jobs' | 'sessions'
+const store = useBoardStore()
 const activeTab = ref<Tab>('jobs')
 const autoRefresh = ref(true)
 const refreshKey = ref(0)
@@ -18,7 +20,7 @@ function refresh() { refreshKey.value += 1 }
 
 function resetTimer() {
   if (timer !== undefined) window.clearInterval(timer)
-  timer = autoRefresh.value ? window.setInterval(refresh, 10_000) : undefined
+  timer = autoRefresh.value && store.currentProjectId ? window.setInterval(refresh, 10_000) : undefined
 }
 
 function openJob(slug: string) {
@@ -35,19 +37,27 @@ function openSession(sessionId: string) {
 
 onMounted(() => { refresh(); resetTimer() })
 watch(autoRefresh, resetTimer)
+watch(() => store.currentProjectId, () => {
+  requestedSlug.value = ''
+  requestedSessionId.value = ''
+  jumpNonce.value = 0
+  resetTimer()
+})
 onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 </script>
 
 <template>
   <div class="page">
     <header class="toolbar">
-      <div><h1><Icon name="bot" class="head-ic" :size="20" />Codex</h1><p>本机全部 Codex 活动与派单工单</p></div>
+      <div><h1><Icon name="bot" class="head-ic" :size="20" />Codex</h1><p>当前项目的派单工单与本机 Codex 会话</p></div>
       <span class="spacer" />
       <label class="auto"><input v-model="autoRefresh" type="checkbox"> 每 10 秒自动刷新</label>
-      <button class="btn btn-sm" @click="refresh">刷新</button>
+      <button class="btn btn-sm" :disabled="!store.currentProjectId" @click="refresh">刷新</button>
     </header>
 
-    <CodexReport :refresh-key="refreshKey" @open-job="openJob" />
+    <p v-if="!store.currentProjectId" class="card">先在顶栏选一个项目</p>
+    <template v-else>
+    <CodexReport :key="'report:' + store.currentProjectId" :refresh-key="refreshKey" @open-job="openJob" />
 
     <div class="tabs" role="tablist" aria-label="Codex 数据范围">
       <button class="btn quiet tab-button" :class="{ on: activeTab === 'jobs' }" role="tab" :aria-selected="activeTab === 'jobs'" @click="activeTab = 'jobs'">工单</button>
@@ -56,14 +66,17 @@ onUnmounted(() => { if (timer !== undefined) window.clearInterval(timer) })
 
     <CodexJobsTab
       v-if="activeTab === 'jobs'"
+      :key="'jobs:' + store.currentProjectId"
       :refresh-key="refreshKey" :requested-slug="requestedSlug" :jump-nonce="jumpNonce"
       @open-session="openSession"
     />
     <CodexSessionsTab
       v-else
+      :key="'sessions:' + store.currentProjectId"
       :refresh-key="refreshKey" :requested-session-id="requestedSessionId" :jump-nonce="jumpNonce"
       @open-job="openJob"
     />
+    </template>
   </div>
 </template>
 

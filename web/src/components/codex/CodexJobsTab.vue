@@ -4,6 +4,11 @@ import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import type { JobDetail, JobSummary } from '@/types/codex'
 import { acceptanceLabel, jobGroupKey, selfReportStatusLabel } from './jobPresentation.js'
+import { codexUrl } from '@/api/client'
+import { useBoardStore } from '@/stores/board'
+
+// 父面板以项目为 key 重建组件；已发出的异步操作保持绑定原项目。
+const projectId = useBoardStore().currentProjectId
 
 const props = defineProps<{ refreshKey: number; requestedSlug: string; jumpNonce: number }>()
 const emit = defineEmits<{ openSession: [sessionId: string] }>()
@@ -72,7 +77,7 @@ async function responseText(response: Response): Promise<string> {
 async function loadDetail(slug: string, includeTail = false): Promise<boolean> {
   detailLoading.value = true
   try {
-    const response = await fetch('/api/codex/job?slug=' + encodeURIComponent(slug) + '&tail=' + (includeTail ? '1' : '0'))
+    const response = await fetch(codexUrl('job?slug=' + encodeURIComponent(slug) + '&tail=' + (includeTail ? '1' : '0'), projectId))
     const text = await responseText(response)
     if (selectedSlug.value === slug) {
       const incoming = JSON.parse(text) as JobDetail
@@ -92,7 +97,7 @@ async function loadJobs(withDetail = true) {
   if (refreshing.value) return
   refreshing.value = true
   try {
-    const response = await fetch('/api/codex/jobs')
+    const response = await fetch(codexUrl('jobs', projectId))
     jobs.value = JSON.parse(await responseText(response)) as JobSummary[]
     if (!jobs.value.some((job) => job.slug === selectedSlug.value)) {
       selectedSlug.value = jobs.value.find((job) => jobGroupKey(job) !== 'completed')?.slug || ''
@@ -141,7 +146,7 @@ async function sendMessage() {
   sending.value = true
   notice.value = ''
   try {
-    const response = await fetch('/api/codex/say', {
+    const response = await fetch(codexUrl('say', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ slug, message: outgoing }),
     })
@@ -166,7 +171,7 @@ async function collectJob() {
   collecting.value = true
   notice.value = ''
   try {
-    const response = await fetch('/api/codex/collect', {
+    const response = await fetch(codexUrl('collect', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug }),
     })
     notice.value = (await responseText(response)).trim() || '收单完成'
@@ -214,7 +219,7 @@ async function dispatchAgain(modifiedText?: string) {
   try {
     const body: { slug: string; taskText?: string } = { slug }
     if (modifiedText !== undefined) body.taskText = modifiedText
-    const response = await fetch('/api/codex/dispatch', {
+    const response = await fetch(codexUrl('dispatch', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     })
     const result = JSON.parse(await responseText(response))
@@ -230,7 +235,7 @@ async function openTaskEditor() {
   if (!canRedispatch.value || !detail.value) return
   jsonError.value = ''
   try {
-    const response = await fetch('/api/codex/task?slug=' + encodeURIComponent(detail.value.slug))
+    const response = await fetch(codexUrl('task?slug=' + encodeURIComponent(detail.value.slug), projectId))
     const body = JSON.parse(await responseText(response))
     taskText.value = body.text
     editingTask.value = true

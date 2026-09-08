@@ -4,6 +4,12 @@ import type { ActivityPage, Board, DecisionInfoField, ProjectSummary, Status } f
 
 const API = '/api'
 
+/** 项目参数必须由调用方显式提供，续聊回包后也不能改投到新选中的项目。 */
+export function codexUrl(endpoint: string, projectId: string | null): string {
+  if (!projectId) throw new Error('先在顶栏选一个项目')
+  return `${API}/codex/${endpoint}${endpoint.includes('?') ? '&' : '?'}project=${encodeURIComponent(projectId)}`
+}
+
 async function asJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`
@@ -53,6 +59,8 @@ export async function fetchActivity(id: string, opts: { before?: string; limit?:
 }
 
 export type WebhookEvents = Record<'done' | 'pending' | 'block', boolean>
+export type ModuleId = 'codex' | 'cost' | 'cpu' | 'reader'
+export type Modules = Record<ModuleId, boolean>
 
 export interface HealthInfo {
   ok: boolean
@@ -62,14 +70,15 @@ export interface HealthInfo {
   latestReleaseCommit?: string | null
   launchHint?: string
   webhook?: { configured: boolean; events: WebhookEvents }
+  modules?: Modules
 }
 
 export async function fetchHealth(): Promise<HealthInfo> {
   return asJson<HealthInfo>(await fetch(`${API}/health`))
 }
 
-export async function postSettings(body: { webhookEvents: Partial<WebhookEvents> }): Promise<{
-  ok: boolean; settings: { webhookEvents: WebhookEvents }
+export async function postSettings(body: { webhookEvents?: Partial<WebhookEvents>; modules?: Partial<Modules> }): Promise<{
+  ok: boolean; settings: { webhookEvents: WebhookEvents; modules: Modules }
 }> {
   return asJson(await fetch(`${API}/settings`, {
     method: 'POST',

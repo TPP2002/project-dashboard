@@ -2,6 +2,10 @@
 import Icon from '@/components/Icon.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import type { CodexReport, QuotaSnapshot } from '@/types/codex'
+import { codexUrl } from '@/api/client'
+import { useBoardStore } from '@/stores/board'
+
+const projectId = useBoardStore().currentProjectId
 
 const props = defineProps<{ refreshKey: number }>()
 const emit = defineEmits<{ openJob: [slug: string] }>()
@@ -31,8 +35,8 @@ async function load() {
   loading.value = true
   try {
     const [reportResponse, quotaResponse] = await Promise.all([
-      fetch(`/api/codex/report?days=${days.value}`),
-      fetch('/api/codex/quota'),
+      fetch(codexUrl(`report?days=${days.value}`, projectId)),
+      fetch(codexUrl('quota', projectId)),
     ])
     const reportBody = await reportResponse.json()
     const quotaBody = await quotaResponse.json()

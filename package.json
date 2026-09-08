@@ -11,6 +11,7 @@
     "release": "node cli/index.cjs release",
     "serve": "node server/server.cjs",
     "start": "node server/server.cjs",
+    "demo": "node scripts/demo.cjs",
     "codex:dispatch": "tsx scripts/codex/codex-dispatch.ts dispatch",
     "codex:status": "tsx scripts/codex/codex-dispatch.ts status",
     "codex:collect": "tsx scripts/codex/codex-dispatch.ts collect",

@@ -6,6 +6,8 @@
 
 *An AI-native project board: your AI agents update it, you just approve the forks.*
 
+[English README](README.en.md)
+
 一个**本地运行、零云端、双击即用**的多项目看板。你把任务派给 AI（Claude Code / Cursor / Codex / Gemini …），
 AI 一路把「认领 → 进度 → 待拍板 → 完工」写回看板；你只负责**看进度**和**在关键岔路口拍板**。
 
@@ -38,7 +40,7 @@ AI 一路把「认领 → 进度 → 待拍板 → 完工」写回看板；你�
 - 🖥️ **本地 · 零云端 · 隐私**：只在你电脑上跑（`127.0.0.1`），不联网、不上传、卸载即净。
 - 📦 **双击即用**：Windows 一键安装包，内嵌运行时，**不用装 Node、不用碰命令行**。
 - 🔌 **跨模型**：Claude Code 开箱即用；Cursor / Codex / Gemini / Copilot / 任何能跑命令的工具都能接（见下）。
-- 📊 **13 个视图**：总览、看板、待拍板、依赖图、波次甘特、风险、占用冲突、验收、活动流…
+- 📊 **20 个视图**：总览、看板、待拍板、依赖图、波次甘特、风险、占用冲突、验收、活动流…（含默认关闭的扩展模块）
 - ⚡ **实时刷新**：AI 一有进展，页面几秒内自动更新，变化的卡片黄色闪一下。
 
 ---
@@ -78,12 +80,26 @@ AI 一路把「认领 → 进度 → 待拍板 → 完工」写回看板；你�
 
 ### 方式 B：从源码跑（开发者）
 
+需要 Node.js 24。
+
 ```bash
 git clone https://github.com/TPP2002/project-dashboard.git
 cd project-dashboard
-npm --prefix web install && npm --prefix web run build   # 构建前端
+npm ci
+npm --prefix web ci
+npm --prefix web run build                               # 构建前端
 node server/server.cjs                                    # 起服务（自动开浏览器）
 ```
+
+构建好前端后，也可运行 `npm run demo`：用两个虚构项目在临时目录启动演示实例，端口从 6099 起，不碰真实看板；按 Ctrl+C 退出。
+
+### 扩展模块
+
+Codex 面板、成本、算力、审阅台是负责人个人工作流用的四个扩展模块，**默认关闭**。默认「每天要看」只保留总览、待拍板、看板、每日成果。
+
+在侧栏底部的「菜单设置 → 扩展模块」打开所需模块，或在 `DASHBOARD_HOME/settings.json` 中设置 `modules`，例如 `{"modules":{"codex":true}}`。关闭时侧栏隐藏入口、直接访问页面跳回总览，对应接口返回 404；重新开启会保留原有菜单分组。Codex 工单随顶栏当前项目读取代码仓。
+
+启动前还可设置 `DASHBOARD_MODULES=codex,cost`，或设为 `all` 全开；环境变量优先于设置文件和菜单开关。演示实例使用 `all`。设置文件位置与详细说明见[使用手册的扩展模块一节](docs/看板使用手册.md#十二扩展模块)。
 
 ---
 
@@ -145,7 +161,7 @@ node server/server.cjs                                    # 起服务（自动�
 ## 📄 许可与致谢
 
 - 安装包内嵌 [Node.js](https://nodejs.org)（MIT）作为运行时，详见安装目录内 `NOTICE-第三方声明.txt`。
-- 本项目自身许可由作者决定。
+- 许可证：待定（负责人决定后补）。
 
 <div align="center">
 
