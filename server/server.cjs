@@ -43,7 +43,8 @@ const { createHash } = require('node:crypto');
 const { execFile } = require('child_process');
 
 const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
-const { readStamp, runtimeMode, displayCliCommand } = require('../core/runtimeRoot.cjs');
+const { readStamp, releaseHome, runtimeMode, displayCliCommand } = require('../core/runtimeRoot.cjs');
+const { releaseBehindOf } = require('../core/releaseCheck.cjs');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { VOID_STATUSES } = require('../core/boardSchema.cjs');
 const { isUnlanded } = require('../core/decisionLanding.cjs');
@@ -488,6 +489,12 @@ function pollBoards() {
 
 function handleHealth(req, res) {
   const projects = Object.keys(readRegistrySafe().projects || {});
+  const latestStamp = MODE === 'release' ? readStamp(releaseHome()) : null;
+  const latestReleaseCommit = typeof latestStamp?.commit === 'string' && latestStamp.commit.trim()
+    ? latestStamp.commit : null;
+  const launchHint = MODE !== 'release' ? undefined : process.platform === 'win32'
+    ? '双击 启动看板.bat'
+    : "node '" + path.join(releaseHome(), 'server', 'server.cjs').replace(/'/g, "'\\''") + "'";
   sendJson(res, 200, {
     ok: true,
     service: SERVICE,
@@ -506,6 +513,9 @@ function handleHealth(req, res) {
     mode: MODE,
     codeRoot: DASH_ROOT,
     releaseCommit: RELEASE_COMMIT,
+    releaseBehind: releaseBehindOf(RELEASE_COMMIT, latestReleaseCommit, MODE),
+    latestReleaseCommit,
+    launchHint,
     releasedAt: RELEASED_AT,
   });
 }
@@ -831,6 +841,39 @@ function handleTaskAction(req, res, pid, tid, action) {
       try { parsed = JSON.parse(stdout); }
       catch (_) { return sendJson(res, 500, { ok: false, error: 'CLI 输出非 JSON', raw: String(stdout).slice(0, 500) }); }
       try { pollBoards(); } catch (_) {}
+      sendJson(res, 200, parsed);
+    });
+  });
+}
+
+function handleUndecide(req, res, projectId, taskId) {
+  if (!projectId || !taskId) return sendJson(res, 400, { ok: false, error: '缺 projectId 或 taskId' });
+  readBody(req, BODY_MAX, (err, raw) => {
+    if (err) return sendJson(res, 413, { ok: false, error: err.message });
+    let body;
+    try { body = raw ? JSON.parse(raw) : {}; }
+    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(res, 400, { ok: false, error: '请求体必须是对象' });
+    }
+    const did = typeof body.did === 'string' ? body.did.trim() : '';
+    const author = typeof body.author === 'string' && body.author.trim() ? body.author.trim() : '看板';
+    if (!did) return sendJson(res, 400, { ok: false, error: '缺 did（要撤销的 decision id）' });
+    // 与拍板共用 CLI 唯一写入通道，参数逐个传递，不经 shell。
+    const args = [CLI_INDEX, 'undecide', taskId, '--project', projectId, '--did', did, '--author', author, '--json'];
+    if (REGISTRY !== REGISTRY_PATH) args.push('--registry', REGISTRY);
+    execFile(process.execPath, args, {
+      cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        const message = String(stderr || '').trim() || error.message || 'undecide 失败';
+        return sendJson(res, typeof error.code === 'number' ? 400 : 500, { ok: false, error: message });
+      }
+      let parsed;
+      try { parsed = JSON.parse(stdout); }
+      catch (_) { return sendJson(res, 500, { ok: false, error: 'CLI 输出非 JSON', raw: String(stdout).slice(0, 500) }); }
+      try { pollBoards(); }
+      catch (error) { console.warn('撤销已写入，立即广播失败，等待下轮刷新', error); }
       sendJson(res, 200, parsed);
     });
   });
@@ -1274,6 +1317,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'board' && req.method === 'GET') return handleBoard(req, res, segs[2], parsed.query || {});
       if (sub === 'activity' && req.method === 'GET') return handleActivity(req, res, segs[2], parsed.query || {});
       if (sub === 'decide' && req.method === 'POST') return handleDecide(req, res, segs[2], segs[3]);
+      if (sub === 'undecide' && req.method === 'POST') return handleUndecide(req, res, segs[2], segs[3]);
       if (sub === 'task' && req.method === 'POST' && segs.length === 5 && TASK_ACTIONS.includes(segs[4])) {
         return handleTaskAction(req, res, segs[2], segs[3], segs[4]);
       }

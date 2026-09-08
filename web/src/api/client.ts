@@ -64,6 +64,11 @@ export type Modules = Record<ModuleId, boolean>
 
 export interface HealthInfo {
   ok: boolean
+  mode?: 'release' | 'dev' | 'installed'
+  releaseCommit?: string | null
+  releaseBehind?: boolean
+  latestReleaseCommit?: string | null
+  launchHint?: string
   webhook?: { configured: boolean; events: WebhookEvents }
   modules?: Modules
 }
@@ -126,6 +131,13 @@ export interface TaskActionResult {
   status?: Status
   percent?: number
   changed?: string[]
+}
+
+export async function postUndecide(pid: string, tid: string, body: { did: string; author?: string }): Promise<TaskActionResult> {
+  return asJson<TaskActionResult>(await fetch(
+    `${API}/undecide/${encodeURIComponent(pid)}/${encodeURIComponent(tid)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+  ))
 }
 
 /** 治理操作经服务端转发 CLI；失败时抛出服务端保留的 CLI 错误文案。 */

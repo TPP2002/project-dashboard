@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 待拍板中心：列所有 answer===null 的 decision（跨项目）；界面点选 → POST /api/decide。
 import Icon from '@/components/Icon.vue'
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
 import { humanTitle } from '@/utils/taskTitle'
@@ -27,6 +27,37 @@ const items = computed(() =>
 // 作用域为「当前项目」时，其他项目还剩多少待拍板（提示用户别漏了）。
 const otherCount = computed(() => store.pendingDecisions.length - items.value.length)
 const keyOf = (item: PendingItem) => `${item.projectId}:${item.task.id}:${item.decision.id}`
+const now = ref(Date.now())
+let recentTimer: ReturnType<typeof setInterval> | null = null
+const undoing = reactive<Record<string, boolean>>({})
+const undoErrors = reactive<Record<string, string>>({})
+function canUndo(item: PendingItem, at: number) {
+  const decidedAt = store.decidedRecently.get(keyOf(item))
+  return decidedAt !== undefined && at >= decidedAt && at - decidedAt < 5 * 60_000
+}
+// 拍板后会离开待拍板列表；仅保留本页五分钟内的回执，让撤销仍有可见入口。
+const recentItems = computed(() => {
+  const at = Math.max(now.value, Date.now())
+  return store.decidedHistory.filter(item => (store.centerScopeAll || item.projectId === store.currentProjectId)
+    && canUndo(item, at))
+})
+onMounted(() => {
+  now.value = Date.now()
+  recentTimer = setInterval(() => { now.value = Date.now() }, 30_000)
+})
+onUnmounted(() => { if (recentTimer !== null) clearInterval(recentTimer) })
+
+async function undoDecision(item: PendingItem) {
+  const key = keyOf(item)
+  if (undoing[key] || !canUndo(item, Date.now())) return
+  if (!confirm(`确认撤销 ${item.task.id} 的这条拍板？答案将清空，施工方会重新看到待拍板问题。`)) return
+  if (!canUndo(item, Date.now())) return
+  undoing[key] = true
+  delete undoErrors[key]
+  try { await store.undecide(item.projectId, item.task.id, item.decision.id) }
+  catch (error) { undoErrors[key] = error instanceof Error ? error.message : String(error) }
+  finally { undoing[key] = false }
+}
 
 function incomplete(item: PendingItem): boolean {
   return incompleteReason(item).length > 0
@@ -126,6 +157,28 @@ async function submit(item: PendingItem) {
       <span>其他项目还有 <b>{{ otherCount }}</b> 条待拍板。</span>
       <button class="btn quiet btn-sm" @click="store.centerScopeAll = true">查看全部项目 →</button>
     </div>
+
+    <section v-if="recentItems.length" class="recently-decided" aria-labelledby="recent-decisions-title">
+      <h2 id="recent-decisions-title">刚刚拍板</h2>
+      <div class="decision-list">
+        <article v-for="item in recentItems" :key="keyOf(item)" class="recent-decision card">
+          <div class="decision-meta">
+            <span class="badge n">{{ item.projectName }}</span>
+            <span class="task-id mono">{{ item.task.id }}</span>
+            <span class="task-title">{{ humanTitle(item.task) }}</span>
+            <span class="decision-id mono">#{{ item.decision.id }}</span>
+          </div>
+          <p>{{ item.decision.question }}</p>
+          <div class="recent-answer">
+            <span>已拍板：<b>{{ item.decision.answer }}</b></span>
+            <button class="btn btn-sm quiet" type="button" :disabled="undoing[keyOf(item)]" @click="undoDecision(item)">
+              <Icon name="rotateCcw" :size="14" />{{ undoing[keyOf(item)] ? '撤销中…' : '撤销' }}
+            </button>
+          </div>
+          <p v-if="undoErrors[keyOf(item)]" class="error-message" role="alert">{{ undoErrors[keyOf(item)] }}</p>
+        </article>
+      </div>
+    </section>
 
     <div v-if="store.loading" class="loading-list" aria-label="正在加载待拍板事项">
       <div v-for="index in 2" :key="index" class="card loading-card">
@@ -262,6 +315,11 @@ async function submit(item: PendingItem) {
 .task-id { color: var(--text-2); font-size: var(--fs-sm); font-weight: 600; }
 .task-title { min-width: 0; font-size: var(--fs-base); font-weight: 600; overflow-wrap: anywhere; }
 .decision-id { margin-left: auto; color: var(--text-3); font-size: var(--fs-sm); }
+.recently-decided { display: flex; flex-direction: column; gap: var(--s3); }
+.recently-decided > h2 { font-size: var(--fs-lg); }
+.recent-decision { display: flex; flex-direction: column; gap: var(--s2); }
+.recent-decision p { margin: 0; overflow-wrap: anywhere; }
+.recent-answer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); color: var(--ok); }
 .question { font-size: var(--fs-lg); line-height: 1.5; }
 .incomplete-note { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s3); border-left: 2px solid var(--warn); border-radius: var(--r); background: var(--warn-bg); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; }
 .context-block, .recommendation { padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }

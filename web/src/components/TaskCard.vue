@@ -5,6 +5,8 @@ import { useBoardStore } from '@/stores/board'
 import { relTime } from '@/utils/format'
 import { registerCardElement, unregisterCardElement } from '@/utils/boardEvents'
 import { projectColorCss } from '@/utils/projectPresentation'
+import { appearance } from '@/utils/appearance'
+import { ageLevel, ageTone } from '@/utils/ageLevel'
 import Icon from './Icon.vue'
 import StatusTile from './StatusTile.vue'
 
@@ -18,22 +20,29 @@ function registerRoot() {
   registeredKey = `${props.projectId}:${props.task.id}`
   registerCardElement(registeredKey, root.value)
 }
-onMounted(registerRoot)
+const ageNow = ref(Date.now())
+let ageTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  registerRoot()
+  ageNow.value = Date.now()
+  ageTimer = setInterval(() => { ageNow.value = Date.now() }, 30_000)
+})
 // 切换项目时同号任务可能复用组件，登记键须跟随当前项目。
 watch(() => `${props.projectId}:${props.task.id}`, registerRoot)
 onBeforeUnmount(() => {
+  if (ageTimer !== null) clearInterval(ageTimer)
   if (root.value) unregisterCardElement(registeredKey, root.value)
 })
 const store = useBoardStore()
 const pending = () => (props.task.decisions ?? []).filter((d) => d.answer == null).length
 const building = () => props.task.status === '施工中'
-// 施工中恒显进度条(哪怕 0%);进度戳超 30 分钟没动 = 陈旧,标黄提醒
+// 施工中恒显进度条（哪怕 0%）；陈旧档位与抽屉共用设置和纯函数。
 const lastProgressAt = () => (props.task as any).lastProgressAt as string | undefined
-const stale = () => {
+const progressAge = computed(() => {
   const t = lastProgressAt()
-  if (!t || !building()) return false
-  return Date.now() - new Date(t).getTime() > 30 * 60 * 1000
-}
+  if (!t || !building()) return 0
+  return ageLevel(ageNow.value - new Date(t).getTime(), appearance.ageThresholds)
+})
 </script>
 
 <template>
@@ -63,8 +72,8 @@ const stale = () => {
     <div v-if="building() || (task.percent ?? 0) > 0" class="prog-wrap">
       <div class="glow-rail"><i :style="{ width: (task.percent || 0) + '%' }" /></div>
       <span class="pct mono">{{ task.percent || 0 }}%</span>
-      <span v-if="building() && lastProgressAt()" class="prog-time" :class="{ stale: stale() }">
-        <Icon v-if="stale()" name="alertTri" :size="14" />{{ relTime(lastProgressAt()) }}
+      <span v-if="building() && lastProgressAt()" class="prog-time" :class="ageTone(progressAge)">
+        <Icon v-if="progressAge >= 2" name="alertTri" :size="14" />{{ relTime(lastProgressAt()) }}
       </span>
     </div>
     <div class="tcard-meta" v-if="(task.gitBranch?.length || task.prNumbers?.length || task.wave || task.modelHint)">
@@ -103,5 +112,7 @@ const stale = () => {
 /* 徽章基类是 inline-block，塞进图标后要改成 flex 才对得齐基线。 */
 .icon-badge { display: inline-flex; align-items: center; gap: var(--s1); }
 .prog-time { display: inline-flex; align-items: center; gap: var(--s1); color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
-.prog-time.stale { color: var(--warn); }
+.prog-time.info { color: var(--info); }
+.prog-time.warn { color: var(--warn); }
+.prog-time.bad { color: var(--bad); }
 </style>
