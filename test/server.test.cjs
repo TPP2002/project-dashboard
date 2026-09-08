@@ -199,6 +199,33 @@ test('GET /api/projects → 含读时派生 summary（total/byStatus）', async 
   assert.equal(entry.summary.progress, 50);
 });
 
+test('GET /api/projects → registry 的 color/icon 逐字段校验，只透传合法值', async () => {
+  const cases = [
+    { id: 'style-color', color: '#4A9eFf', icon: '<svg>', expected: { color: '#4A9eFf' } },
+    { id: 'style-icon', color: 'red', icon: 'kanban', expected: { icon: 'kanban' } },
+    { id: 'style-both', color: '#112233', icon: 'chart', expected: { color: '#112233', icon: 'chart' } },
+    { id: 'style-types', color: 123456, icon: 42, expected: {} },
+    { id: 'style-long', color: '#123', icon: 'a'.repeat(25), expected: {} },
+    { id: 'style-missing', expected: {} },
+  ];
+  for (const entry of cases) newProject(entry.id);
+  const reg = JSON.parse(fs.readFileSync(SRV.reg, 'utf8'));
+  for (const { id, color, icon } of cases) Object.assign(reg.projects[id], { color, icon });
+  fs.writeFileSync(SRV.reg, JSON.stringify(reg));
+
+  const { status, body } = await getJson('/api/projects');
+  assert.equal(status, 200);
+  assert.equal(body.ok, true);
+  for (const { id, expected } of cases) {
+    const entry = body.projects.find(project => project.id === id);
+    assert.ok(entry, `${id} 仍在项目清单中`);
+    for (const field of ['color', 'icon']) {
+      if (Object.hasOwn(expected, field)) assert.equal(entry[field], expected[field]);
+      else assert.equal(Object.hasOwn(entry, field), false, `${id} 不返回非法或缺失的 ${field}`);
+    }
+  }
+});
+
 test('GET /api/board/:id → 返回 board 全量；未注册 → 404', async () => {
   const p = newProject('boardone');
   cmds.add({ _: ['P01'], title: '看板任务', ...p.P });

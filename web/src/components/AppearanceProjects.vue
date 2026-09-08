@@ -3,24 +3,23 @@ import {
   appearance, PROJECT_COLORS, PROJECT_ICONS, PROJECT_RINGS, setAppearance,
   type ProjectColorId, type ProjectIconId,
 } from '@/utils/appearance'
+import { pickProjectColor } from '@/utils/projectColor'
+import { projectIconName } from '@/utils/projectPresentation'
 import Icon from './Icon.vue'
 
-// 当前清单只保证 id/name；以后返回项目默认色/图标时，面板可直接显示，不能为此另加接口。
 interface ProjectPresentation { id: string; name: string; color?: unknown; icon?: unknown }
 defineProps<{ projects: ProjectPresentation[] }>()
 
+// 设置预览不受总开关影响，关闭着色时仍可挑选本机颜色。
 function colorFor(project: ProjectPresentation): string {
-  const override = appearance.projectColors[project.id]
-  if (override) return `var(--project-${override})`
-  if (typeof project.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(project.color)) return project.color
-  // 只用于面板预览的稳定后备色：同一项目 id 在刷新、重排后保持同色。
-  let hash = 0
-  for (const char of project.id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0
-  return `var(--project-${PROJECT_COLORS[hash % PROJECT_COLORS.length].id})`
+  return pickProjectColor({
+    projectId: project.id, override: appearance.projectColors[project.id], registry: project.color,
+    paletteIds: PROJECT_COLORS.map(color => color.id),
+  }).value
 }
 
 function iconFor(project: ProjectPresentation): ProjectIconId {
-  return appearance.projectIcons[project.id] ?? PROJECT_ICONS.find(icon => icon.id === project.icon)?.id ?? 'kanban'
+  return projectIconName(project.id)
 }
 
 function chooseColor(id: string, color: ProjectColorId) {
@@ -92,8 +91,6 @@ function restoreProject(id: string) {
     <button v-for="option in PROJECT_RINGS" :key="option.id" class="appearance-choice" type="button"
       :aria-pressed="appearance.projectRing === option.id" @click="setAppearance('projectRing', option.id)">{{ option.label }}</button>
   </div>
-  <p class="ac-hint">默认环的底色用项目色，外圈保留跑马灯；也可以只用项目色，或保持原来的流光。</p>
-  <p class="ac-hint">本页先保存本机设置，项目下拉、卡片和进度环的着色效果将在后续接入。</p>
 </template>
 
 <style scoped>
