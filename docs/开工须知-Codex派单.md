@@ -61,3 +61,4 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 9. **`say` 续聊后判决不刷新**：续聊的新结论只打在 stdout，`last-message.json` 还是续聊前那份，`collect` 会继续按旧自述判 blocked（机器验收那几项是真的重跑了）。续聊后以机器验收 + 自审 diff 为准，别被判决行吓住；治本卡 AD-20260908-CODEX-SAY-REPORT。
 10. **派单器命令必须在仓库根跑**这一条会被对话的 cwd 悄悄破坏：一次 `cd` 进 worktree 后，后续所有命令的 cwd 都留在那里，`say` 会报「找不到会话号」、`dispatch` 会报「工单文件不存在」。每条派单器命令前显式 `cd /f/project-dashboard`。
 11. **一张卡多单并行的落地顺序**：同一批派出去的单先落地改动小、改文件少的；两单都碰同一文件（如 `server/server.cjs`）时，后落地的那单在自己的工作区 `git merge origin/master` 后必须重跑全部验收再 push——派单器只在 collect 时跑过一次，不知道主干又动了。
+12. **被裸 tsx 子进程导入的模块，契约里别让它引 Vite 虚拟模块或 `@/api/schema`**：test/ageLevel.test.cjs 这类单测用 `node --import tsx` 直接导入 web/src/utils 下的纯模块，没有路径别名也没有虚拟模块加载器；schema.ts 牵着 `virtual:board-schema`，一引就 ERR_UNSUPPORTED_ESM_URL_SCHEME（aud-kanban-flow-build 开工 4 分钟即因此停工）。写契约时先 `grep -l "web/src/utils" test/*.cjs` 看哪些模块被裸导入，这些模块只许做形状校验，状态名之类的枚举校验放到组件里。

@@ -6,6 +6,7 @@ import { computed, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { appearance } from '@/utils/appearance'
+import { sortStalestFirst, isOverLimit } from '@/utils/kanbanFlow'
 import { DONE_STATUSES } from '@/api/schema'
 import TaskCard from '@/components/TaskCard.vue'
 import DoneToggle from '@/components/DoneToggle.vue'
@@ -22,7 +23,8 @@ const columns = computed(() => derive.groupByStatus(board.value)
   // 完工泳道按完工日倒序（最新完工在最上面），找"最近干完的那张"不用翻全列（体检 U2）。
   .map((column) => DONE_STATUSES.has(column.status)
     ? { ...column, tasks: [...column.tasks].sort((left, right) => (right.dates?.done || '').localeCompare(left.dates?.done || '')) }
-    : column))
+    : column.status === '施工中' ? { ...column, tasks: sortStalestFirst(column.tasks) } : column)
+  .map(column => ({ ...column, limit: appearance.wipLimits[column.status] || 0 })))
 const progress = computed(() => derive.progress(board.value))
 
 function statusTone(status: string) {
@@ -78,7 +80,7 @@ function statusTone(status: string) {
           <span class="badge tiled" :class="statusTone(column.status)">
             <StatusTile :status="column.status" :size="20" decorative />{{ column.status }}
           </span>
-          <span class="badge n count-badge">{{ column.tasks.length }}</span>
+          <span class="badge count-badge" :class="isOverLimit(column.tasks.length, column.limit) ? 'bad' : 'n'">{{ column.tasks.length }}<span v-if="column.limit"> / {{ column.limit }}</span></span>
         </header>
         <div class="column-body stagger-list">
           <!-- TaskCard 属第 4 批，本批只提供规范化容器。 -->

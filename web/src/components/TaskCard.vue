@@ -7,6 +7,8 @@ import { registerCardElement, unregisterCardElement } from '@/utils/boardEvents'
 import { projectColorCss } from '@/utils/projectPresentation'
 import { appearance } from '@/utils/appearance'
 import { ageLevel, ageTone } from '@/utils/ageLevel'
+import { cardAgeMs, formatAge } from '@/utils/kanbanFlow'
+import { isSettled } from 'virtual:task-signal'
 import Icon from './Icon.vue'
 import StatusTile from './StatusTile.vue'
 
@@ -36,6 +38,8 @@ onBeforeUnmount(() => {
 const store = useBoardStore()
 const pending = () => (props.task.decisions ?? []).filter((d) => d.answer == null).length
 const building = () => props.task.status === '施工中'
+const age = computed(() => cardAgeMs(props.task, ageNow.value))
+const level = computed(() => ageLevel(age.value ?? 0, appearance.ageThresholds))
 // 施工中恒显进度条（哪怕 0%）；陈旧档位与抽屉共用设置和纯函数。
 const lastProgressAt = () => (props.task as any).lastProgressAt as string | undefined
 const progressAge = computed(() => {
@@ -62,6 +66,8 @@ const progressAge = computed(() => {
       <StatusTile :status="task.status" :size="16" />
       <span class="tid mono">{{ task.id }}</span>
       <span class="spacer" />
+      <span v-if="age !== null && !isSettled(task)" class="badge age" :class="ageTone(level)"
+        :title="`自 ${task.dates?.start} 开工起的卡龄`">{{ formatAge(age) }}</span>
       <span v-if="pending()" class="badge warn icon-badge" :title="pending() + ' 条待拍板'">
         <Icon name="bell" :size="14" />{{ pending() }}
       </span>
@@ -100,6 +106,7 @@ const progressAge = computed(() => {
 .tcard-head { font-size: var(--fs-sm); }
 .tcard-meta { flex-wrap: wrap; }
 .tid { color: var(--text-2); font-weight: 600; }
+.age { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ttitle { font-size: var(--fs-base); line-height: 1.4; }
 /* 技术说明:给模型读的,负责人扫卡时不该被它挤占。压成两行,鼠标悬停看全文。 */
 .tdesc {
