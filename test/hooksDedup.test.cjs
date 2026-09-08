@@ -84,7 +84,7 @@ function cli(f, args) {
   assert.equal(r.stderr, '');
   return r.stdout;
 }
-const oldProgress = (id) => ({ type: 'command', command: `node "D:/old/cli/index.cjs" sync-progress --project "${id}"` });
+const oldProgress = (id) => ({ type: 'command', command: `node "C:/path/to/old-release/cli/index.cjs" sync-progress --project "${id}"` });
 
 test('全局已有同步：重装项目摘掉旧 TodoWrite，保留 Bash，Stop 改用快速安静体检', (t) => {
   const f = setup(t);
