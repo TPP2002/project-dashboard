@@ -65,6 +65,7 @@ const REGISTRY = {
   backfill: ['./backfill.cjs', 'backfill'],
   'render-index': ['./renderIndex.cjs', 'renderIndex'],
   snapshot: ['./snapshot.cjs', 'snapshot'],
+  'archive-activity': ['./archiveActivity.cjs', 'archiveActivity'],
   onboard: ['./onboard.cjs', 'onboard'],
   enroll: ['./enroll.cjs', 'enroll'],
 };

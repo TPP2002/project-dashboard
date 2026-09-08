@@ -118,6 +118,12 @@ export interface Activity {
   missing?: DecisionInfoField[]
 }
 
+export interface ActivityPage {
+  ok: true
+  items: Activity[]
+  nextBefore: string | null
+}
+
 export interface ProjectMeta {
   id: string
   name: string

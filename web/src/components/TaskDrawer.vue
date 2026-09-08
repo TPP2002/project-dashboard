@@ -22,6 +22,12 @@ const store = useBoardStore()
 const task = computed(() => store.selectedTask)
 const pid = computed(() => store.selectedTaskProjectId || '')
 const acts = computed(() => derive.activityOfTask(store.selectedBoard, task.value?.id || ''))
+watch(() => [store.selectedTaskId, pid.value, store.loading, store.activityComplete[pid.value]], () => {
+  if (store.loading || !store.selectedTaskId || !pid.value) return
+  store.ensureFullActivity(pid.value).catch((e) => {
+    store.error = e instanceof Error ? e.message : String(e)
+  })
+}, { immediate: true })
 // 施工中任务进度戳超 30 分钟没动 = 陈旧
 const progStale = computed(() => {
   const lp = (task.value as any)?.lastProgressAt

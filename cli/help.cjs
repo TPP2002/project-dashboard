@@ -33,7 +33,7 @@ const GROUPS = [
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
     'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit']],
-  ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot']],
+  ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot', 'archive-activity']],
 ];
 
 const COMMANDS = {
@@ -501,6 +501,16 @@ const COMMANDS = {
   },
 
   // ——— 导入导出 ———
+  'archive-activity': {
+    summary: '把指定月份以前的旧活动按月归档，网页仍能查看完整历史',
+    usage: 'archive-activity --project <id> --before <YYYY-MM>',
+    args: [['--before <YYYY-MM>', '必填；该月 1 日本地时间 00:00 以前的活动搬入月度归档']],
+    examples: ['archive-activity --project myproj --before 2026-09'],
+    notes: [
+      '归档存于 board.json 旁的 activity-YYYYMM.json，已有文件合并去重；不自动执行。',
+      '输出搬入条数与文件路径；没有旧活动时不改文件，重复执行安全。',
+    ],
+  },
   import: {
     summary: '从任务台账（INDEX.md / BOARD.md）半自动生成板的骨架',
     usage: 'import --project <id> [--from <台账.md>] [--dry-run]',

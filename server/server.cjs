@@ -6,7 +6,8 @@
  *   1) 静态托管 web/dist/（生产构建产物；SPA 路由回退 index.html；dist 未构建时给占位页）
  *   2) GET  /api/health                         → 探活：{ok,port,pid,projects:[id],hooksInstalled,...}
  *   3) GET  /api/projects                       → 读 registry + 每个 board 派生摘要（读时算，不落盘 R9a）
- *   4) GET  /api/board/:projectId               → 返回该项目 board.json 全量
+ *   4) GET  /api/board/:projectId               → 按需返回任务/活动，活动含月度归档；支持 ETag
+ *      GET  /api/activity/:projectId            → 合并活动的倒序游标分页
  *   5) GET  /api/doc?projectId=&path=           → 读文档文本；path 必过 safePath，逃逸/非法 403（R4）
  *   6) POST /api/decide/:projectId/:taskId      → 转发 execFile 调 cli decide（board 仍只被 CLI 写 R6）
  *      POST /api/task/:projectId/:taskId/:action → 留言、暂缓、复工、作废、重开、要求补齐信息
@@ -38,6 +39,7 @@ const https = require('node:https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const { createHash } = require('node:crypto');
 const { execFile } = require('child_process');
 
 const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
@@ -117,6 +119,12 @@ const state = {
   webhookCursor: new Map(), // projectId → 已处理活动的最大 ISO ts（含失败与未勾选的活动）
   webhookSending: new Map(), // 同项目串行发送；只合并期间的变更标记，不保存重试队列
 };
+
+// 路径只保留最新版本；摘要/合并缓存限制项目数，避免长驻服务积攒旧板。
+const summaryCache = new Map();
+const archiveCache = new Map();
+const mergedBoardCache = new Map();
+const BOARD_CACHE_LIMIT = 50;
 
 // ============ 通用工具 ============
 
@@ -208,6 +216,96 @@ function readBoardFile(boardPath) {
   try { raw = fs.readFileSync(boardPath, 'utf8'); }
   catch (e) { if (e.code === 'ENOENT') return null; throw e; }
   return JSON.parse(raw);
+}
+
+function rememberBoard(cache, boardPath, entry) {
+  cache.delete(boardPath);
+  cache.set(boardPath, entry);
+  if (cache.size > BOARD_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+  return entry;
+}
+
+/** 摘要只由板内数据派生，归档不改变项目清单现有口径。 */
+function readSummaryCached(boardPath) {
+  let stat;
+  try { stat = fs.statSync(boardPath); }
+  catch (e) { if (e.code === 'ENOENT') { summaryCache.delete(boardPath); return null; } throw e; }
+  const cached = summaryCache.get(boardPath);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.summary;
+  const board = readBoardFile(boardPath);
+  if (!board) return null;
+  const summary = deriveSummary(board);
+  rememberBoard(summaryCache, boardPath, { mtimeMs: stat.mtimeMs, size: stat.size, summary });
+  return summary;
+}
+
+/** 仅枚举文件和 stat；条件请求命中时不读取 board/归档内容。文件名也参与版本，覆盖新增/删除。 */
+function activitySnapshot(boardPath) {
+  let boardStat;
+  try { boardStat = fs.statSync(boardPath); }
+  catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+  const dir = path.dirname(boardPath);
+  const archives = fs.readdirSync(dir).filter((name) => /^activity-\d{6}\.json$/.test(name)).sort()
+    .map((name) => {
+      const file = path.join(dir, name);
+      const stat = fs.statSync(file);
+      return { file, mtimeMs: stat.mtimeMs, size: stat.size };
+    });
+  const version = JSON.stringify([
+    [boardPath, boardStat.mtimeMs, boardStat.size],
+    ...archives.map((a) => [a.file, a.mtimeMs, a.size]),
+  ]);
+  return { archives, version };
+}
+
+function readArchiveCached(info) {
+  const cached = archiveCache.get(info.file);
+  if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.items;
+  const items = JSON.parse(fs.readFileSync(info.file, 'utf8'));
+  if (!Array.isArray(items)) throw new Error(`归档应为 JSON 数组：${info.file}`);
+  archiveCache.set(info.file, { mtimeMs: info.mtimeMs, size: info.size, items });
+  return items;
+}
+
+function compareActivity(a, b) {
+  return (Date.parse(a.ts) - Date.parse(b.ts)) || String(a.ts || '').localeCompare(String(b.ts || ''));
+}
+
+/** 先合并去重再排序；两条读接口共享结果，不能在响应裁剪时改动缓存数组。 */
+function readMergedBoard(boardPath, snapshot) {
+  const cached = mergedBoardCache.get(boardPath);
+  if (cached && cached.version === snapshot.version) return cached.board;
+  const board = readBoardFile(boardPath);
+  if (!board) return null;
+  const seen = new Set();
+  const activity = [];
+  for (const items of [board.activity || [], ...snapshot.archives.map(readArchiveCached)]) {
+    for (const item of items) {
+      const key = JSON.stringify([item.ts, item.taskId, item.text]);
+      if (!seen.has(key)) { seen.add(key); activity.push(item); }
+    }
+  }
+  activity.sort(compareActivity);
+  const merged = { ...board, activity };
+  rememberBoard(mergedBoardCache, boardPath, { version: snapshot.version, board: merged });
+  return merged;
+}
+
+function replyNotModified(req, res, snapshot, endpoint, query) {
+  const params = JSON.stringify(Object.keys(query).sort().map((key) => [key, query[key]]));
+  const hash = createHash('sha1').update(snapshot.version + '|' + endpoint + '|' + params).digest('hex').slice(0, 16);
+  const etag = `W/"${hash}"`;
+  res.setHeader('ETag', etag);
+  if (req.headers['if-none-match'] !== etag) return false;
+  res.writeHead(304, { 'cache-control': 'no-cache' });
+  res.end();
+  return true;
+}
+
+function positiveInteger(value, fallback) {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return fallback;
+  const n = Number(value);
+  return n > 0 ? Math.min(n, Number.MAX_SAFE_INTEGER) : fallback;
 }
 
 /** 从 board 派生摘要（读时算、不落盘 R9a）；口径对齐 CLI deriveStats：只数"已完工"，分母剔掉作废卡 */
@@ -428,11 +526,11 @@ function handleProjects(req, res) {
     if (typeof entry.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(entry.color)) item.color = entry.color;
     if (typeof entry.icon === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(entry.icon)) item.icon = entry.icon;
     if (!proj) { list.push({ ...item, summary: emptySummary(), error: '项目解析失败' }); continue; }
-    let board;
-    try { board = readBoardFile(proj.board); }
+    let summary;
+    try { summary = readSummaryCached(proj.board); }
     catch (_) { list.push({ ...item, summary: emptySummary(), error: 'board.json 解析失败' }); continue; }
-    if (!board) { list.push({ ...item, summary: emptySummary(), error: 'board.json 不存在' }); continue; }
-    list.push({ ...item, summary: deriveSummary(board) });
+    if (!summary) { list.push({ ...item, summary: emptySummary(), error: 'board.json 不存在' }); continue; }
+    list.push({ ...item, summary });
   }
   sendJson(res, 200, { ok: true, projects: list });
 }
@@ -441,15 +539,52 @@ function emptySummary() {
   return { total: 0, byStatus: {}, progress: 0, pendingCount: 0, lastActivityTs: null };
 }
 
-function handleBoard(req, res, projectId) {
+function handleBoard(req, res, projectId, query = {}) {
   if (!projectId) return sendJson(res, 400, { ok: false, error: '缺 projectId' });
   const proj = resolveProjectSafe(projectId);
   if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
-  let board;
-  try { board = readBoardFile(proj.board); }
-  catch (e) { return sendJson(res, 500, { ok: false, error: `board.json 解析失败：${e.message}` }); }
-  if (!board) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
-  sendJson(res, 200, board);
+  try {
+    const snapshot = activitySnapshot(proj.board);
+    if (!snapshot) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
+    if (replyNotModified(req, res, snapshot, 'board', query)) return;
+    const fields = ['tasks', 'activity', 'all'].includes(query.fields) ? query.fields : 'all';
+    const board = fields === 'tasks' ? readBoardFile(proj.board) : readMergedBoard(proj.board, snapshot);
+    if (!board) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
+    const limit = positiveInteger(query.activityLimit, 0);
+    const activity = fields === 'tasks' ? [] : limit ? board.activity.slice(-limit) : board.activity;
+    sendJson(res, 200, { ...board, tasks: fields === 'activity' ? [] : board.tasks, activity });
+  } catch (e) {
+    res.removeHeader('ETag');
+    sendJson(res, 500, { ok: false, error: `board.json 或活动归档读取失败：${e.message}` });
+  }
+}
+
+function handleActivity(req, res, projectId, query = {}) {
+  if (!projectId) return sendJson(res, 400, { ok: false, error: '缺 projectId' });
+  const proj = resolveProjectSafe(projectId);
+  if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
+  const isoTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
+  const before = query.before === undefined ? Infinity : Date.parse(query.before);
+  if ((query.before !== undefined && (typeof query.before !== 'string' || !isoTime.test(query.before))) || Number.isNaN(before)) {
+    return sendJson(res, 400, { ok: false, error: 'before 必须是 ISO 时间戳' });
+  }
+  const limit = Math.min(1000, positiveInteger(query.limit, 100));
+  try {
+    const snapshot = activitySnapshot(proj.board);
+    if (!snapshot) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
+    if (replyNotModified(req, res, snapshot, 'activity', query)) return;
+    const board = readMergedBoard(proj.board, snapshot);
+    if (!board) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
+    const items = [];
+    for (let i = board.activity.length - 1; i >= 0 && items.length < limit; i--) {
+      const item = board.activity[i];
+      if (before === Infinity || Date.parse(item.ts) < before) items.push(item);
+    }
+    sendJson(res, 200, { ok: true, items, nextBefore: items.length ? items[items.length - 1].ts : null });
+  } catch (e) {
+    res.removeHeader('ETag');
+    sendJson(res, 500, { ok: false, error: `board.json 或活动归档读取失败：${e.message}` });
+  }
 }
 
 /**
@@ -1123,7 +1258,8 @@ const server = http.createServer((req, res) => {
       if (sub === 'projects' && req.method === 'GET') return handleProjects(req, res);
       if (sub === 'stream' && req.method === 'GET') return handleStream(req, res);
       if (sub === 'doc' && req.method === 'GET') return handleDoc(req, res, parsed.query || {});
-      if (sub === 'board' && req.method === 'GET') return handleBoard(req, res, segs[2]);
+      if (sub === 'board' && req.method === 'GET') return handleBoard(req, res, segs[2], parsed.query || {});
+      if (sub === 'activity' && req.method === 'GET') return handleActivity(req, res, segs[2], parsed.query || {});
       if (sub === 'decide' && req.method === 'POST') return handleDecide(req, res, segs[2], segs[3]);
       if (sub === 'task' && req.method === 'POST' && segs.length === 5 && TASK_ACTIONS.includes(segs[4])) {
         return handleTaskAction(req, res, segs[2], segs[3], segs[4]);
