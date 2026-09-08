@@ -9,7 +9,7 @@
 ## 0. 一句话与电梯陈述
 
 - **一句话**：一个**本地运行的、多项目通用的项目管理可视化看板**——把「每个项目里每件事做到哪一步、卡在哪、有什么等人拍板」一屏看清，并能**直接在网页上拍板**。
-- **电梯陈述**：它是一层**读多写少**的项目治理面板。真正的「事实」存在一个机器可读的 `board.json` 里；一个零依赖 CLI 是**唯一的写入通道**；一个零依赖本地 server 提供 API + 实时推送；一个 Vue 前端提供 13 个视图。它最初为「AI（Claude Code）施工、人类监督拍板」的协作模式而生，也可作为通用的轻量项目面板独立使用。
+- **电梯陈述**：它是一层**读多写少**的项目治理面板。真正的「事实」存在一个机器可读的 `board.json` 里；一个零依赖 CLI 是**唯一的写入通道**；一个零依赖本地 server 提供 API + 实时推送；一个 Vue 前端提供 20 个视图（按 `web/src/router/index.ts`，不含 `/` 重定向）。它最初为「AI（Claude Code）施工、人类监督拍板」的协作模式而生，也可作为通用的轻量项目面板独立使用。
 
 ---
 
@@ -268,7 +268,7 @@
 | `register --id --name --root [--board]` | 注册项目到 registry + 建空 board。 |
 | `import [--from <INDEX.md>] [--dry-run]` | 从现有 markdown 任务台账（INDEX/BOARD 表格）批量回填任务骨架（自动剥删除线、抽可靠字段）。 |
 | `backfill [--patch <json>]` | 查缺语义字段 / 用补丁批量补。 |
-| `add <id> --title [--status --wave --desc]` | 新建任务。 |
+| `add <id> --title <技术说明> --plain-title <人话标题> --model <档位> [--status --wave --desc]` | 新建任务。 |
 | `claim <id> --branch [--scope]` | 认领 → 施工中（带防倒退状态机）。 |
 | `progress <id> --percent [--next --tests --typecheck]` | 里程碑回写进度。 |
 | `sync-progress [--project]` | 按当前 git 分支找施工中任务，自动同步进度（只进不退，封顶 95）。 |
@@ -425,7 +425,7 @@ node packaging/build-installer.cjs [--version 1.0.0] [--skip-selfcheck]
 2. 浏览器自动打开 `http://127.0.0.1:6060/`，此时项目列表为空。
 3. 双击「添加项目.bat」，按提示填：项目代号（英文）、显示名、项目文件夹路径 → 回车。
 4. 回网页刷新，即见该项目（初始 0 任务）。
-5. 用 CLI 给项目加任务：`node-runtime\node.exe cli\index.cjs add TASK1 --project <代号> --title "标题"`。
+5. 用 CLI 给项目加任务：`node-runtime\node.exe cli\index.cjs add TASK1 --project <代号> --title "技术说明" --plain-title "把这件事要解决的问题用一句日常的话说清楚" --model "opus·中"`。
 
 ### 11.2 AI 驱动开发（Claude Code 用户）
 1. `enroll`/`register` 接入项目 + `import` 从现有任务台账回填 + `hooks-install` 装 hook。
@@ -442,7 +442,7 @@ node packaging/build-installer.cjs [--version 1.0.0] [--skip-selfcheck]
 - **接新项目**：`register --id --name --root` 一行；有 INDEX/BOARD 表格可 `import` 自动抽任务。
 - **对接外部**：所有数据可经 `GET /api/board/:id` 拿到全量 JSON；`GET /api/projects` 拿派生摘要。只读集成很容易。
 - **加视图**：前端加页面需**同时**改 `router/index.ts` 与 `components/SideNav.vue` 的 NAV 数组（只改路由会导致「页面存在但侧栏看不到」——这是一个真实踩过的坑）。
-- **测试**：`node --test`（零依赖 node:test），当前 62 用例覆盖 core / 命令层 / 解析层 / server / 集成。
+- **测试**：`node --test`（零依赖 node:test），按 `test/*.cjs` 中的 `test(` 声明静态计数，约 476 用例，以 `npm test` 汇总行为准；覆盖 core / 命令层 / 解析层 / server / 集成。
 
 ---
 
