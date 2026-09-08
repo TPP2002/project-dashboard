@@ -43,19 +43,31 @@ function depLine(depId, byId, { warnUnsettled }) {
 const NOTE_MAX = 200;
 
 /**
- * 活动流里挂在这张卡上的留言（最近 N 条，新的在前）。
+ * 活动流里挂在这张卡上的普通留言（最近 N 条，新的在前）；负责人留言已置顶，不重复输出。
  * 只认 `note` 命令写的（kind='message'）：add / set / mark-landed 的记账流水也记成 type:'note'，
  * 其中「新建任务 …」那条会把整段技术说明再吐一遍——正是本卡要消灭的浪费。
  */
 function recentNotes(board, taskId, limit = 3) {
   return ((board && board.activity) || [])
-    .filter((a) => a && a.type === 'note' && a.kind === 'message' && a.taskId === taskId && a.text)
+    .filter((a) => a && a.type === 'note' && a.kind === 'message' && a.author !== '负责人' && a.taskId === taskId && a.text)
     .slice(-limit)
     .reverse()
     .map((a) => ({
       ts: a.ts,
       author: a.author,
       text: String(a.text).length > NOTE_MAX ? String(a.text).slice(0, NOTE_MAX) + '…（截断）' : String(a.text),
+    }));
+}
+
+/** 负责人留言单独置顶；省略卡号时供 precheck 展示全项目最近留言。 */
+function recentHumanNotes(board, taskId, limit = 3) {
+  return ((board && board.activity) || [])
+    .filter((a) => a && a.author === '负责人' && ['message', 'request-info'].includes(a.kind)
+      && (taskId === undefined || a.taskId === taskId) && a.text)
+    .slice(-limit).reverse()
+    .map((a) => ({
+      ts: a.ts, taskId: a.taskId,
+      text: String(a.text).length > NOTE_MAX ? String(a.text).slice(0, NOTE_MAX - 1) + '…' : String(a.text),
     }));
 }
 
@@ -79,6 +91,12 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
 
   L.push(`# ${t.id} · ${humanTitle(t) || '（这张卡还没写标题）'}`);
   L.push('');
+  const humanNotes = recentHumanNotes(b, t.id);
+  if (humanNotes.length) {
+    L.push('## 负责人留言（最近 3 条，先读）', '');
+    for (const n of humanNotes) L.push(`- ${n.ts || ''}：${n.text}`);
+    L.push('');
+  }
   L.push(`**项目**：${projName || pid}（\`${pid}\`）　**状态**：${t.status || '未知'} ${t.percent || 0}%`
     + `　**建议档位**：${t.modelHint || '没登记'}　**波次**：${t.wave === undefined ? '-' : t.wave}`);
   L.push(`**分支**：${(t.gitBranch || []).join('、') || '还没人建'}`
@@ -90,7 +108,7 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
   }
   if (t.blockReason) L.push(`> 🚧 卡在：${t.blockReason}`);
 
-  // ⛔ 闸门放在最前面：没拍完板就动代码，是本流程最贵的一种白干。
+  // 开工闸门紧跟负责人留言与卡面信息，先提示待拍板，再展开技术说明。
   const open = unanswered(t);
   if (open.length) {
     L.push('');
@@ -204,4 +222,4 @@ function brief(flags) {
   return { ok: true, text: buildBrief({ pid: proj.id, projName: proj.name, board, task }) };
 }
 
-module.exports = { brief, buildBrief, unanswered, unlanded, SETTLED };
+module.exports = { brief, buildBrief, recentHumanNotes, unanswered, unlanded, SETTLED };

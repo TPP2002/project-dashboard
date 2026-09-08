@@ -14,6 +14,7 @@ const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { releaseHome } = require('../core/runtimeRoot.cjs');
 const { releaseStatus } = require('./release.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
+const { requestedInfoIssues } = require('./requestInfo.cjs');
 
 function resolveProj(flags) {
   return resolveProject(flags.project, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
@@ -139,6 +140,8 @@ function doctor(flags) {
     }
   }
   if (badDecisions.length) issues.push(`${badDecisions.length} 条待拍板不合格（skill §6.2）：\n    ` + badDecisions.slice(0, 10).join('\n    ') + (badDecisions.length > 10 ? `\n    ...（共 ${badDecisions.length} 条）` : ''));
+
+  issues.push(...requestedInfoIssues(board));
 
   // Stop 只做上面的轻量检查；即使同时传 --fix / --branches，也不扫描或写入。
   if (flags.quick) return doctorReport(issues, flags, 'hook 已装、待拍板三件套齐全');
