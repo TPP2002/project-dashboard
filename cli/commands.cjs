@@ -409,45 +409,45 @@ function progress(flags) {
  * 治"进度纯靠对话记得调 cli progress、不报就冻住"——挂在对话每次更新待办上,全自动。
  * 规则:只进不退(max)、自动进度封顶 95(真完工靠 cli done 置 100)、找不到任务静默跳过。
  */
-/**
- * 按当前工作目录的 git 仓,反查它属于哪个已注册看板项目(返回 id 或 null)。
- * 正本已挪到 core/resolveProject.detectProjectIds(那里连 codeRepo 一起比,并返回【全部】命中);
- * 这里保留"取第一个、认不出就 null"的宽松口径,只给 syncProgress 用 ——
- * 它挂在钩子上每次待办更新都跑,歧义时报错刷屏比猜错更糟,共仓歧义的治理归 AUD-HOOKS-DEDUP-COST。
- */
-function detectProjectId(registryPath) {
-  return detectProjectIds({ registryPath })[0] || null;
-}
-
 function syncProgress(flags) {
-  // 项目:显式 --project 优先;否则按当前 git 仓自动认(支持 worktree→主仓),
-  // 让装到全局的钩子在任何对话里都能认出自己在哪个看板项目。
-  let projId = flags.project;
-  if (!projId) projId = detectProjectId(getRegistryPath(flags));
-  if (!projId) return { ok: true, skipped: '当前目录不属于任何看板项目' };
-  const proj = resolveProject(projId, { registryPath: getRegistryPath(flags) });
-  const pct = flags.percent !== undefined ? parseInt(flags.percent, 10) : undefined;
-  if (pct === undefined || isNaN(pct)) return { ok: true, skipped: '缺 --percent' };
-  // 分支:优先 --branch,否则读当前 git 分支(钩子在对话 cwd 里跑)
-  let branch = flags.branch ? String(asArray(flags.branch)[0]) : '';
-  if (!branch) {
-    try { branch = require('node:child_process').execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim(); }
-    catch (_) { branch = ''; }
+  const skip = (skipped) => ({ ok: true, skipped, silent: true });
+  try {
+    // 显式项目优先；自动识别保留 mainRepo / codeRepo / worktree 的全部命中。
+    const registryPath = getRegistryPath(flags);
+    const ids = flags.project ? [flags.project] : detectProjectIds({ registryPath });
+    if (!ids.length) return skip('当前目录不属于任何看板项目');
+    const pct = flags.percent !== undefined ? parseInt(flags.percent, 10) : undefined;
+    if (pct === undefined || isNaN(pct)) return skip('缺 --percent');
+    // currentBranch 的 git stderr 已隔离；空仓、非仓与游离 HEAD 都不打扰对话。
+    const branch = (flags.branch ? String(asArray(flags.branch)[0]) : '') || currentBranch();
+    if (!branch || branch === 'HEAD') return skip('无有效分支');
+
+    // 按板消歧，同一块板有多张匹配卡仍只算一块；板内继续沿用首张施工卡规则。
+    const matches = [];
+    for (const id of ids) {
+      const proj = resolveProject(id, { registryPath });
+      const board0 = readBoard(proj.board);
+      const cand = (board0.tasks || []).find((t) =>
+        t.status === '施工中' && (t.gitBranch || []).map(String).includes(branch));
+      if (cand) matches.push({ proj, cand });
+    }
+    if (ids.length > 1 && matches.length !== 1) {
+      return skip(`项目归属有歧义：${ids.join('、')} 中有 ${matches.length} 块板的施工中任务匹配分支 ${branch}`);
+    }
+    if (!matches.length) return skip(`无施工中任务匹配分支 ${branch}`);
+    const { proj, cand } = matches[0];
+    const target = Math.max(cand.percent || 0, Math.min(95, Math.max(0, pct))); // 只进不退、封顶 95
+    if (target <= (cand.percent || 0)) return skip(`进度未前进(当前 ${cand.percent || 0}%)`);
+    const { board, changed } = mutateTask(proj, cand.id, (b) => {
+      const t = findTask(b, cand.id);
+      t.percent = target;
+      t.lastProgressAt = nowIso();
+    }, act('progress', flags.author || 'todo-hook', `进度(自动) ${cand.id} ${target}%`, cand.id));
+    return okTask(board, cand.id, changed);
+  } catch (e) {
+    // 钩子路径上的解析、读板与写入异常都只交回原因，不向对话打印错误。
+    return skip(`进度同步跳过：${e?.message || String(e)}`);
   }
-  if (!branch || branch === 'HEAD') return { ok: true, skipped: '无有效分支' };
-  // 先只读:找匹配的施工中任务,没有就不写(免 activity 噪音)
-  const board0 = readBoard(proj.board);
-  const cand = (board0.tasks || []).find((t) =>
-    t.status === '施工中' && (t.gitBranch || []).map(String).includes(branch));
-  if (!cand) return { ok: true, skipped: `无施工中任务匹配分支 ${branch}` };
-  const target = Math.max(cand.percent || 0, Math.min(95, Math.max(0, pct))); // 只进不退、封顶 95
-  if (target <= (cand.percent || 0)) return { ok: true, skipped: `进度未前进(当前 ${cand.percent || 0}%)` };
-  const { board, changed } = mutateTask(proj, cand.id, (b) => {
-    const t = findTask(b, cand.id);
-    t.percent = target;
-    t.lastProgressAt = nowIso();
-  }, act('progress', flags.author || 'todo-hook', `进度(自动) ${cand.id} ${target}%`, cand.id));
-  return okTask(board, cand.id, changed);
 }
 
 // ---------- pending（登记待拍板问题） ----------

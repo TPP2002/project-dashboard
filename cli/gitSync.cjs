@@ -92,12 +92,21 @@ function backup(boardPath) {
   try { atomicWriteJsonSync(bak, readBoard(boardPath)); } catch { /* ignore */ }
   return bak;
 }
+function doctorReport(issues, flags, cleanText) {
+  const ok = issues.length === 0;
+  if (flags.quiet && ok) return { ok: true, text: '', silent: true };
+  const text = issues.length ? issues.map((s) => '• ' + s).join('\n') : '✔ ' + cleanText;
+  return { ok, text: (flags.quick && !flags.quiet ? '快速体检\n' : '') + text };
+}
 function doctor(flags) {
   const proj = resolveProj(flags);
   const repo = proj.codeRepo; // 同 syncFromGit：hook 与提交都在「代码的家」
 
   let board = readBoardOrNull(proj.board);
-  if (!board) return { ok: false, text: '✖ board.json 不存在' };
+  if (!board) {
+    if (flags.quick || flags.quiet) return doctorReport(['board.json 不存在'], flags, '');
+    return { ok: false, text: '✖ board.json 不存在' };
+  }
   const issues = [];
 
   // 1) hook 自检
@@ -108,7 +117,7 @@ function doctor(flags) {
   // 1.6) 发布副本新鲜度（HOOK-CLI-POINTS-AT-LIVE-CHECKOUT，负责人 0906 拍板 d2=A：收官手动 release、体检落后就提醒）。
   // 只在【本仓 hook 确实指着发布副本】时才查——hook 指别处（测试隔离 / 尚未迁移）时，机器上碰巧有没有副本
   // 与这个仓无关，不该拿它决定 doctor 的红绿。
-  if (hookOk) {
+  if (!flags.quick && hookOk) {
     const relHome = releaseHome();
     if (safeRead(hookPath).includes(relHome.replace(/\\/g, '/') + '/cli/index.cjs')) {
       const rs = releaseStatus({ dest: relHome });
@@ -130,6 +139,9 @@ function doctor(flags) {
     }
   }
   if (badDecisions.length) issues.push(`${badDecisions.length} 条待拍板不合格（skill §6.2）：\n    ` + badDecisions.slice(0, 10).join('\n    ') + (badDecisions.length > 10 ? `\n    ...（共 ${badDecisions.length} 条）` : ''));
+
+  // Stop 只做上面的轻量检查；即使同时传 --fix / --branches，也不扫描或写入。
+  if (flags.quick) return doctorReport(issues, flags, 'hook 已装、待拍板三件套齐全');
 
   // 2) git 派生字段漂移（git 有、board 缺）
   // 诊断与修复必须同窗口：--n 传下去，别一个看 300 条、一个看别的条数。
@@ -206,8 +218,8 @@ function doctor(flags) {
       }
     }
   }
-  result.ok = issues.length === 0;
-  result.text = issues.length ? issues.map((s) => '• ' + s).join('\n') : '✔ board 与 git 一致、hook 已装';
+  Object.assign(result, doctorReport(issues, flags, 'board 与 git 一致、hook 已装'));
+  if (flags.quiet) return result;
   if (branchSummary && !result.branchAudit.summary.suspect) result.text += '\n' + branchSummary;
   if (cleanupSummary) result.text += '\n' + cleanupSummary;
   return result;

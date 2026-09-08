@@ -7,6 +7,9 @@
 // 端到端用例要验的是【本检出】的 hook,不是机器上的发布副本(否则那份旧 CLI 会决定测试红绿),
 // 故用测试隔离专用变量显式指过来。registry 仍逐个显式传。
 process.env.DASHBOARD_HOOK_CLI_ROOT = require('node:path').resolve(__dirname, '..');
+// 全局设置文件同样隔离(AUD-HOOKS-DEDUP-COST):本机 ~/.claude/settings.json 装着全局待办同步钩子时,
+// hooksInstall 会按查重规则跳过项目级 TodoWrite 条目——那是产品行为,不该让这台机器的环境决定测试红绿。
+process.env.DASHBOARD_GLOBAL_SETTINGS = require('node:path').join(require('node:os').tmpdir(), 'dashboard-test-no-global-settings-' + process.pid + '.json');
 
 const test = require('node:test');
 const assert = require('node:assert');

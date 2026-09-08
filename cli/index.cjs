@@ -193,6 +193,7 @@ function main() {
   }
   try {
     const res = fn(flags) || { ok: true };
+    if (res.silent) return;
     if (flags.json) console.log(JSON.stringify(slimJson(res)));
     else if (res.text) console.log(res.text);
     else console.log(`✔ ${cmd}` + (res.task ? ` ${res.task.id} → ${res.task.status}` : ''));

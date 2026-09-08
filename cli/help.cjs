@@ -426,13 +426,15 @@ const COMMANDS = {
   },
   doctor: {
     summary: '体检：钩子装没装、提交有没有漏记、分支台账脏不脏',
-    usage: 'doctor --project <id> [--fix] [--branches] [--n <扫描条数>]',
+    usage: 'doctor --project <id> [--quick] [--quiet] [--fix] [--branches] [--n <扫描条数>]',
     args: [
+      ['--quick', '只查钩子安装和待拍板三件套；跳过发布副本、提交扫描、分支审计与修复'],
+      ['--quiet', '无问题时不输出，有问题时只列问题'],
       ['--fix', '能自动修的就修（漏记的提交、脏分支台账）'],
       ['--branches', '连分支台账一起体检'],
       ['--n <条数>', '往回扫多少条提交，默认 300'],
     ],
-    examples: ['doctor --project myproj', 'doctor --project myproj --branches --fix'],
+    examples: ['doctor --project myproj', 'doctor --project myproj --branches --fix', 'doctor --project myproj --quick --quiet'],
     notes: [],
   },
   'sync-from-git': {
