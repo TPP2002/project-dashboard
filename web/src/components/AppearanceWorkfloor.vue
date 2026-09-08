@@ -6,6 +6,7 @@ const worlds = [{ id: 'off', label: '关' }, { id: 'launch', label: '发射场' 
 const times = [{ id: 'theme', label: '跟随主题' }, { id: 'night', label: '始终夜景' }, { id: 'clock', label: '跟随时间' }] as const
 const details = [{ id: 'standard', label: '标准' }, { id: 'ultra', label: '极致' }] as const
 const heights = [{ id: 'standard', label: '标准' }, { id: 'compact', label: '紧凑' }] as const
+const positions = [{ id: 'bottom', label: '任务卡下方' }, { id: 'top', label: '任务卡上方' }] as const
 
 function choose<K extends keyof WorkfloorSettings>(key: K, value: WorkfloorSettings[K]) {
   setAppearance('workfloor', { ...appearance.workfloor, [key]: value })
@@ -14,7 +15,7 @@ function choose<K extends keyof WorkfloorSettings>(key: K, value: WorkfloorSetti
 
 <template>
   <h3 class="ac-h">施工现场</h3>
-  <p class="ac-p">把当前项目的任务进展放进看板上方的一幅施工画面，设置立即保存。</p>
+  <p class="ac-p">把当前项目的任务进展放进看板页的一幅施工画面（位置可选），设置立即保存。</p>
   <div class="ac-line">
     <div class="ac-text"><b id="wf-world">世界</b><span>关掉后，看板不再显示这条横幅</span></div>
     <div class="ac-options" role="group" aria-labelledby="wf-world">
@@ -41,6 +42,13 @@ function choose<K extends keyof WorkfloorSettings>(key: K, value: WorkfloorSetti
     <div class="ac-options two" role="group" aria-labelledby="wf-height">
       <button v-for="option in heights" :key="option.id" class="appearance-choice" type="button"
         :aria-pressed="appearance.workfloor.height === option.id" @click="choose('height', option.id)">{{ option.label }}</button>
+    </div>
+  </div>
+  <div class="ac-line">
+    <div class="ac-text"><b id="wf-position">位置</b><span>默认贴在页面底部，任务卡先看</span></div>
+    <div class="ac-options two" role="group" aria-labelledby="wf-position">
+      <button v-for="option in positions" :key="option.id" class="appearance-choice" type="button"
+        :aria-pressed="appearance.workfloor.position === option.id" @click="choose('position', option.id)">{{ option.label }}</button>
     </div>
   </div>
   <div class="ac-line">
