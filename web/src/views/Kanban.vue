@@ -51,7 +51,7 @@ function statusTone(status: string) {
       </div>
     </header>
 
-    <WorkFloor v-if="board" :board="board" :project-id="pid" :class="appearance.workfloor.position === 'top' ? 'wf-top' : 'wf-bottom'" />
+    <WorkFloor v-if="board" :board="board" :project-id="pid" :class="{ 'wf-bottom': appearance.workfloor.position === 'bottom' }" />
 
     <div v-if="store.loading && !board" class="loading-board" aria-label="正在加载看板">
       <div v-for="index in 3" :key="index" class="card loading-column">
@@ -90,12 +90,8 @@ function statusTone(status: string) {
 </template>
 
 <style scoped>
-/* 整页随内容长高、由 .area-main 上下滚：每张任务卡完整显示，泳道不再各自内滚成抽屉。
-   overflow-x 用 clip 不用 hidden——hidden 会把 .page 变成滚动容器，底下钉住的施工现场就贴不到窗口边。 */
-.page { width: 100%; min-height: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: clip; }
-/* 施工现场钉在窗口底（位置设为「任务卡上方」时钉顶），任务卡在它上面整页滚；滚到头它回到自然位置。 */
-.page > .wf-bottom { order: 10; position: sticky; bottom: 0; z-index: 2; }
-.page > .wf-top { position: sticky; top: 0; z-index: 2; }
+.page { width: 100%; height: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
+.page > .wf-bottom { order: 10; }
 .page-head { position: relative; display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); padding-bottom: var(--s3); }
 .title-group p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
@@ -106,14 +102,11 @@ function statusTone(status: string) {
 .skel.medium { width: 48%; }
 .skel.task-skel { height: 92px; }
 .empty-help { font-size: var(--fs-sm); }
-/* 泳道区不再是滚动容器：泳道随内容长高，一行放不下就折到下一行（每条不低于 280），
-   全部靠整页上下滚翻看；align-content 钉住行首，免得短板子时第二行被撑到半空。 */
-.board-scroll { min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; flex: 1; gap: var(--s3); padding-bottom: var(--s2); }
-/* 泳道自适应：flex-grow 让泳道少时把剩余宽度分光（右边不再留死白）；
-   基准 280：一行放得下就并排、放不下就换行；容器本身窄于 280（手机/窄分栏）时允许缩到容器宽，
-   配 min-width: 0 免得被长卡号撑开后横向裁掉。
+.board-scroll { min-width: 0; display: flex; align-items: flex-start; flex: 1; gap: var(--s3); overflow-x: auto; overflow-y: hidden; padding-bottom: var(--s2); }
+/* 泳道自适应：flex-grow 让泳道少时把剩余宽度分光（右边不再留死白），
+   flex-shrink: 0 + 基准 280 保证泳道多时每条不低于 280，靠 .board-scroll 的横滚兜住。
    这里刻意不设 max-width：设了上限，三条以下的泳道又会在右边空出一截——正是本次要治的病。 */
-.column { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--surface); }
+.column { flex: 1 0 280px; max-height: 100%; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--surface); }
 /* 徽章基类是 inline-block，装了瓦片就得换 flex；左边留窄一点，瓦片自带一圈边框。 */
 .tiled { display: inline-flex; align-items: center; gap: 5px; padding-left: var(--s1); }
 .column-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s1); }
@@ -122,11 +115,13 @@ function statusTone(status: string) {
    泳道回到常规宽度（≤ 约 530）时它就是单列，和以前一模一样。
    align-items: start —— 同排卡片各保持自然高度，不被最高的那张撑齐。 */
 .column-body {
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   align-content: start;
   align-items: start;
   gap: var(--s2);
+  overflow-y: auto;
   padding: 0 var(--s1) var(--s1);
 }
 
