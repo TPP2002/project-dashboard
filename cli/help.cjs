@@ -27,7 +27,7 @@ const EXIT_CODES = [
 
 /** 全局 help 的分组:先给天天用的,装机维护的沉到后面。 */
 const GROUPS = [
-  ['开工与同步（最常用）', ['brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note']],
+  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
   ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
@@ -38,6 +38,20 @@ const GROUPS = [
 
 const COMMANDS = {
   // ——— 开工与同步 ———
+  protocol: {
+    summary: '生成看板协议卡（与帮助同源的用法、状态行为、硬规则与正确示例）',
+    usage: 'protocol [--project <id>] [--format md|json]',
+    args: [
+      ['--format md|json', '默认 md（≤60 行）；json 输出结构化协议对象'],
+      ['--project <id>', '可选；省略时只认唯一命中，认不出或共仓歧义时用 <项目id> 占位符'],
+    ],
+    examples: ['protocol', 'protocol --project myproj --format json'],
+    notes: [
+      '动代码前先 protocol 拿规矩，再 brief <卡号> 拿任务书，随后 claim。',
+      '只读生成，不写看板；无需先注册项目，认不出项目也不报错。',
+      '--format json 返回协议本身；全局 --json 则封装为 {ok,text}。',
+    ],
+  },
   brief: {
     summary: '一条命令拿全开工信息（人话标题/技术说明/文件域/依赖/待拍板/已拍板答案/文档）',
     usage: 'brief <卡号> --project <id>',
@@ -47,7 +61,7 @@ const COMMANDS = {
     ],
     examples: ['brief FEAT-12 --project myproj'],
     notes: [
-      '这是新对话开工的唯一入口：读完它就知道要干什么、能不能动手。',
+      '先 protocol 拿规矩，再读这份任务书，确认要干什么、能不能动手。',
       '卡上还有没答的待拍板问题时，任务书顶部会写「禁止开工」——先让负责人拍板。',
       '`claim --brief` 认领的同时打印同一份；`inbox --tid` 用的也是同一个生成器。',
     ],
@@ -84,7 +98,7 @@ const COMMANDS = {
   },
   pending: {
     summary: '登记一个要负责人拍板的问题（必须给全背景/各选项利弊/推荐理由三件套）',
-    usage: 'pending <卡号> --project <id> --json-file <路径>\n'
+    usage: 'pending <卡号> --project <id> --json-file <路径>  或  '
       + 'pending <卡号> --project <id> --q <问题> --opt <选项>... --rec <推荐> --background <背景> --pros-<选项> <利弊> --reason <推荐理由> [--strict]',
     args: [
       ['--json-file <路径>', '从文件读整块 JSON（首选：字段多，命令行转义容易出错；PowerShell 下 heredoc 也不好使）'],
@@ -134,7 +148,7 @@ const COMMANDS = {
   },
   note: {
     summary: '往活动流写一条留言（可挂在某张卡上，也可只挂项目）',
-    usage: 'note <卡号> --project <id> --text <文本>\n       note --project <id> --text <文本>',
+    usage: 'note <卡号> --project <id> --text <文本>  或  note --project <id> --text <文本>',
     args: [
       ['<卡号> / --task <卡号>', '两种写法等价，挂在哪张卡上。都不写就是项目级留言'],
       ['--text <文本>', '留言正文'],
@@ -166,7 +180,7 @@ const COMMANDS = {
   },
   show: {
     summary: '看一张卡的精简卡片，或列出全板待拍板',
-    usage: 'show <卡号> --project <id> [--full]\n       show --pending --project <id>',
+    usage: 'show <卡号> --project <id> [--full]  或  show --pending --project <id>',
     args: [
       ['<卡号>', '要看的卡'],
       ['--full', '给整卡 JSON（一个字段不落）'],
@@ -573,7 +587,7 @@ function renderGlobalHelp({ cli = 'cli', commands = Object.keys(COMMANDS) } = {}
   const w = Math.max(...GLOBAL_FLAGS.map(([f]) => displayWidth(f)));
   for (const [f, d] of GLOBAL_FLAGS) out.push(`    ${pad(f, w)}  ${d}`);
   out.push('', '【退出码】 ' + EXIT_CODES.map(([c, d]) => `${c}=${d}`).join('；'));
-  out.push('', `新对话开工先跑：${cli} brief <卡号> --project <项目id>`);
+  out.push('', `新对话开工先跑：${cli} protocol，再 brief <卡号> --project <项目id>`);
   return out.join('\n');
 }
 

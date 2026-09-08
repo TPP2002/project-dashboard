@@ -44,7 +44,8 @@ const REGISTRY = {
   edit: ['./commands.cjs', 'edit'], set: ['./commands.cjs', 'set'],
   list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
   cost: ['./commands.cjs', 'cost'],
-  // 新对话开工的唯一入口(AUD-CLI-BRIEF-AND-HELP):一条命令给全开工信息,不用再拼 show+inbox+precheck
+  // protocol 给规矩，brief 给任务书；两者都只读。
+  protocol: ['./protocol.cjs', 'protocol'],
   brief: ['./brief.cjs', 'brief'],
   precheck: ['./precheck.cjs', 'precheck'], cleanup: ['./cleanup.cjs', 'cleanup'],
   'docs-audit': ['./docsAudit.cjs', 'docsAudit'],
@@ -71,11 +72,11 @@ const REGISTRY = {
  * 不吃 --project 的命令（AUD-CLI-BATCH-AND-AUTOPROJECT ③ 的例外表）。
  * 两类：① 压根没有"当前项目"这个概念的（register 用 --id、enroll 用 --id、release 发的是代码副本、
  * claim-check / hooks-global / hooks-trunk-guard 一次扫全部已注册项目）；
- * ② sync-progress —— 它自带一套【认不出就静默跳过】的反查（钩子每次待办更新都跑，绝不许因歧义报错刷屏）。
+ * ② sync-progress / protocol 自己软探测：前者认不出就跳过，后者用项目占位符，不因共仓歧义报错。
  * 给这些命令做反查纯属白跑一个 git 子进程，而 claim-check 挂在每次 commit 上，那点开销是要还的（审计 A9）。
  */
 const NO_AUTO_PROJECT = new Set([
-  'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress',
+  'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol',
 ]);
 
 /**

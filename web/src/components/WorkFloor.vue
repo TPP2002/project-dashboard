@@ -6,6 +6,7 @@ import { appearance } from '@/utils/appearance'
 import { onBoardEvent } from '@/utils/boardEvents'
 import { theme } from '@/utils/theme'
 import { readStops, spectrumRevision } from '@/utils/spectrum'
+import { projectColorCss } from '@/utils/projectPresentation'
 import { createWorkfloor, type SoundCue, type SoundPlayer, type WorkfloorHandle, type WorkfloorOptions } from '@/workfloor'
 import { deriveSceneState, mapBoardEvent } from '@/workfloor/bridge'
 import { loadCollapsed, saveCollapsed } from '@/workfloor/presentation'
@@ -42,13 +43,7 @@ const summary = computed(() => `${worldName.value} · ${state.value.queued.lengt
 const aria = computed(() => `${props.board.project.name}，${summary.value}，${action.value}`)
 const color = computed(() => {
   void spectrumRevision.value
-  if (appearance.projectColor) {
-    const override = appearance.projectColors[props.projectId]
-    if (override) return `var(--project-${override})`
-    const project = store.projects.find(project => project.id === props.projectId) as { color?: unknown } | undefined
-    if (typeof project?.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(project.color)) return project.color
-  }
-  return readStops('--spec-active')[0] || 'var(--info)'
+  return projectColorCss(props.projectId) || readStops('--spec-active')[0] || 'var(--info)'
 })
 const options = computed<WorkfloorOptions>(() => ({
   state: state.value, world: appearance.workfloor.world === 'mech' ? 'mech' : 'launch',
@@ -127,8 +122,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .workfloor { position: relative; flex: none; width: 100%; min-width: 0; overflow: hidden; contain: content; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--wf-stage); }
-.workfloor-canvas { display: block; width: 100%; height: auto; aspect-ratio: 1400 / 520; max-height: min(44vh, 520px); }
-.workfloor[data-height="compact"] .workfloor-canvas { aspect-ratio: 1400 / 360; }
+.workfloor-canvas { display: block; width: 100%; height: auto; aspect-ratio: 1400 / 520; max-height: min(32vh, 380px); }
+.workfloor[data-height="compact"] .workfloor-canvas { aspect-ratio: 1400 / 360; max-height: min(24vh, 280px); }
 .workfloor[data-collapsed="true"] { height: 36px; background: var(--surface); }
 .workfloor-summary { margin: 0; padding: 0 var(--s3); padding-right: var(--s7); line-height: 34px; font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workfloor-toggle { position: absolute; top: var(--s1); right: var(--s1); padding: var(--s1); color: var(--wf-text); background: var(--wf-floor); border-color: var(--wf-line); }

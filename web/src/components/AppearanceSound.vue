@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { appearance, setAppearance } from '@/utils/appearance'
+import { playSound } from '@/utils/sound'
 
 const sounds = [
-  { label: '有新的待拍板', hint: '清脆的一声「叮」' },
-  { label: '有卡完工', hint: '厚一点的一声「咚」' },
-  { label: '有卡被卡住', hint: '闷闷的低鸣，提醒但不惊吓' },
-]
+  { cue: 'ding', label: '有新的待拍板', hint: '清脆的一声「叮」' },
+  { cue: 'dong', label: '有卡完工', hint: '厚一点的一声「咚」' },
+  { cue: 'low', label: '有卡被卡住', hint: '闷闷的低鸣，提醒但不惊吓' },
+] as const
 </script>
 
 <template>
@@ -19,7 +20,8 @@ const sounds = [
   </div>
   <div v-for="sound in sounds" :key="sound.label" class="ac-line">
     <div class="ac-text"><b>{{ sound.label }}</b><span>{{ sound.hint }}</span></div>
-    <button class="btn btn-sm" type="button" disabled :aria-label="`试听${sound.label}`" title="提示音将在后续接入">试听</button>
+    <button class="btn btn-sm" type="button" :aria-label="`试听${sound.label}`"
+      @click="playSound(sound.cue, { preview: true })">试听</button>
   </div>
   <div class="ac-line">
     <div class="ac-text"><b id="appearance-volume">音量</b><span>默认放得很轻，只是一点提示，不是闹钟</span></div>
@@ -40,7 +42,6 @@ const sounds = [
     </div>
   </div>
   <p class="ac-hint">同一件事在一秒内连着发生多次（比如批量完工五张卡），只响一声，不会连珠炮。</p>
-  <p class="ac-hint">提示音与试听将在后续接入；这里先保存开关、音量和静音时段。</p>
 </template>
 
 <style scoped>

@@ -28,15 +28,19 @@
 
 ---
 
-## 第 0 步：先拿任务书，别自己拼
+## 第 0 步：先拿规矩，再拿任务书
 
-接到一个任务号，**第一条命令永远是这个**——它把开工要知道的全部一次给齐：
-人话标题、给模型看的技术说明、这张卡会改哪些文件、依赖的上游卡此刻什么状态、
-还有没有没答的待拍板问题（有就明写**禁止开工**）、负责人已经拍过哪些答案、参考文档、最近留言。
+1. **先跑 `protocol` 拿规矩**，照它输出的协议卡做，别凭记忆；项目可省略，认不出时会给占位符。
 
-```bash
-node <CLI> brief <任务id> --project <id>
-```
+   ```bash
+   node <CLI> protocol --project <id>
+   ```
+
+2. **再跑 `brief` 拿任务书**——人话标题、技术说明、文件域、上游状态、待拍板问题（有就明写**禁止开工**）、已拍板答案、参考文档和最近留言一次给齐。
+
+   ```bash
+   node <CLI> brief <任务id> --project <id>
+   ```
 
 不知道有哪些卡可接：`node <CLI> list --project <id>`（默认只列没完工的，一行一张）。
 **任何一条命令记不清怎么用，就问它自己**：`node <CLI> <命令> --help`（含参数、示例、退出码）；
@@ -60,16 +64,22 @@ node <CLI> brief <任务id> --project <id>
    ```
 
 3. **遇到方向性岔路口 → 交给人拍板，别自作主张**。摆出选项 + 推荐 + 每项利弊：
+   首选把完整问题存成文件再传入，避免命令行转义出错：
+   ```bash
+   node <CLI> pending <任务id> --project <id> --json-file pending.json
+   ```
+   文件包含 `question`、`options`、`recommended`、`background`、`optionPros`、`recommendReason`、`allowCustom`；JSON 示例见 `protocol` 输出。
+   命令行形式的真实参数如下（`--pros-` 后必须接完整选项文本）：
    ```bash
    node <CLI> pending <任务id> --project <id> \
      --q "要定夺的问题" \
      --opt "选项A" --opt "选项B" \
      --rec "选项A" \
-     --background "前因后果（越具体越好）" \
-     --pros-A "选项A利弊" --pros-B "选项B利弊" \
-     --reason "为什么推荐 A"
+     --background "<至少60字：场景、问题、要做什么、为什么重要>" \
+     --pros-选项A "<至少20字：选项A的好处与代价>" --pros-选项B "<至少20字：选项B的好处与代价>" \
+     --reason "<至少30字：为什么推荐选项A>"
    ```
-   （字段名以 `node <CLI> pending --help` / 项目 skill 为准；给全「背景 / 每项利弊 / 推荐理由」三件套，看板界面才能完整展示、便于用户一键拍板。）
+   三件套 `background` / `optionPros` / `recommendReason` 缺一或太短会拒收；默认允许自定义答案，命令行加 `--strict` 可禁止。
 
 4. **完工收官**：
    ```bash
@@ -87,10 +97,11 @@ node <CLI> brief <任务id> --project <id>
 
 | 你要干什么 | 命令 |
 |---|---|
+| 开工先拿规矩 | `protocol [--format md\|json]`（`--project` 可选） |
 | 建一张卡 | `add <id> --title "技术说明" --plain-title "一句人话" --model "档位"` |
 | 动代码前认领 | `claim <id> --branch <分支名>` |
 | 有进展了 | `progress <id> --percent 60 --next "下一步干什么"` |
-| 遇到岔路口要人拍板 | `pending <id> --q … `（三件套见上面铁律 3） |
+| 遇到岔路口要人拍板 | `pending <id> --json-file pending.json`（三件套见上面铁律 3） |
 | 拍板的东西写进代码了 | `mark-landed <id> --did dN`，一次标完本卡全部用 `--all` |
 | **我不做了，把卡交回去** | `unclaim <id> --reason "为什么放手"` |
 | 先搁一搁 / 又能做了 | `park <id> --reason …` / `unpark <id> --reason …` |
@@ -142,4 +153,4 @@ node <CLI> brief <任务id> --project <id>
 
 ## 一句话记住
 
-> **你是施工方，看板是账本。开工先 `brief`，每一步写回看板；方向性问题 `pending` 交人拍板，别自作主张。**
+> **你是施工方，看板是账本。开工先 `protocol` 再 `brief`，每一步写回看板；方向性问题 `pending` 交人拍板，别自作主张。**

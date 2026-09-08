@@ -46,6 +46,15 @@ test('全局 help 列出全部命令,每条带一句话', () => {
   assert.match(text, /--help/, '要告诉调用方怎么看单条命令的详细用法');
 });
 
+test('protocol 帮助说明可选项目与两种格式，并在开工组排在 brief 前', () => {
+  const r = run(['protocol', '--help']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /protocol \[--project <id>\] \[--format md\|json\]/);
+  assert.match(r.stdout, /占位符/);
+  const group = help.GROUPS.find(([title]) => title.includes('开工与同步'));
+  assert.deepEqual(group[1].slice(0, 2), ['protocol', 'brief']);
+});
+
 test('pending --help 给用法,不再报"缺参数 --project"(AGENTS.md 照着写的那条路要真的通)', () => {
   const r = run(['pending', '--help']);
   assert.equal(r.status, 0, r.stdout + r.stderr);

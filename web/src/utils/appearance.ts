@@ -69,7 +69,7 @@ export function defaultAppearance(): AppearanceConfig {
     projectColors: Object.create(null), projectIcons: Object.create(null),
     sound: false, volume: 35, quietStart: '22:30', quietEnd: '08:30',
     wireEvents: { done: true, pending: true, block: true },
-    workfloor: { world: 'launch', dayNight: 'theme', detail: 'ultra', height: 'standard', soundLink: true },
+    workfloor: { world: 'launch', dayNight: 'theme', detail: 'ultra', height: 'standard', position: 'bottom', soundLink: true },
   }
 }
 
@@ -136,6 +136,7 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
       dayNight: oneOf(workfloor.dayNight, ['theme', 'night', 'clock'] as const, defaults.workfloor.dayNight),
       detail: oneOf(workfloor.detail, ['standard', 'ultra'] as const, defaults.workfloor.detail),
       height: oneOf(workfloor.height, ['standard', 'compact'] as const, defaults.workfloor.height),
+      position: oneOf(workfloor.position, ['top', 'bottom'] as const, defaults.workfloor.position),
       soundLink: bool(workfloor.soundLink, defaults.workfloor.soundLink),
     },
   }
