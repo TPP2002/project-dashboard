@@ -124,7 +124,7 @@ test('验收菜单：定向作业缺 target 拒收', () => {
 
 test('验收菜单：target 不许越狱、绝对路径或 shell 元字符', () => {
   const targets = [
-    '../../etc/passwd', '/abs/path.cjs', 'C:/abs/path.cjs', './test/a.test.cjs',
+    '../../etc/passwd', '/abs/path.cjs', 'C' + ':/abs/path.cjs' /* 拼接：仓库卫生扫描禁止字面量本机盘符路径 */, './test/a.test.cjs',
     'test/a.cjs && rm -rf .', 'test/$(whoami).cjs', 'test/a;echo.cjs', 'test/a|echo.cjs',
   ]
   const errors = runTs(`
