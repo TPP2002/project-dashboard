@@ -30,6 +30,27 @@ export async function fetchBoard(id: string): Promise<Board> {
   return asJson<Board>(await fetch(`${API}/board/${encodeURIComponent(id)}`))
 }
 
+export type WebhookEvents = Record<'done' | 'pending' | 'block', boolean>
+
+export interface HealthInfo {
+  ok: boolean
+  webhook?: { configured: boolean; events: WebhookEvents }
+}
+
+export async function fetchHealth(): Promise<HealthInfo> {
+  return asJson<HealthInfo>(await fetch(`${API}/health`))
+}
+
+export async function postSettings(body: { webhookEvents: Partial<WebhookEvents> }): Promise<{
+  ok: boolean; settings: { webhookEvents: WebhookEvents }
+}> {
+  return asJson(await fetch(`${API}/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }))
+}
+
 export interface DecidePayload {
   did: string
   answer: string

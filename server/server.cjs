@@ -32,7 +32,8 @@
  *             DASHBOARD_POLL_MS=1500 轮询间隔 | DASHBOARD_REGISTRY=<path> 覆盖 registry（测试隔离用）
  */
 
-const http = require('http');
+const http = require('node:http');
+const https = require('node:https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
@@ -50,6 +51,7 @@ const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
+const { readSettings, writeSettings, normalizeWebhookEvents } = require('../core/settings.cjs');
 
 // ============ 常量 ============
 
@@ -61,6 +63,8 @@ const DIST_DIR = path.join(DASH_ROOT, 'web', 'dist');        // 前端生产产�
 const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯一写者）
 // registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / 示例项目·模拟器主仓）
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
+const WEBHOOK_URL = (process.env.DASHBOARD_EVENT_WEBHOOK || '').trim();
+const WEBHOOK_CONFIGURED = /^https?:\/\//.test(WEBHOOK_URL);
 
 // —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——
 // 负责人日常用的服务必须从【发布副本】起（mode=release）；从 git 检出起的一律算开发实例（mode=dev），
@@ -109,6 +113,8 @@ const state = {
   startedAt: Date.now(),
   subscribers: new Set(),   // SSE clients（res 对象）
   mtimes: new Map(),        // projectId → board.json 上次 mtimeMs（null=文件缺失）
+  webhookCursor: new Map(), // projectId → 已处理活动的最大 ISO ts（含失败与未勾选的活动）
+  webhookSending: new Map(), // 同项目串行发送；只合并期间的变更标记，不保存重试队列
 };
 
 // ============ 通用工具 ============
@@ -281,6 +287,82 @@ function handleStream(req, res) {
 
 // ============ mtime 轮询（驱动 SSE，禁 fs.watch —— R7） ============
 
+/** 等待单次请求结束，不重试；超时、连接或响应失败只记一行，不暴露地址。 */
+function postWebhook(payload) {
+  return new Promise((resolve) => {
+    let timer;
+    let settled = false;
+    const finish = (reason) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (reason) console.warn(`[webhook] ${payload.project}/${payload.task} 推送失败：${reason}`);
+      resolve();
+    };
+    try {
+      const target = new URL(WEBHOOK_URL);
+      const body = JSON.stringify(payload);
+      const transport = target.protocol === 'https:' ? https : http;
+      const request = transport.request(target, {
+        method: 'POST', timeout: 3000,
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      }, (response) => {
+        response.once('error', () => finish('响应中断'));
+        response.once('end', () => finish(response.statusCode >= 200 && response.statusCode < 300
+          ? null : `接收方返回 ${response.statusCode}`));
+        response.resume();
+      });
+      const timedOut = () => { finish('超过三秒'); request.destroy(); };
+      request.once('timeout', timedOut);
+      request.once('error', () => finish('连接不可用'));
+      // 总时限也覆盖尚未连接的阶段，不能让 DNS 或握手拖住未完成的请求。
+      timer = setTimeout(timedOut, 3000);
+      timer.unref();
+      request.end(body);
+    } catch (_) { finish('地址或请求不可用'); }
+  });
+}
+
+/** 初见项目只记基线；按活动时间发本轮新增消息，最多 20 条，失败和溢出都不补发。 */
+async function notifyWebhook(id) {
+  if (!WEBHOOK_CONFIGURED) return;
+  const sending = state.webhookSending.get(id);
+  if (sending) { sending.changed = true; return; }
+  const batch = { changed: false };
+  state.webhookSending.set(id, batch);
+  let latest;
+  try {
+    const project = resolveProjectSafe(id);
+    if (!project) return;
+    const board = readBoardFile(project.board);
+    if (!board) return;
+    const activity = (Array.isArray(board.activity) ? board.activity : [])
+      .filter((entry) => entry && typeof entry.ts === 'string');
+    latest = activity.reduce((max, entry) => entry.ts > max ? entry.ts : max, '');
+    if (!state.webhookCursor.has(id)) return;
+    const cursor = state.webhookCursor.get(id);
+    const events = normalizeWebhookEvents(readSettings().webhookEvents);
+    const fresh = activity.filter((entry) => entry.ts > cursor
+      && ['done', 'pending', 'block'].includes(entry.type) && events[entry.type])
+      .sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0);
+    if (fresh.length > 20) console.warn(`[webhook] 项目 ${id} 本轮超过 20 条，丢弃 ${fresh.length - 20} 条`);
+    const tasks = Array.isArray(board.tasks) ? board.tasks : [];
+    for (const entry of fresh.slice(0, 20)) {
+      const task = tasks.find((candidate) => candidate.id === entry.taskId);
+      await postWebhook({
+        event: entry.type, project: id, projectName: board.project?.name || project.name,
+        task: entry.taskId, title: task?.plainTitle || task?.title || '', status: task?.status || '', ts: entry.ts,
+      });
+    }
+  } catch (_) { console.warn(`[webhook] 项目 ${id} 的活动读取或推送失败`); }
+  finally {
+    // 无论请求成败都推进游标；发送期间有新变更时只读一次最新板，不补发本批消息。
+    if (latest !== undefined) state.webhookCursor.set(id, latest);
+    state.webhookSending.delete(id);
+    if (batch.changed) void notifyWebhook(id);
+  }
+}
+
 /**
  * 扫各项目 board.json 的 mtime，与上次比对，变了就广播 board:changed{projectId,mtime}。
  * 首次见到某项目只记基线不广播（避免启动瞬间刷一波）。全程 try/catch，绝不让定时器崩。
@@ -295,10 +377,15 @@ function pollBoards() {
     let mtime = null;
     try { mtime = fs.statSync(proj.board).mtimeMs; }
     catch (e) { mtime = null; } // ENOENT 等 → 视为"无文件"
-    if (!state.mtimes.has(id)) { state.mtimes.set(id, mtime); continue; } // 基线，不广播
+    if (!state.mtimes.has(id)) {
+      state.mtimes.set(id, mtime);
+      void notifyWebhook(id); // 同时建立活动基线，下一次变动才会推送。
+      continue;
+    }
     if (state.mtimes.get(id) !== mtime) {
       state.mtimes.set(id, mtime);
       broadcast('board:changed', { projectId: id, mtime });
+      void notifyWebhook(id);
     }
   }
 }
@@ -318,6 +405,7 @@ function handleHealth(req, res) {
     hooksInstalled: hooksInstalledMap(projects),
     sseSubscribers: state.subscribers.size,
     distBuilt: fs.existsSync(path.join(DIST_DIR, 'index.html')),
+    webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(readSettings().webhookEvents) },
     // 报家门（SERVER-RUNS-ON-LIVE-CHECKOUT）：谁都能一眼看出"在跑的是哪份代码、哪个提交"，
     // 启动器据此判断要不要换新，体检据此提醒"合了主干还没生效"。
     mode: MODE,
@@ -411,6 +499,27 @@ function readBody(req, maxBytes, cb) {
   });
   req.on('end', () => finish(null, Buffer.concat(chunks).toString('utf8')));
   req.on('error', (e) => finish(e));
+}
+
+/** 只允许保存推送事件选择；地址始终来自环境变量，不能通过网页改写。 */
+function handleSettings(req, res) {
+  readBody(req, BODY_MAX, (err, raw) => {
+    if (err) return sendJson(res, 413, { ok: false, error: err.message });
+    let body;
+    try { body = JSON.parse(raw); }
+    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+    const isRecord = (value) => value && typeof value === 'object' && !Array.isArray(value);
+    if (!isRecord(body) || Object.keys(body).some((key) => key !== 'webhookEvents')
+      || !isRecord(body.webhookEvents) || Object.entries(body.webhookEvents)
+        .some(([key, value]) => !['done', 'pending', 'block'].includes(key) || typeof value !== 'boolean')) {
+      return sendJson(res, 400, { ok: false, error: '只能保存完工、待拍板、阻塞三项开关，值必须是布尔值' });
+    }
+    try {
+      const webhookEvents = normalizeWebhookEvents(body.webhookEvents);
+      writeSettings({ webhookEvents });
+      return sendJson(res, 200, { ok: true, settings: { webhookEvents } });
+    } catch (_) { return sendJson(res, 500, { ok: false, error: '推送选择保存失败，请稍后再试' }); }
+  });
 }
 
 const codexApi = createCodexApi({
@@ -954,6 +1063,7 @@ const server = http.createServer((req, res) => {
       const sub = segs[1];
 
       if (sub === 'health' && req.method === 'GET') return handleHealth(req, res);
+      if (sub === 'settings' && req.method === 'POST') return handleSettings(req, res);
       if (sub === 'projects' && req.method === 'GET') return handleProjects(req, res);
       if (sub === 'stream' && req.method === 'GET') return handleStream(req, res);
       if (sub === 'doc' && req.method === 'GET') return handleDoc(req, res, parsed.query || {});
