@@ -16,7 +16,7 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 ```
 
 也有短命令：`npm run codex:dispatch -- --task <工单>` / `codex:status` / `codex:collect -- <slug>`。
-**派单器命令一律在主工位（仓库根）跑**，在 `.codex/worktrees/<slug>` 里跑会找错工单目录。
+**派单器命令一律在主工位（仓库根）跑**，在 `.codex-worktrees/<slug>`（隔离工作区）里跑会找错工单目录。
 
 ## 2. 本仓库与 来源仓 那份的差别
 
@@ -25,6 +25,7 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 | 单测 | `node --test`，文件在 `test/*.test.cjs`；作业名 `test:targeted`（定向）/ `test:all`（全量） |
 | 前端 | 在 `web/` 子目录：`web:typecheck`（vue-tsc）/ `web:build`（vite）/ `web:no-emoji`（禁 emoji 扫描） |
 | 依赖位置 | 前端依赖在 `web/node_modules`，根目录只有派单器自己的 `tsx`；派单器建 worktree 时**两处都链**（目录联接），`end` 时只摘链接 |
+| 工作区位置 | 隔离工作区在 `<仓库根>/.codex-worktrees/<slug>`（**不在 `.codex` 底下**，理由见第 6 节第 13 条）；工单台账仍在 `.codex/jobs/<slug>` |
 | 开工必读 | `AGENTS.md` + 本文第 3 节（本仓库没有开工须知/口径速查表） |
 | 看板登记 | 由派单方（Claude）代做：claim / progress / done 都在主工位跑；Codex 不跑看板 CLI |
 
@@ -62,3 +63,4 @@ npx tsx scripts/codex/codex-dispatch.ts end my-task                 # 收工：�
 10. **派单器命令必须在仓库根跑**这一条会被对话的 cwd 悄悄破坏：一次 `cd` 进 worktree 后，后续所有命令的 cwd 都留在那里，`say` 会报「找不到会话号」、`dispatch` 会报「工单文件不存在」。每条派单器命令前显式 `cd /f/project-dashboard`。
 11. **一张卡多单并行的落地顺序**：同一批派出去的单先落地改动小、改文件少的；两单都碰同一文件（如 `server/server.cjs`）时，后落地的那单在自己的工作区 `git merge origin/master` 后必须重跑全部验收再 push——派单器只在 collect 时跑过一次，不知道主干又动了。
 12. **被裸 tsx 子进程导入的模块，契约里别让它引 Vite 虚拟模块或 `@/api/schema`**：test/ageLevel.test.cjs 这类单测用 `node --import tsx` 直接导入 web/src/utils 下的纯模块，没有路径别名也没有虚拟模块加载器；schema.ts 牵着 `virtual:board-schema`，一引就 ERR_UNSUPPORTED_ESM_URL_SCHEME（aud-kanban-flow-build 开工 4 分钟即因此停工）。写契约时先 `grep -l "web/src/utils" test/*.cjs` 看哪些模块被裸导入，这些模块只许做形状校验，状态名之类的枚举校验放到组件里。
+13. **隔离工作区不许建在 `.codex` 底下**（0908 aud-notify-fresh 实踩，治本卡 AD-20260908-CODEX-WORKTREE-ROOT）：Codex 沙箱把「工作目录里的 `.codex`」当自己的配置目录，启动时给沙箱用户在这个目录上加一条**拒写的显式 ACE，而且向下继承**。工作区原本建在 `.codex/worktrees/<slug>`，并行派出去的第二单一起来，第一单就在**自己的工作区里**写不进文件——现象是「说好的三个测试文件一个都没落盘」，看着像 Codex 偷懒，其实是被自己锁住。现在工作区根是 `<仓库根>/.codex-worktrees/`（不进 git）；工单台账 `.codex/jobs/` 没动，那是派单器（管理员身份）在写，不受沙箱 ACE 影响。改根之前留下的老工作区，`end` 还认得出来，照常收。要临时止血旧环境：用 PowerShell 去掉 `.codex` 上的显式 Deny 规则。

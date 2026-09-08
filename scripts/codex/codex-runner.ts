@@ -20,7 +20,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import type { CodexTask } from './codex-contract'
 import { resolveAcceptanceArgv } from './codex-contract'
-import { jobPaths, worktreeFor, REPO_ROOT } from './codex-paths'
+import { jobPaths, worktreeFor, CODEX_WORKTREES_ROOT, REPO_ROOT } from './codex-paths'
 import { renderPrompt, completionMarker } from './codex-prompt'
 import { extractThreadId } from './codex-say'
 import { VERDICT_SCHEMA, type MachineAcceptance } from './codex-verdict'
@@ -190,7 +190,7 @@ const ensureWorktree = (slug: string): string => {
     linkNodeModules(path)
     return path
   }
-  mkdirSync(join(REPO_ROOT, '.codex', 'worktrees'), { recursive: true })
+  mkdirSync(CODEX_WORKTREES_ROOT, { recursive: true })
   const add = spawnSync('git', ['worktree', 'add', '-b', branch, path, 'HEAD'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',

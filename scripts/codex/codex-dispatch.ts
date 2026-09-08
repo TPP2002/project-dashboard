@@ -43,7 +43,7 @@ import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from '
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { parseTask, acceptanceKindMenu, type CodexTask } from './codex-contract'
-import { jobPaths, worktreeFor, JOBS_ROOT, REPO_ROOT } from './codex-paths'
+import { jobPaths, worktreeFor, legacyWorktreePathFor, JOBS_ROOT, REPO_ROOT } from './codex-paths'
 import {
   dispatch as runDispatch,
   isAlive,
@@ -326,7 +326,10 @@ switch (command) {
   case 'end': {
     const slug = positional(1)
     if (!slug) die('用法:end <slug>')
-    const { path, branch } = worktreeFor(slug)
+    const { path: current, branch } = worktreeFor(slug)
+    // 工作区根在 2026-09-09 从 .codex/worktrees 挪到了 .codex-worktrees(理由见 codex-paths 头注)。
+    // 挪之前派出去、还没收的单躺在老根里,这里得认得出来,否则它们再也收不掉,只能手工 git worktree remove。
+    const path = existsSync(current) ? current : legacyWorktreePathFor(slug)
     if (!existsSync(path)) {
       process.stdout.write('没有 worktree 要收(这一单没用 --worktree,或已收过)。\n')
       break
