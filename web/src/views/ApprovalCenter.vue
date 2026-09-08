@@ -5,6 +5,9 @@ import { ref, reactive, computed } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import ScopeToggle from '@/components/ScopeToggle.vue'
 import { humanTitle } from '@/utils/taskTitle'
+import { postTaskAction } from '@/api/client'
+import { fmtDateTime } from '@/utils/format'
+import type { DecisionInfoField } from '@/types'
 import type { PendingItem } from '@/utils/derive'
 
 const store = useBoardStore()
@@ -13,6 +16,8 @@ const picked = reactive<Record<string, string>>({})
 const customText = reactive<Record<string, string>>({})
 const submitting = reactive<Record<string, boolean>>({})
 const errors = reactive<Record<string, string>>({})
+const requestingInfo = reactive<Record<string, boolean>>({})
+const infoErrors = reactive<Record<string, string>>({})
 const CUSTOM = '__custom__'
 
 // 默认只看当前项目（跟随顶栏项目切换）；「全部项目」开关可跨项目聚合。
@@ -24,21 +29,49 @@ const otherCount = computed(() => store.pendingDecisions.length - items.value.le
 const keyOf = (item: PendingItem) => `${item.projectId}:${item.task.id}:${item.decision.id}`
 
 function incomplete(item: PendingItem): boolean {
-  const decision = item.decision as any
-  if (!decision.background || String(decision.background).trim().length < 60) return true
-  if (!decision.recommendReason || String(decision.recommendReason).trim().length < 30) return true
-  if (!decision.optionPros) return true
-  for (const option of decision.options || []) if (!(decision.optionPros[option] || '').trim()) return true
-  return false
+  return incompleteReason(item).length > 0
 }
-function incompleteReason(item: PendingItem): string {
-  const decision = item.decision as any
-  const missing: string[] = []
-  if (!decision.background || String(decision.background).trim().length < 60) missing.push('背景（大白话前因后果）')
-  if (!decision.recommendReason || String(decision.recommendReason).trim().length < 30) missing.push('推荐理由')
-  if (!decision.optionPros) missing.push('每选项利弊')
-  else for (const option of decision.options || []) if (!(decision.optionPros[option] || '').trim()) missing.push(`「${option}」的利弊`)
+function incompleteReason(item: PendingItem): DecisionInfoField[] {
+  const decision = item.decision
+  const missing: DecisionInfoField[] = []
+  if (!decision.background || String(decision.background).trim().length < 60) missing.push('background')
+  if (!decision.recommendReason || String(decision.recommendReason).trim().length < 30) missing.push('recommendReason')
+  const pros = decision.optionPros
+  if (!pros || typeof pros !== 'object' || Array.isArray(pros)
+    || (decision.options || []).some((option) => typeof pros[option] !== 'string' || !pros[option].trim())) missing.push('optionPros')
+  return missing
+}
+function incompleteDescription(item: PendingItem): string {
+  const labels: Record<DecisionInfoField, string> = {
+    background: '背景（大白话前因后果）', optionPros: '每选项利弊', recommendReason: '推荐理由',
+  }
+  const missing = incompleteReason(item).map((field) => {
+    const pros = item.decision.optionPros
+    if (field === 'optionPros' && pros && typeof pros === 'object' && !Array.isArray(pros)) {
+      return item.decision.options
+        .filter((option) => typeof pros[option] !== 'string' || !pros[option].trim())
+        .map((option) => `「${option}」的利弊`).join('、') || labels[field]
+    }
+    return labels[field]
+  })
   return missing.length ? '缺：' + missing.join('、') : ''
+}
+
+async function requestInfo(item: PendingItem) {
+  const key = keyOf(item)
+  const missing = incompleteReason(item)
+  if (requestingInfo[key] || item.decision.infoRequestedAt || !missing.length) return
+  if (!confirm(`这会要求施工方补齐卡 ${item.task.id} 的问题 ${item.decision.id} 的背景、选项利弊或推荐理由，确认发送？`)) return
+  requestingInfo[key] = true
+  delete infoErrors[key]
+  try {
+    await postTaskAction(item.projectId, item.task.id, 'request-info', { did: item.decision.id, missing })
+    await store.loadBoard(item.projectId, { detect: true })
+  } catch (error) {
+    infoErrors[key] = error instanceof Error ? error.message : String(error)
+  } finally {
+    requestingInfo[key] = false
+  }
 }
 
 function pick(item: PendingItem, option: string) {
@@ -115,7 +148,11 @@ async function submit(item: PendingItem) {
           <span class="badge n">{{ item.projectName }}</span>
           <span class="task-id mono">{{ item.task.id }}</span>
           <span class="task-title">{{ humanTitle(item.task) }}</span>
-          <span v-if="incomplete(item)" class="badge warn" :title="incompleteReason(item)">信息不完整</span>
+          <span v-if="incomplete(item)" class="badge warn" :title="incompleteDescription(item)">信息不完整</span>
+          <button
+            v-if="incomplete(item) || item.decision.infoRequestedAt" type="button" class="btn btn-sm"
+            :disabled="requestingInfo[keyOf(item)] || !!item.decision.infoRequestedAt" @click="requestInfo(item)"
+          ><Icon name="alertTri" :size="14" />{{ item.decision.infoRequestedAt ? '已要求补齐 · ' + fmtDateTime(item.decision.infoRequestedAt) : requestingInfo[keyOf(item)] ? '提交中…' : '要求补齐' }}</button>
           <span class="decision-id mono">#{{ item.decision.id }}</span>
         </header>
 
@@ -124,10 +161,12 @@ async function submit(item: PendingItem) {
         <div v-if="incomplete(item)" class="incomplete-note">
           <span class="badge warn">登记缺项</span>
           <span>
-            {{ incompleteReason(item) }}
+            {{ incompleteDescription(item) }}
             （登记这条待拍板的对话没按 skill §6.2 给全“三件套”——你仍可拍，但看板界面无法展示完整背景/利弊/推荐理由）
           </span>
         </div>
+
+        <p v-if="infoErrors[keyOf(item)]" class="error-message" role="alert">{{ infoErrors[keyOf(item)] }}</p>
 
         <section v-if="(item.decision as any).background" class="context-block">
           <h3>背景（大白话）</h3>

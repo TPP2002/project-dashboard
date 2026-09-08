@@ -41,6 +41,7 @@ const REGISTRY = {
   park: ['./commands.cjs', 'park'], unpark: ['./commands.cjs', 'unpark'], block: ['./commands.cjs', 'block'],
   done: ['./commands.cjs', 'done'], cancel: ['./commands.cjs', 'cancel'], reopen: ['./commands.cjs', 'reopen'],
   note: ['./commands.cjs', 'note'],
+  'request-info': ['./requestInfo.cjs', 'requestInfo'],
   edit: ['./commands.cjs', 'edit'], set: ['./commands.cjs', 'set'],
   list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
   cost: ['./commands.cjs', 'cost'],

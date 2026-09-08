@@ -3,12 +3,12 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
-import { fetchDoc, docUrl } from '@/api/client'
+import { fetchDoc, docUrl, postTaskAction } from '@/api/client'
 import { fmtDateTime, relTime } from '@/utils/format'
 import Icon from './Icon.vue'
 import StatusBadge from './StatusBadge.vue'
 import { humanTitle, specText, missingPlainTitle, plainTitleFixCommand } from '@/utils/taskTitle'
-import type { DocRef } from '@/types'
+import type { DocRef, Status } from '@/types'
 
 /**
  * docked = 宽屏内嵌模式(由 App.vue 按 ≥1600 的断点决定)。
@@ -64,6 +64,74 @@ async function decide(did: string, options: string[], recommended: string) {
     derr[did] = e instanceof Error ? e.message : String(e)
   } finally {
     submitting[did] = false
+  }
+}
+
+// ---- 负责人操作：两种抽屉外壳共用，状态迁移仍交 CLI 判断 ----
+const drawerActions = [
+  { action: 'note', label: '留言', icon: 'message' },
+  { action: 'park', label: '暂缓', icon: 'parkingNote' },
+  { action: 'unpark', label: '复工', icon: 'rotateCcw' },
+  { action: 'cancel', label: '作废', icon: 'x' },
+  { action: 'reopen', label: '重开', icon: 'refresh' },
+] as const
+type DrawerAction = typeof drawerActions[number]['action']
+const activeAction = ref<DrawerAction | null>(null)
+const actionText = ref('')
+const actionBusy = ref(false)
+const actionError = ref('')
+function actionAllowed(action: DrawerAction, status: Status): boolean {
+  const terminal = status === '已完工' || status === '已作废'
+  if (action === 'reopen') return terminal
+  if (action === 'unpark') return status === '暂缓'
+  if (action === 'park' || action === 'cancel') return !terminal
+  return true
+}
+const availableActions = computed(() => drawerActions.filter((entry) => task.value && actionAllowed(entry.action, task.value.status)))
+const actionMinLength = computed(() => activeAction.value === 'note' ? 1 : 4)
+function resetActionForm() { activeAction.value = null; actionText.value = ''; actionError.value = '' }
+function openAction(action: DrawerAction) {
+  if (actionBusy.value) return
+  resetActionForm()
+  activeAction.value = action
+}
+watch([pid, () => task.value?.id], resetActionForm)
+watch(() => task.value?.status, (status) => {
+  if (status && activeAction.value && !actionAllowed(activeAction.value, status)) resetActionForm()
+})
+async function submitAction() {
+  const action = activeAction.value
+  const current = task.value
+  const projectId = pid.value
+  if (!action || !current || actionBusy.value || !actionAllowed(action, current.status)) return
+  const text = actionText.value.trim()
+  if (text.length < actionMinLength.value) {
+    actionError.value = action === 'note' ? '请填写留言' : '理由至少填写 4 个字'
+    return
+  }
+  const confirmations: Record<DrawerAction, string> = {
+    note: `这会给卡 ${current.id} 留下负责人留言，确认发送？`,
+    park: `这会把卡 ${current.id} 转成暂缓，确认继续？`,
+    unpark: `这会把卡 ${current.id} 转成可复工，确认继续？`,
+    cancel: `这会把卡 ${current.id} 转成已作废，确认继续？`,
+    reopen: `这会把卡 ${current.id} 转成待开工，并清零进度和完工日期，确认重开？`,
+  }
+  if (!confirm(confirmations[action])) return
+  actionBusy.value = true
+  actionError.value = ''
+  const stillSelected = () => pid.value === projectId && task.value?.id === current.id
+  try {
+    if (action === 'note') await postTaskAction(projectId, current.id, action, { text })
+    else await postTaskAction(projectId, current.id, action, { reason: text })
+    await store.loadBoard(projectId, { detect: true })
+    if (stillSelected()) resetActionForm()
+  } catch (error) {
+    if (stillSelected()) {
+      activeAction.value = action
+      actionError.value = error instanceof Error ? error.message : String(error)
+    }
+  } finally {
+    actionBusy.value = false
   }
 }
 
@@ -257,6 +325,31 @@ onUnmounted(() => {
               </div>
             </section>
 
+            <section class="sec block">
+              <div class="sec-t">操作</div>
+              <div class="inline-list">
+                <button
+                  v-for="entry in availableActions" :key="entry.action"
+                  type="button" class="btn btn-sm" :disabled="actionBusy"
+                  :aria-pressed="activeAction === entry.action" @click="openAction(entry.action)"
+                ><Icon :name="entry.icon" :size="14" />{{ entry.label }}</button>
+              </div>
+              <form v-if="activeAction" class="task-action-form" @submit.prevent="submitAction">
+                <label class="task-action-label">
+                  {{ activeAction === 'note' ? '留言（必填）' : '理由（至少 4 个字）' }}
+                  <textarea
+                    v-model="actionText" class="field" rows="3" required :minlength="actionMinLength"
+                    :disabled="actionBusy" :placeholder="activeAction === 'note' ? '给施工方留下要先读的话' : '请写明这次操作的理由'"
+                  />
+                </label>
+                <div class="inline-list">
+                  <button type="submit" class="btn btn-primary btn-sm" :disabled="actionBusy || actionText.trim().length < actionMinLength">{{ actionBusy ? '提交中…' : '确认' }}</button>
+                  <button type="button" class="btn btn-sm" :disabled="actionBusy" @click="resetActionForm">取消</button>
+                </div>
+                <p v-if="actionError" class="err" role="alert">{{ actionError }}</p>
+              </form>
+            </section>
+
             <!-- 活动 -->
             <section v-if="acts.length" class="sec block">
               <div class="sec-t">活动</div>
@@ -315,6 +408,10 @@ onUnmounted(() => {
 .note.ok { background: var(--ok-bg); color: var(--ok); }
 .note-when { margin-left: var(--s2); color: var(--text-3); font-size: var(--fs-sm); }
 .inline-list, .decision-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.task-action-form, .task-action-label { display: flex; flex-direction: column; gap: var(--s2); }
+.task-action-label { color: var(--text-2); font-size: var(--fs-sm); }
+.task-action-form textarea { width: 100%; resize: vertical; }
+.task-action-form .err { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .secondary-list { margin-top: var(--s2); }
 .dec { display: flex; flex-direction: column; gap: var(--s2); background: var(--surface-2); }
 .dec-q { font-size: var(--fs-base); }

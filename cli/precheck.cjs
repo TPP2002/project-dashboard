@@ -19,6 +19,8 @@ const { execFileSync } = require('node:child_process');
 const { readBoardOrNull } = require('./store.cjs');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { releaseStatus, serviceStatus } = require('./release.cjs');
+const { recentHumanNotes } = require('./brief.cjs');
+const { requestedInfoIssues } = require('./requestInfo.cjs');
 
 function git(repo, args, opts = {}) {
   try {
@@ -129,6 +131,16 @@ function precheck(flags) {
     }
     const pend = tasks.filter((t) => (t.decisions || []).some((d) => d.answer == null));
     if (pend.length) L.push(`  ❓ 待拍板 ${pend.length} 张:${pend.map((t) => t.id).join(', ')}`);
+  }
+
+  if (board) {
+    const notes = recentHumanNotes(board, undefined, 5);
+    const requests = requestedInfoIssues(board);
+    if (notes.length || requests.length) {
+      L.push('', '【负责人留言】');
+      for (const note of notes) L.push(`  ${note.taskId || '项目级'} · ${note.ts || ''}：${note.text}`);
+      for (const issue of requests) L.push(`  ${issue}`);
+    }
   }
 
   // ── ③ 正本三读 ──

@@ -1,6 +1,6 @@
 // REST 客户端：严格按 API 契约。dev 由 vite proxy 转发 /api → 真 server；
 // mock 模式由内置 mock 中间件应答（业务代码无 mock 分支）。
-import type { Board, ProjectSummary } from '@/types'
+import type { Board, DecisionInfoField, ProjectSummary, Status } from '@/types'
 
 const API = '/api'
 
@@ -77,6 +77,34 @@ export async function postDecide(
     },
   )
   return asJson<DecideResult>(res)
+}
+
+export interface TaskActionPayloads {
+  note: { text: string }
+  park: { reason: string; note?: string }
+  unpark: { reason: string }
+  cancel: { reason: string }
+  reopen: { reason: string }
+  'request-info': { did: string; missing: DecisionInfoField[] }
+}
+export type TaskAction = keyof TaskActionPayloads
+export interface TaskActionResult {
+  ok: boolean
+  id?: string
+  taskId?: string | null
+  status?: Status
+  percent?: number
+  changed?: string[]
+}
+
+/** 治理操作经服务端转发 CLI；失败时抛出服务端保留的 CLI 错误文案。 */
+export async function postTaskAction<A extends TaskAction>(
+  pid: string, tid: string, action: A, body: TaskActionPayloads[A],
+): Promise<TaskActionResult> {
+  return asJson<TaskActionResult>(await fetch(
+    `${API}/task/${encodeURIComponent(pid)}/${encodeURIComponent(tid)}/${action}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+  ))
 }
 
 export function docUrl(projectId: string, path: string): string {

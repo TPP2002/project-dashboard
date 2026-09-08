@@ -6,6 +6,8 @@ export type Status =
   | '未开工' | '待开工' | '待拍板' | '已拍板' | '施工中'
   | '可复工' | '收官' | '已完工' | '暂缓' | '压轴' | '已作废'
 
+export type DecisionInfoField = 'background' | 'optionPros' | 'recommendReason'
+
 export interface Decision {
   id: string
   question: string
@@ -13,6 +15,10 @@ export interface Decision {
   recommended: string
   answer: string | null
   decidedAt: string | null
+  background?: string
+  optionPros?: Record<string, string>
+  recommendReason?: string
+  infoRequestedAt?: string
 }
 
 export interface Deps {
@@ -107,6 +113,9 @@ export interface Activity {
   type?: string
   text?: string
   taskId?: string | null
+  kind?: string
+  did?: string
+  missing?: DecisionInfoField[]
 }
 
 export interface ProjectMeta {

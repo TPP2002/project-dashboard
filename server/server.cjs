@@ -9,11 +9,12 @@
  *   4) GET  /api/board/:projectId               → 返回该项目 board.json 全量
  *   5) GET  /api/doc?projectId=&path=           → 读文档文本；path 必过 safePath，逃逸/非法 403（R4）
  *   6) POST /api/decide/:projectId/:taskId      → 转发 execFile 调 cli decide（board 仍只被 CLI 写 R6）
+ *      POST /api/task/:projectId/:taskId/:action → 留言、暂缓、复工、作废、重开、要求补齐信息
  *   7) GET  /api/stream                         → SSE：mtime 轮询驱动的 board:changed 广播（R7，禁 fs.watch）
  *
  * 铁律（对齐实施方案第七节风险登记册）：
  *   - 零依赖：只用 Node 内置（http/fs/path/url/child_process/crypto）+ 本仓 core/*（同为零依赖）。
- *   - 写 board 唯一通道 = CLI：server 只经 execFile + 数组传参调 cli decide（防注入），绝不自写 board（R6）。
+ *   - 写 board 唯一通道 = CLI：server 只经 execFile + 数组传参调语义命令（防注入），绝不自写 board（R6）。
  *   - 路径安全：/api/doc 按用户输入拼路径一律走 core/safePath.resolveInsideRoot（realpath + path.relative，非 startsWith）（R4）。
  *   - 实时：mtime 轮询（1–2s）驱动 SSE，禁 fs.watch；SSE 断开必清 subscriber + 15s 心跳保活（R7）。
  *   - 单实例：启动先探 /api/health；在跑的和这份是同一份代码则复用 + 开浏览器，
@@ -642,6 +643,57 @@ function handleCpuReserve(req, res) {
   });
 }
 
+const TASK_ACTIONS = ['note', 'park', 'unpark', 'cancel', 'reopen', 'request-info'];
+
+/** 网页治理操作只转发 CLI；正文按字面参数传递，拒绝文案沿用 decide 的约定。 */
+function handleTaskAction(req, res, pid, tid, action) {
+  if (!pid || !tid) return sendJson(res, 400, { ok: false, error: '缺 projectId 或 taskId' });
+  readBody(req, BODY_MAX, (err, raw) => {
+    if (err) return sendJson(res, 413, { ok: false, error: err.message });
+    let body;
+    try { body = raw ? JSON.parse(raw) : {}; }
+    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return sendJson(res, 400, { ok: false, error: '请求体应为 JSON 对象' });
+    }
+    const hasText = (field) => typeof body[field] === 'string' && body[field].trim().length > 0;
+    const args = [CLI_INDEX, action, tid];
+    if (action === 'note') {
+      if (!hasText('text')) return sendJson(res, 400, { ok: false, error: '缺 text（留言正文）' });
+      args.push('--text', body.text, '--from', 'human');
+    } else if (action === 'request-info') {
+      if (!hasText('did')) return sendJson(res, 400, { ok: false, error: '缺 did（要补齐的 decision id）' });
+      if (!Array.isArray(body.missing) || !body.missing.length
+        || body.missing.some((field) => typeof field !== 'string' || !field.trim())) {
+        return sendJson(res, 400, { ok: false, error: '缺 missing（要补齐的字段数组）' });
+      }
+      args.push('--did', body.did, '--missing', body.missing.join(','));
+    } else {
+      if (!hasText('reason')) return sendJson(res, 400, { ok: false, error: '缺 reason（操作理由）' });
+      args.push('--reason', body.reason);
+      if (action === 'park' && body.note !== undefined) {
+        if (typeof body.note !== 'string') return sendJson(res, 400, { ok: false, error: 'note（遗留说明）应为文本' });
+        if (body.note) args.push('--note', body.note);
+      }
+    }
+    args.push('--project', pid, '--author', '负责人', '--json');
+    if (REGISTRY !== REGISTRY_PATH) args.push('--registry', REGISTRY);
+    execFile(process.execPath, args, {
+      cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
+    }, (e, stdout, stderr) => {
+      if (e) {
+        const msg = String(stderr || '').trim() || e.message || `${action} 失败`;
+        return sendJson(res, typeof e.code === 'number' ? 400 : 500, { ok: false, error: msg });
+      }
+      let parsed;
+      try { parsed = JSON.parse(stdout); }
+      catch (_) { return sendJson(res, 500, { ok: false, error: 'CLI 输出非 JSON', raw: String(stdout).slice(0, 500) }); }
+      try { pollBoards(); } catch (_) {}
+      sendJson(res, 200, parsed);
+    });
+  });
+}
+
 function handleDecide(req, res, projectId, taskId) {
   if (!projectId || !taskId) return sendJson(res, 400, { ok: false, error: '缺 projectId 或 taskId' });
   readBody(req, BODY_MAX, (err, raw) => {
@@ -1073,6 +1125,9 @@ const server = http.createServer((req, res) => {
       if (sub === 'doc' && req.method === 'GET') return handleDoc(req, res, parsed.query || {});
       if (sub === 'board' && req.method === 'GET') return handleBoard(req, res, segs[2]);
       if (sub === 'decide' && req.method === 'POST') return handleDecide(req, res, segs[2], segs[3]);
+      if (sub === 'task' && req.method === 'POST' && segs.length === 5 && TASK_ACTIONS.includes(segs[4])) {
+        return handleTaskAction(req, res, segs[2], segs[3], segs[4]);
+      }
       if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
       if (sub === 'cpu' && req.method === 'GET') return handleCpuStatus(req, res);
       if (sub === 'cpu' && req.method === 'POST') return handleCpuReserve(req, res);

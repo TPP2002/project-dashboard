@@ -27,7 +27,7 @@ const EXIT_CODES = [
 
 /** 全局 help 的分组:先给天天用的,装机维护的沉到后面。 */
 const GROUPS = [
-  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note']],
+  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note', 'request-info']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
   ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
@@ -152,12 +152,25 @@ const COMMANDS = {
     args: [
       ['<卡号> / --task <卡号>', '两种写法等价，挂在哪张卡上。都不写就是项目级留言'],
       ['--text <文本>', '留言正文'],
+      ['--from <身份>', 'human 固定署名为「负责人」，其它值原样作为署名；不传则沿用 --author'],
     ],
     examples: [
       'note FEAT-12 --project myproj --text "施工方=自干；撞车预警见分支说明"',
       'note --project myproj --text "今天只做批次一"',
     ],
     notes: ['卡号写错会被引用完整性校验在写盘前拦下。'],
+  },
+  'request-info': {
+    summary: '要求补齐未答决策的背景、各选项利弊或推荐理由',
+    usage: 'request-info <卡号> --project <id> --did <dN> --missing <字段列表> [--author <身份>]',
+    args: [
+      ['<卡号>', '要补齐拍板信息的卡'],
+      ['--did <dN>', '本卡尚未回答的决策编号'],
+      ['--missing <字段列表>', 'background、optionPros、recommendReason 的非空子集，用逗号分隔'],
+      ['--author <身份>', '活动署名，默认「负责人」'],
+    ],
+    examples: ['request-info FEAT-12 --project myproj --did d1 --missing background,optionPros'],
+    notes: ['写活动并记录 infoRequestedAt；不改答案或状态。已答决策与非法字段会被拒绝。'],
   },
 
   // ——— 查询 ———

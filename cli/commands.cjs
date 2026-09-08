@@ -745,7 +745,9 @@ function note(flags) {
   // kind:'message' —— 这是"有人特意留的一句话"，区别于 add/set/mark-landed 那些同样记成
   // type:'note' 的记账流水。brief 的「最近留言」只捡这种，否则整段技术说明会跟着流水又吐一遍
   // （AUD-CLI-BRIEF-AND-HELP）。老数据没有这个标记，只会少显示，不会显示错。
-  mutate(proj, () => {}, { ...act('note', flags.author, text, taskId), kind: 'message' });
+  const from = flags.from === undefined ? undefined : need(flags.from, '--from <身份>');
+  const author = from === 'human' ? '负责人' : from ?? flags.author;
+  mutate(proj, () => {}, { ...act('note', author, text, taskId), kind: 'message' });
   return { ok: true, taskId, text: `✔ note${taskId ? ` → ${taskId}` : ' → （项目级留言，未挂任何卡）'}` };
 }
 
