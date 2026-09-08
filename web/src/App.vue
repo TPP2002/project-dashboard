@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import '@/utils/celebrate'
 import '@/utils/soundLink'
+import '@/utils/notify'
 import Icon from '@/components/Icon.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useBoardStore } from '@/stores/board'
@@ -119,7 +120,7 @@ onBeforeUnmount(() => {
   position: relative;
   display: grid;
   grid-template-columns: 208px 1fr;
-  grid-template-rows: 52px 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
 }

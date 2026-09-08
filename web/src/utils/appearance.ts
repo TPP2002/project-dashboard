@@ -1,6 +1,7 @@
 // 外观中心的本机设置。后续效果只读存档；本模块此阶段只落地灯条、密度和字号。
 import { reactive } from 'vue'
 import type { WorkfloorSettings } from '../workfloor/types'
+import { DEFAULT_AGE_THRESHOLDS } from './ageLevel'
 
 export const SPEEDS = [
   { value: 1.55, label: '慢' }, { value: 1, label: '中（默认）' }, { value: 0.62, label: '快' },
@@ -49,6 +50,10 @@ export interface AppearanceConfig {
   projectColors: Record<string, ProjectColorId>
   projectIcons: Record<string, ProjectIconId>
   sound: boolean
+  notify: boolean
+  notifyEvents: { pending: boolean; done: boolean; block: boolean }
+  /** 分钟，三个严格递增的正整数，上限一年。 */
+  ageThresholds: [number, number, number]
   /** 百分比，0~100，步长 5；静音时段为本地 HH:mm。 */
   volume: number
   quietStart: string
@@ -68,6 +73,8 @@ export function defaultAppearance(): AppearanceConfig {
     projectColor: true, projectMark: 'icon', projectRing: 'project-glow',
     projectColors: Object.create(null), projectIcons: Object.create(null),
     sound: false, volume: 35, quietStart: '22:30', quietEnd: '08:30',
+    notify: false, notifyEvents: { pending: true, done: true, block: true },
+    ageThresholds: [...DEFAULT_AGE_THRESHOLDS],
     wireEvents: { done: true, pending: true, block: true },
     workfloor: { world: 'launch', dayNight: 'theme', detail: 'ultra', height: 'standard', position: 'bottom', zoom: 1.5, camera: 'fixed', soundLink: true },
   }
@@ -89,6 +96,13 @@ function time(value: unknown, fallback: string): string {
   return typeof value === 'string' && TIME_RE.test(value) ? value : fallback
 }
 
+/** 存档读回与输入提交共用；任一档非法时整组拒收。 */
+export function isAgeThresholds(value: unknown): value is [number, number, number] {
+  return Array.isArray(value) && value.length === 3
+    && value.every(item => typeof item === 'number' && Number.isInteger(item) && item > 0 && item <= 525600)
+    && value[0] < value[1] && value[1] < value[2]
+}
+
 function overrides<T extends string>(value: unknown, allowed: readonly T[]): Record<string, T> {
   const out: Record<string, T> = Object.create(null)
   for (const [id, candidate] of Object.entries(record(value))) {
@@ -104,6 +118,7 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
   const raw = record(value)
   const defaults = defaultAppearance()
   const events = record(raw.wireEvents)
+  const notifyEvents = record(raw.notifyEvents)
   const workfloor = record(raw.workfloor)
   return {
     version: 1,
@@ -122,6 +137,13 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
     projectColors: overrides(raw.projectColors, PROJECT_COLORS.map(item => item.id)),
     projectIcons: overrides(raw.projectIcons, PROJECT_ICONS.map(item => item.id)),
     sound: bool(raw.sound, defaults.sound),
+    notify: bool(raw.notify, defaults.notify),
+    notifyEvents: {
+      pending: bool(notifyEvents.pending, defaults.notifyEvents.pending),
+      done: bool(notifyEvents.done, defaults.notifyEvents.done),
+      block: bool(notifyEvents.block, defaults.notifyEvents.block),
+    },
+    ageThresholds: isAgeThresholds(raw.ageThresholds) ? [...raw.ageThresholds] : defaults.ageThresholds,
     volume: typeof raw.volume === 'number' && Number.isFinite(raw.volume) && raw.volume >= 0 && raw.volume <= 100
       && raw.volume % 5 === 0 ? raw.volume : defaults.volume,
     quietStart: time(raw.quietStart, defaults.quietStart),

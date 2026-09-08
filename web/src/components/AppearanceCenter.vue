@@ -20,7 +20,7 @@ const emit = defineEmits<{ close: [] }>()
 const categories = [
   { id: 'color', label: '主题与配色' }, { id: 'glow', label: '灯条与动效' },
   { id: 'celebrate', label: '完工庆祝' }, { id: 'projects', label: '项目颜色' },
-  { id: 'density', label: '密度与字号' }, { id: 'sound', label: '提示音' },
+  { id: 'density', label: '密度与字号' }, { id: 'sound', label: '提示音与通知' },
   { id: 'wire', label: '灯带与推送' }, { id: 'workfloor', label: '施工现场' },
 ] as const
 const active = ref<(typeof categories)[number]['id']>('color')
