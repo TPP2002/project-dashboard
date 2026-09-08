@@ -1,6 +1,6 @@
 // REST 客户端：严格按 API 契约。dev 由 vite proxy 转发 /api → 真 server；
 // mock 模式由内置 mock 中间件应答（业务代码无 mock 分支）。
-import type { Board, ProjectSummary } from '@/types'
+import type { ActivityPage, Board, ProjectSummary } from '@/types'
 
 const API = '/api'
 
@@ -26,8 +26,30 @@ export async function fetchProjects(): Promise<ProjectSummary[]> {
   return Array.isArray(data) ? data : data.projects ?? []
 }
 
-export async function fetchBoard(id: string): Promise<Board> {
-  return asJson<Board>(await fetch(`${API}/board/${encodeURIComponent(id)}`))
+/** 304 没有 JSON 响应体；ETag 由调用方按项目和查询模式分别保存。 */
+export async function fetchBoard(id: string, opts: {
+  fields?: 'tasks' | 'activity' | 'all'
+  activityLimit?: number
+  etag?: string | null
+} = {}): Promise<{ board: Board | null; etag: string | null; notModified: boolean }> {
+  const params = new URLSearchParams()
+  if (opts.fields) params.set('fields', opts.fields)
+  if (opts.activityLimit !== undefined) params.set('activityLimit', String(opts.activityLimit))
+  const query = params.size ? `?${params}` : ''
+  const res = await fetch(`${API}/board/${encodeURIComponent(id)}${query}`, {
+    headers: opts.etag ? { 'If-None-Match': opts.etag } : {},
+  })
+  const etag = res.headers.get('ETag')
+  if (res.status === 304) return { board: null, etag, notModified: true }
+  return { board: await asJson<Board>(res), etag, notModified: false }
+}
+
+export async function fetchActivity(id: string, opts: { before?: string; limit?: number } = {}): Promise<ActivityPage> {
+  const params = new URLSearchParams()
+  if (opts.before !== undefined) params.set('before', opts.before)
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+  const query = params.size ? `?${params}` : ''
+  return asJson<ActivityPage>(await fetch(`${API}/activity/${encodeURIComponent(id)}${query}`))
 }
 
 export type WebhookEvents = Record<'done' | 'pending' | 'block', boolean>

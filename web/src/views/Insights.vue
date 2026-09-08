@@ -13,6 +13,12 @@ import type { Board } from '@/types'
 
 const store = useBoardStore()
 const selectedPid = ref<string>('all')
+watch(() => store.loading ? [] : (selectedPid.value === 'all' ? store.projectList.map((p) => p.id) : [selectedPid.value])
+  .filter((pid) => !store.activityComplete[pid]), (pids) => {
+  for (const pid of pids) store.ensureFullActivity(pid).catch((e) => {
+    store.error = e instanceof Error ? e.message : String(e)
+  })
+}, { immediate: true })
 const boards = computed<Board[]>(() => {
   if (selectedPid.value === 'all') return store.allBoards
   const b = store.boards[selectedPid.value]

@@ -18,6 +18,12 @@ const store = useBoardStore()
 // 本页局部项目选择：默认「全部项目」（一天的总产出），也可点任意单个项目单看——
 // 负责人点名要能逐项目查看，不跟顶栏下拉绑定（那个是"当前项目"语义，这里是自由挑选）。
 const selectedPid = ref<string>('all')
+watch(() => store.loading ? [] : (selectedPid.value === 'all' ? store.projectList.map((p) => p.id) : [selectedPid.value])
+  .filter((pid) => !store.activityComplete[pid]), (pids) => {
+  for (const pid of pids) store.ensureFullActivity(pid).catch((e) => {
+    store.error = e instanceof Error ? e.message : String(e)
+  })
+}, { immediate: true })
 const boards = computed<Board[]>(() => {
   if (selectedPid.value === 'all') return store.allBoards
   const b = store.boards[selectedPid.value]

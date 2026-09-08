@@ -109,6 +109,12 @@ export interface Activity {
   taskId?: string | null
 }
 
+export interface ActivityPage {
+  ok: true
+  items: Activity[]
+  nextBefore: string | null
+}
+
 export interface ProjectMeta {
   id: string
   name: string

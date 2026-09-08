@@ -198,7 +198,9 @@ export interface DoneRecord {
   ts: string | null
 }
 
-/** 收集所有已完工卡的完工记录（跨项目）；无任何完工日期线索的卡收进 undated */
+/** 收集所有已完工卡的完工记录（跨项目）；无任何完工日期线索的卡收进 undated。
+ * activity 可能只有最近 N 条，老卡完工日回落 dates.done。
+ */
 export function collectDoneRecords(boards: Board[]): { records: DoneRecord[]; undated: number } {
   const records: DoneRecord[] = []
   let undated = 0
