@@ -54,6 +54,8 @@ export interface AppearanceConfig {
   notifyEvents: { pending: boolean; done: boolean; block: boolean }
   /** 分钟，三个严格递增的正整数，上限一年。 */
   ageThresholds: [number, number, number]
+  /** 每泳道的提醒上限；0 表示不限，未知泳道键不参与界面计数。 */
+  wipLimits: Record<string, number>
   /** 百分比，0~100，步长 5；静音时段为本地 HH:mm。 */
   volume: number
   quietStart: string
@@ -75,6 +77,7 @@ export function defaultAppearance(): AppearanceConfig {
     sound: false, volume: 35, quietStart: '22:30', quietEnd: '08:30',
     notify: false, notifyEvents: { pending: true, done: true, block: true },
     ageThresholds: [...DEFAULT_AGE_THRESHOLDS],
+    wipLimits: { 施工中: 5 },
     wireEvents: { done: true, pending: true, block: true },
     workfloor: { world: 'launch', dayNight: 'theme', detail: 'ultra', height: 'standard', position: 'bottom', zoom: 1.5, camera: 'fixed', soundLink: true },
   }
@@ -120,6 +123,13 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
   const events = record(raw.wireEvents)
   const notifyEvents = record(raw.notifyEvents)
   const workfloor = record(raw.workfloor)
+  const wipLimits: Record<string, number> = Object.assign(Object.create(null), defaults.wipLimits)
+  for (const [key, limit] of Object.entries(record(raw.wipLimits))) {
+    if (key.trim().length > 0 && key.length <= 32
+      && typeof limit === 'number' && Number.isInteger(limit) && limit >= 0 && limit <= 999) {
+      wipLimits[key] = limit
+    }
+  }
   return {
     version: 1,
     speed: oneOf(raw.speed, SPEEDS.map(item => item.value), defaults.speed),
@@ -144,6 +154,7 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
       block: bool(notifyEvents.block, defaults.notifyEvents.block),
     },
     ageThresholds: isAgeThresholds(raw.ageThresholds) ? [...raw.ageThresholds] : defaults.ageThresholds,
+    wipLimits,
     volume: typeof raw.volume === 'number' && Number.isFinite(raw.volume) && raw.volume >= 0 && raw.volume <= 100
       && raw.volume % 5 === 0 ? raw.volume : defaults.volume,
     quietStart: time(raw.quietStart, defaults.quietStart),

@@ -9,6 +9,7 @@ import { DONE_STATUSES } from '@/api/schema'
 import DoneToggle from '@/components/DoneToggle.vue'
 import { humanTitle } from '@/utils/taskTitle'
 import type { Task } from '@/types'
+import { indexBoard, isBlocked } from 'virtual:task-signal'
 
 const store = useBoardStore()
 const pid = computed(() => store.currentProjectId || '')
@@ -16,8 +17,10 @@ const pid = computed(() => store.currentProjectId || '')
 // 但进度 done/total 仍按全量算(不因折叠而失真)。
 const showDone = ref(false)
 const doneCount = computed(() => (store.currentBoard?.tasks ?? []).filter((t) => DONE_STATUSES.has(t.status)).length)
+const signalIndex = computed(() => indexBoard(store.currentBoard))
 const waves = computed(() => derive.groupByWave(store.currentBoard)
-  .map((w) => ({ ...w, visible: showDone.value ? w.tasks : w.tasks.filter((t) => !DONE_STATUSES.has(t.status)) }))
+  .map((w) => ({ ...w, visible: showDone.value ? w.tasks : w.tasks.filter((t) => !DONE_STATUSES.has(t.status)),
+    blocked: w.tasks.filter(task => isBlocked(task, signalIndex.value)).length }))
   .filter((w) => w.visible.length > 0))
 function prog(tasks: Task[]) {
   const done = tasks.filter((t) => t.status === '已完工').length
@@ -45,6 +48,7 @@ function prog(tasks: Task[]) {
         <div class="w-head">
           <div class="w-title">第 {{ w.wave }} 波</div>
           <span class="pill">{{ prog(w.tasks).done }}/{{ prog(w.tasks).total }}</span>
+          <span v-if="w.blocked" class="badge bad">阻塞 {{ w.blocked }}</span>
           <span class="spacer" />
           <span class="w-pct mono">{{ prog(w.tasks).percent }}%</span>
         </div>
@@ -71,11 +75,11 @@ function prog(tasks: Task[]) {
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
 .page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
-/* 波次卡自动分栏：每列不窄于 620，宽屏塞得下几列就是几列（1920 两列 / 2560 三列）。
+/* 波次卡自动分栏：每列不窄于 480，窄屏自然回到单栏。
    align-items: start 让高矮不一的波次卡各自保持自然高度，不被同行最高的那张撑开。 */
-.waves { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(620px, 100%), 1fr)); align-items: start; gap: var(--s3); }
+.waves { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(480px, 100%), 1fr)); align-items: start; gap: var(--s3); }
 .wave { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4); }
-.w-head { display: flex; align-items: center; gap: var(--s3); }
+.w-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s3); }
 .w-title { font-size: var(--fs-md); font-weight: 600; }
 .w-pct { color: var(--text-2); font-size: var(--fs-base); }
 .w-tasks { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s1); }
