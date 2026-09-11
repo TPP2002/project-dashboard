@@ -484,7 +484,11 @@ const COMMANDS = {
       ['--n <条数>', '往回扫多少条，默认 300'],
     ],
     examples: ['sync-from-git --project myproj'],
-    notes: ['装了 post-commit 钩子后每次提交自动跑，一般不手动调。'],
+    notes: [
+      '装了 post-commit 钩子后每次提交自动跑，一般不手动调。',
+      '卡号写在 feat(卡号): 的括号里、说明开头或末尾括号里才关联；正文顺带提到的不关联，除非已在当前分支认领且同时给了 --commit 和 --branch（窗口重扫不算）。',
+      'PR 号只认 Merge PR #N: 开头（兼容 Merge pull request #N）和单独成括号的 (#N) 等纯标注，正文里的 PR #N 不算。',
+    ],
   },
   cleanup: {
     summary: '收工清理：摘掉工位与已合并的分支',
