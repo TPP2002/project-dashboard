@@ -150,6 +150,12 @@ function doctor(flags) {
   // Stop 只做上面的轻量检查；即使同时传 --fix / --branches，也不扫描或写入。
   if (flags.quick) return doctorReport(issues, flags, 'hook 已装、待拍板三件套齐全');
 
+  // 参数错误必须先于扫描和任何备份、写板；即使没给 --fix 也不接受非法档位。
+  const tier = flags.tier === undefined ? 'owned' : flags.tier;
+  if (!['owned', 'suspect', 'claimed-elsewhere', 'broadcast'].includes(tier)) {
+    throw new Error('--tier 只能是 owned / suspect / claimed-elsewhere / broadcast');
+  }
+
   // 2) git 派生字段漂移（git 有、board 缺）
   // 诊断与修复必须同窗口：--n 传下去，别一个看 300 条、一个看别的条数。
   const scanN = flags.n ? parseInt(flags.n, 10) : 300;
@@ -188,8 +194,9 @@ function doctor(flags) {
   if (flags.branches) {
     // Stop 钩子的默认 doctor 不加载提交图；补提交后体检必须使用最新台账。
     if (flags.fix && missing > 0) board = readBoardOrNull(proj.board);
-    const { auditBoardBranches, planBranchCleanup, applyBranchCleanup } = require('./branchAudit.cjs');
-    const audit = auditBoardBranches(board, repo);
+    const { loadClaimIndex, auditBoardBranches, planBranchCleanup, applyBranchCleanup } = require('./branchAudit.cjs');
+    const claims = loadClaimIndex(flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH);
+    const audit = auditBoardBranches(board, repo, { claims });
     result.branchAudit = audit;
     const { ok, suspect, unknown } = audit.summary;
     branchSummary = `分支台账体检（--branches）：可疑 ${suspect} 条 / 可信 ${ok} 条 / 无法核实 ${unknown} 条`;
@@ -200,8 +207,11 @@ function doctor(flags) {
       issues.push(branchSummary + ' → 可疑条目：\n    ' + details.join('\n    '));
     }
     if (flags.fix) {
-      const plan = planBranchCleanup(board.tasks || [], audit.entries);
-      const skippedText = `跳过 有依赖关系 ${plan.skipped.related} / 分支没正主 ${plan.skipped.noOwner}`;
+      const plan = planBranchCleanup(board.tasks || [], audit.entries, { tier, trunkNames: [audit.trunk] });
+      const command = tier === 'owned' ? 'doctor --branches --fix' : `doctor --branches --fix --tier ${tier}`;
+      const skippedText = tier === 'owned'
+        ? `跳过 有依赖关系 ${plan.skipped.related} / 分支没正主 ${plan.skipped.noOwner}`
+        : `跳过 有依赖关系 ${plan.skipped.related} / 主干 ${plan.skipped.trunk}`;
       let removed = 0, bak = null;
       if (plan.removals.length > 0) {
         // 补提交前若已备份，整次修复共用这份原样备份，保留完整回退点。
@@ -211,17 +221,20 @@ function doctor(flags) {
         const activity = { ts: new Date().toISOString(), author: 'doctor', type: 'note', text: '', taskId: null };
         mutate(proj, (b) => {
           removed = applyBranchCleanup(b, plan.removals);
-          activity.text = `doctor --branches --fix：摘掉 ${removed} 条误扣分支（备份 ${bak}；${skippedText}）`;
+          activity.text = `${command}：摘掉 ${removed} 条误扣分支（备份 ${bak}；${skippedText}）`;
         }, activity);
       }
-      audit.cleanup = { removed, skipped: plan.skipped, backup: bak, entries: plan.removals };
+      audit.cleanup = { tier, removed, skipped: plan.skipped, backup: bak, entries: plan.removals };
       if (removed > 0) {
         const details = plan.removals.slice(0, 30)
-          .map((entry) => `${entry.taskId}·${entry.branch}（正主 ${entry.otherIds.join('、')}）`);
+          .map((entry) => `${entry.taskId}·${entry.branch}${entry.otherIds.length ? `（正主 ${entry.otherIds.join('、')}）` : ''}`);
         if (plan.removals.length > 30) details.push(`...（共 ${plan.removals.length} 条，--json 看全量）`);
-        issues.push(`已按体检结果摘掉 ${removed} 条误扣分支（备份 ${bak}）：\n    ` + details.join('\n    '));
+        const message = tier === 'owned'
+          ? `已按体检结果摘掉 ${removed} 条误扣分支（备份 ${bak}）`
+          : `${command}：摘掉 ${removed} 条误扣分支（备份 ${bak}；${skippedText}）`;
+        issues.push(message + '：\n    ' + details.join('\n    '));
       } else {
-        cleanupSummary = `分支台账无需清理（${skippedText}）`;
+        cleanupSummary = `分支台账无需清理（${tier === 'owned' ? '' : `--tier ${tier}；`}${skippedText}）`;
       }
     }
   }

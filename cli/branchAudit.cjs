@@ -2,9 +2,53 @@
 /**
  * branchAudit.cjs —— 分支台账体检与误扣分支清理（BOARD-GITFIELD-HISTORY-AUTOCLEAN）。
  * 历史同步曾把工位分支误记到老卡；用引用与 merge 证据找回分支自有提交，
- * 体检只读，清理按提交反证、分支正主与依赖关系规划；落盘由调用方负责，不改 git。
+ * 结合显式认领与无证据铺开面分档规划清理；体检只读，落盘由调用方负责，不改 git。
  */
+const fs = require('node:fs');
+const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { readRegistry, resolveProject } = require('../core/resolveProject.cjs');
+
+/** 纯函数：只认 claim 流水；set 是整份覆盖，不能证明卡亲手认领过分支。 */
+function claimIndex(activityItems) {
+  const claims = new Map();
+  for (const item of Array.isArray(activityItems) ? activityItems : []) {
+    if (item?.type !== 'claim' || typeof item.taskId !== 'string' || !item.taskId || typeof item.text !== 'string') continue;
+    const match = item.text.match(/：分支 (.+?)(?:，文件域 |$)/);
+    if (!match) continue;
+    const branches = match[1].split(',').map((s) => s.trim()).filter((s) => s && s !== '-');
+    if (!branches.length) continue;
+    if (!claims.has(item.taskId)) claims.set(item.taskId, new Set());
+    for (const branch of branches) claims.get(item.taskId).add(branch);
+  }
+  return claims;
+}
+
+/** 跨板只读汇总当前与月度流水；坏板跳过，坏归档不连坐其它文件，同号卡合并以多保留。 */
+function loadClaimIndex(registryPath) {
+  const registry = readRegistry(registryPath), items = [];
+  const collect = (activity) => {
+    if (Array.isArray(activity)) for (const item of activity) if (item?.type === 'claim') items.push(item);
+  };
+  for (const id of Object.keys(registry.projects || {})) {
+    let boardPath, board;
+    try {
+      boardPath = resolveProject(id, { registryPath }).board;
+      board = JSON.parse(fs.readFileSync(boardPath, 'utf8'));
+    } catch { continue; } // 搬家或离线的板不阻断其它板的证据读取。
+    collect(board?.activity);
+    let archives;
+    try { archives = fs.readdirSync(path.dirname(boardPath)).filter((name) => /^activity-\d{6}\.json$/.test(name)).sort(); }
+    catch { continue; } // 板内流水已保留；目录不可读只表示缺少归档证据。
+    for (const name of archives) {
+      let activity;
+      try { activity = JSON.parse(fs.readFileSync(path.join(path.dirname(boardPath), name), 'utf8')); }
+      catch { continue; } // 单份归档损坏时继续读取剩余月份。
+      collect(activity);
+    }
+  }
+  return claimIndex(items);
+}
 
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 /** 与 scanCommits 保持相同的大小写和完整任务 ID 边界。 */
@@ -114,8 +158,18 @@ function branchOwnership(graph) {
 }
 
 /** 纯函数：只读取卡的 id/gitBranch；输出维持卡、分支原顺序，不修改输入。 */
-function classifyBranches(tasks, graph) {
+function classifyBranches(tasks, graph, opts = {}) {
   const entries = [], summary = { ok: 0, suspect: 0, unknown: 0 };
+  const claims = opts.claims || new Map(), claimers = new Map(), spreads = new Map();
+  const spreadMin = opts.spreadMin === undefined ? 3 : opts.spreadMin;
+  // 一次反向索引，逐条目只查该分支的认领者，不重复扫描活动或所有卡。
+  for (const [id, branches] of claims) {
+    for (const branch of branches) {
+      if (!claimers.has(branch)) claimers.set(branch, []);
+      claimers.get(branch).push(id);
+    }
+  }
+  for (const ids of claimers.values()) ids.sort();
   const ids = tasks.map((task) => task.id);
   const subjectIds = new RegExp(taskIdRegex(ids).source, 'g');
   const namePatterns = ids.map((id) => [id, new RegExp('(^|[^a-z0-9])' + escapeRe(id.toLowerCase()) + '([^a-z0-9]|$)')]);
@@ -147,11 +201,15 @@ function classifyBranches(tasks, graph) {
     for (const branch of task.gitBranch || []) {
       const { commits, mentioned, nameIds } = inspect(branch);
       const self = nameIds.includes(task.id);
-      // evidence：这条判决靠什么——commits（分支自有提交）/ name（分支名）/ none（两样都没有）。
-      // 「可疑」只在有反面证据时才判：分支的提交明明白白提到了别的卡、或分支名点名别的卡；
-      // 分支自有提交一张卡都没提（早期提交不带卡号是常态），是没证据，不是反证，归无法核实。
+      const claimed = claims.get(task.id)?.has(branch) || false;
+      const claimedBy = (claimers.get(branch) || []).filter((id) => id !== task.id);
+      // 显式认领优先于反证；无卡号提交仍先归无法核实，再看认领者与铺开面。
       let verdict, reason, otherIds = [], evidence = 'none';
-      if (self || (commits && mentioned.has(task.id))) {
+      if (claimed) {
+        verdict = 'ok';
+        evidence = 'claim';
+        reason = '本卡显式认领过这条分支';
+      } else if (self || (commits && mentioned.has(task.id))) {
         verdict = 'ok';
         evidence = self ? 'name' : 'commits';
         reason = self ? '分支名点名本卡' : `分支自有 ${commits.size} 个提交中提到本卡`;
@@ -173,40 +231,66 @@ function classifyBranches(tasks, graph) {
         verdict = 'unknown';
         reason = '分支已不存在，主干里也找不到它的 merge 记录，无法核实';
       }
-      entries.push({ taskId: task.id, branch, verdict, evidence, reason, otherIds });
-      summary[verdict]++;
+      if (verdict === 'unknown' && claimedBy.length) {
+        verdict = 'suspect';
+        evidence = 'claim';
+        otherIds = claimedBy;
+        reason = `分支自有提交和分支名都没指向本卡，而这条分支被 ${claimedBy.join('、')} 显式认领过、本卡从没认领过`;
+      }
+      entries.push({ taskId: task.id, branch, verdict, evidence, reason, otherIds, claimed, claimedBy, spread: 0 });
+      if (verdict !== 'ok') spreads.set(branch, (spreads.get(branch) || 0) + 1);
     }
+  }
+  // 铺开面只数前三步仍非可信的条目；可信条目也带同一计数，便于复核。
+  for (const entry of entries) {
+    entry.spread = spreads.get(entry.branch) || 0;
+    if (entry.verdict === 'unknown' && entry.spread >= spreadMin) {
+      entry.verdict = 'suspect';
+      entry.evidence = 'spread';
+      entry.otherIds = [];
+      entry.reason = `分支自有提交和分支名都没指向本卡、也没有任何卡认领过它，却无凭无据地挂在本板 ${entry.spread} 张卡上（早期同步把主目录分支广播给一批老卡的典型痕迹）`;
+    }
+    summary[entry.verdict]++;
   }
   return { entries, summary };
 }
 
 /** 只读加载 git 证据并体检；额外给出探测到的主干名（无证据时为 null）。 */
-function auditBoardBranches(board, repo) {
+function auditBoardBranches(board, repo, opts = {}) {
   const graph = loadGraph(repo);
-  return { ...classifyBranches(board.tasks || [], graph), trunk: graph.trunk && graph.trunk.name };
+  return { ...classifyBranches(board.tasks || [], graph, opts), trunk: graph.trunk && graph.trunk.name };
 }
 
 /**
- * 纯函数：只规划有提交反证、全部正主都挂着分支且双向无依赖关系的条目。
- * 保持 entries 与 otherIds 原顺序；关系优先计入跳过数，不改 tasks 或 entries。
+ * 纯函数：默认仍要求提交反证与全部正主挂分支，其它档依次纳入名字、认领、铺开反证。
+ * 主干永不摘；关系优先于无正主计数，默认 skipped 保留两个键；不改输入与条目顺序。
  */
-function planBranchCleanup(tasks, entries) {
+function planBranchCleanup(tasks, entries, opts = {}) {
+  const tier = opts.tier === undefined ? 'owned' : opts.tier;
+  const level = ['owned', 'suspect', 'claimed-elsewhere', 'broadcast'].indexOf(tier);
+  if (level < 0) throw new Error('--tier 只能是 owned / suspect / claimed-elsewhere / broadcast');
+  const accepted = ['commits', 'name', 'claim', 'spread'].slice(0, level + 1);
+  const trunkNames = new Set(['main', 'master', ...(opts.trunkNames || [])]);
   const byId = new Map(tasks.map((task) => [task.id, task]));
-  const removals = [], skipped = { related: 0, noOwner: 0 };
+  const removals = [], skipped = tier === 'owned' ? { related: 0, noOwner: 0 } : { related: 0, noOwner: 0, trunk: 0 };
   const related = (task, id) => ['dependsOn', 'blockedBy', 'relatedTasks']
     .some((key) => (task?.deps?.[key] || []).includes(id));
   for (const entry of entries) {
-    if (entry.verdict !== 'suspect' || entry.evidence !== 'commits') continue;
-    const { taskId, branch, otherIds } = entry;
+    if (entry.verdict !== 'suspect' || !accepted.includes(entry.evidence)) continue;
+    const { taskId, branch, otherIds, verdict, evidence } = entry;
+    if (trunkNames.has(branch)) {
+      if (tier !== 'owned') skipped.trunk++;
+      continue;
+    }
     if (otherIds.some((id) => related(byId.get(taskId), id) || related(byId.get(id), taskId))) {
       skipped.related++;
       continue;
     }
-    if (!otherIds.length || !otherIds.every((id) => byId.get(id)?.gitBranch?.includes(branch))) {
+    if (tier === 'owned' && (!otherIds.length || !otherIds.every((id) => byId.get(id)?.gitBranch?.includes(branch)))) {
       skipped.noOwner++;
       continue;
     }
-    removals.push({ taskId, branch, otherIds });
+    removals.push({ taskId, branch, otherIds, verdict, evidence });
   }
   return { removals, skipped };
 }
@@ -224,4 +308,4 @@ function applyBranchCleanup(board, removals) {
   return removed;
 }
 
-module.exports = { classifyBranches, loadGraph, auditBoardBranches, planBranchCleanup, applyBranchCleanup, taskIdRegex, escapeRe };
+module.exports = { claimIndex, loadClaimIndex, classifyBranches, loadGraph, auditBoardBranches, planBranchCleanup, applyBranchCleanup, taskIdRegex, escapeRe };
