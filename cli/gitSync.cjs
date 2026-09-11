@@ -15,39 +15,41 @@ const { releaseHome } = require('../core/runtimeRoot.cjs');
 const { releaseStatus } = require('./release.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
 const { requestedInfoIssues } = require('./requestInfo.cjs');
+const { subjectRefs, buildMatcher } = require('./commitRefs.cjs');
 
 function resolveProj(flags) {
   return resolveProject(flags.project, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
 }
-function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function git(repo, args) { return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', windowsHide: true }).trim(); }
 function safeGit(repo, args) { try { return git(repo, args); } catch { return ''; } }
 function safeRead(p) { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } }
 
 /**
- * 扫提交，对 subject 里匹配到的 task id 聚合 git 派生字段。
+ * 扫提交，按约定位置与正文提及分别聚合 git 派生字段。
  * opts.commit 给了就只认那一次提交（post-commit 钩子用）；不给才回退到扫最近 N 条（doctor 对账用）。
  */
 function scanCommits(repo, taskIds, opts = {}) {
   const perTask = {}; // id → { commits:Set, prs:Set }
-  if (!taskIds.length) return { perTask, scanned: 0 };
-  const idRe = new RegExp('(?:^|[^A-Za-z0-9-])(' + taskIds.map(escapeRe).join('|') + ')(?![A-Za-z0-9-])');
+  const prose = {};
+  if (!taskIds.length) return { perTask, prose, scanned: 0 };
+  const matcher = buildMatcher(taskIds);
   const raw = safeGit(repo, opts.commit
     ? ['log', '-1', '--pretty=format:%H%x1f%s', opts.commit]
     : ['log', '-n', String(opts.n || 300), '--pretty=format:%H%x1f%s']);
-  if (!raw) return { perTask, scanned: 0 };
+  if (!raw) return { perTask, prose, scanned: 0 };
   const lines = raw.split('\n');
   for (const line of lines) {
     const [hash, subject = ''] = line.split('\x1f');
-    const m = subject.match(idRe);
-    if (!m) continue;
-    const id = m[1];
-    perTask[id] = perTask[id] || { commits: new Set(), prs: new Set() };
-    perTask[id].commits.add(hash.slice(0, 12));
-    const pr = subject.match(/#(\d+)/);
-    if (pr) perTask[id].prs.add(Number(pr[1]));
+    const refs = subjectRefs(subject, matcher);
+    for (const [target, ids] of [[perTask, refs.structural], [prose, refs.prose]]) {
+      for (const id of ids) {
+        target[id] = target[id] || { commits: new Set(), prs: new Set() };
+        target[id].commits.add(hash.slice(0, 12));
+        for (const pr of refs.prs) target[id].prs.add(pr);
+      }
+    }
   }
-  return { perTask, scanned: lines.length };
+  return { perTask, prose, scanned: lines.length };
 }
 
 /** 从 git 派生并写回 board（只碰 git 派生字段）。 */
@@ -63,18 +65,20 @@ function syncFromGit(flags) {
   // 那个采样值又会被下面的窗口扫描广播给窗口内全部匹配到的卡，把老卡的分支台账越滚越脏。
   const branch = typeof flags.branch === 'string' ? flags.branch.trim() : '';
   const commit = typeof flags.commit === 'string' ? flags.commit.trim() : '';
-  const { perTask, scanned } = scanCommits(repo, taskIds, { n: flags.n ? parseInt(flags.n, 10) : 300, commit });
+  const { perTask, prose, scanned } = scanCommits(repo, taskIds, { n: flags.n ? parseInt(flags.n, 10) : 300, commit });
   const snap = (t) => JSON.stringify([t.commitShas || [], t.prNumbers || [], t.gitBranch || []]);
   let changed = 0;
   mutate(proj, (b) => {
     changed = 0; // mutator 在锁内跑，board 是锁内重读的那份；计数每次从头算，免重入时叠加
     for (const t of b.tasks || []) {
-      const info = perTask[t.id];
+      // 正文提及只给本次提交、且在这条分支上已有认领记录的卡补字段；窗口重扫绝不补。
+      const claimedProse = commit && branch && branch !== 'HEAD' && (t.gitBranch || []).includes(branch);
+      const info = perTask[t.id] || (claimedProse ? prose[t.id] : null);
       if (!info) continue;
       const before = snap(t);
       t.commitShas = unionShas([...(t.commitShas || []), ...info.commits]);
       if (info.prs.size) t.prNumbers = unionBy([...(t.prNumbers || []), ...info.prs], String);
-      if (branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
+      if (perTask[t.id] && branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
       // 比【内容】不比【长度】：板里存的 8 位短哈希被 unionShas 升成 12 位时数组长度纹丝不动，
       // 但板确实变了。只比长度会让这类改动报成 changed=0，下游据此判「无需备份/无需留痕」就全错。
       if (snap(t) !== before) changed++;
