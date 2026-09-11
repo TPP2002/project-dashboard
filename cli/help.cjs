@@ -464,16 +464,23 @@ const COMMANDS = {
   },
   doctor: {
     summary: '体检：钩子装没装、提交有没有漏记、分支台账脏不脏',
-    usage: 'doctor --project <id> [--quick] [--quiet] [--fix] [--branches] [--n <扫描条数>]',
+    usage: 'doctor --project <id> [--quick] [--quiet] [--fix] [--branches] [--tier <档位>] [--n <扫描条数>]',
     args: [
       ['--quick', '只查钩子安装和待拍板三件套；跳过发布副本、提交扫描、分支审计与修复'],
       ['--quiet', '无问题时不输出，有问题时只列问题'],
       ['--fix', '能自动修的就修（漏记的提交、脏分支台账）'],
       ['--branches', '连分支台账一起体检'],
+      ['--tier <档位>', '分支清理档位，默认 owned；需配合 --branches --fix 才执行清理'],
       ['--n <条数>', '往回扫多少条提交，默认 300'],
     ],
-    examples: ['doctor --project myproj', 'doctor --project myproj --branches --fix', 'doctor --project myproj --quick --quiet'],
-    notes: [],
+    examples: ['doctor --project myproj', 'doctor --project myproj --branches --fix', 'doctor --project myproj --branches --fix --tier suspect', 'doctor --project myproj --quick --quiet'],
+    notes: [
+      'owned（默认）：只摘提交明确指向别的卡、且那些卡自己也挂着这条分支的误记。',
+      'suspect：再摘提交或分支名指向别的卡的误记，不要求那些卡仍挂着分支。',
+      'claimed-elsewhere：再摘被别的卡亲手认领、本卡没认领且没有本卡证据的误记。',
+      'broadcast：再摘没人认领、无本卡证据且无凭无据挂在本板至少三张卡上的分支。',
+      '四档都保留可信分支和主干；涉及卡片之间有依赖关系的条目也不摘。',
+    ],
   },
   'sync-from-git': {
     summary: '扫 git 历史，把提交号/分支/PR 补进对应的卡',

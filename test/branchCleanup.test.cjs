@@ -92,8 +92,7 @@ test('端到端：--branches --fix 摘掉 0903 误扣的分支，先备份、留
     git(t.repo, ['checkout', '-q', 'master']);
 
     // 模拟修复前的广播污染：OLD01 被扣上 feat-new（正主 NEW02）与 feat-dep（正主 DEP03，但 OLD01 依赖 DEP03）
-    cmds.claim({ _: ['OLD01'], branch: 'feat-new', ...t.P });
-    cmds.claim({ _: ['OLD01'], branch: 'feat-dep', ...t.P });
+    cmds.set({ _: ['OLD01'], field: 'gitBranch', value: JSON.stringify(['feat-new', 'feat-dep']), ...t.P });
     cmds.claim({ _: ['NEW02'], branch: 'feat-new', ...t.P });
     cmds.claim({ _: ['DEP03'], branch: 'feat-dep', ...t.P });
     cmds.set({ _: ['OLD01'], field: 'deps.dependsOn', value: '["DEP03"]', ...t.P });
