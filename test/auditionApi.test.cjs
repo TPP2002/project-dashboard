@@ -56,8 +56,8 @@ async function fixture(t, options = {}) {
   const cliIndex = path.join(dir, 'cli', 'index.cjs'), registry = path.join(dir, 'registry.json');
   const api = createAuditionApi({
     resolveProjectSafe: project => project === 'sample' ? { docsRoot } : null,
-    dataRoot: process.env.DASHBOARD_HOME, dashRoot: dir, cliIndex, registry, registryPath: path.join(dir, 'default-registry.json'), bodyMax: 4096,
-    isEnabled: () => env.enabled, now: () => FIXED_AT, createId: () => `note-${++id}`,
+    dataRoot: process.env.DASHBOARD_HOME, dashRoot: dir, cliIndex, registry, registryPath: path.join(dir, 'default-registry.json'), bodyMax: options.bodyMax ?? 4096,
+    isEnabled: () => env.enabled, now: options.now || (() => FIXED_AT), createId: () => `note-${++id}`,
     pollBoards: () => { polls++; },
     execFile(executable, args, config, callback) {
       calls.push({ executable, args, config });
@@ -194,7 +194,7 @@ test('音频单区间、后缀和开放区间返回 206 与准确字节，非法
 
 test('批注增删、标记、整组倾向、审阅、汇总与原子写相互保留', async t => {
   const f = await fixture(t);
-  assert.deepEqual((await f.json('state')).body.state, { schemaVersion: 1, project: 'sample', key: 'dir-r1', notes: [], marks: {}, verdicts: {}, review: null });
+  assert.deepEqual((await f.json('state')).body.state, { schemaVersion: 1, project: 'sample', key: 'dir-r1', notes: [], marks: {}, verdicts: {}, verdictReasons: {}, review: null });
   const note = await f.json('note', { body: { scene: 'buy', group: 'A', text: '清楚，但稍微尖了一点' } });
   assert.equal(note.body.state.notes[0].at, FIXED_AT); assert.equal(note.body.state.notes[0].by, '负责人');
   await Promise.all([
@@ -263,8 +263,133 @@ test('模块关闭时全部读写返回 404，不读取清单、不写账本、�
   for (const action of ['index', 'batch', 'state', 'file']) {
     const result = await f.json(action); assert.equal(result.status, 404); assert.match(result.body.error, /模块未启用/);
   }
-  for (const action of ['note', 'note/delete', 'mark', 'verdict', 'review', 'export']) assert.equal((await f.json(action, { body: {} })).status, 404);
+  for (const action of ['note', 'note/update', 'note/delete', 'mark', 'verdict', 'review', 'export']) assert.equal((await f.json(action, { body: {} })).status, 404);
   assert.equal(f.calls.length, 0); assert.equal(fs.existsSync(path.join(f.dataRoot, 'data')), false);
+});
+
+test('批注可反复修改：锁内保留编号、创建信息与其它账本内容，修改时间随注入时钟变化', async t => {
+  let at = FIXED_AT;
+  const f = await fixture(t, { now: () => at });
+  const original = (await f.json('note', { body: { scene: 'buy', group: 'A', text: '有点尖' } })).body.note;
+  await f.json('mark', { body: { scene: 'buy', group: 'A', value: 'down' } });
+  await f.json('verdict', { body: { group: 'A', value: 'meh', reason: '需要再听' } });
+  const before = (await f.json('state')).body.state;
+  for (const [timestamp, text] of [['2026-09-12T08:01:00.000Z', '改得柔和一点'], ['2026-09-12T08:02:00.000Z', '再短一点就好']]) {
+    at = timestamp;
+    const result = await f.json('note/update', { body: { id: original.id, text: `  ${text}\n` } });
+    assert.equal(result.status, 200); assert.equal(result.body.ok, true);
+    const expected = { ...original, text, editedAt: at };
+    assert.deepEqual(result.body.note, expected);
+    assert.deepEqual(result.body.state, { ...before, notes: [expected] });
+    assert.deepEqual((await f.json('state')).body.state, result.body.state);
+  }
+  const ledgerDir = path.join(f.dataRoot, 'data/audition/sample');
+  assert.deepEqual(fs.readdirSync(ledgerDir), ['dir-r1.json']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(ledgerDir, 'dir-r1.json'), 'utf8')), (await f.json('state')).body.state);
+});
+
+test('批注修改：找不到返回 404，空白、非字符串和超长返回 400，拒绝时不改主存或调用镜像', async t => {
+  const f = await fixture(t, { bodyMax: 20000 });
+  await f.json('note', { body: { text: '保留这条批注' } });
+  const before = (await f.json('state')).body.state, count = f.calls.length;
+  const missing = await f.json('note/update', { body: { id: 'missing', text: '不能新增' } });
+  assert.equal(missing.status, 404); assert.equal(missing.body.error, '没有这条批注');
+  for (const text of ['', ' \n ', 123, null, [], {}, '字'.repeat(4001)]) {
+    const result = await f.json('note/update', { body: { id: 'note-1', text } });
+    assert.equal(result.status, 400); assert.equal(result.body.error, '批注须为 1 到 4000 字');
+  }
+  assert.equal((await f.json('note/update', { body: { text: '缺少编号' } })).status, 400);
+  assert.deepEqual((await f.json('state')).body.state, before); assert.equal(f.calls.length, count);
+  const maximum = await f.json('note/update', { body: { id: 'note-1', text: ` ${'字'.repeat(4000)} ` } });
+  assert.equal(maximum.status, 200); assert.equal(maximum.body.note.text.length, 4000);
+});
+
+test('批注修改镜像采用参数数组与原批注归属；镜像失败保留修改内容及时间', async t => {
+  const f = await fixture(t), text = '更柔和；" & $(echo 不执行)';
+  await f.json('note', { body: { scene: 'buy', group: 'A', text: '原批注' } });
+  const result = await f.json('note/update', { body: { id: 'note-1', text } });
+  assert.equal(result.body.mirrored, true); assert.equal(f.polls(), 2);
+  assert.deepEqual(f.calls[1].args, [f.cliIndex, 'note', '--project', 'sample', '--task', 'AUDIO-DESIGN', '--text', `试听台批注(修改)〔声音方向试听·买入成交·像素原声〕${text}`, '--author', '负责人·试听台', '--registry', f.registry]);
+  assert.equal(f.calls[1].executable, process.execPath); assert.equal(f.calls[1].config.windowsHide, true); assert.equal(f.calls[1].config.shell, undefined);
+  await f.json('note', { body: { text: '整批意见' } });
+  f.env.mirrorFailure = true;
+  const failed = await f.json('note/update', { body: { id: 'note-2', text: '整批都需要重听' } });
+  assert.equal(failed.status, 200); assert.equal(failed.body.mirrored, false); assert.equal(failed.body.mirrorError, '临时卡不可用');
+  assert.ok(f.calls[3].args.includes('试听台批注(修改)〔声音方向试听·整批·全部〕整批都需要重听'));
+  assert.deepEqual((await f.json('state')).body.state.notes[1], { ...failed.body.note, text: '整批都需要重听', editedAt: FIXED_AT });
+});
+
+test('整组原因保存与修改；省略原因保留原值，空串和 null 清除，取消倾向一并清除', async t => {
+  let at = FIXED_AT;
+  const f = await fixture(t, { now: () => at });
+  const saved = await f.json('verdict', { body: { group: 'A', value: 'like', reason: '  清楚又耐听\n' } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.state.verdictReasons, { A: { text: '清楚又耐听', at: FIXED_AT } });
+  at = '2026-09-12T08:03:00.000Z';
+  const retained = await f.json('verdict', { body: { group: 'A', value: 'meh' } });
+  assert.deepEqual(retained.body.state.verdictReasons, saved.body.state.verdictReasons);
+  const changed = await f.json('verdict', { body: { group: 'A', value: 'meh', reason: '再柔和一点' } });
+  assert.deepEqual(changed.body.state.verdictReasons, { A: { text: '再柔和一点', at } });
+  for (const reason of ['', ' \n ', null]) {
+    const cleared = await f.json('verdict', { body: { group: 'A', value: 'meh', reason } });
+    assert.equal(cleared.status, 200); assert.deepEqual(cleared.body.state.verdictReasons, {});
+    assert.deepEqual(cleared.body.state.verdicts, { A: 'meh' });
+    await f.json('verdict', { body: { group: 'A', value: 'like', reason: '保留这句' } });
+  }
+  const cancelled = await f.json('verdict', { body: { group: 'A', value: null, reason: '取消时不留这句' } });
+  assert.equal(cancelled.status, 200);
+  assert.deepEqual(cancelled.body.state.verdicts, {}); assert.deepEqual(cancelled.body.state.verdictReasons, {});
+  assert.deepEqual((await f.json('state')).body.state, cancelled.body.state);
+});
+
+test('整组原因限制 2000 字并校验类型，拒绝时不写盘或镜像', async t => {
+  const f = await fixture(t, { bodyMax: 10000 });
+  const saved = await f.json('verdict', { body: { group: 'A', value: 'like', reason: ` ${'字'.repeat(2000)} ` } });
+  assert.equal(saved.status, 200); assert.equal(saved.body.state.verdictReasons.A.text.length, 2000);
+  const before = (await f.json('state')).body.state, count = f.calls.length;
+  for (const reason of ['字'.repeat(2001), false, 12, [], {}]) {
+    const result = await f.json('verdict', { body: { group: 'A', value: 'dislike', reason } });
+    assert.equal(result.status, 400); assert.equal(result.body.error, '整组原因须为 0 到 2000 字');
+  }
+  assert.deepEqual((await f.json('state')).body.state, before); assert.equal(f.calls.length, count);
+});
+
+test('保存倾向或原因都会镜像参数数组；原因清空显示未写原因，镜像失败不回滚', async t => {
+  const f = await fixture(t), reason = '耐听；" & $(echo 不执行)';
+  for (const [value, label] of [['like', '喜欢'], ['meh', '一般'], ['dislike', '不喜欢']]) {
+    const result = await f.json('verdict', { body: { group: 'A', value, reason } });
+    assert.equal(result.body.mirrored, true);
+    const call = f.calls.at(-1);
+    assert.deepEqual(call.args, [f.cliIndex, 'note', '--project', 'sample', '--task', 'AUDIO-DESIGN', '--text', `试听台整组倾向〔声音方向试听·像素原声〕${label}——${reason}`, '--author', '负责人·试听台', '--registry', f.registry]);
+    assert.equal(call.executable, process.execPath); assert.equal(call.config.windowsHide, true); assert.equal(call.config.shell, undefined);
+  }
+  const changed = await f.json('verdict', { body: { group: 'A', value: 'dislike', reason: '只改原因' } });
+  assert.equal(changed.body.mirrored, true);
+  assert.ok(f.calls.at(-1).args.includes('试听台整组倾向〔声音方向试听·像素原声〕不喜欢——只改原因'));
+  f.env.mirrorFailure = true;
+  const failed = await f.json('verdict', { body: { group: 'A', value: 'meh', reason: null } });
+  assert.equal(failed.status, 200); assert.equal(failed.body.mirrored, false); assert.equal(failed.body.mirrorError, '临时卡不可用');
+  assert.ok(f.calls.at(-1).args.includes('试听台整组倾向〔声音方向试听·像素原声〕一般——(未写原因)'));
+  assert.deepEqual((await f.json('state')).body.state, failed.body.state); assert.deepEqual(failed.body.state.verdicts, { A: 'meh' });
+  assert.deepEqual(failed.body.state.verdictReasons, {});
+});
+
+test('旧账本读取补空原因且不迁移；写入新原因保留原有批注与倾向，导出包含新字段', async t => {
+  const f = await fixture(t);
+  const original = { schemaVersion: 1, project: 'sample', key: 'dir-r1', notes: [{ id: 'old-note', scene: null, group: null, text: '旧批注', at: FIXED_AT, by: '负责人' }], marks: {}, verdicts: { A: 'like' }, review: null };
+  const file = path.join(f.dataRoot, 'data/audition/sample/dir-r1.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(original));
+  const bytes = fs.readFileSync(file), index = fs.readFileSync(path.join(f.docsRoot, INDEX_REL));
+  assert.deepEqual((await f.json('state')).body.state, { ...original, verdictReasons: {} });
+  assert.deepEqual(fs.readFileSync(file), bytes);
+  const saved = await f.json('verdict', { body: { group: 'A', value: 'like', reason: '旧的一样能写原因' } });
+  const expected = { ...original, verdictReasons: { A: { text: '旧的一样能写原因', at: FIXED_AT } } };
+  assert.deepEqual(saved.body.state, expected); assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), expected);
+  const exported = await f.json('export', { body: {} });
+  assert.equal(exported.status, 200);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.docsRoot, exported.body.path), 'utf8')), expected);
+  assert.deepEqual((await f.json('state')).body.state, expected); assert.deepEqual(fs.readFileSync(path.join(f.docsRoot, INDEX_REL)), index);
+  assert.deepEqual((await f.json('index')).body.summaries['dir-r1'], { notes: 1, up: 0, down: 0, review: null });
 });
 
 test('盲听种子精确重放、标签与本地设置逐字段校验', async () => {
@@ -279,11 +404,42 @@ test('盲听种子精确重放、标签与本地设置逐字段校验', async ()
   assert.deepEqual([random(), random(), random()], [0.011704753153026104, 0.06195825757458806, 0.97690763277933]);
   assert.deepEqual([0, 1, 2].map(i => blindLabel(i, '方向')), ['X', 'Y', 'Z']);
   assert.deepEqual([0, 1, 2].map(i => blindLabel(i, '候选')), ['1', '2', '3']);
-  assert.deepEqual(normalizePreferences({ volume: 0, seed: -2147483648, blind: true }), { volume: 0, seed: -2147483648, blind: true });
-  assert.deepEqual(normalizePreferences({ volume: 100, seed: 2147483647, blind: false }), { volume: 100, seed: 2147483647, blind: false });
-  assert.deepEqual(normalizePreferences({ volume: 101, seed: 7, blind: 'true' }), { volume: 70, seed: 7, blind: false });
+  assert.deepEqual(normalizePreferences({ volume: 0, seed: -2147483648, blind: true }), { volume: 0, seed: -2147483648, blind: true, shelfCollapsed: false, railCollapsed: false });
+  assert.deepEqual(normalizePreferences({ volume: 100, seed: 2147483647, blind: false }), { volume: 100, seed: 2147483647, blind: false, shelfCollapsed: false, railCollapsed: false });
+  assert.deepEqual(normalizePreferences({ volume: 101, seed: 7, blind: 'true' }), { volume: 70, seed: 7, blind: false, shelfCollapsed: false, railCollapsed: false });
   for (const seed of [Infinity, NaN, 1.5, '2', 2147483648]) assert.equal(normalizePreferences({ seed }).seed, 1);
-  assert.deepEqual(normalizePreferences(null), { volume: 70, seed: 1, blind: false });
+  assert.deepEqual(normalizePreferences(null), { volume: 70, seed: 1, blind: false, shelfCollapsed: false, railCollapsed: false });
+});
+
+test('批次架与侧栏折叠状态逐字段校验并可重新读取；旧设置和脏数据默认展开', async t => {
+  const { normalizePreferences, loadPreferences, savePreferences } = await import('../web/src/utils/audition/preferences.ts');
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  let stored = null;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem(key) { assert.equal(key, 'board-audition-preferences'); return stored; },
+    setItem(key, value) { assert.equal(key, 'board-audition-preferences'); stored = value; },
+  } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'localStorage', previous); else delete globalThis.localStorage; });
+  const valid = { volume: 25, seed: 6, blind: true, shelfCollapsed: true, railCollapsed: true };
+  assert.equal(savePreferences(valid), true); assert.deepEqual(loadPreferences(), valid);
+  for (const shelfCollapsed of ['true', 1, null, [], {}]) {
+    stored = JSON.stringify({ ...valid, shelfCollapsed });
+    assert.deepEqual(loadPreferences(), { ...valid, shelfCollapsed: false });
+  }
+  for (const railCollapsed of ['true', 1, null, [], {}]) {
+    stored = JSON.stringify({ ...valid, railCollapsed });
+    assert.deepEqual(loadPreferences(), { ...valid, railCollapsed: false });
+  }
+  stored = JSON.stringify({ volume: 25, seed: 6, blind: true, shelfCollapsed: true });
+  assert.deepEqual(loadPreferences(), { ...valid, railCollapsed: false });
+  stored = JSON.stringify({ volume: 25, seed: 6, blind: true });
+  assert.deepEqual(loadPreferences(), { ...valid, shelfCollapsed: false, railCollapsed: false });
+  for (const bad of ['{', '[]', 'null']) { stored = bad; assert.deepEqual(loadPreferences(), normalizePreferences(null)); }
+  assert.equal(savePreferences({ ...valid, shelfCollapsed: false }), true); assert.equal(loadPreferences().shelfCollapsed, false);
+  for (const shelfCollapsed of [false, true]) for (const railCollapsed of [false, true]) {
+    const value = { ...valid, shelfCollapsed, railCollapsed };
+    assert.equal(savePreferences(value), true); assert.deepEqual(loadPreferences(), value);
+  }
 });
 
 test('画面消息校验来源窗口和同源，只有相同场景在 80 毫秒内去重', async () => {
