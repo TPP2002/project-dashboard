@@ -48,4 +48,10 @@ function resolveModules() {
   return normalizeModules(readSettings().modules);
 }
 
-module.exports = { SETTINGS_PATH, MODULE_IDS, readSettings, writeSettings, normalizeWebhookEvents, normalizeModules, resolveModules };
+/** 调度数据根每次读取；测试和部署可用环境变量覆盖，不与旧账本位置混用。 */
+function resolveSchedShare() {
+  const value = process.env.DASHBOARD_SCHED_SHARE ?? readSettings().schedShare;
+  return typeof value === 'string' && value.trim() ? value.trim() : path.win32.join('F:', '\\', 'calib-share');
+}
+
+module.exports = { SETTINGS_PATH, MODULE_IDS, readSettings, writeSettings, normalizeWebhookEvents, normalizeModules, resolveModules, resolveSchedShare };

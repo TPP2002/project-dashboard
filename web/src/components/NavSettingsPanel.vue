@@ -116,7 +116,7 @@ const dragging = ref<{ groupId: string; itemId: string } | null>(null)
 const store = useBoardStore()
 const moduleOptions: { id: ModuleId; title: string }[] = [
   { id: 'codex', title: 'Codex 面板' }, { id: 'cost', title: '成本' },
-  { id: 'cpu', title: '算力' }, { id: 'reader', title: '审阅台' },
+  { id: 'cpu', title: '调度台' }, { id: 'reader', title: '审阅台' },
   { id: 'audition', title: '试听台' },
 ]
 const moduleDraft = ref({ ...store.modules })

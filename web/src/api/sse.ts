@@ -5,6 +5,7 @@ export type ConnState = 'connecting' | 'sse' | 'polling' | 'offline'
 export interface BoardStreamOptions {
   /** 收到 board:changed；'*' = 触发全量重拉（轮询降级时用） */
   onChanged: (projectId: string) => void
+  onSchedChanged?: (cursorSeq: number | null) => void
   onState?: (s: ConnState) => void
   url?: string
   pollMs?: number
@@ -18,6 +19,7 @@ export class BoardStream {
   private closed = false
   private readonly onChanged: (projectId: string) => void
   private readonly onState: (s: ConnState) => void
+  private readonly onSchedChanged: (cursorSeq: number | null) => void
   private readonly url: string
   private readonly pollMs: number
   private readonly reconnectMs: number
@@ -25,6 +27,7 @@ export class BoardStream {
   constructor(opts: BoardStreamOptions) {
     this.onChanged = opts.onChanged
     this.onState = opts.onState ?? (() => {})
+    this.onSchedChanged = opts.onSchedChanged ?? (() => {})
     this.url = opts.url ?? '/api/stream'
     this.pollMs = opts.pollMs ?? 3000
     this.reconnectMs = opts.reconnectMs ?? 10000
@@ -88,6 +91,14 @@ export class BoardStream {
         // EventSource 自身会重试连接中态；仅在 CLOSED（彻底断）时主动降级
         if (es.readyState === EventSource.CLOSED) this.degrade()
       }
+      es.addEventListener('sched:changed', (e: MessageEvent) => {
+        let cursor: number | null = null
+        try {
+          const data = JSON.parse(e.data)
+          if (Number.isSafeInteger(data?.cursorSeq) && data.cursorSeq >= 0) cursor = data.cursorSeq
+        } catch { /* 无有效序号仍刷新，读取失败也需要在页面呈现。 */ }
+        this.onSchedChanged(cursor)
+      })
     } catch {
       this.degrade()
     }

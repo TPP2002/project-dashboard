@@ -54,9 +54,10 @@ const costUsage = require('../core/costUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
+const { createSchedApi } = require('./schedApi.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
-const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules } = require('../core/settings.cjs');
+const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
 
 // ============ 常量 ============
 
@@ -464,6 +465,7 @@ async function notifyWebhook(id) {
  * 首次见到某项目只记基线不广播（避免启动瞬间刷一波）。全程 try/catch，绝不让定时器崩。
  */
 function pollBoards() {
+  schedApi.poll(broadcast, resolveModules().cpu);
   let reg;
   try { reg = readRegistrySafe(); } catch (_) { return; }
   const ids = Object.keys(reg.projects || {});
@@ -711,6 +713,8 @@ const auditionApi = createAuditionApi({
   dashRoot: DASH_ROOT, dataRoot: DASHBOARD_HOME, cliIndex: CLI_INDEX,
   registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards: () => pollBoards(),
 });
+
+const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, cpuBudget, resolveShare: resolveSchedShare });
 
 /**
  * 本机算力账本快照(GET /api/cpu)。
@@ -1314,6 +1318,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'codex' && !modules.codex) return sendJson(res, 404, { ok: false, error: 'Codex 模块未启用（在菜单设置里打开，或 settings.json 的 modules.codex 设为 true）' });
       if (sub === 'cost' && !modules.cost) return sendJson(res, 404, { ok: false, error: '成本模块未启用（在菜单设置里打开，或 settings.json 的 modules.cost 设为 true）' });
       if (sub === 'cpu' && !modules.cpu) return sendJson(res, 404, { ok: false, error: '算力模块未启用（在菜单设置里打开，或 settings.json 的 modules.cpu 设为 true）' });
+      if (sub === 'sched' && !modules.cpu) return sendJson(res, 404, { ok: false, error: '调度台模块未启用，请在菜单设置里打开' });
       if (sub === 'reader' && !modules.reader) return sendJson(res, 404, { ok: false, error: '审阅台模块未启用（在菜单设置里打开，或 settings.json 的 modules.reader 设为 true）' });
       if (sub === 'audition' && !modules.audition) return sendJson(res, 404, { ok: false, error: '试听台模块未启用，请在菜单设置里打开' });
 
@@ -1340,6 +1345,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'audition' && auditionApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
+      if (sub === 'sched' && schedApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
     }
