@@ -17,6 +17,7 @@ const routes = [
   { path: '/kanban', name: 'kanban', component: () => import('@/views/Kanban.vue'), meta: { title: '看板', icon: 'kanban' } },
   { path: '/approvals', name: 'approvals', component: () => import('@/views/ApprovalCenter.vue'), meta: { title: '待拍板', icon: 'bell' } },
   { path: '/reader', name: 'reader', component: () => import('@/views/Reader.vue'), meta: { title: '审阅台', icon: 'book', module: 'reader' } },
+  { path: '/audition', name: 'audition', component: () => import('@/views/Audition.vue'), meta: { title: '试听台', icon: 'activity', module: 'audition' } },
   { path: '/toland', name: 'toland', component: () => import('@/views/ToLand.vue'), meta: { title: '待落地', icon: 'toland' } },
   { path: '/history', name: 'history', component: () => import('@/views/DecisionHistory.vue'), meta: { title: '拍板历史', icon: 'history' } },
   { path: '/daily', name: 'daily', component: () => import('@/views/DailyOutput.vue'), meta: { title: '每日成果', icon: 'calendar' } },

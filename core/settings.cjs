@@ -5,7 +5,7 @@ const { DASHBOARD_HOME } = require('./resolveProject.cjs');
 const { atomicWriteJsonSync } = require('./atomicWrite.cjs');
 
 const SETTINGS_PATH = path.join(DASHBOARD_HOME, 'settings.json');
-const MODULE_IDS = ['codex', 'cost', 'cpu', 'reader'];
+const MODULE_IDS = ['codex', 'cost', 'cpu', 'reader', 'audition'];
 
 /** 设置缺失、损坏或不是对象时回落空设置，不影响服务启动。 */
 function readSettings() {

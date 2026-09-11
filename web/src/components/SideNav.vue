@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
+import { useAuditionStore } from '@/stores/audition'
 import type { ModuleId } from '@/api/client'
 import type { QuotaSnapshot } from '@/types/codex'
 import Icon from './Icon.vue'
@@ -21,6 +22,7 @@ const NAV_ITEMS = {
   overview: { to: '/overview', icon: 'home', title: '总览' },
   approvals: { to: '/approvals', icon: 'bell', title: '待拍板', badge: 'pending' },
   reader: { to: '/reader', icon: 'book', title: '审阅台', module: 'reader' },
+  audition: { to: '/audition', icon: 'activity', title: '试听台', module: 'audition' },
   codex: { to: '/codex', icon: 'bot', title: 'Codex', module: 'codex' },
   parallel: { to: '/parallel', icon: 'checks', title: '能同时派几张' },
   daily: { to: '/daily', icon: 'calendar', title: '每日成果', badge: 'today' },
@@ -51,7 +53,7 @@ const DEFAULT_GROUPS: ReadonlyArray<NavGroupConfig<NavItemId>> = [
     { id: 'toland', visible: true }, { id: 'history', visible: true }, { id: 'parallel', visible: true },
   ] },
   { id: 'extensions', name: '扩展模块', collapsed: true, items: [
-    { id: 'reader', visible: true }, { id: 'codex', visible: true },
+    { id: 'reader', visible: true }, { id: 'audition', visible: true }, { id: 'codex', visible: true },
     { id: 'cost', visible: true }, { id: 'cpu', visible: true },
   ] },
   { id: 'analysis', name: '深入分析', collapsed: true, items: [
@@ -63,6 +65,10 @@ const DEFAULT_GROUPS: ReadonlyArray<NavGroupConfig<NavItemId>> = [
 ]
 
 const store = useBoardStore()
+const audition = useAuditionStore()
+watch(() => [store.modules.audition, store.currentProjectId], () => {
+  if (store.modules.audition && store.currentProjectId) void audition.checkIndex(store.currentProjectId, true)
+}, { immediate: true })
 const groups = ref<NavGroupConfig<NavItemId>[]>(loadNavGroups(NAV_STORAGE_KEY, KNOWN_NAV_IDS, DEFAULT_GROUPS))
 const settingsOpen = ref(false)
 const quota = ref<QuotaSnapshot | null>(null)
@@ -128,6 +134,7 @@ function hasVisibleItems(group: NavGroupConfig<NavItemId>) {
 
 function isVisibleItem(item: NavItemConfig<NavItemId>) {
   const module = navItem(item.id).module
+  if (item.id === 'audition' && (!store.currentProjectId || !audition.indexes[store.currentProjectId]?.ok)) return false
   return item.visible && (!module || store.modules[module])
 }
 
