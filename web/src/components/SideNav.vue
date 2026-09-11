@@ -30,7 +30,7 @@ const NAV_ITEMS = {
   toland: { to: '/toland', icon: 'toland', title: '待落地', badge: 'unlanded' },
   history: { to: '/history', icon: 'history', title: '拍板历史' },
   cost: { to: '/cost', icon: 'coins', title: '成本', module: 'cost' },
-  cpu: { to: '/cpu', icon: 'cpu', title: '算力', module: 'cpu' },
+  cpu: { to: '/sched', icon: 'cpu', title: '调度台', module: 'cpu' },
   insights: { to: '/insights', icon: 'chart', title: '洞察' },
   risk: { to: '/risk', icon: 'alertTri', title: '风险' },
   waves: { to: '/waves', icon: 'layers', title: '波次' },

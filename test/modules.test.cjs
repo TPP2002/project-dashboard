@@ -36,6 +36,7 @@ async function startServer(t, { modules, settings } = {}) {
     ...process.env, DASHBOARD_HOME: dir, DASHBOARD_REGISTRY: registry,
     DASHBOARD_GLOBAL_SETTINGS: path.join(dir, 'global-settings.json'),
     DASHBOARD_CODEX_SESSIONS: path.join(dir, 'sessions'),
+    DASHBOARD_SCHED_SHARE: path.join(dir, 'sched-share'), CPU_LEASE_DIR: path.join(dir, 'leases'),
     DASHBOARD_EVENT_WEBHOOK: '', DASHBOARD_NO_OPEN: '1', DASHBOARD_POLL_MS: '500',
     DASHBOARD_PORT: String(await freePort()),
   };
@@ -74,7 +75,7 @@ async function startServer(t, { modules, settings } = {}) {
 test('默认模块全关，菜单保存后立即放行；关闭后立即拦截', async (t) => {
   const srv = await startServer(t);
   assert.deepEqual((await srv.json('/api/health')).body.modules, OFF);
-  for (const endpoint of ['/api/codex/jobs', '/api/cost', '/api/cpu', '/api/reader/xxx', '/api/audition/index']) {
+  for (const endpoint of ['/api/codex/jobs', '/api/cost', '/api/cpu', '/api/sched/snapshot', '/api/reader/xxx', '/api/audition/index']) {
     const result = await srv.json(endpoint);
     assert.equal(result.status, 404, endpoint);
     assert.equal(result.body.ok, false);

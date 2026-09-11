@@ -1,0 +1,90 @@
+{
+  "generatedFrom": "unified-dispatch sched-contract.ts @ c69c40a5b2d06278cf32c4c37ad1ab1ec144f2b2",
+  "note": "规范 JSON = 对象键按 JS 字符串序递归排序、数组保序、无空格;sha256 为规范 JSON 的 UTF-8 摘要(小写十六进制)",
+  "canonical": [
+    {
+      "value": { "b": 1, "a": { "d": [3, { "z": 1, "y": 2 }], "c": "中文" }, "A": true, "_": null },
+      "json": "{\"A\":true,\"_\":null,\"a\":{\"c\":\"中文\",\"d\":[3,{\"y\":2,\"z\":1}]},\"b\":1}",
+      "sha256": "86d43614fc27213fbef7c6b888c2e93739dd10383884666a7d8a674d21d37729"
+    },
+    {
+      "value": { "s": "line1\nline2\t\"q\"\\", "u": "é", "e": "" },
+      "json": "{\"e\":\"\",\"s\":\"line1\\nline2\\t\\\"q\\\"\\\\\",\"u\":\"é\"}",
+      "sha256": "95df0bb222285823e28b250078a33b3e12f377f24ba3b23c9b5cd9b5c741ca03"
+    },
+    {
+      "value": { "n": 0, "m": -1.5, "big": 12345678901234, "f": 0.1 },
+      "json": "{\"big\":12345678901234,\"f\":0.1,\"m\":-1.5,\"n\":0}",
+      "sha256": "24ac32e27daebcec4381fdbca11873ad63f7ea2d1f3cd43e98acaaebea3ad0eb"
+    },
+    {
+      "value": { "a": [], "o": {}, "nested": [[], [{}]] },
+      "json": "{\"a\":[],\"nested\":[[],[{}]],\"o\":{}}",
+      "sha256": "0a8736382a58985853e3a48483940f53efb011cc588be241d37b9a40eece57fb"
+    },
+    {
+      "value": { "1": 3, "b": 1, "B": 2, "a-b": 4, "a_b": 5, "a.b": 6 },
+      "json": "{\"1\":3,\"B\":2,\"a-b\":4,\"a.b\":6,\"a_b\":5,\"b\":1}",
+      "sha256": "24421a38925a516394438711d0aee68f5bc557580752769c36f40e1113e6c080"
+    },
+    {
+      "value": ["x", { "k": "v" }, 1, false, null],
+      "json": "[\"x\",{\"k\":\"v\"},1,false,null]",
+      "sha256": "67c8181f7d6cded580567244f50b177c06b138009ce80226ba45694a0294bf4a"
+    }
+  ],
+  "ticketIds": [
+    { "project": "rogue", "key": "test-1", "ticketId": "tk-d9439709801dbbf2d9be" },
+    { "project": "rogue", "key": "m1-ticket-1", "ticketId": "tk-cdfe12ea190060fc1166" },
+    { "project": "dashboard", "key": "k.2026-09-12_a", "ticketId": "tk-cf61d0ab90431ab8fc6c" },
+    { "project": "项目", "key": "key", "ticketId": "tk-c474882e5fbc0b3608bd" }
+  ],
+  "commands": [
+    {
+      "command": { "commandId": "dash-20260912T000000-aaaa1111", "kind": "jump-queue", "data": { "ticketId": "tk-0123456789abcdef0123" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "json": "{\"commandId\":\"dash-20260912T000000-aaaa1111\",\"createdAt\":\"2026-09-12T00:00:00.000Z\",\"data\":{\"ticketId\":\"tk-0123456789abcdef0123\"},\"expiresAt\":\"2026-09-12T00:10:00.000Z\",\"kind\":\"jump-queue\",\"submitter\":\"dashboard\"}",
+      "sha256": "8473ad57e6caea5d73d82226c382510e9484e8a1c6c710a455199fb9525ce2bd"
+    },
+    {
+      "command": { "commandId": "dash-20260912T000001-bbbb2222", "kind": "cancel", "data": { "ticketId": "tk-0123456789abcdef0123" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "json": "{\"commandId\":\"dash-20260912T000001-bbbb2222\",\"createdAt\":\"2026-09-12T00:00:00.000Z\",\"data\":{\"ticketId\":\"tk-0123456789abcdef0123\"},\"expiresAt\":\"2026-09-12T00:10:00.000Z\",\"kind\":\"cancel\",\"submitter\":\"dashboard\"}",
+      "sha256": "f5e28e6ba8d51c562b26ab3e40dcbe13c432102343ea08bf2858d12e65788e36"
+    },
+    {
+      "command": { "commandId": "dash-20260912T000002-cccc3333", "kind": "owner-hold", "data": { "machine": "Dx-202501231051" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "json": "{\"commandId\":\"dash-20260912T000002-cccc3333\",\"createdAt\":\"2026-09-12T00:00:00.000Z\",\"data\":{\"machine\":\"Dx-202501231051\"},\"expiresAt\":\"2026-09-12T00:10:00.000Z\",\"kind\":\"owner-hold\",\"submitter\":\"dashboard\"}",
+      "sha256": "57f1b6910b664804d42f2701d1a8447aa79272333fe3c66cbb9e7da89ad51cf6"
+    },
+    {
+      "command": { "commandId": "dash-20260912T000003-dddd4444", "kind": "owner-release", "data": { "machine": "Dx-202501231051" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "json": "{\"commandId\":\"dash-20260912T000003-dddd4444\",\"createdAt\":\"2026-09-12T00:00:00.000Z\",\"data\":{\"machine\":\"Dx-202501231051\"},\"expiresAt\":\"2026-09-12T00:10:00.000Z\",\"kind\":\"owner-release\",\"submitter\":\"dashboard\"}",
+      "sha256": "60af81f2cee0f49dec84b0679560c07edee767a2be6012871dc10236d1bbc44f"
+    }
+  ],
+  "invalidCommands": [
+    {
+      "command": { "commandId": "bad-kind", "kind": "reboot", "data": {}, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "rejected": true, "error": "[sched] 枚举值不合法:reboot"
+    },
+    {
+      "command": { "commandId": "bad id", "kind": "cancel", "data": { "ticketId": "tk-0123456789abcdef0123" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "rejected": true, "error": "[cluster-lifecycle] 路径段 含不允许的路径字符:bad id"
+    },
+    {
+      "command": { "commandId": "no-data", "kind": "cancel", "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "rejected": true, "error": "[cluster-lifecycle] 指令 data 必须是 JSON object"
+    },
+    {
+      "command": { "commandId": "bad-ticket", "kind": "cancel", "data": { "ticketId": "tk-xyz" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "rejected": true, "error": "[sched] 单号不合法"
+    },
+    {
+      "command": { "commandId": "bad-time", "kind": "owner-hold", "data": { "machine": "Dx-202501231051" }, "submitter": "dashboard", "createdAt": "昨天", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "rejected": true, "error": "[sched] 时间必须为 UTC 毫秒 ISO"
+    }
+  ],
+  "segments": {
+    "valid": [ { "value": "abc", "ok": true }, { "value": "a-b_c.d", "ok": true }, { "value": "X1", "ok": true }, { "value": "tk-0123456789abcdef0123", "ok": true } ],
+    "invalid": [ { "value": "", "ok": false }, { "value": ".", "ok": false }, { "value": "..", "ok": false }, { "value": "a b", "ok": false }, { "value": "a/b", "ok": false }, { "value": "a\\b", "ok": false }, { "value": "中文", "ok": false } ]
+  }
+}

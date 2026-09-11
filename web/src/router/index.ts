@@ -31,8 +31,8 @@ const routes = [
   { path: '/gantt', name: 'gantt', component: () => import('@/views/Gantt.vue'), meta: { title: '甘特', icon: 'gantt' } },
   { path: '/deps', name: 'deps', component: () => import('@/views/DependencyGraph.vue'), meta: { title: '依赖', icon: 'network' } },
   { path: '/search', name: 'search', component: () => import('@/views/SearchFilter.vue'), meta: { title: '搜索', icon: 'search' } },
-  // 算力面板:给负责人一个「我要用电脑,留点资源给我」的开关(写进全机 CPU 账本,测试自动让路)。
-  { path: '/cpu', name: 'cpu', component: () => import('@/views/CpuBudget.vue'), meta: { title: '算力', icon: 'cpu', module: 'cpu' } },
+  { path: '/cpu', name: 'cpu', redirect: '/sched' },
+  { path: '/sched', name: 'sched', component: () => import('@/views/SchedConsole.vue'), meta: { title: '调度台', icon: 'cpu', module: 'cpu' } },
   // 成本监管:本机对话流水的真实 token 消耗(按天/按模型/主·子agent)+ 各卡施工成本登记(0901)。
   { path: '/cost', name: 'cost', component: () => import('@/views/CostMonitor.vue'), meta: { title: '成本', icon: 'coins', module: 'cost' } },
   { path: '/codex', name: 'codex', component: () => import('@/views/CodexPanel.vue'), meta: { title: 'Codex', icon: 'bot', module: 'codex' } },
