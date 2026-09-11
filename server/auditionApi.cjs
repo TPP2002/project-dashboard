@@ -152,10 +152,12 @@ function createAuditionApi(deps) {
     let doc;
     try { doc = JSON.parse(fs.readFileSync(ledgerPath(project, key), 'utf8')); }
     catch (e) {
-      if (e.code === 'ENOENT') return { schemaVersion: 1, project, key, notes: [], marks: {}, verdicts: {}, review: null };
+      if (e.code === 'ENOENT') return { schemaVersion: 1, project, key, notes: [], marks: {}, verdicts: {}, verdictReasons: {}, review: null };
       throw e;
     }
     if (!object(doc) || doc.schemaVersion !== 1 || doc.project !== project || doc.key !== key || !Array.isArray(doc.notes) || !object(doc.marks) || !object(doc.verdicts)) fail(500, '批注账本格式有误，请保留原文件检查');
+    if (doc.verdictReasons === undefined) doc.verdictReasons = {};
+    if (!object(doc.verdictReasons)) fail(500, '批注账本格式有误，请保留原文件检查');
     return doc;
   }
   function writeState(project, key, mutate) {
@@ -238,16 +240,26 @@ function createAuditionApi(deps) {
     let note, removed = false;
     const group = ['note', 'mark', 'verdict'].includes(action) ? requireMember(batch.groups, body.group, '组', action === 'note') : null;
     const scene = ['note', 'mark'].includes(action) ? requireMember(batch.scenes, body.scene, '场景', action === 'note') : null;
-    if (action === 'note') {
+    if (action === 'note' || action === 'note/update') {
       if (!nonempty(body.text) || body.text.trim().length > 4000) fail(400, '批注须为 1 到 4000 字');
+    }
+    if (action === 'note') {
       note = { id: createId(), scene: scene?.id || null, group: group?.id || null, text: body.text.trim(), at: now(), by: '负责人' };
     }
-    if (action === 'note/delete' && !nonempty(body.id)) fail(400, '缺少批注编号');
+    if (['note/delete', 'note/update'].includes(action) && !nonempty(body.id)) fail(400, '缺少批注编号');
     if (action === 'mark' && !['up', 'down', null].includes(body.value)) fail(400, '标记只接受好、不好或取消');
     if (action === 'verdict' && !['like', 'meh', 'dislike', null].includes(body.value)) fail(400, '整组倾向不合法');
+    // 不传原因保留原值；明确传空串或 null 才清除，取消倾向则无条件连带清除。
+    if (action === 'verdict' && body.reason !== undefined && body.reason !== null && (typeof body.reason !== 'string' || body.reason.trim().length > 2000)) fail(400, '整组原因须为 0 到 2000 字');
     if (action === 'review' && !['已审阅', '未审阅'].includes(body.state)) fail(400, '审阅状态不合法');
     const state = writeState(project, key, (doc) => {
       if (action === 'note') doc.notes.push(note);
+      if (action === 'note/update') {
+        note = doc.notes.find((item) => item.id === body.id);
+        if (!note) fail(404, '没有这条批注');
+        note.text = body.text.trim();
+        note.editedAt = now();
+      }
       if (action === 'note/delete') {
         removed = doc.notes.some((item) => item.id === body.id);
         if (!removed) fail(404, '没有这条批注');
@@ -258,13 +270,30 @@ function createAuditionApi(deps) {
         if (body.value === null) delete doc.marks[pair]; else doc.marks[pair] = body.value;
       }
       if (action === 'verdict') {
-        if (body.value === null) delete doc.verdicts[body.group];
-        else doc.verdicts = { ...doc.verdicts, [body.group]: body.value };
+        if (body.value === null) {
+          delete doc.verdicts[body.group];
+          delete doc.verdictReasons[body.group];
+        } else {
+          doc.verdicts = { ...doc.verdicts, [body.group]: body.value };
+          if (body.reason !== undefined) {
+            const text = body.reason === null ? '' : body.reason.trim();
+            if (text) doc.verdictReasons = { ...doc.verdictReasons, [body.group]: { text, at: now() } };
+            else delete doc.verdictReasons[body.group];
+          }
+        }
       }
       if (action === 'review') doc.review = body.state === '已审阅' ? { state: '已审阅', at: now(), by: '负责人' } : null;
     });
+    if (action === 'verdict' && body.value !== null) {
+      const value = { like: '喜欢', meh: '一般', dislike: '不喜欢' }[body.value];
+      const text = `试听台整组倾向〔${batch.title}·${group.name}〕${value}——${state.verdictReasons[body.group]?.text || '(未写原因)'}`;
+      return { ok: true, state, ...await mirrorNote(project, batch.task, text) };
+    }
     if (!note) return { ok: true, state };
-    const text = `试听台批注〔${batch.title}·${scene?.name || '整批'}·${group?.name || '全部'}〕${note.text}`;
+    const noteScene = list(batch.scenes).find((item) => object(item) && item.id === note.scene);
+    const noteGroup = list(batch.groups).find((item) => object(item) && item.id === note.group);
+    const prefix = action === 'note/update' ? '试听台批注(修改)' : '试听台批注';
+    const text = `${prefix}〔${batch.title}·${noteScene?.name || '整批'}·${noteGroup?.name || '全部'}〕${note.text}`;
     return { ok: true, state, note, ...await mirrorNote(project, batch.task, text) };
   }
   function errorReply(res, e) { sendJson(res, e.status || 500, { ok: false, error: e.status ? e.message : '试听台读写失败：' + e.message }); }
@@ -286,7 +315,7 @@ function createAuditionApi(deps) {
       } catch (e) { errorReply(res, e); }
       return true;
     }
-    if (req.method !== 'POST' || !['note', 'note/delete', 'mark', 'verdict', 'review', 'export'].includes(action)) return false;
+    if (req.method !== 'POST' || !['note', 'note/update', 'note/delete', 'mark', 'verdict', 'review', 'export'].includes(action)) return false;
     readBody(req, bodyMax, (error, raw) => {
       if (error) return sendJson(res, 413, { ok: false, error: '请求内容太长' });
       let body;

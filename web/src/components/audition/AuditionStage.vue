@@ -68,12 +68,12 @@ onUnmounted(() => { detach(); observer?.disconnect(); window.removeEventListener
 </template>
 
 <style scoped>
-.stage { display: flex; flex-direction: column; min-width: 0; min-height: 420px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
-header { display: flex; align-items: baseline; gap: var(--s3); padding: var(--s3); border-bottom: 1px solid var(--line); }
+.stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
+header { display: flex; flex: none; align-items: baseline; gap: var(--s3); padding: var(--s3); border-bottom: 1px solid var(--line); }
 h2 { margin: 0; font-size: var(--fs-md); }
 header span, footer, .viewport > p { color: var(--text-2); font-size: var(--fs-sm); }
-.viewport { display: flex; flex: 1; align-items: center; justify-content: center; min-height: 320px; overflow: hidden; }
+.viewport { display: flex; flex: 1; align-items: center; justify-content: center; min-height: 0; overflow: hidden; }
 .scaled { position: relative; width: var(--scaled-width); height: var(--scaled-height); flex: none; }
 iframe { position: absolute; top: 0; left: 0; width: var(--screen-width); height: var(--screen-height); border: 0; transform: scale(var(--screen-scale)); transform-origin: top left; }
-footer { padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+footer { flex: none; padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
 </style>
