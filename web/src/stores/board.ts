@@ -11,7 +11,7 @@ import { emitBoardEvent, type BoardEventKind } from '@/utils/boardEvents'
 export const useBoardStore = defineStore('board', () => {
   // ---------- state ----------
   const projects = ref<ProjectSummary[]>([])
-  const modules = ref<Modules>({ codex: false, cost: false, cpu: false, reader: false })
+  const modules = ref<Modules>({ codex: false, cost: false, cpu: false, reader: false, audition: false })
   const boards = ref<Record<string, Board>>({})
   const etags = ref<Record<string, string>>({})
   const activityComplete = ref<Record<string, boolean>>({})
@@ -99,6 +99,7 @@ export const useBoardStore = defineStore('board', () => {
       modules.value = {
         codex: raw?.codex === true, cost: raw?.cost === true,
         cpu: raw?.cpu === true, reader: raw?.reader === true,
+        audition: raw?.audition === true,
       }
       return true
     } catch (_) {

@@ -9,8 +9,8 @@ const { spawn } = require('node:child_process');
 const freePort = require('../scripts/free-port.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
-const OFF = { codex: false, cost: false, cpu: false, reader: false };
-const ON = { codex: true, cost: true, cpu: true, reader: true };
+const OFF = { codex: false, cost: false, cpu: false, reader: false, audition: false };
+const ON = { codex: true, cost: true, cpu: true, reader: true, audition: true };
 
 async function startServer(t, { modules, settings } = {}) {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-modules-')));
@@ -74,7 +74,7 @@ async function startServer(t, { modules, settings } = {}) {
 test('默认模块全关，菜单保存后立即放行；关闭后立即拦截', async (t) => {
   const srv = await startServer(t);
   assert.deepEqual((await srv.json('/api/health')).body.modules, OFF);
-  for (const endpoint of ['/api/codex/jobs', '/api/cost', '/api/cpu', '/api/reader/xxx']) {
+  for (const endpoint of ['/api/codex/jobs', '/api/cost', '/api/cpu', '/api/reader/xxx', '/api/audition/index']) {
     const result = await srv.json(endpoint);
     assert.equal(result.status, 404, endpoint);
     assert.equal(result.body.ok, false);
@@ -108,7 +108,7 @@ test('非法模块名、非布尔值和非法设置结构返回 400，原设置�
   const before = fs.readFileSync(settingsPath, 'utf8');
   for (const body of [
     { modules: { extra: true } }, { modules: { codex: 'true' } }, { modules: { cpu: 1 } },
-    { modules: { reader: null } }, { modules: null }, { modules: [] }, { modules: true },
+    { modules: { reader: null } }, { modules: { audition: 'true' } }, { modules: null }, { modules: [] }, { modules: true },
     { modules: {}, extra: false }, {}, [], null,
   ]) {
     assert.equal((await srv.json('/api/settings', body)).status, 400, JSON.stringify(body));
@@ -130,6 +130,24 @@ test('逗号名单覆盖文件；未知名称不会开启模块', async (t) => {
 });
 
 test('脏模块字段回落关闭，合法布尔字段保留', async (t) => {
-  const srv = await startServer(t, { settings: { modules: { codex: 'true', cpu: 1, reader: true, extra: true } } });
+  const srv = await startServer(t, { settings: { modules: { codex: 'true', cpu: 1, reader: true, audition: 1, extra: true } } });
   assert.deepEqual((await srv.json('/api/health')).body.modules, { ...OFF, reader: true });
+});
+
+test('试听台模块保存后立即生效，关闭后读写都被拦截', async (t) => {
+  const srv = await startServer(t);
+  assert.equal((await srv.json('/api/settings', { modules: { audition: true } })).status, 200);
+  assert.deepEqual((await srv.json('/api/health')).body.modules, { ...OFF, audition: true });
+  const missing = await srv.json('/api/audition/index?project=sample');
+  assert.equal(missing.status, 404);
+  assert.equal(missing.body.error, '本项目还没有试听清单');
+  await srv.json('/api/settings', { modules: { audition: false } });
+  for (const endpoint of ['index', 'batch', 'file', 'state']) {
+    const result = await srv.json(`/api/audition/${endpoint}?project=sample`);
+    assert.equal(result.status, 404); assert.match(result.body.error, /模块未启用/);
+  }
+  for (const endpoint of ['note', 'note/delete', 'mark', 'verdict', 'review', 'export']) {
+    const result = await srv.json(`/api/audition/${endpoint}`, { project: 'sample', key: 'dir-r1' });
+    assert.equal(result.status, 404); assert.match(result.body.error, /模块未启用/);
+  }
 });

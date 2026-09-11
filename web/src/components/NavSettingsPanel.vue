@@ -117,6 +117,7 @@ const store = useBoardStore()
 const moduleOptions: { id: ModuleId; title: string }[] = [
   { id: 'codex', title: 'Codex 面板' }, { id: 'cost', title: '成本' },
   { id: 'cpu', title: '算力' }, { id: 'reader', title: '审阅台' },
+  { id: 'audition', title: '试听台' },
 ]
 const moduleDraft = ref({ ...store.modules })
 const savingModules = ref(false)
@@ -248,7 +249,7 @@ function dropAtEnd(event: DragEvent, toGroupId: string) {
 
         <section class="module-settings" aria-labelledby="module-settings-title">
           <h3 id="module-settings-title">扩展模块</h3>
-          <p>这些是负责人个人工作流用的模块，开源发布版默认关闭；打开后侧栏出现对应入口</p>
+          <p>这些是负责人个人工作流用的模块，开源发布版默认关闭；试听台还需当前项目已有试听清单，才会出现入口。</p>
           <div class="module-options">
             <label v-for="option in moduleOptions" :key="option.id" class="visibility-toggle">
               <input type="checkbox" :checked="moduleDraft[option.id]" :disabled="savingModules" @change="setModule(option.id, $event)">

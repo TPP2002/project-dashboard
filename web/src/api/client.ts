@@ -59,7 +59,7 @@ export async function fetchActivity(id: string, opts: { before?: string; limit?:
 }
 
 export type WebhookEvents = Record<'done' | 'pending' | 'block', boolean>
-export type ModuleId = 'codex' | 'cost' | 'cpu' | 'reader'
+export type ModuleId = 'codex' | 'cost' | 'cpu' | 'reader' | 'audition'
 export type Modules = Record<ModuleId, boolean>
 
 export interface HealthInfo {

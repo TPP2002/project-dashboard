@@ -53,6 +53,7 @@ const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
+const { createAuditionApi } = require('./auditionApi.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
 const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules } = require('../core/settings.cjs');
@@ -665,7 +666,7 @@ function handleSettings(req, res) {
     }
     if (Object.hasOwn(body, 'modules') && (!isRecord(body.modules) || Object.entries(body.modules)
       .some(([key, value]) => !MODULE_IDS.includes(key) || typeof value !== 'boolean'))) {
-      return sendJson(res, 400, { ok: false, error: 'modules 只允许 codex、cost、cpu、reader 四项开关，值必须是布尔值' });
+      return sendJson(res, 400, { ok: false, error: '只能保存已登记的扩展模块开关，值必须是布尔值' });
     }
     try {
       const patch = {};
@@ -703,6 +704,12 @@ const readerApi = createReaderApi({
   registry: REGISTRY,
   registryPath: REGISTRY_PATH,
   pollBoards: () => pollBoards(),
+});
+
+const auditionApi = createAuditionApi({
+  resolveProjectSafe, sendJson, readBody, bodyMax: BODY_MAX,
+  dashRoot: DASH_ROOT, dataRoot: DASHBOARD_HOME, cliIndex: CLI_INDEX,
+  registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards: () => pollBoards(),
 });
 
 /**
@@ -1308,6 +1315,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'cost' && !modules.cost) return sendJson(res, 404, { ok: false, error: '成本模块未启用（在菜单设置里打开，或 settings.json 的 modules.cost 设为 true）' });
       if (sub === 'cpu' && !modules.cpu) return sendJson(res, 404, { ok: false, error: '算力模块未启用（在菜单设置里打开，或 settings.json 的 modules.cpu 设为 true）' });
       if (sub === 'reader' && !modules.reader) return sendJson(res, 404, { ok: false, error: '审阅台模块未启用（在菜单设置里打开，或 settings.json 的 modules.reader 设为 true）' });
+      if (sub === 'audition' && !modules.audition) return sendJson(res, 404, { ok: false, error: '试听台模块未启用，请在菜单设置里打开' });
 
       if (sub === 'health' && req.method === 'GET') return handleHealth(req, res);
       if (sub === 'settings' && req.method === 'POST') return handleSettings(req, res);
@@ -1331,6 +1339,7 @@ const server = http.createServer((req, res) => {
       if (sub === 'parallel' && req.method === 'GET') return handleParallel(req, res, parsed.query || {});
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
+      if (sub === 'audition' && auditionApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
     }
