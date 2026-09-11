@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import type { AuditionBatch, AuditionGroup, AuditionState, AuditionMark, AuditionVerdict } from '@/types/audition'
+import { ref } from 'vue'
+import type { AuditionBatch, AuditionGroup, AuditionState, AuditionMark } from '@/types/audition'
 import { markKey } from '@/utils/audition/manifest'
 import type { AuditionPreferences } from '@/utils/audition/preferences'
+import SceneNotes from './SceneNotes.vue'
+import GroupVerdict from './GroupVerdict.vue'
 
 const props = defineProps<{
   batch: AuditionBatch; groups: AuditionGroup[]; group: string; scene: string; labels: Record<string, string>
@@ -10,13 +13,21 @@ const props = defineProps<{
 const emit = defineEmits<{
   group: [id: string]; scene: [id: string]; selectScene: [id: string]; compare: []; playlist: []; fatigue: []; stop: []
   volume: [value: number]; seed: [value: string]; blind: [value: boolean]; reveal: []
-  mark: [scene: string, value: AuditionMark]; verdict: [value: AuditionVerdict]
+  mark: [scene: string, value: AuditionMark]
 }>()
 const levels = ['未说明', '最轻', '轻', '中', '重', '最重']
+const expanded = ref(new Set<string>()), focusRequests = ref<Record<string, number>>({})
+function toggleNotes(scene: string) {
+  const pair = markKey(props.group, scene)
+  if (expanded.value.has(pair)) expanded.value.delete(pair)
+  else expanded.value.add(pair)
+}
 function mark(scene: string, value: 'up' | 'down') {
   emit('mark', scene, props.state?.marks[markKey(props.group, scene)] === value ? null : value)
+  const pair = markKey(props.group, scene)
+  expanded.value.add(pair)
+  focusRequests.value[pair] = (focusRequests.value[pair] || 0) + 1
 }
-function verdict(value: Exclude<AuditionVerdict, null>) { emit('verdict', props.state?.verdicts[props.group] === value ? null : value) }
 function seedChanged(event: Event) {
   const input = event.target as HTMLInputElement
   emit('seed', input.value)
@@ -55,14 +66,7 @@ function seedChanged(event: Event) {
       <button class="btn" :disabled="!group || !scene" @click="emit('fatigue')">连播 20 次</button>
     </div>
     <p class="progress" role="status">{{ status || '点一个场景开始试听。' }}</p>
-    <section class="verdict" aria-label="整组倾向">
-      <span>对这一组的感觉</span>
-      <div class="actions">
-        <button class="btn btn-sm" :disabled="!group" :aria-pressed="state?.verdicts[group] === 'like'" @click="verdict('like')">喜欢</button>
-        <button class="btn btn-sm" :disabled="!group" :aria-pressed="state?.verdicts[group] === 'meh'" @click="verdict('meh')">一般</button>
-        <button class="btn btn-sm" :disabled="!group" :aria-pressed="state?.verdicts[group] === 'dislike'" @click="verdict('dislike')">不喜欢</button>
-      </div>
-    </section>
+    <GroupVerdict :key="group" :group="group" :label="labels[group] || ''" />
     <h3>场景</h3>
     <p v-if="!batch.scenes.length">本批次还没有场景。</p>
     <article v-for="(item, index) in batch.scenes" :key="`${item.id}-${index}`" class="scene" :data-selected="scene === item.id">
@@ -72,13 +76,21 @@ function seedChanged(event: Event) {
         <button class="btn btn-sm" :disabled="!group" @click="emit('scene', item.id)">播放</button>
         <button class="btn btn-sm" :disabled="!group" :aria-pressed="state?.marks[markKey(group, item.id)] === 'up'" @click="mark(item.id, 'up')">好</button>
         <button class="btn btn-sm" :disabled="!group" :aria-pressed="state?.marks[markKey(group, item.id)] === 'down'" @click="mark(item.id, 'down')">不好</button>
-        <span class="hint">批注 {{ state?.notes.filter(note => note.scene === item.id).length || 0 }}</span>
+        <button class="btn btn-sm" :disabled="!group" :aria-expanded="expanded.has(markKey(group, item.id))" :aria-controls="`scene-notes-${index}`"
+          :aria-label="`${item.name} · ${labels[group] || '尚未选组'}的批注`" @click="toggleNotes(item.id)">
+          批注 {{ state?.notes.filter(note => note.scene === item.id && note.group === group).length || 0 }}
+        </button>
       </div>
+      <SceneNotes v-show="expanded.has(markKey(group, item.id))" :id="`scene-notes-${index}`" :key="markKey(group, item.id)"
+        :scene="item.id" :group="group" :label="labels[group] || '尚未选组'" :focus-request="focusRequests[markKey(group, item.id)] || 0" />
     </article>
+    <section v-if="batch.notes.length" class="batch-notes" aria-label="批次说明">
+      <h3>批次说明</h3><p v-for="(note, index) in batch.notes" :key="index">{{ note }}</p>
+    </section>
   </div>
 </template>
 <style scoped>
-.listening { display: grid; gap: var(--s3); }
+.listening { display: grid; gap: var(--s3); min-width: 0; }
 .volume, .choose, .fatigue label { display: grid; gap: var(--s2); }
 .blind, .actions, .scene-heading { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
 .blind label { display: flex; align-items: center; gap: var(--s2); }
@@ -86,12 +98,14 @@ function seedChanged(event: Event) {
 .hint, .scene p, .description { font-size: var(--fs-sm); color: var(--text-2); }
 p, h3 { margin: 0; }
 .description { display: grid; gap: var(--s2); }
-.fatigue { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: var(--s2); }
-.progress { padding: var(--s2); background: var(--surface-2); border-radius: var(--r); }
-.verdict { display: grid; gap: var(--s2); }
-.scene { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); }
+.fatigue { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s2); }
+.fatigue label { flex: 1 1 160px; min-width: 0; }
+.progress { height: auto; overflow: visible; padding: var(--s2); background: var(--surface-2); border-radius: var(--r); }
+.scene { display: grid; gap: var(--s2); min-width: 0; padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); }
 .scene[data-selected="true"] { border-color: var(--info); }
 .scene-name { font: inherit; font-weight: 600; color: var(--text); background: var(--surface); border: 0; padding: 0; text-align: left; cursor: pointer; }
 .btn[aria-pressed="true"] { color: var(--info); border-color: var(--info); background: var(--info-bg); }
 select { width: 100%; min-width: 0; }
+.batch-notes { display: grid; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--text-2); }
+.listening { overflow-wrap: anywhere; }
 </style>

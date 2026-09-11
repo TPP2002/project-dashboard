@@ -14,7 +14,7 @@ export interface AuditionBatch {
   screens: AuditionScreen[]; defaultScreen: string; groups: AuditionGroup[]; scenes: AuditionScene[]
   clips: AuditionClip[]; decisions: AuditionDecision[]; notes: string[]
 }
-export interface AuditionNote { id: string; scene: string | null; group: string | null; text: string; at: string; by: string }
+export interface AuditionNote { id: string; scene: string | null; group: string | null; text: string; at: string; by: string; editedAt?: string }
 export type AuditionMark = 'up' | 'down' | null
 export type AuditionVerdict = 'like' | 'meh' | 'dislike' | null
 export interface AuditionReview { state: '已审阅'; at: string; by: string }
@@ -22,6 +22,7 @@ export interface AuditionState {
   schemaVersion: 1; project: string; key: string; notes: AuditionNote[]
   marks: Record<string, Exclude<AuditionMark, null>>
   verdicts: Record<string, Exclude<AuditionVerdict, null>>; review: AuditionReview | null
+  verdictReasons: Record<string, { text: string; at: string }>
 }
 export interface AuditionSummary { notes: number; up: number; down: number; review: AuditionReview | null }
 export interface AuditionIndexResult { ok: boolean; project: string; index: AuditionIndex; summaries: Record<string, AuditionSummary> }
@@ -29,8 +30,9 @@ export interface AuditionBatchResult { ok: boolean; batch: AuditionBatch; baseDi
 export interface AuditionMutation { ok: boolean; state: AuditionState; mirrored?: boolean; mirrorError?: string }
 export interface AuditionOperations {
   note: { text: string; scene?: string | null; group?: string | null }
+  'note/update': { id: string; text: string }
   'note/delete': { id: string }
   mark: { scene: string; group: string; value: AuditionMark }
-  verdict: { group: string; value: AuditionVerdict }
+  verdict: { group: string; value: AuditionVerdict; reason?: string | null }
   review: { state: '已审阅' | '未审阅' }
 }

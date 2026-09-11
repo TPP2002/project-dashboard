@@ -66,6 +66,7 @@ function exportNotes() { void action(async () => { await store.exportNotes(); re
       <h3>{{ bucket.title }}</h3>
       <article v-for="note in bucket.notes" :key="note.id">
         <p class="text">{{ note.text }}</p>
+        <p v-if="note.editedAt" class="hint">已修改 · {{ note.editedAt.replace('T', ' ').slice(0, 16) }}</p>
         <footer><span>{{ note.by }} · {{ note.at.replace('T', ' ').slice(0, 16) }}</span><button class="btn btn-sm" :disabled="busy" @click="remove(note.id)">删除</button></footer>
       </article>
     </section>
