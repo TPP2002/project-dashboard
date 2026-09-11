@@ -130,6 +130,7 @@
 ## 关于 Git（对所有工具通用）
 
 - 若项目装了看板 git 钩子：**每次 `git commit` 会自动把 commit/PR/分支同步进看板**，你不用手动同步这些。
+- 提交说明的卡号写在 `feat(卡号):` 的括号里、说明开头或说明末尾的括号里才会关联；正文里顺带提到的不关联，除非那张卡已经在当前分支认领（仅本次提交同步，窗口重扫不算）。PR 号只认 `Merge PR #N:` 开头（兼容 `Merge pull request #N`）和单独成括号的 `(#N)` 等纯标注。
 - 若装了 `pre-commit` 认领闸门：**没先 `claim` 就提交会被拒**。补一个 `claim` 即可；确需紧急放行用
   `DASHBOARD_SKIP_CLAIM_CHECK=1 git commit ...`。
 
