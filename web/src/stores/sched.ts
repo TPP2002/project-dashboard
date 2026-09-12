@@ -13,12 +13,15 @@ export const useSchedStore = defineStore('sched', () => {
   const cursors = ref(['']), page = ref(0)
   const detail = ref<api.TicketDetail | null>(null), detailId = ref<string | null>(null), detailError = ref('')
   const detailLoading = ref(false)
+  const related = ref<api.TicketRelations | null>(null)
+  const exporting = ref(false), exportError = ref('')
   const queueDetails = ref<Record<string, api.TicketDetail>>({}), queueErrors = ref<Record<string, string>>({})
   const readable = computed(() => !!snapshot.value && !snapshotError.value)
   const host = computed(() => snapshot.value?.machines.find(machine => machine.name === snapshot.value?.dispatcher.config.machine) ?? null)
   const commands = computed(() => submitted.value.filter(item => item.share === snapshot.value?.share))
   let active = false, stream: BoardStream | null = null, timer: number | undefined
   let snapshotRequest: AbortController | null = null, ledgerRequest: AbortController | null = null, detailRequest: AbortController | null = null
+  let exportRequest: AbortController | null = null
   let ledgerQuery = queryFilters(filters.value, now.value), metadataShare = ''
 
   function rememberCommands() {
@@ -40,7 +43,7 @@ export const useSchedStore = defineStore('sched', () => {
       while (index < missing.length && !signal.aborted) {
         const item = missing[index++]!
         try {
-          const result = await api.fetchTicket(item.ticketId, signal)
+          const result = await api.fetchQueueTicket(item.ticketId, signal)
           if (!signal.aborted) { queueDetails.value[item.ticketId] = result.ticket; delete queueErrors.value[item.ticketId] }
         } catch (error) {
           if (!signal.aborted) queueErrors.value[item.ticketId] = error instanceof Error ? error.message : String(error)
@@ -73,10 +76,25 @@ export const useSchedStore = defineStore('sched', () => {
     } finally { if (ledgerRequest === request) { ledgerRequest = null; ledgerLoading.value = false } }
   }
   function applyFilters(value: LedgerPrefs) {
+    exportRequest?.abort(); exportRequest = null; exporting.value = false; exportError.value = ''
     filters.value = { ...value }; cursors.value = ['']; page.value = 0; ledger.value = null
     ledgerQuery = queryFilters(value, Date.now())
     if (!saveLocal('filters', value)) storageError.value = '浏览器未能记住筛选条件，本次筛选仍然有效。'
     void loadLedger()
+  }
+  async function exportLedger() {
+    if (exporting.value || !readable.value) return
+    const request = new AbortController(); exportRequest = request; exporting.value = true; exportError.value = ''
+    try {
+      const blob = await api.exportTickets({ ...ledgerQuery }, request.signal)
+      if (request.signal.aborted) return
+      const url = URL.createObjectURL(blob), link = document.createElement('a')
+      try {
+        link.href = url; link.download = 'sched-ledger.csv'; document.body.appendChild(link); link.click()
+      } finally { link.remove(); URL.revokeObjectURL(url) }
+    } catch (error) {
+      if (!request.signal.aborted) exportError.value = error instanceof Error ? error.message : String(error)
+    } finally { if (exportRequest === request) { exportRequest = null; exporting.value = false } }
   }
   function movePage(direction: -1 | 1) {
     if (ledgerLoading.value) return
@@ -88,15 +106,15 @@ export const useSchedStore = defineStore('sched', () => {
   }
   async function openDetail(id: string) {
     detailRequest?.abort(); const request = new AbortController(); detailRequest = request
-    detailId.value = id; detail.value = null; detailError.value = ''; detailLoading.value = true
+    detailId.value = id; detail.value = null; related.value = null; detailError.value = ''; detailLoading.value = true
     try {
       const data = await api.fetchTicket(id, request.signal)
-      if (!request.signal.aborted) detail.value = data.ticket
+      if (!request.signal.aborted) { detail.value = data.ticket; related.value = data.related }
     } catch (error) {
       if (!request.signal.aborted) detailError.value = error instanceof Error ? error.message : String(error)
     } finally { if (detailRequest === request) { detailRequest = null; detailLoading.value = false } }
   }
-  function closeDetail() { detailRequest?.abort(); detailRequest = null; detailId.value = null; detail.value = null; detailLoading.value = false }
+  function closeDetail() { detailRequest?.abort(); detailRequest = null; detailId.value = null; detail.value = null; related.value = null; detailLoading.value = false }
   async function command(input: api.CommandInput) {
     if (busy.value || !readable.value || !snapshot.value) return false
     busy.value = true; commandError.value = ''; const share = snapshot.value.share
@@ -117,6 +135,7 @@ export const useSchedStore = defineStore('sched', () => {
     finally { rememberCommands(); busy.value = false }
   }
   function suspend() {
+    exportRequest?.abort(); exportRequest = null; exporting.value = false
     if (timer !== undefined) window.clearInterval(timer)
     timer = undefined; stream?.stop(); stream = null
     snapshotRequest?.abort(); snapshotRequest = null; loading.value = false
@@ -138,6 +157,6 @@ export const useSchedStore = defineStore('sched', () => {
   function stop() { active = false; document.removeEventListener('visibilitychange', visibilityChanged); suspend(); closeDetail() }
 
   return { snapshot, snapshotError, loading, commandError, storageError, now, busy, readable, host, commands,
-    filters, ledger, ledgerError, ledgerLoading, page, detail, detailId, detailError, detailLoading, queueDetails, queueErrors,
-    refreshSnapshot, loadLedger, applyFilters, movePage, openDetail, closeDetail, command, retryLegacy, start, stop }
+    filters, ledger, ledgerError, ledgerLoading, page, detail, detailId, detailError, detailLoading, related, queueDetails, queueErrors,
+    exporting, exportError, exportLedger, refreshSnapshot, loadLedger, applyFilters, movePage, openDetail, closeDetail, command, retryLegacy, start, stop }
 })

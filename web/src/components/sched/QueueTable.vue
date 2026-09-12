@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { QueueEntry, TicketDetail } from '@/api/sched'
+import type { QueueEntry, TicketDetail, TicketEstimate } from '@/api/sched'
+import EstimateText from './EstimateText.vue'
 import { duration } from './format'
-defineProps<{ queue: QueueEntry[]; locks: { machine: string; byTicketId: string }[]; details: Record<string, TicketDetail>; errors: Record<string, string>; now: number; busy: boolean }>()
+defineProps<{ queue: QueueEntry[]; locks: { machine: string; byTicketId: string }[]; details: Record<string, TicketDetail>; errors: Record<string, string>; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; jump: [id: string]; cancel: [id: string] }>()
 </script>
 
@@ -18,6 +19,7 @@ const emit = defineEmits<{ open: [id: string]; jump: [id: string]; cancel: [id: 
             <span v-if="ticket.band === 0" class="sched-tag info">优先队列</span>
             <span v-for="lock in locks.filter(item => item.byTicketId === ticket.ticketId)" :key="lock.machine" class="sched-tag warn">排头保护：{{ lock.machine }} 停插空</span>
             <p v-if="ticket.state === 'unsatisfiable'" class="bad">无法满足：{{ ticket.reason }}</p>
+            <p class="sched-note"><EstimateText :estimate="estimates[ticket.ticketId]" /></p>
           </td><td class="r">{{ ticket.requestedCores }}</td><td>{{ ticket.allowedMachines.join('、') }}</td>
           <td class="r">{{ duration(Math.max(0, now - Date.parse(ticket.queuedAt))) }}</td>
           <td class="queue-actions"><button class="sched-btn small" :disabled="busy" @click="emit('jump', ticket.ticketId)">插队</button>

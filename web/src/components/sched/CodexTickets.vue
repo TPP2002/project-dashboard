@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { TicketSummary } from '@/api/sched'
+import type { TicketSummary, TicketEstimate } from '@/api/sched'
+import EstimateText from './EstimateText.vue'
 import { duration } from './format'
-defineProps<{ tickets: TicketSummary[]; now: number }>()
+defineProps<{ tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number }>()
 const emit = defineEmits<{ open: [id: string] }>()
 </script>
 <template>
@@ -11,6 +12,7 @@ const emit = defineEmits<{ open: [id: string] }>()
       <button class="sched-link" @click="emit('open', ticket.ticketId)">{{ ticket.title }}</button>
       <span class="sched-tag info">{{ ticket.project }}</span><span class="sched-tag muted">不占核</span>
       <span class="sched-muted">已开工 {{ duration(Math.max(0, now - Date.parse(ticket.createdAt))) }}</span>
+      <EstimateText :estimate="estimates[ticket.ticketId]" />
     </li></ul>
     <p v-if="!tickets.length" class="sched-empty">没有施工中的 Codex 单</p>
   </section>
