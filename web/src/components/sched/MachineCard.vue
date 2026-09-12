@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { MachineSnapshot, TicketSummary } from '@/api/sched'
+import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched'
+import EstimateText from './EstimateText.vue'
 import { duration, freshness, stamp, ticketLabel, tone } from './format'
-const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; now: number; busy: boolean }>()
+const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string] }>()
 const fresh = computed(() => freshness(props.machine, props.now))
 const jobs = computed(() => props.tickets.filter(ticket => !ticket.registerOnly && ticket.machine === props.machine.name))
@@ -31,7 +32,7 @@ const grantWidth = computed(() => `${props.machine.quotaCores ? Math.min(100, pr
     <div class="machine-bar" :title="`已授予 ${machine.grantedCores} / 配额 ${machine.quotaCores} 核`"><span :style="{ width: grantWidth }" /></div>
     <div class="machine-metrics">
       <span>已授予 <b>{{ machine.grantedCores }}</b> 核</span>
-      <span>外部负载 <b>{{ machine.externalLoadCores }}</b> 核</span>
+      <span>未接入调度的负载：<b>{{ machine.externalLoadCores }}</b> 核</span>
       <span v-if="machine.reservation">预留 已兑现 <b>{{ machine.reservation.fulfilledCores }}</b> / 申请 <b>{{ machine.reservation.requestedCores }}</b></span>
       <span>可再派 <b>{{ machine.availableCores }}</b> 核</span>
     </div>
@@ -41,6 +42,7 @@ const grantWidth = computed(() => `${props.machine.quotaCores ? Math.min(100, pr
           <button class="sched-link" @click="emit('open', ticket.ticketId)">{{ ticket.title }}</button><span class="job-cores">{{ ticket.grantedCores }} 核</span>
         </div>
         <div class="job-meta"><span>{{ ticket.submitter }}</span><span :class="tone(ticket.state)">{{ ticketLabel(ticket) }}</span></div>
+        <div class="job-meta"><EstimateText :estimate="estimates[ticket.ticketId]" /></div>
         <div class="job-meta"><span>执行 {{ duration(ticket.runningMs) }} · 暂停 {{ duration(ticket.pausedMs) }} · 低速 {{ duration(ticket.slowMs) }}</span>
           <button class="sched-btn small bad" :disabled="busy || ticket.cancelRequested" @click="emit('cancel', ticket.ticketId)">撤单</button>
         </div>

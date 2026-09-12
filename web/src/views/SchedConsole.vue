@@ -10,6 +10,7 @@ import CodexTickets from '@/components/sched/CodexTickets.vue'
 import RecentCommands from '@/components/sched/RecentCommands.vue'
 import LedgerTable from '@/components/sched/LedgerTable.vue'
 import TicketDrawer from '@/components/sched/TicketDrawer.vue'
+import EstimateText from '@/components/sched/EstimateText.vue'
 import { age, ticketLabel } from '@/components/sched/format'
 import '@/components/sched/console.css'
 
@@ -52,29 +53,39 @@ onUnmounted(store.stop)
         <p class="sched-note">派单员第 {{ store.snapshot.dispatcher.heartbeat.tick }} 拍 · 台账序号 {{ store.snapshot.dispatcher.heartbeat.cursorSeq }} · 数据位置 {{ store.snapshot.share }}</p>
       </details>
       <AttentionItems :snapshot="store.snapshot" :now="store.now" @open="store.openDetail" />
+      <section class="sched-card">
+        <h2 v-if="store.snapshot.connectedProjects.readable">已接入（{{ store.snapshot.connectedProjects.names.length }} 个项目）</h2><h2 v-else>项目接入状态暂不可读</h2>
+        <p v-if="!store.snapshot.connectedProjects.readable" class="warn" role="status">{{ store.snapshot.connectedProjects.reason }}</p>
+        <p v-else-if="store.snapshot.connectedProjects.names.length" class="connected-projects"><span v-for="name in store.snapshot.connectedProjects.names" :key="name" class="sched-tag info">{{ name }}</span></p>
+        <p v-else class="sched-empty">最近 7 天没有项目在台账中出现</p>
+        <p class="sched-note">按最近 7 天的台账统计。未接入调度的占用按外部负载统计，不区分来源</p>
+      </section>
+      <p v-if="store.snapshot.historyError" class="warn" role="status">{{ store.snapshot.historyError }}；暂无法预估</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-        :tickets="store.snapshot.running" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" /></div>
+        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" /></div>
       <details v-if="offline.length" class="sched-offline"><summary>离线机器 {{ offline.length }} 台（不参与派单）</summary>
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-          :tickets="store.snapshot.running" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" /></div>
+          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" /></div>
       </details>
       <section v-if="unassigned.length" class="sched-card"><h2>等待执行机确认</h2><p v-for="ticket in unassigned" :key="ticket.ticketId">
         <button class="sched-link" @click="store.openDetail(ticket.ticketId)">{{ ticket.title }}</button> · {{ ticketLabel(ticket) }}
+        <EstimateText :estimate="store.snapshot.estimates[ticket.ticketId]" />
         <button class="sched-btn small bad" :disabled="store.busy || ticket.cancelRequested" @click="cancel(ticket.ticketId)">撤单</button>
       </p></section>
       <div class="sched-two-columns">
         <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
-          :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />
+          :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />
         <div class="sched-stack"><ReserveCard :host="store.host" :legacy="store.snapshot.legacyReserve" :latest="latestReserve" :busy="store.busy" @command="store.command" />
-          <CodexTickets :tickets="store.snapshot.registerOnly" :now="store.now" @open="store.openDetail" />
+          <CodexTickets :tickets="store.snapshot.registerOnly" :estimates="store.snapshot.estimates" :now="store.now" @open="store.openDetail" />
           <RecentCommands :receipts="store.snapshot.recentReceipts" :submitted="store.commands" :now="store.now" :busy="store.busy" @retry="store.retryLegacy" />
         </div>
       </div>
       <LedgerTable :value="store.filters" :data="store.ledger" :page="store.page" :loading="store.ledgerLoading" :error="store.ledgerError"
+        :exporting="store.exporting" :export-error="store.exportError" @export="store.exportLedger"
         @filter="store.applyFilters" @page="store.movePage" @open="store.openDetail" @refresh="store.loadLedger" />
     </template>
     <TicketDrawer v-if="store.detailId" :ticket-id="store.detailId" :ticket="store.detail" :loading="store.detailLoading" :error="store.detailError"
-      @close="store.closeDetail" @retry="store.detailId && store.openDetail(store.detailId)" />
+      :related="store.related" @open="store.openDetail" @close="store.closeDetail" @retry="store.detailId && store.openDetail(store.detailId)" />
   </main>
 </template>
 
@@ -95,6 +106,7 @@ onUnmounted(store.stop)
 .sched-offline .sched-machines { margin-top: var(--s2); }
 .sched-two-columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); align-items: start; gap: var(--s4); }
 .sched-stack { display: grid; gap: var(--s4); min-width: 0; }
+.connected-projects { display: flex; flex-wrap: wrap; gap: var(--s2); }
 @media (max-width: 1150px) { .sched-two-columns { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) { .sched-page-head { flex-direction: column; }.sched-pills { justify-content: flex-start; } }
 </style>
