@@ -5,6 +5,7 @@ const REASONS = Object.freeze({
   ci: 'CI 在跑', reservation: '预留未兑现', capacity: '需求超过容量', history: '没有历史样本',
   unavailable: '允许的机器离线、数据过期或暂不可派', start: '尚未收到开跑回报',
   paused: '执行已暂停或处于低速，恢复时刻未知', load: '现有占用的释放时刻未知',
+  overdue: '在跑执行已超出平均耗时', missingMachine: '执行所在机器已不在快照中',
   head: '队首单子的开跑时刻未知',
   snapshot: '调度快照不可读、已过期或尚未同步', ledger: '调度台账不可读',
 });
@@ -21,6 +22,7 @@ function machineBlock(machine, nowMs) {
 
 function runningEstimate(ticket, machines, samples, nowMs) {
   const attempt = currentAttempt(ticket), machine = machines.find(item => item.name === (attempt?.permit?.machine ?? attempt?.intent?.machine));
+  if (!machine && !ticket.registerOnly) return unknown('missingMachine');
   const block = machine && machineBlock(machine, nowMs);
   if (block) return unknown(block);
   if (ticket.pauseReasons.includes('ci')) return unknown('ci');
@@ -105,9 +107,9 @@ function estimateTickets(snapshot, history) {
     if (!machine || ticket.registerOnly || !attempt?.grantedCores) continue;
     const releasing = Math.min(attempt.grantedCores, machine.releaseBudget);
     machine.releaseBudget -= releasing;
-    if (estimate.kind === 'completion') machine.changes.push({ at: nowMs + estimate.remainingMs, cores: releasing });
-    // 未知执行保持占用；已有空闲核仍可用，只有需要释放这些核时才报告该原因。
-    else machine.releaseUnknown = estimate.code;
+    if (estimate.kind === 'completion' && !estimate.overdue) machine.changes.push({ at: nowMs + estimate.remainingMs, cores: releasing });
+    // 超时或未知执行保持占用；已有空闲核仍可用，只有需要释放这些核时才报告原因。
+    else machine.releaseUnknown = estimate.overdue ? 'overdue' : estimate.code;
   }
   const byId = new Map(tickets.map(ticket => [ticket.ticketId, ticket]));
   for (const entry of [...queue].sort((a, b) => a.position - b.position)) {

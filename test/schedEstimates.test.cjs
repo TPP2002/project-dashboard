@@ -52,12 +52,20 @@ test('中位数与剩余时长决定排队等待、预计完成；输入不可�
   assert.equal(JSON.stringify([input, samples]), before);
 });
 
-test('超时用 overdue 表示已超出平均耗时，剩余时长下限为零', () => {
+test('超时执行保持占用并报告原因，已有空闲核与其他执行的释放仍可用', () => {
   const running = job(1, 'running', 15000), waiting = job(2), estimates = estimateTickets(snapshot([running, waiting]), history([10000]));
   assert.equal(estimates[running.ticketId].overdue, true);
   assert.equal(estimates[running.ticketId].remainingMs, 0);
   assert.equal(estimates[running.ticketId].finishAt, iso(NOW - 5000));
-  assert.equal(estimates[waiting.ticketId].waitMs, 0);
+  const unavailable = { kind: 'unavailable', code: 'overdue', reason: '在跑执行已超出平均耗时' };
+  assert.deepEqual(estimates[waiting.ticketId], unavailable);
+  const spare = snapshot([running, waiting], [machine({ quotaCores: 8, availableCores: 4 })]);
+  assert.equal(estimateTickets(spare, history([10000]))[waiting.ticketId].waitMs, 0);
+  const onTime = job(3, 'running', 4000);
+  const mixed = snapshot([running, onTime, waiting], [machine({ quotaCores: 8, grantedCores: 8 })]);
+  assert.equal(estimateTickets(mixed, history([10000]))[waiting.ticketId].waitMs, 6000);
+  waiting.request.requestedCores = 8; mixed.queue[0].requestedCores = 8;
+  assert.deepEqual(estimateTickets(mixed, history([10000]))[waiting.ticketId], unavailable);
 });
 
 test('四种不可预估原因分别保留，不以零等待冒充', () => {
@@ -73,7 +81,7 @@ test('四种不可预估原因分别保留，不以零等待冒充', () => {
   }
 });
 
-test('只选允许且在线新鲜的机器；一台 CI 忙不妨碍另一台空闲机', () => {
+test('只选允许且在线新鲜的机器；在跑机器缺失不编造完成时间，只登记单不受影响', () => {
   const waiting = job(1); waiting.request.allowedMachines.push('fixture-alternative');
   const input = snapshot([waiting], [machine({ ci: 'active' }), machine({ name: 'fixture-alternative', grantedCores: 0, availableCores: 4 }),
     machine({ name: 'not-allowed', grantedCores: 0, availableCores: 100 })]);
@@ -82,6 +90,17 @@ test('只选允许且在线新鲜的机器；一台 CI 忙不妨碍另一台空�
   assert.equal(estimateTickets(input, history([10000]))[waiting.ticketId].code, 'ci');
   input.machines[0].ci = 'idle'; input.machines[0].online = false;
   assert.equal(estimateTickets(input, history([10000]))[waiting.ticketId].code, 'unavailable');
+  const running = job(2, 'running', 4000);
+  for (const hosts of [[], [machine({ name: 'fixture-alternative' })]]) {
+    assert.deepEqual(estimateTickets(snapshot([running], hosts), history([10000]))[running.ticketId],
+      { kind: 'unavailable', code: 'missingMachine', reason: '执行所在机器已不在快照中' });
+  }
+  for (const host of [machine({ online: false }), machine({ fresh: false }), machine({ heartbeatAt: iso(NOW - 31000) })]) {
+    assert.equal(estimateTickets(snapshot([running], [host]), history([10000]))[running.ticketId].code, 'unavailable');
+  }
+  const registered = ticket(3, { state: 'running', registerOnly: true, machine: null });
+  registered.attempts[0].startedAt = iso(NOW - 4000);
+  assert.equal(estimateTickets(snapshot([registered], []), history([10000], 'codex-build'))[registered.ticketId].finishAt, iso(NOW + 6000));
 });
 
 test('不能用配额冒充当前可派核；已兑现预留与小数外部负载保持占用', () => {
