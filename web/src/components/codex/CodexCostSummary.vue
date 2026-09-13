@@ -3,32 +3,12 @@ import Icon from '@/components/Icon.vue'
 import { computed } from 'vue'
 import type { CodexUsage, CombinedUsage, QuotaSnapshot } from '@/types/codex'
 
-/** 只取用得到的几项,避免把整个 usage 类型搬过来。 */
-interface SpendBreakdown {
-  output: number
-  inputNew: number
-  reused: number
-  hitRate: number
-  savedUsd: number
-}
-
 const props = defineProps<{
   codex: CodexUsage
   combined: CombinedUsage
   quota: QuotaSnapshot
   days: number
-  spend?: SpendBreakdown | null
 }>()
-
-/** 写出来的字占总量多少 —— 用来点明「量大不等于花得多」。 */
-const outputShare = computed(() => {
-  const s = props.spend
-  if (!s) return '—'
-  const all = s.output + s.inputNew + s.reused
-  if (all <= 0) return '—'
-  const pct = (s.output / all) * 100
-  return pct < 0.1 ? '不到 0.1%' : `${pct.toFixed(1)}%`
-})
 
 function fmt(value: number) {
   if (value >= 1e8) return (value / 1e8).toFixed(2) + ' 亿'
@@ -63,38 +43,24 @@ const projectRows = computed(() => {
   }
   return visible
 })
-const maxProjectTokens = computed(() => Math.max(1, ...projectRows.value.map((row) => row.tokens)))
 const quotaPercent = computed(() => props.quota.usedPercent == null
   ? 0
   : Math.max(0, Math.min(100, props.quota.usedPercent)))
 </script>
 
 <template>
-  <section class="cost-summary">
+  <section class="card cost-summary">
     <div class="section-head">
-      <h2>近 {{ days }} 天摘要</h2>
+      <h2>Codex · 消耗按项目</h2>
       <span class="badge n">token 口径</span>
     </div>
+    <p class="fine">近 {{ days }} 天的用量摘要与项目分布。</p>
 
     <div class="summary-cards">
       <div class="card"><div class="v">{{ fmt(combined.claudeTokens) }}</div><div class="l">Claude 消耗</div></div>
       <div class="card"><div class="v">{{ fmt(combined.codexTokens) }}</div><div class="l">Codex 消耗</div></div>
       <div class="card"><div class="v">{{ fmt(combined.totalTokens) }}</div><div class="l">两者合计</div></div>
       <div class="card rough"><div class="v">{{ money(combined.savingsEstimateUsd) }}</div><div class="l">用 Codex 省下的 Claude 额度（粗估）</div></div>
-    </div>
-
-    <div v-if="spend" class="spend-row">
-      <p class="spend-note">
-        上面是<b>用量</b>,下面是<b>花销结构</b>——单价差得很远:写出来的字最贵,读进去的新内容次之,
-        重复用到的旧内容几乎不要钱。<b>所以总量大不等于花得多。</b>
-      </p>
-      <div class="summary-cards spend-cards">
-        <div class="card"><div class="v">{{ fmt(spend.output) }}</div><div class="l">写出来的(最贵) · 占总量 {{ outputShare }}</div></div>
-        <div class="card"><div class="v">{{ fmt(spend.inputNew) }}</div><div class="l">读进去的新内容</div></div>
-        <div class="card"><div class="v">{{ fmt(spend.reused) }}</div><div class="l">重复用到的旧内容(几乎不花钱)</div></div>
-        <div class="card"><div class="v">{{ (spend.hitRate * 100).toFixed(1) }}%</div><div class="l">重复利用命中率 —— 越高越省</div></div>
-        <div class="card saved"><div class="v">${{ Math.round(spend.savedUsd).toLocaleString() }}</div><div class="l">靠重复利用省下的钱</div></div>
-      </div>
     </div>
 
     <div class="wide-pair">
@@ -114,7 +80,6 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
       <section class="project-section">
         <div class="section-head">
           <div>
-            <h2>Codex 消耗按项目</h2>
             <p>最多列出前 5 个项目，其余合并为“其它”。</p>
           </div>
           <span class="badge n">{{ codex.byProject.length }} 个项目</span>
@@ -124,14 +89,16 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
           期间没有可归属的 Codex 会话<br>
           <span class="empty-help">会话带有可识别的工作目录后，就能在这里比较各项目消耗。</span>
         </div>
-        <div v-else class="project-bars">
-          <div v-for="row in projectRows" :key="row.project" class="project-row">
-            <span class="project-name" :title="row.project">{{ row.project }}</span>
-            <div class="project-track" aria-hidden="true">
-              <i :style="{ width: (row.tokens / maxProjectTokens) * 100 + '%' }" />
-            </div>
-            <span class="project-value">{{ fmt(row.tokens) }}</span>
-          </div>
+        <div v-else class="project-scroll">
+          <table class="project-table">
+            <thead><tr><th scope="col">项目名</th><th scope="col">token 数</th></tr></thead>
+            <tbody>
+              <tr v-for="row in projectRows" :key="row.project">
+                <td class="project-name" :title="row.project">{{ row.project }}</td>
+                <td class="num project-value" :title="row.tokens.toLocaleString() + ' token'">{{ fmt(row.tokens) }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
@@ -145,18 +112,12 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
 </template>
 
 <style scoped>
-.cost-summary { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); }
+.cost-summary { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); background: var(--surface); }
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
 .section-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-sm); }
 .summary-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
 .summary-cards .card { min-width: 0; background: var(--surface-2); }
-.rough .v { overflow-wrap: anywhere; }
-.spend-row { display: flex; flex-direction: column; gap: var(--s2); }
-.spend-note { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; }
-.spend-note b { color: var(--text); font-weight: 600; }
-.spend-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.spend-cards .v { font-size: var(--fs-lg); }
-.spend-cards .saved .v { color: var(--ok); }
+.summary-cards .v { overflow-wrap: anywhere; }
 .quota-card { display: flex; flex-direction: column; gap: var(--s3); background: var(--surface); }
 .quota-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s3); }
 .quota-head strong, .quota-head span { display: block; }
@@ -167,18 +128,15 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
 /* 额度条与「按项目消耗」并排，每列不窄于 520；窄屏自动落回上下堆叠。 */
 .wide-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); align-items: start; gap: var(--s3); }
 .project-section { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); }
-.project-bars { display: flex; flex-direction: column; gap: var(--s2); }
-.project-row { display: grid; grid-template-columns: minmax(110px, 180px) minmax(120px, 1fr) minmax(76px, auto); align-items: center; gap: var(--s3); font-size: var(--fs-base); }
-.project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-track { height: var(--s2); overflow: hidden; border-radius: var(--r-sm); background: var(--surface-3); }
-.project-track i { display: block; height: 100%; border-radius: var(--r-sm); background: var(--text-2); }
-.project-value { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.project-scroll { max-width: 100%; max-height: 180px; overflow-x: auto; overflow-y: auto; }
+.project-table { table-layout: fixed; }
+.project-table th:first-child { width: 65%; }
+.project-table th:last-child { text-align: right; }
+.project-name { overflow-wrap: anywhere; }
+.project-value { white-space: nowrap; }
 .empty-help { font-size: var(--fs-sm); }
 
-@media (max-width: 820px) {
+@media (max-width: 1150px) {
   .summary-cards { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 560px) {
-  .project-row { grid-template-columns: minmax(88px, 1fr) minmax(72px, 2fr) auto; gap: var(--s2); }
 }
 </style>
