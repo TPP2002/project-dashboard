@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import type { TicketDetail } from '@/api/sched'
+import type { TicketDetail, TicketRelations } from '@/api/sched'
 import { duration, stamp, stateLabels, ticketLabel, tone } from './format'
-const props = defineProps<{ ticketId: string; ticket: TicketDetail | null; loading: boolean; error: string }>()
-const emit = defineEmits<{ close: []; retry: [] }>()
+const props = defineProps<{ ticketId: string; ticket: TicketDetail | null; related: TicketRelations | null; loading: boolean; error: string }>()
+const emit = defineEmits<{ close: []; retry: []; open: [id: string] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 const attempt = computed(() => props.ticket?.attempts.find(item => item.attemptId === props.ticket?.currentAttemptId))
 const timings = [{ key: 'queuedMs', label: '排队' }, { key: 'runningMs', label: '执行' }, { key: 'pausedMs', label: '暂停' }, { key: 'slowMs', label: '低速' }] as const
@@ -15,6 +15,7 @@ const eventLabels: Record<string, string> = { submitted: '挂号', granted: '授
 onMounted(() => dialog.value?.showModal())
 onUnmounted(() => dialog.value?.close())
 function backdrop(event: MouseEvent) { if (event.target === dialog.value) emit('close') }
+function openParent() { const id = props.ticket?.request.parentTicketId; if (id) emit('open', id) }
 </script>
 
 <template>
@@ -27,6 +28,7 @@ function backdrop(event: MouseEvent) { if (event.target === dialog.value) emit('
       <template v-else-if="ticket">
         <p><span class="sched-tag info">{{ ticket.request.project }}</span> <span class="sched-tag" :class="tone(ticket.state)">{{ ticketLabel(ticket) }}</span></p>
         <p class="sched-note">这是打开时的快照 · 更新于 {{ stamp(ticket.updatedAt) }}</p>
+        <p v-if="ticket.request.parentTicketId">子单（属于 <button class="sched-link" @click="openParent">{{ ticket.request.parentTicketId }}</button>）</p>
         <section><h3>基本信息</h3><dl class="detail-kv">
           <dt>活</dt><dd>{{ ticket.request.title }}</dd><dt>派单方</dt><dd>{{ ticket.request.submitter }}</dd>
           <dt>工位 / 分支</dt><dd>暂无</dd><dt>任务范围</dt><dd>{{ ticket.request.work.type }} · {{ ticket.request.work.targetPaths.join('、') }}</dd>
@@ -34,8 +36,21 @@ function backdrop(event: MouseEvent) { if (event.target === dialog.value) emit('
           <dt>执行机</dt><dd>{{ attempt?.permit?.machine || attempt?.intent?.machine || '尚未派机' }}</dd>
           <dt>授予核数</dt><dd>{{ attempt?.grantedCores ?? '暂无' }}</dd>
           <dt>挂号时刻</dt><dd>{{ stamp(ticket.createdAt) }}</dd><dt>结束时刻</dt><dd>{{ stamp(ticket.endedAt) }}</dd>
-          <dt v-if="ticket.request.parentTicketId">上游单子</dt><dd v-if="ticket.request.parentTicketId">{{ ticket.request.parentTicketId }}</dd>
         </dl></section>
+        <p v-if="related && !related.readable" class="warn" role="status">{{ related.reason }}；交接信息仅供核对快照</p>
+        <section v-if="related?.handoffs.length"><h3>集群交接</h3>
+          <div v-for="handoff in related.handoffs" :key="handoff.attemptId" class="handoff">
+            <p class="sched-id">{{ handoff.attemptId }} · {{ handoff.machine }} · {{ handoff.submissionId }}</p>
+            <ol class="handoff-steps" aria-label="派发意图 → 已投递"><li><b>派发意图</b><time>{{ handoff.intentAt ? stamp(handoff.intentAt) : '尚无意图事件' }}</time></li>
+              <li><b :class="{ 'sched-muted': !handoff.dispatchedAt }">已投递</b><time>{{ handoff.dispatchedAt ? stamp(handoff.dispatchedAt) : '等待投递，尚无投递事件' }}</time></li></ol>
+          </div>
+        </section>
+        <section><h3>子单</h3>
+          <p v-if="!related?.children" class="sched-note">子单关系暂不可读</p>
+          <ul v-else-if="related.children.length" class="child-tickets"><li v-for="child in related.children" :key="child.ticketId">
+            <button class="sched-link" @click="emit('open', child.ticketId)">{{ child.title }}</button> · {{ stateLabels[child.state] }}<div class="sched-id">{{ child.ticketId }}</div>
+          </li></ul><p v-else class="sched-empty">没有子单</p>
+        </section>
         <section><h3>时长（四段互不重叠）</h3><dl class="detail-kv">
           <template v-for="part in timings" :key="part.key"><dt>{{ part.label }}</dt><dd>{{ duration(ticket.timing[part.key]) }}</dd></template>
         </dl></section>
@@ -76,4 +91,10 @@ h3 { font-size: var(--fs-sm); color: var(--text-2); margin: 0 0 6px; }
 .timeline time { display: block; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); }
 .timeline p { margin: var(--s1) 0; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--s2); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); font-size: var(--fs-xs); }
+.handoff-steps { display: flex; gap: var(--s3); list-style: none; padding: 0; font-size: var(--fs-sm); }
+.handoff-steps li { flex: 1; min-width: 0; }
+.handoff-steps li + li { position: relative; padding-left: var(--s3); }
+.handoff-steps li + li::before { content: '→'; position: absolute; left: calc(-1 * var(--s1)); color: var(--text-3); }
+.handoff-steps time { display: block; color: var(--text-3); font-size: var(--fs-xs); }
+.child-tickets { padding-left: var(--s4); font-size: var(--fs-sm); }
 </style>

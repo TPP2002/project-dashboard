@@ -3,6 +3,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const c = require('./schedContract.cjs');
+const { readLedger, connectedProjects } = require('./schedLedger.cjs');
+const { estimateTickets } = require('./schedEstimates.cjs');
+const { ticketCsv } = require('./schedCsv.cjs');
+const { ticketRelations } = require('./schedRelations.cjs');
 
 const STATES = ['queued', 'granted', 'running', 'paused', 'slow', 'unsatisfiable', 'passed', 'failed', 'cancelled', 'voided'];
 const ACTIVE = ['granted', 'running', 'paused', 'slow'];
@@ -40,6 +44,7 @@ function validateTicket(value, id) {
   for (const key of ['project', 'title', 'submitter', 'category']) c.text(request[key]);
   c.integer(request.requestedCores); c.list(c.segment, 1, true)(request.allowedMachines);
   c.requireRecord(request.work); c.text(request.work.type); c.list(c.text, 1)(request.work.targetPaths);
+  if (request.parentTicketId !== undefined) c.ticketId(request.parentTicketId);
   c.fields(request.codeRef, { kind: c.oneOf(['commit', 'content']), value: c.text });
   c.list(attempt => {
     c.requireRecord(attempt, '执行记录'); c.text(attempt.attemptId); c.integer(attempt.grantedCores);
@@ -91,7 +96,10 @@ function snapshot(share, cpuBudget, nowMs) {
     const config = readConfig(share);
     const heartbeat = c.validateHeartbeat(c.readJson(paths.heartbeat));
     if (heartbeat.machine !== config.machine) throw new Error('[sched] 心跳与派单主机配置不一致');
-    const tickets = readTickets(share).map(summarize);
+    const records = readTickets(share), tickets = records.map(summarize);
+    const history = readLedger(share);
+    const estimates = estimateTickets({ readable: true, nowMs, tickets: records, queue: heartbeat.queue,
+      machines: heartbeat.machines, locks: heartbeat.locks, heartbeatAt: heartbeat.at, cursorSeq: heartbeat.cursorSeq }, history);
     const receipts = recentReceipts(share);
     const legacy = cpuBudget.cpuStatus();
     return { ok: true, share, readable: true, format,
@@ -99,10 +107,13 @@ function snapshot(share, cpuBudget, nowMs) {
       machines: heartbeat.machines, queue: heartbeat.queue, locks: heartbeat.locks,
       running: tickets.filter(ticket => ACTIVE.includes(ticket.state)),
       registerOnly: tickets.filter(ticket => ticket.registerOnly && ticket.state === 'running'), recentReceipts: receipts,
-      legacyReserve: { reservedCores: legacy.reservedCores, reserveExpiresAt: legacy.reserveExpiresAt } };
+      legacyReserve: { reservedCores: legacy.reservedCores, reserveExpiresAt: legacy.reserveExpiresAt },
+      estimates, estimatesAt: new Date(nowMs).toISOString(), historyError: history.reason,
+      connectedProjects: connectedProjects(records, history, nowMs) };
   } catch (error) {
     return { ...readFailure(error), share, format: null, dispatcher: null, machines: null, queue: null, locks: null,
-      running: null, registerOnly: null, recentReceipts: null, legacyReserve: null };
+      running: null, registerOnly: null, recentReceipts: null, legacyReserve: null,
+      estimates: null, estimatesAt: null, historyError: null, connectedProjects: null };
   }
 }
 
@@ -117,12 +128,27 @@ function dateBoundary(value, end) {
   catch (_) { throw badRequest('日期必须为有效日期或 UTC 毫秒 ISO'); }
 }
 
-/** 按不可变的挂号时刻、单号倒序；游标绑定筛选，翻页时新单不挤出或重复旧行。 */
-function ticketPage(share, query = {}) {
+function ticketFilters(query) {
   const filters = Object.fromEntries(['project', 'machine', 'submitter', 'result', 'from', 'to'].map(key => [key, queryText(query[key], key)]));
   filters.from = dateBoundary(filters.from, false); filters.to = dateBoundary(filters.to, true);
   if (filters.from && filters.to && filters.from > filters.to) throw badRequest('开始日期不能晚于结束日期');
   if (filters.result && !STATES.includes(filters.result)) throw badRequest('非法结果筛选');
+  return filters;
+}
+/** 页面与导出共用同一个筛选谓词；机器匹配历史执行，日期匹配挂号时刻。 */
+function filteredTickets(tickets, filters) {
+  return tickets.filter(ticket => {
+    const request = ticket.request;
+    return (!filters.project || request.project === filters.project) && (!filters.submitter || request.submitter === filters.submitter)
+      && (!filters.result || ticket.state === filters.result)
+      && (!filters.machine || ticket.attempts.some(a => (a.permit?.machine ?? a.intent?.machine) === filters.machine))
+      && (!filters.from || ticket.createdAt >= filters.from) && (!filters.to || ticket.createdAt <= filters.to);
+  }).sort((a, b) => compare(b.createdAt, a.createdAt) || compare(b.ticketId, a.ticketId));
+}
+
+/** 按不可变的挂号时刻、单号倒序；游标绑定筛选，翻页时新单不挤出或重复旧行。 */
+function ticketPage(share, query = {}) {
+  const filters = ticketFilters(query);
   const rawLimit = queryText(query.limit, 'limit');
   if (rawLimit && (!/^\d+$/.test(rawLimit) || !Number.isSafeInteger(Number(rawLimit)) || Number(rawLimit) < 1)) throw badRequest('limit 必须为正整数');
   const limit = Math.min(200, rawLimit ? Number(rawLimit) : 50);
@@ -138,13 +164,7 @@ function ticketPage(share, query = {}) {
     } catch (_) { throw badRequest('非法分页游标或筛选已改变'); }
   }
   const tickets = readTickets(share);
-  const rows = tickets.filter(ticket => {
-    const request = ticket.request;
-    return (!filters.project || request.project === filters.project) && (!filters.submitter || request.submitter === filters.submitter)
-      && (!filters.result || ticket.state === filters.result)
-      && (!filters.machine || ticket.attempts.some(a => (a.permit?.machine ?? a.intent?.machine) === filters.machine))
-      && (!filters.from || ticket.createdAt >= filters.from) && (!filters.to || ticket.createdAt <= filters.to);
-  }).sort((a, b) => compare(b.createdAt, a.createdAt) || compare(b.ticketId, a.ticketId));
+  const rows = filteredTickets(tickets, filters);
   const after = rows.filter(ticket => !cursor || ticket.createdAt < cursor.at || (ticket.createdAt === cursor.at && ticket.ticketId < cursor.id));
   const items = after.slice(0, limit).map(summarize);
   const last = items[items.length - 1];
@@ -154,6 +174,10 @@ function ticketPage(share, query = {}) {
     filters: { projects: unique(tickets.map(t => t.request.project)), submitters: unique(tickets.map(t => t.request.submitter)),
       machines: unique(tickets.flatMap(t => t.attempts.map(a => a.permit?.machine ?? a.intent?.machine))) } };
 }
+function exportTickets(share, query = {}) {
+  const filters = ticketFilters(query);
+  return ticketCsv(filteredTickets(readTickets(share), filters));
+}
 function ticketDetail(share, id) {
   try { c.ticketId(id); } catch (error) { throw badRequest(error.message); }
   const directory = c.schedPaths(share).tickets;
@@ -161,6 +185,10 @@ function ticketDetail(share, id) {
   const files = jsonFiles(directory);
   if (!files.includes(`${id}.json`)) throw Object.assign(new Error('单子不存在'), { status: 404 });
   return validateTicket(c.readJson(path.join(directory, `${id}.json`)), id);
+}
+function relatedTickets(share, ticket) {
+  try { return ticketRelations(ticket, readTickets(share), readLedger(share)); }
+  catch (error) { return { readable: false, reason: `读不到关联单子：${error.message}`, children: null, handoffs: [] }; }
 }
 function pollStamp(share) {
   const paths = c.schedPaths(share);
@@ -171,4 +199,4 @@ function pollStamp(share) {
   return { cursorSeq, key: `${share}:${cursorSeq}:${receipts.mtimeMs}` };
 }
 
-module.exports = { snapshot, ticketPage, ticketDetail, readConfig, readFailure, pollStamp, STATES };
+module.exports = { snapshot, ticketPage, exportTickets, ticketDetail, relatedTickets, readConfig, readFailure, pollStamp, STATES };

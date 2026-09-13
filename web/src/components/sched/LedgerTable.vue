@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { TicketPage } from '@/api/sched'
 import type { LedgerPrefs, Period } from './preferences'
 import { duration, stamp, stateLabels, tone } from './format'
-const props = defineProps<{ value: LedgerPrefs; data: TicketPage | null; page: number; loading: boolean; error: string }>()
-const emit = defineEmits<{ filter: [value: LedgerPrefs]; page: [direction: -1 | 1]; open: [id: string]; refresh: [] }>()
+const props = defineProps<{ value: LedgerPrefs; data: TicketPage | null; page: number; loading: boolean; error: string; exporting: boolean; exportError: string }>()
+const emit = defineEmits<{ filter: [value: LedgerPrefs]; page: [direction: -1 | 1]; open: [id: string]; refresh: []; export: [] }>()
 const draft = ref({ ...props.value })
+const pendingDates = computed(() => draft.value.period === 'custom' && (draft.value.from !== props.value.from || draft.value.to !== props.value.to))
 watch(() => props.value, value => { draft.value = { ...value } })
 const periods: { value: Period; label: string }[] = [{ value: 'today', label: '今天' }, { value: 'd7', label: '近 7 天' },
   { value: 'd90', label: '近 90 天' }, { value: 'all', label: '全部' }, { value: 'custom', label: '自选日期' }]
@@ -36,6 +37,9 @@ function period(value: Period) { draft.value.period = value; emit('filter', { ..
         <button class="sched-btn" type="submit">应用日期</button>
       </template>
     </form>
+    <p class="sched-note"><button class="sched-btn small" :disabled="exporting || loading || !!error || !data || pendingDates" @click="emit('export')">{{ exporting ? '正在导出…' : '按当前筛选导出 CSV' }}</button> · 最多 10000 行，导出全部符合筛选的记录；耗时为累计执行时长（毫秒）</p>
+    <p v-if="pendingDates" class="sched-note">日期尚未应用，请先应用日期再导出。</p>
+    <p v-if="exportError" class="bad" role="alert">{{ exportError }}</p>
     <p v-if="error" class="bad" role="alert">{{ error }} <button class="sched-btn small" @click="emit('refresh')">重新读取</button></p>
     <p v-else-if="loading" class="sched-note" role="status">正在读取台账…</p>
     <div v-if="data && !error" class="sched-table-wrap" :aria-busy="loading">

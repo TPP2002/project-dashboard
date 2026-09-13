@@ -20,6 +20,15 @@ export interface QueueEntry {
   ticketId: string; position: number; band: 0 | 1; requestedCores: number; allowedMachines: string[]
   queuedAt: string; state: 'queued' | 'unsatisfiable'; reason: string | null
 }
+export type TicketEstimate =
+  | { kind: 'unavailable'; code: string; reason: string }
+  | { kind: 'wait'; startAt: string; waitMs: number; machine: string; medianMs: number; sampleCount: number }
+  | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number }
+export interface TicketRelations {
+  readable: boolean; reason: string | null
+  children: { ticketId: string; title: string; state: TicketState }[] | null
+  handoffs: { attemptId: string; intentAt: string | null; dispatchedAt: string | null; machine: string | null; submissionId: string | null }[]
+}
 export interface TicketSummary extends Timing {
   ticketId: string; project: string; title: string; submitter: string; category: string; machine: string | null
   requestedCores: number; grantedCores: number; state: TicketState; result: TicketState; resultReason: string | null
@@ -49,6 +58,8 @@ export interface SchedSnapshot {
   machines: MachineSnapshot[]; queue: QueueEntry[]; locks: { machine: string; byTicketId: string }[]
   running: TicketSummary[]; registerOnly: TicketSummary[]; recentReceipts: Receipt[]
   legacyReserve: { reservedCores: number; reserveExpiresAt: string | null }
+  estimates: Record<string, TicketEstimate>; estimatesAt: string; historyError: string | null
+  connectedProjects: { readable: boolean; names: string[]; reason: string | null }
 }
 export interface TicketFilters { project: string; machine: string; submitter: string; result: string; from: string; to: string }
 export interface TicketPage {
@@ -65,7 +76,8 @@ async function request<T>(endpoint: string, body?: unknown, signal?: AbortSignal
   return value as T
 }
 export const fetchSnapshot = (signal?: AbortSignal) => request<SchedSnapshot>('snapshot', undefined, signal)
-export const fetchTicket = (id: string, signal?: AbortSignal) => request<{ ok: boolean; ticket: TicketDetail }>(`ticket/${encodeURIComponent(id)}`, undefined, signal)
+export const fetchTicket = (id: string, signal?: AbortSignal) => request<{ ok: boolean; ticket: TicketDetail; related: TicketRelations }>(`ticket/${encodeURIComponent(id)}`, undefined, signal)
+export const fetchQueueTicket = (id: string, signal?: AbortSignal) => request<{ ok: boolean; ticket: TicketDetail }>(`ticket/${encodeURIComponent(id)}?related=0`, undefined, signal)
 export function fetchTickets(filters: Partial<TicketFilters>, cursor = '', limit = 50, signal?: AbortSignal) {
   const query = new URLSearchParams({ cursor, limit: String(limit) })
   for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value)
@@ -73,3 +85,15 @@ export function fetchTickets(filters: Partial<TicketFilters>, cursor = '', limit
 }
 export const postCommand = (body: CommandInput) => request<{ ok: boolean; commandId: string; legacy?: LegacySync }>('command', body)
 export const retryLegacyReserve = (data: ReserveData) => request<{ ok: boolean; legacy: LegacySync }>('legacy-reserve', data)
+
+/** 下载服务端生成的文件；沿用已应用的日期边界，不随下载时刻重新计算筛选。 */
+export async function exportTickets(filters: TicketFilters, signal?: AbortSignal): Promise<Blob> {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value)
+  const response = await fetch(`/api/sched/tickets.csv?${query}`, { signal })
+  if (!response.ok) {
+    const value = await response.json()
+    throw new Error([value.error || '导出失败', value.reason].filter(Boolean).join('：'))
+  }
+  return response.blob()
+}

@@ -52,7 +52,7 @@ function createSchedApi({ sendJson, readBody, bodyMax, cpuBudget, resolveShare, 
       }
     });
   }
-  function route(action, req, res, query) {
+  function route(action, req, res, query = {}) {
     if (req.method === 'POST' && ['command', 'legacy-reserve'].includes(action)) {
       handlePost(req, res, action === 'legacy-reserve'); return true;
     }
@@ -63,8 +63,14 @@ function createSchedApi({ sendJson, readBody, bodyMax, cpuBudget, resolveShare, 
         const result = read.snapshot(share, cpuBudget, sources.now());
         sendJson(res, result.readable ? 200 : 503, result);
       } else if (action === 'tickets') sendJson(res, 200, read.ticketPage(share, query));
-      else if (action.startsWith('ticket/')) sendJson(res, 200, { ok: true, ticket: read.ticketDetail(share, action.slice(7)) });
-      else return false;
+      else if (action === 'tickets.csv') {
+        const csv = read.exportTickets(share, query);
+        res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="sched-ledger.csv"', 'cache-control': 'no-store' });
+        res.end(csv);
+      } else if (action.startsWith('ticket/')) {
+        const ticket = read.ticketDetail(share, action.slice(7));
+        sendJson(res, 200, { ok: true, ticket, ...(query.related === '0' ? {} : { related: read.relatedTickets(share, ticket) }) });
+      } else return false;
     } catch (error) {
       sendJson(res, error.status || 503, error.status ? { ok: false, error: error.message } : read.readFailure(error));
     }
