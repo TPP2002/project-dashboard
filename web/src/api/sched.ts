@@ -31,9 +31,12 @@ export interface TicketRelations {
 }
 export interface TicketSummary extends Timing {
   ticketId: string; project: string; title: string; submitter: string; category: string; machine: string | null
+  engine?: string | null
   requestedCores: number; grantedCores: number; state: TicketState; result: TicketState; resultReason: string | null
   registerOnly: boolean; pauseReasons: string[]; cancelRequested: boolean; createdAt: string; endedAt: string | null
 }
+export interface EngineGroup { engine: string | null; tickets: TicketSummary[] }
+export interface EngineOption { value: string; label: string }
 export interface Permit {
   ticketId: string; attemptId: string; token: string; machine: string; category: string; grantedCores: number; issuedAt: string
 }
@@ -49,7 +52,7 @@ export interface TicketDetail {
   currentAttemptId: string; pauseReasons: string[]; attempts: Attempt[]; timing: Timing; timeline: TimelineEvent[]
   createdAt: string; updatedAt: string; endedAt: string | null; contentHash: string
   request: { project: string; title: string; submitter: string; category: string; requestedCores: number
-    allowedMachines: string[]; codeRef: CodeRef; work: { type: string; targetPaths: string[] }; parentTicketId?: string }
+    allowedMachines: string[]; codeRef: CodeRef; work: { type: string; targetPaths: string[] }; parentTicketId?: string; engine?: string }
 }
 export interface SchedSnapshot {
   ok: true; readable: true; share: string; format: { formatVersion: number; capabilities: string[]; createdAt: string }
@@ -57,14 +60,15 @@ export interface SchedSnapshot {
     heartbeat: { machine: string; pid: number; protocol: number; head: string; at: string; tick: number; cursorSeq: number; queued: number; granted: number } }
   machines: MachineSnapshot[]; queue: QueueEntry[]; locks: { machine: string; byTicketId: string }[]
   running: TicketSummary[]; registerOnly: TicketSummary[]; recentReceipts: Receipt[]
+  registerOnlyGroups?: EngineGroup[]
   legacyReserve: { reservedCores: number; reserveExpiresAt: string | null }
   estimates: Record<string, TicketEstimate>; estimatesAt: string; historyError: string | null
   connectedProjects: { readable: boolean; names: string[]; reason: string | null }
 }
-export interface TicketFilters { project: string; machine: string; submitter: string; result: string; from: string; to: string }
+export interface TicketFilters { project: string; machine: string; submitter: string; engine?: string; result: string; from: string; to: string }
 export interface TicketPage {
   ok: boolean; readable: boolean; items: TicketSummary[]; total: number; limit: number; nextCursor: string | null
-  filters: { projects: string[]; machines: string[]; submitters: string[] }
+  filters: { projects: string[]; machines: string[]; submitters: string[]; engines?: EngineOption[] }
 }
 
 async function request<T>(endpoint: string, body?: unknown, signal?: AbortSignal): Promise<T> {
