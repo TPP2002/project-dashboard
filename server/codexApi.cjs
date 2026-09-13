@@ -7,11 +7,12 @@ const { attachLiveness } = require('./codexJobHealth.cjs');
 const { getJobSessionSummary } = require('./codexSessions.cjs');
 const { spawnDispatchCli, waitForChild } = require('./codexProcess.cjs');
 const { createCodexSessionApi } = require('./codexSessionApi.cjs');
+const deepseekCostUsage = require('../core/deepseekCostUsage.cjs');
 
 const MESSAGE_MAX = 8000;
 
 function createCodexApi({
-  resolveRepo, readRegistry, dashboardRoot, sessionsRoot,
+  resolveRepo, readRegistry, dashboardRoot, sessionsRoot, registryPath,
   readBody, sendJson, sendText, bodyMax,
 }) {
   const activeDispatches = new Set();
@@ -224,7 +225,12 @@ function createCodexApi({
     return false;
   }
 
-  return { getCostUsage: sessionApi.getCostUsage, getQuota: sessionApi.getQuota, route };
+  return {
+    getCostUsage: sessionApi.getCostUsage,
+    getDeepseekUsage: (days, projectId) => deepseekCostUsage.getDeepseekUsage({ days, projectId, registryPath }),
+    getQuota: sessionApi.getQuota,
+    route,
+  };
 }
 
 module.exports = { createCodexApi };

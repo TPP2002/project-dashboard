@@ -125,3 +125,10 @@ export interface CombinedUsage {
   totalTokens: number
   savingsEstimateUsd: number | null
 }
+
+/** DeepSeek 历史工单实际用量按官方人民币价目计费，金额在展示时保留分位。 */
+export interface DeepseekUsage {
+  byDay: Array<{ date: string; tokens: number; costRmb: number }>
+  totals: { tokens: number; costRmb: number; jobs: number }
+  byModel: Record<string, { tokens: number; costRmb: number }>
+}

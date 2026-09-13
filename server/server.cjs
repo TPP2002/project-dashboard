@@ -685,6 +685,7 @@ function handleSettings(req, res) {
 const codexApi = createCodexApi({
   resolveRepo: codexRepo,
   readRegistry: readRegistrySafe,
+  registryPath: REGISTRY,
   dashboardRoot: DASH_ROOT,
   sessionsRoot: process.env.DASHBOARD_CODEX_SESSIONS
     ? path.resolve(process.env.DASHBOARD_CODEX_SESSIONS) : undefined,
@@ -758,8 +759,9 @@ function handleCostUsage(req, res, query) {
   return Promise.all([
     costUsage.getUsage({ ...selected, days }),
     codexApi.getCostUsage(days, proj.name || pid),
+    codexApi.getDeepseekUsage(days, pid),
   ])
-    .then(([usage, codex]) => {
+    .then(([usage, codex, deepseek]) => {
       const quota = codexApi.getQuota();
       const claudeTokens = costUsage.totalClaudeTokens(usage);
       const codexTokens = codex.selected.tokens;
@@ -769,6 +771,7 @@ function handleCostUsage(req, res, query) {
         sharedDirs: usage.sharedDirs,
         usage,
         codex,
+        deepseek,
         quota,
         combined: {
           claudeTokens,
