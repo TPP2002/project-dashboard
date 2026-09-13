@@ -56,6 +56,11 @@ onUnmounted(store.stop)
         <p class="sched-note">派单员第 {{ store.snapshot.dispatcher.heartbeat.tick }} 拍 · 台账序号 {{ store.snapshot.dispatcher.heartbeat.cursorSeq }} · 数据位置 {{ store.snapshot.share }}</p>
       </details>
       <AttentionItems :snapshot="store.snapshot" :now="store.now" @open="store.openDetail" />
+      <section v-if="unassigned.length" class="sched-card"><h2>等待执行机确认</h2><p v-for="ticket in unassigned" :key="ticket.ticketId">
+        <button class="sched-link" @click="store.openDetail(ticket.ticketId)">{{ ticket.title }}</button> · {{ ticketLabel(ticket) }}
+        <EstimateText :estimate="store.snapshot.estimates[ticket.ticketId]" />
+        <button class="sched-btn small bad" :disabled="store.busy || ticket.cancelRequested" @click="cancel(ticket.ticketId)">撤单</button>
+      </p></section>
       <details class="connected-projects-details" :open="!store.snapshot.connectedProjects.readable">
         <summary>{{ store.snapshot.connectedProjects.readable ? `已接入（${store.snapshot.connectedProjects.names.length} 个项目）` : '项目接入状态暂不可读' }}</summary>
         <p v-if="!store.snapshot.connectedProjects.readable" class="warn" role="status">{{ store.snapshot.connectedProjects.reason }}</p>
@@ -70,22 +75,16 @@ onUnmounted(store.stop)
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
           :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" /></div>
       </details>
+      <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
+        :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />
+      <EngineTickets :groups="store.snapshot.registerOnlyGroups" :tickets="store.snapshot.registerOnly" :estimates="store.snapshot.estimates" :now="store.now" @open="store.openDetail" />
       <LedgerTable :value="store.filters" :data="store.ledger" :page="store.page" :loading="store.ledgerLoading" :error="store.ledgerError"
         :exporting="store.exporting" :export-error="store.exportError" @export="store.exportLedger"
         @filter="store.applyFilters" @page="store.movePage" @open="store.openDetail" @refresh="store.loadLedger" />
-      <section v-if="unassigned.length" class="sched-card"><h2>等待执行机确认</h2><p v-for="ticket in unassigned" :key="ticket.ticketId">
-        <button class="sched-link" @click="store.openDetail(ticket.ticketId)">{{ ticket.title }}</button> · {{ ticketLabel(ticket) }}
-        <EstimateText :estimate="store.snapshot.estimates[ticket.ticketId]" />
-        <button class="sched-btn small bad" :disabled="store.busy || ticket.cancelRequested" @click="cancel(ticket.ticketId)">撤单</button>
-      </p></section>
-      <div class="sched-two-columns">
-        <EngineTickets :groups="store.snapshot.registerOnlyGroups" :tickets="store.snapshot.registerOnly" :estimates="store.snapshot.estimates" :now="store.now" @open="store.openDetail" />
-        <div class="sched-stack">
-          <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
-            :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />
-          <RecentCommands :receipts="store.snapshot.recentReceipts" :submitted="store.commands" :now="store.now" :busy="store.busy" @retry="store.retryLegacy" />
-        </div>
-      </div>
+      <details class="sched-more">
+        <summary>更多 · 最近指令</summary>
+        <RecentCommands :receipts="store.snapshot.recentReceipts" :submitted="store.commands" :now="store.now" :busy="store.busy" @retry="store.retryLegacy" />
+      </details>
     </template>
     <TicketDrawer v-if="store.detailId" :ticket-id="store.detailId" :ticket="store.detail" :loading="store.detailLoading" :error="store.detailError"
       :related="store.related" @open="store.openDetail" @close="store.closeDetail" @retry="store.detailId && store.openDetail(store.detailId)" />
@@ -106,12 +105,12 @@ onUnmounted(store.stop)
 .sched-machines { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: var(--s4); }
 .sched-offline { padding: 6px 12px; border: 1px dashed var(--line-strong); border-radius: var(--r); color: var(--text-3); font-size: var(--fs-sm); }
 .sched-offline .sched-machines { margin-top: var(--s2); }
-.sched-two-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: start; gap: var(--s4); }
-.sched-stack { display: grid; gap: var(--s4); min-width: 0; }
+.sched-more { min-width: 0; }
+.sched-more > summary { cursor: pointer; color: var(--text-3); font-size: var(--fs-sm); }
+.sched-more[open] > summary { margin-bottom: var(--s2); }
 .connected-projects-details { color: var(--text-3); font-size: var(--fs-sm); min-width: 0; }
 .connected-projects-details summary { cursor: pointer; }
 .connected-projects { display: flex; flex-wrap: wrap; gap: var(--s2); }
 .connected-projects .sched-tag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-@media (max-width: 1150px) { .sched-two-columns { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) { .sched-page-head { flex-direction: column; }.sched-pills { justify-content: flex-start; } }
 </style>

@@ -47,7 +47,8 @@ function period(value: Period) { draft.value.period = value; emit('filter', { ..
     <p v-if="exportError" class="bad" role="alert">{{ exportError }}</p>
     <p v-if="error" class="bad" role="alert">{{ error }} <button class="sched-btn small" @click="emit('refresh')">重新读取</button></p>
     <p v-else-if="loading" class="sched-note" role="status">正在读取台账…</p>
-    <div v-if="data && !error" class="sched-table-wrap" :aria-busy="loading">
+    <div v-if="data && !error" class="sched-table-wrap sched-scroll-region ledger-scroll" :aria-busy="loading"
+      tabindex="0" role="region" aria-label="台账记录" title="内容超出时，可在框内上下滚动">
       <table class="sched-table"><thead><tr><th>单号</th><th>项目</th><th>活</th><th>施工方</th><th>派单方</th><th>机器</th><th class="r">核</th>
         <th class="r">排队</th><th class="r">执行</th><th class="r">暂停</th><th class="r">低速</th><th>结果</th><th>结束时刻</th></tr></thead>
         <tbody><tr v-for="ticket in data.items" :key="ticket.ticketId" class="clickable" tabindex="0" role="button"
@@ -69,6 +70,7 @@ function period(value: Period) { draft.value.period = value; emit('filter', { ..
 </template>
 
 <style scoped>
+.ledger-scroll { max-height: 45vh; }
 .ledger-filters, .periods { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .ledger-filters, .periods { margin-bottom: var(--s2); }
 .ledger-filters label { display: flex; gap: var(--s1); align-items: center; min-width: 0; max-width: 100%; color: var(--text-3); font-size: var(--fs-xs); }

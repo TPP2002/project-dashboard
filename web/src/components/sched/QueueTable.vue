@@ -9,7 +9,8 @@ const emit = defineEmits<{ open: [id: string]; jump: [id: string]; cancel: [id: 
 <template>
   <section class="sched-card">
     <h2>排队 <span class="sched-sub">{{ queue.length ? `共 ${queue.length} 单在等` : '队伍是空的' }}</span></h2>
-    <div class="sched-table-wrap">
+    <div class="sched-table-wrap sched-scroll-region queue-scroll" tabindex="0" role="region"
+      aria-label="排队列表" title="内容超出时，可在框内上下滚动">
       <table class="sched-table"><thead><tr><th>名次</th><th>项目</th><th>活</th><th class="r">要几核</th><th>去哪</th><th class="r">已等</th><th>操作</th></tr></thead>
         <tbody><tr v-for="ticket in queue" :key="ticket.ticketId">
           <td class="sched-id">{{ ticket.position }}</td><td>{{ details[ticket.ticketId]?.request.project || '读取中' }}</td>
@@ -34,6 +35,7 @@ const emit = defineEmits<{ open: [id: string]; jump: [id: string]; cancel: [id: 
 </template>
 
 <style scoped>
-.queue-actions { white-space: nowrap; }
-.queue-actions button + button { margin-left: var(--s1); }
+.queue-scroll { max-height: 30vh; }
+.queue-actions .sched-btn { display: block; }
+.queue-actions button + button { margin-top: var(--s1); }
 </style>
