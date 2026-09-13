@@ -146,6 +146,10 @@ async function scanDeepseekJobs({ registryPath, currentCodeRepo }) {
   return jobs;
 }
 
+function emptySummary() {
+  return { tokens: 0, costRmb: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheHitRate: 0 };
+}
+
 /** 最近 days 个本地自然日（含今天）。nowMs 可注入以固定窗口；金额汇总前不逐单舍入。 */
 async function getDeepseekUsage({ projectId, days = 30, registryPath, nowMs = Date.now() }) {
   const { codeRepo } = resolveProject(projectId, { registryPath });
@@ -154,19 +158,28 @@ async function getDeepseekUsage({ projectId, days = 30, registryPath, nowMs = Da
   const count = Math.max(1, Math.min(365, parseInt(days, 10) || 30));
   cutoff.setDate(cutoff.getDate() - (count - 1));
   const firstDay = localDate(cutoff), lastDay = localDate(today);
-  const daily = new Map(), byModel = {}, totals = { tokens: 0, costRmb: 0, jobs: 0 };
+  const daily = new Map(), byModel = {}, totals = { ...emptySummary(), jobs: 0 };
   for (const job of await scanDeepseekJobs({ registryPath, currentCodeRepo: codeRepo })) {
     const date = localDate(job.dispatchedAt);
     if (date < firstDay || date > lastDay) continue;
     const t = usageBuckets(job.usage);
     const tokens = t.input + t.output + t.cacheRead + t.cacheWrite;
-    if (!daily.has(date)) daily.set(date, { date, tokens: 0, costRmb: 0 });
-    const model = byModel[job.model] ||= { tokens: 0, costRmb: 0 };
+    if (!daily.has(date)) daily.set(date, { date, ...emptySummary() });
+    const model = byModel[job.model] ||= emptySummary();
     for (const row of [daily.get(date), model, totals]) {
       row.tokens += tokens;
       row.costRmb += job.costRmb;
+      row.input += t.input;
+      row.output += t.output;
+      row.cacheRead += t.cacheRead;
+      row.cacheWrite += t.cacheWrite;
     }
     totals.jobs++;
+  }
+  // 与 costUsage.cjs 同口径：输出不计入分母；先汇总桶数，不平均各工单的命中率。
+  for (const row of [...daily.values(), ...Object.values(byModel), totals]) {
+    const denom = row.cacheRead + row.cacheWrite + row.input;
+    row.cacheHitRate = denom > 0 ? row.cacheRead / denom : 0;
   }
   return { byDay: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), totals, byModel };
 }

@@ -760,8 +760,11 @@ function handleCostUsage(req, res, query) {
     costUsage.getUsage({ ...selected, days }),
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
+    codexApi.getDeepseekBalance().catch(() => ({
+      available: false, reason: '查询异常', balance: null, sampledAt: new Date().toISOString(),
+    })),
   ])
-    .then(([usage, codex, deepseek]) => {
+    .then(([usage, codex, deepseek, deepseekBalance]) => {
       const quota = codexApi.getQuota();
       const claudeTokens = costUsage.totalClaudeTokens(usage);
       const codexTokens = codex.selected.tokens;
@@ -772,6 +775,7 @@ function handleCostUsage(req, res, query) {
         usage,
         codex,
         deepseek,
+        deepseekBalance,
         quota,
         combined: {
           claudeTokens,

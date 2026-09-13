@@ -185,28 +185,87 @@ test('getDeepseekUsage:固定本地日期窗口、逐日与按模型合计、金
     nowMs: new Date(2026, 8, 14, 18).getTime() };
   const r = await getDeepseekUsage(options);
   const costs = [12, 13, 14].map((day) => costRmbOf(usage, modelFor(day), isPeakBeijing(timestamp(day))));
-  assert.deepEqual(r.byDay, [12, 13, 14].map((day, i) => ({ date: `2026-09-${day}`, tokens: 100, costRmb: costs[i] })));
+  const outputOnly = { input: 0, output: 100, cacheRead: 0, cacheWrite: 0, cacheHitRate: 0 };
+  assert.deepEqual(r.byDay, [12, 13, 14].map((day, i) => ({
+    date: `2026-09-${day}`, tokens: 100, costRmb: costs[i], ...outputOnly,
+  })));
   assert.equal(r.totals.jobs, 3);
   assert.equal(r.totals.tokens, 300);
   closeTo(r.totals.costRmb, costs.reduce((sum, value) => sum + value, 0));
   assert.ok(r.totals.costRmb > 0 && r.totals.costRmb < 0.01, '分以下金额须累加，不能逐单舍入成零');
+  for (const [field, value] of Object.entries({ ...outputOnly, output: 300 })) {
+    assert.equal(r.totals[field], value, field);
+  }
   assert.deepEqual(r.byModel, {
-    'deepseek-flash': { tokens: 200, costRmb: costs[0] + costs[2] },
-    'deepseek-v4-pro': { tokens: 100, costRmb: costs[1] },
+    'deepseek-flash': { tokens: 200, costRmb: costs[0] + costs[2], ...outputOnly, output: 200 },
+    'deepseek-v4-pro': { tokens: 100, costRmb: costs[1], ...outputOnly },
   });
   assert.deepEqual(await getDeepseekUsage(options), r, '相同输入与窗口应可重放');
   const today = await getDeepseekUsage({ ...options, days: 1 });
   assert.deepEqual(today.byDay, [r.byDay[2]]);
   assert.deepEqual(await getDeepseekUsage({ ...options, projectId: 'empty' }), {
-    byDay: [], totals: { tokens: 0, costRmb: 0, jobs: 0 }, byModel: {},
+    byDay: [], totals: { tokens: 0, costRmb: 0, jobs: 0, ...outputOnly, output: 0 }, byModel: {},
   });
 });
 
-test('getDeepseekUsage:总 token 包含新输入、输出、缓存命中与新写缓存', async (t) => {
+test('getDeepseekUsage:四个用量桶与命中率在逐日、模型和总计中均保留', async (t) => {
   const f = fixture(t);
   writeJob(f.host, 'all-buckets');
   const r = await getDeepseekUsage({ registryPath: f.registryPath, projectId: 'host', days: 1, nowMs: Date.parse(PEAK) });
   assert.equal(r.totals.tokens, 10000000);
   assert.equal(r.totals.jobs, 1);
   closeTo(r.totals.costRmb, 38.12);
+  const tally = { tokens: 10000000, costRmb: 38.12, input: 1000000, output: 4000000,
+    cacheRead: 3000000, cacheWrite: 2000000, cacheHitRate: 0.5 };
+  assert.deepEqual(r.totals, { ...tally, jobs: 1 });
+  assert.deepEqual(r.byModel, { 'deepseek-flash': tally });
+  assert.deepEqual(r.byDay, [{ date: r.byDay[0].date, ...tally }]);
+});
+
+test('getDeepseekUsage:命中率按桶数加权，缓存写入细分不重计，输出不入分母', async (t) => {
+  const f = fixture(t);
+  const timestamp = (day) => new Date(2026, 8, day, 12).toISOString();
+  const rows = [
+    [13, 'deepseek-flash', { input_tokens: 10, output_tokens: 100, cache_read_input_tokens: 30 }],
+    [14, 'deepseek-flash', { input_tokens: 30, output_tokens: 200, cache_read_input_tokens: 10,
+      cache_creation_input_tokens: 999,
+      cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 40 } }],
+    [14, 'deepseek-v4-pro', { input_tokens: 0, output_tokens: 600, cache_read_input_tokens: 100 }],
+  ];
+  for (const [index, [day, model, usage]] of rows.entries()) {
+    writeJob(f.host, `weighted-${index}`, { meta: { dispatchedAt: timestamp(day) }, events: [result(usage, model)] });
+  }
+  const r = await getDeepseekUsage({ registryPath: f.registryPath, projectId: 'host', days: 2,
+    nowMs: new Date(2026, 8, 14, 18).getTime() });
+  assert.equal(r.totals.jobs, 3);
+  assert.deepEqual(r.byDay.map((row) => row.date), ['2026-09-13', '2026-09-14']);
+  for (const [row, expected] of [
+    [r.totals, { tokens: 1140, input: 40, output: 900, cacheRead: 140, cacheWrite: 60, cacheHitRate: 140 / 240 }],
+    [r.byModel['deepseek-flash'], { tokens: 440, input: 40, output: 300, cacheRead: 40, cacheWrite: 60, cacheHitRate: 40 / 140 }],
+    [r.byModel['deepseek-v4-pro'], { tokens: 700, input: 0, output: 600, cacheRead: 100, cacheWrite: 0, cacheHitRate: 1 }],
+    [r.byDay[0], { tokens: 140, input: 10, output: 100, cacheRead: 30, cacheWrite: 0, cacheHitRate: 0.75 }],
+    [r.byDay[1], { tokens: 1000, input: 30, output: 800, cacheRead: 110, cacheWrite: 60, cacheHitRate: 0.55 }],
+  ]) {
+    for (const [field, value] of Object.entries(expected)) assert.equal(row[field], value, field);
+  }
+});
+
+test('getDeepseekUsage:全零用量及没有缓存命中的输入，命中率为零', async (t) => {
+  const f = fixture(t);
+  const options = { registryPath: f.registryPath, projectId: 'host', days: 1, nowMs: Date.parse(PEAK) };
+  writeJob(f.host, 'zero', { events: [result({ input_tokens: 0, output_tokens: 0 })] });
+  const zero = await getDeepseekUsage(options);
+  assert.equal(zero.totals.jobs, 1);
+  for (const row of [zero.totals, ...zero.byDay, ...Object.values(zero.byModel)]) {
+    for (const field of ['tokens', 'costRmb', 'input', 'output', 'cacheRead', 'cacheWrite', 'cacheHitRate']) {
+      assert.equal(row[field], 0, field);
+    }
+  }
+  writeJob(f.host, 'miss', { events: [result({ input_tokens: 10, output_tokens: 20, cache_creation_input_tokens: 30 })] });
+  const miss = await getDeepseekUsage(options);
+  assert.equal(miss.totals.input, 10);
+  assert.equal(miss.totals.cacheWrite, 30);
+  for (const row of [miss.totals, ...miss.byDay, ...Object.values(miss.byModel)]) {
+    assert.equal(row.cacheHitRate, 0);
+  }
 });

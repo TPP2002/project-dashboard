@@ -8,6 +8,7 @@ const { getJobSessionSummary } = require('./codexSessions.cjs');
 const { spawnDispatchCli, waitForChild } = require('./codexProcess.cjs');
 const { createCodexSessionApi } = require('./codexSessionApi.cjs');
 const deepseekCostUsage = require('../core/deepseekCostUsage.cjs');
+const deepseekBalance = require('../core/deepseekBalance.cjs');
 
 const MESSAGE_MAX = 8000;
 
@@ -228,6 +229,7 @@ function createCodexApi({
   return {
     getCostUsage: sessionApi.getCostUsage,
     getDeepseekUsage: (days, projectId) => deepseekCostUsage.getDeepseekUsage({ days, projectId, registryPath }),
+    getDeepseekBalance: () => deepseekBalance.fetchDeepseekBalance(),
     getQuota: sessionApi.getQuota,
     route,
   };
