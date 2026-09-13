@@ -127,8 +127,26 @@ export interface CombinedUsage {
 }
 
 /** DeepSeek 历史工单实际用量按官方人民币价目计费，金额在展示时保留分位。 */
+export interface DeepseekUsageTally {
+  tokens: number
+  costRmb: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  /** 缓存读取占输入与缓存总量的比例，范围 0–1；分母为零时为 0。 */
+  cacheHitRate: number
+}
+
 export interface DeepseekUsage {
-  byDay: Array<{ date: string; tokens: number; costRmb: number }>
-  totals: { tokens: number; costRmb: number; jobs: number }
-  byModel: Record<string, { tokens: number; costRmb: number }>
+  byDay: Array<DeepseekUsageTally & { date: string }>
+  totals: DeepseekUsageTally & { jobs: number }
+  byModel: Record<string, DeepseekUsageTally>
+}
+
+export interface DeepseekBalance {
+  available: boolean
+  reason: string
+  balance: number | null
+  sampledAt: string
 }

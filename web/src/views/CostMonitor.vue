@@ -15,7 +15,7 @@ import { useBoardStore } from '@/stores/board'
 import type { Task } from '@/types'
 import CodexCostSummary from '@/components/codex/CodexCostSummary.vue'
 import DeepseekCostSummary from '@/components/codex/DeepseekCostSummary.vue'
-import type { CodexUsage, CombinedUsage, DeepseekUsage, QuotaSnapshot } from '@/types/codex'
+import type { CodexUsage, CombinedUsage, DeepseekBalance, DeepseekUsage, QuotaSnapshot } from '@/types/codex'
 
 interface Tally { input: number; output: number; cacheRead: number; cacheWrite: number; msgs: number }
 interface UsdRow { actual: number; noCache: number; saved: number }
@@ -35,6 +35,7 @@ const store = useBoardStore()
 const usage = ref<Usage | null>(null)
 const codex = ref<CodexUsage | null>(null)
 const deepseek = ref<DeepseekUsage | null>(null)
+const deepseekBalance = ref<DeepseekBalance | null>(null)
 const quota = ref<QuotaSnapshot | null>(null)
 const combined = ref<CombinedUsage | null>(null)
 const days = ref(30)
@@ -65,6 +66,7 @@ async function load() {
     usage.value = body.usage
     codex.value = body.codex
     deepseek.value = body.deepseek ?? null
+    deepseekBalance.value = body.deepseekBalance ?? null
     quota.value = body.quota
     combined.value = body.combined
     error.value = ''
@@ -74,6 +76,7 @@ async function load() {
     usage.value = null
     codex.value = null
     deepseek.value = null
+    deepseekBalance.value = null
     quota.value = null
     combined.value = null
     error.value = e instanceof Error ? e.message : String(e)
@@ -228,8 +231,9 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
       </div>
 
       <DeepseekCostSummary
-        v-if="deepseek && deepseek.totals.jobs > 0"
+        v-if="deepseek"
         :deepseek="deepseek"
+        :balance="deepseekBalance"
         :days="days"
       />
       <p v-else class="empty card deepseek-empty">近 {{ days }} 天没有 DeepSeek 工单</p>
