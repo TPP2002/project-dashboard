@@ -14,7 +14,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import type { Task } from '@/types'
 import CodexCostSummary from '@/components/codex/CodexCostSummary.vue'
-import type { CodexUsage, CombinedUsage, QuotaSnapshot } from '@/types/codex'
+import DeepseekCostSummary from '@/components/codex/DeepseekCostSummary.vue'
+import type { CodexUsage, CombinedUsage, DeepseekUsage, QuotaSnapshot } from '@/types/codex'
 
 interface Tally { input: number; output: number; cacheRead: number; cacheWrite: number; msgs: number }
 interface UsdRow { actual: number; noCache: number; saved: number }
@@ -33,6 +34,7 @@ interface Usage {
 const store = useBoardStore()
 const usage = ref<Usage | null>(null)
 const codex = ref<CodexUsage | null>(null)
+const deepseek = ref<DeepseekUsage | null>(null)
 const quota = ref<QuotaSnapshot | null>(null)
 const combined = ref<CombinedUsage | null>(null)
 const days = ref(30)
@@ -62,6 +64,7 @@ async function load() {
     if (!body.ok) throw new Error(body.error || '读取失败')
     usage.value = body.usage
     codex.value = body.codex
+    deepseek.value = body.deepseek ?? null
     quota.value = body.quota
     combined.value = body.combined
     error.value = ''
@@ -70,6 +73,7 @@ async function load() {
     // 失败时清空旧数据:留着会让人以为看到的是当前区间的数,其实是上一次的
     usage.value = null
     codex.value = null
+    deepseek.value = null
     quota.value = null
     combined.value = null
     error.value = e instanceof Error ? e.message : String(e)
@@ -117,6 +121,8 @@ const dailyRows = computed(() => {
   })
 })
 
+const deepseekDailyRows = computed(() => [...(deepseek.value?.byDay ?? [])].reverse())
+
 /** 花销结构:摘要区第二行用。写出来的最贵、重复利用的几乎不花钱。 */
 const spendBreakdown = computed(() => {
   const t = usage.value?.totals
@@ -140,7 +146,8 @@ const emptyReason = computed(() => {
   if (!usage.value) return null
   const hasClaude = (usage.value.byDay?.length ?? 0) > 0
   const hasCodex = (codex.value?.byDay?.length ?? 0) > 0
-  if (hasClaude || hasCodex) return null
+  const hasDeepseek = (deepseek.value?.totals.jobs ?? 0) > 0
+  if (hasClaude || hasCodex || hasDeepseek) return null
   return `这个项目近 ${days.value} 天没有任何对话记录,所以下面都是 0。换更长的区间看看,或者确认最近是不是没在这个项目上干活。`
 })
 
@@ -164,6 +171,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
         <h1><Icon name="coins" class="head-ic" :size="20" />成本监管</h1>
         <p class="page-subtitle">
           本机对话流水的真实 token 数；跑在别的机器上的对话不在此账内。
+          DeepSeek 展示真实人民币花费，Codex 展示等价估算。
         </p>
       </div>
       <div class="range-picker" role="group" aria-label="成本统计时间范围">
@@ -219,6 +227,12 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
         <span class="empty-help">有可归属到当前项目的会话后，这里会出现 Claude、Codex 与合计摘要。</span>
       </div>
 
+      <DeepseekCostSummary
+        v-if="deepseek && deepseek.totals.jobs > 0"
+        :deepseek="deepseek"
+        :days="days"
+      />
+      <p v-else class="empty card deepseek-empty">近 {{ days }} 天没有 DeepSeek 工单</p>
 
       <p class="fine">
         <Icon name="zap" :size="14" /> 折算口径:你实付的是订阅费——美元是「同样的量若按 API 牌价直购值多少钱」的等价参考
@@ -238,6 +252,21 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 
         <!-- v-if 是硬要求：折叠时不创建几十行明细 DOM。 -->
         <div v-if="detailsOpen" class="details-content">
+          <section v-if="deepseek && deepseek.totals.jobs > 0" class="detail-section">
+            <h3>DeepSeek 按天</h3>
+            <div class="table-scroll">
+              <table class="deepseek-daily-table">
+                <thead><tr><th scope="col">日期</th><th scope="col">消耗 token</th><th scope="col">真实花费 · 人民币</th></tr></thead>
+                <tbody>
+                  <tr v-for="row in deepseekDailyRows" :key="row.date">
+                    <td class="mono">{{ row.date }}</td>
+                    <td class="num">{{ row.tokens.toLocaleString() }}</td>
+                    <td class="num">¥{{ row.costRmb.toFixed(2) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
           <div class="detail-pair">
           <section class="detail-section">
             <h3>按天</h3>
@@ -346,6 +375,8 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .detail-section h3 { margin-bottom: var(--s2); font-size: var(--fs-md); }
 .table-scroll { max-width: 100%; overflow-x: auto; }
 .daily-table { min-width: 780px; }
+.deepseek-daily-table { min-width: 420px; }
+.deepseek-empty { margin: 0; padding: var(--s2) var(--s4); }
 .model-table { min-width: 620px; }
 .task-cost-table { min-width: 720px; }
 .total-cell { font-weight: 600; }
