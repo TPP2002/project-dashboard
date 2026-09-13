@@ -7,6 +7,7 @@ const { readLedger, connectedProjects } = require('./schedLedger.cjs');
 const { estimateTickets } = require('./schedEstimates.cjs');
 const { ticketCsv } = require('./schedCsv.cjs');
 const { ticketRelations } = require('./schedRelations.cjs');
+const { normalizeEngine, matchesEngine, engineOptions, groupExternalTickets } = require('./schedEngines.cjs');
 
 const STATES = ['queued', 'granted', 'running', 'paused', 'slow', 'unsatisfiable', 'passed', 'failed', 'cancelled', 'voided'];
 const ACTIVE = ['granted', 'running', 'paused', 'slow'];
@@ -72,7 +73,7 @@ function summarize(ticket) {
   const attempt = ticket.attempts.find(a => a.attemptId === ticket.currentAttemptId);
   return {
     ticketId: ticket.ticketId, project: ticket.request.project, title: ticket.request.title, submitter: ticket.request.submitter,
-    category: ticket.request.category, machine: attempt?.permit?.machine ?? attempt?.intent?.machine ?? null,
+    category: ticket.request.category, engine: normalizeEngine(ticket.request.engine), machine: attempt?.permit?.machine ?? attempt?.intent?.machine ?? null,
     requestedCores: ticket.request.requestedCores, grantedCores: attempt?.grantedCores ?? 0,
     state: ticket.state, result: ticket.state, resultReason: attempt?.result?.reason ?? null,
     registerOnly: ticket.registerOnly, pauseReasons: ticket.pauseReasons, cancelRequested: ticket.cancelRequested,
@@ -97,6 +98,7 @@ function snapshot(share, cpuBudget, nowMs) {
     const heartbeat = c.validateHeartbeat(c.readJson(paths.heartbeat));
     if (heartbeat.machine !== config.machine) throw new Error('[sched] 心跳与派单主机配置不一致');
     const records = readTickets(share), tickets = records.map(summarize);
+    const registerOnly = tickets.filter(ticket => ticket.registerOnly && ticket.state === 'running');
     const history = readLedger(share);
     const estimates = estimateTickets({ readable: true, nowMs, tickets: records, queue: heartbeat.queue,
       machines: heartbeat.machines, locks: heartbeat.locks, heartbeatAt: heartbeat.at, cursorSeq: heartbeat.cursorSeq }, history);
@@ -106,13 +108,13 @@ function snapshot(share, cpuBudget, nowMs) {
       dispatcher: { config, heartbeat, heartbeatAgeMs: Math.max(0, nowMs - Date.parse(heartbeat.at)) },
       machines: heartbeat.machines, queue: heartbeat.queue, locks: heartbeat.locks,
       running: tickets.filter(ticket => ACTIVE.includes(ticket.state)),
-      registerOnly: tickets.filter(ticket => ticket.registerOnly && ticket.state === 'running'), recentReceipts: receipts,
+      registerOnly, registerOnlyGroups: groupExternalTickets(registerOnly, tickets), recentReceipts: receipts,
       legacyReserve: { reservedCores: legacy.reservedCores, reserveExpiresAt: legacy.reserveExpiresAt },
       estimates, estimatesAt: new Date(nowMs).toISOString(), historyError: history.reason,
       connectedProjects: connectedProjects(records, history, nowMs) };
   } catch (error) {
     return { ...readFailure(error), share, format: null, dispatcher: null, machines: null, queue: null, locks: null,
-      running: null, registerOnly: null, recentReceipts: null, legacyReserve: null,
+      running: null, registerOnly: null, registerOnlyGroups: null, recentReceipts: null, legacyReserve: null,
       estimates: null, estimatesAt: null, historyError: null, connectedProjects: null };
   }
 }
@@ -129,7 +131,7 @@ function dateBoundary(value, end) {
 }
 
 function ticketFilters(query) {
-  const filters = Object.fromEntries(['project', 'machine', 'submitter', 'result', 'from', 'to'].map(key => [key, queryText(query[key], key)]));
+  const filters = Object.fromEntries(['project', 'machine', 'submitter', 'engine', 'result', 'from', 'to'].map(key => [key, queryText(query[key], key)]));
   filters.from = dateBoundary(filters.from, false); filters.to = dateBoundary(filters.to, true);
   if (filters.from && filters.to && filters.from > filters.to) throw badRequest('开始日期不能晚于结束日期');
   if (filters.result && !STATES.includes(filters.result)) throw badRequest('非法结果筛选');
@@ -140,6 +142,7 @@ function filteredTickets(tickets, filters) {
   return tickets.filter(ticket => {
     const request = ticket.request;
     return (!filters.project || request.project === filters.project) && (!filters.submitter || request.submitter === filters.submitter)
+      && matchesEngine(request.engine, filters.engine)
       && (!filters.result || ticket.state === filters.result)
       && (!filters.machine || ticket.attempts.some(a => (a.permit?.machine ?? a.intent?.machine) === filters.machine))
       && (!filters.from || ticket.createdAt >= filters.from) && (!filters.to || ticket.createdAt <= filters.to);
@@ -172,6 +175,7 @@ function ticketPage(share, query = {}) {
   return { ok: true, readable: true, items, total: rows.length, limit,
     nextCursor: after.length > limit ? Buffer.from(c.canonicalJson({ at: last.createdAt, id: last.ticketId, filterHash })).toString('base64url') : null,
     filters: { projects: unique(tickets.map(t => t.request.project)), submitters: unique(tickets.map(t => t.request.submitter)),
+      engines: engineOptions(tickets.map(t => ({ engine: t.request.engine }))),
       machines: unique(tickets.flatMap(t => t.attempts.map(a => a.permit?.machine ?? a.intent?.machine))) } };
 }
 function exportTickets(share, query = {}) {

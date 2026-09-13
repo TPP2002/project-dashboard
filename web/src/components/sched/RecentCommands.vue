@@ -20,20 +20,24 @@ const labels: Record<string, string> = { executed: '已执行', rejected: '已�
 <template>
   <section class="sched-card" aria-live="polite">
     <h2>最近指令 <span class="sched-sub">看板上点的操作，派单员执行后回执</span></h2>
-    <ul class="receipt-list"><li v-for="row in rows" :key="row.id">
-      <div class="receipt-main"><span>{{ row.label }}</span><strong :class="tone(row.status)">{{ labels[row.status] }}</strong></div>
-      <p v-if="row.reason" class="bad">{{ row.reason }}</p>
-      <div class="sched-id" :title="stamp(row.at)">{{ row.id }} · {{ stamp(row.at) }}</div>
-      <div v-if="row.command?.legacy?.ok === false" class="legacy-error bad">
-        <span>旧账本同步失败：{{ row.command.legacy.error }}</span>
-        <button class="sched-btn small" :disabled="busy" @click="emit('retry', row.id)">重试同步</button>
-      </div>
-      <div v-else-if="row.command?.legacy?.ok" class="sched-note">旧账本已同步</div>
-    </li></ul>
-    <p v-if="!rows.length" class="sched-empty">还没有指令</p>
+    <div class="receipt-scroll sched-scroll-region" tabindex="0" role="region"
+      aria-label="最近指令列表" title="内容超出时，可在框内上下滚动">
+      <ul class="receipt-list"><li v-for="row in rows" :key="row.id">
+        <div class="receipt-main"><span>{{ row.label }}</span><strong :class="tone(row.status)">{{ labels[row.status] }}</strong></div>
+        <p v-if="row.reason" class="bad">{{ row.reason }}</p>
+        <div class="sched-id" :title="stamp(row.at)">{{ row.id }} · {{ stamp(row.at) }}</div>
+        <div v-if="row.command?.legacy?.ok === false" class="legacy-error bad">
+          <span>旧账本同步失败：{{ row.command.legacy.error }}</span>
+          <button class="sched-btn small" :disabled="busy" @click="emit('retry', row.id)">重试同步</button>
+        </div>
+        <div v-else-if="row.command?.legacy?.ok" class="sched-note">旧账本已同步</div>
+      </li></ul>
+      <p v-if="!rows.length" class="sched-empty">还没有指令</p>
+    </div>
   </section>
 </template>
 <style scoped>
+.receipt-scroll { max-height: 30vh; padding: var(--s2); }
 .receipt-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
 .receipt-list li { padding-bottom: var(--s2); border-bottom: 1px solid var(--line); }
 .receipt-list li:last-child { border-bottom: 0; }

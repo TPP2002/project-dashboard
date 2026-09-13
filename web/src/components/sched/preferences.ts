@@ -6,7 +6,7 @@ export interface SubmittedCommand {
   commandId: string; input: CommandInput; createdAt: string; expiresAt: string; share: string
   legacy?: LegacySync; receipt?: Receipt
 }
-export const DEFAULT_FILTERS: LedgerPrefs = { project: '', machine: '', submitter: '', result: '', from: '', to: '', period: 'd7' }
+export const DEFAULT_FILTERS: LedgerPrefs = { project: '', machine: '', submitter: '', engine: '', result: '', from: '', to: '', period: 'd7' }
 const FILTER_KEY = 'dashboard.sched.filters.v1'
 const COMMAND_KEY = 'dashboard.sched.commands.v1'
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -27,7 +27,7 @@ export function saveLocal(key: 'filters' | 'commands', value: LedgerPrefs | Subm
 export function loadFilters(): LedgerPrefs {
   const raw = load(FILTER_KEY), result = { ...DEFAULT_FILTERS }
   if (!object(raw)) return result
-  for (const key of ['project', 'machine', 'submitter'] as const) if (boundedText(raw[key])) result[key] = raw[key]
+  for (const key of ['project', 'machine', 'submitter', 'engine'] as const) if (boundedText(raw[key])) result[key] = raw[key]
   if (typeof raw.result === 'string' && RESULTS.includes(raw.result)) result.result = raw.result
   if (typeof raw.period === 'string' && ['today', 'd7', 'd90', 'all', 'custom'].includes(raw.period)) result.period = raw.period as Period
   if (date(raw.from)) result.from = raw.from

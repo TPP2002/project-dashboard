@@ -39,6 +39,26 @@
 .sched-page .sched-attention p { margin: 0; }
 .sched-page .sched-attention-row { display: flex; align-items: baseline; gap: var(--s2); margin: 4px 0; }
 .sched-page .sched-attention-row > :last-child { min-width: 0; overflow-wrap: anywhere; }
+/* 只限制列表内容；标题、筛选、导出及既有翻页控件留在框外。短列表按内容收缩，不预留滚动槽。 */
+:where(.sched-page) .sched-scroll-region {
+  box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 0; max-height: 40vh;
+  overflow-y: auto; overflow-x: hidden; scrollbar-gutter: auto; overflow-wrap: anywhere;
+  border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface);
+}
+:where(.sched-page) .sched-scroll-region:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+:where(.sched-page) .sched-scroll-region .sched-table { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+:where(.sched-page) .sched-scroll-region .sched-table th,
+:where(.sched-page) .sched-scroll-region .sched-table td { white-space: normal; overflow-wrap: anywhere; }
+:where(.sched-page) .sched-scroll-region .sched-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-2); box-shadow: 0 1px 0 var(--line);
+}
+:where(.sched-page) .sched-scroll-region .sched-tag,
+:where(.sched-page) .sched-scroll-region .sched-link,
+:where(.sched-page) .sched-scroll-region .sched-btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  :where(.sched-page) .sched-scroll-region .sched-table th,
+  :where(.sched-page) .sched-scroll-region .sched-table td { padding-inline: 2px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .sched-page .sched-card::before { animation: none; }
   :where(.sched-page, .sched-drawer) *, :where(.sched-page, .sched-drawer) *::before { transition: none; scroll-behavior: auto; }
