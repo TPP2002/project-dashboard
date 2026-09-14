@@ -6,9 +6,12 @@ const { detectProjectIds } = require('../core/resolveProject.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 const COMMAND_NAMES = [
-  'brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note', 'unclaim',
+  'brief', 'claim', 'progress', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox',
 ];
+
+// 只读命令:状态与写入完全同构,md 渲染时并成一行(见 renderMarkdown),JSON 侧照旧逐条给。
+const READ_ONLY_COMMANDS = ['brief', 'list', 'show', 'inbox'];
 
 // 按 commands.cjs 的 mutator 核对；protocol.test.cjs 用真实临时板逐分支对照。
 // status 为 null 表示保持原状态；有条件的命令用「条件 → 结果」对象，避免把例外藏在正文里。
@@ -27,9 +30,14 @@ const TRANSITIONS = [
   { command: 'decide', status: { '待拍板且全部答完且未传 --no-promote': '已拍板', '其它情况': null }, writes: [
     'decisions[].answer、decidedAt；施工中等其它状态保持，nextMilestone 不清除',
   ] },
+  { command: 'cost', status: null, writes: [
+    '往 cost.entries 追加一条：date、author、agents 必写；按参数写 tokens / rmb / credits+creditUnit / unknown+unknownReason / note',
+    '不改卡状态；一个「消耗量」都没有时照记，但当场提醒这一笔不够 done 那道闸放行',
+  ] },
   { command: 'done', status: { '默认': '已完工', '--collect': '收官' }, writes: [
     '按参数合并 prNumbers、commitShas；默认写 dates.done、percent=100，并自动落地已答未落地决策（landed/landedAt/landedCommit，取首个 commit，已落地不覆盖）',
     '--collect 保留进度/完工日期/决策；无原状态限制',
+    '**额度登记硬闸**：默认路径要求本卡已有一条带「消耗量」的 cost 账（rmb / credits / tokens 之一，或 unknown+理由），否则拒收、退出码 1、不改任何字段；--collect 与「已完工卡补 PR 号」两处不查',
   ] },
   { command: 'note', status: null, writes: ['仅追加 activity（kind=message，可关联 taskId）；不写卡字段'] },
   { command: 'unclaim', status: { '施工中且有 unparkReason': '可复工', '施工中且无 unparkReason': '待开工' }, writes: [
@@ -50,7 +58,7 @@ const TRANSITIONS = [
   ] },
   { command: 'edit', status: null, writes: ['按参数写 title、plainTitle、description、modelHint、wave，至少给一项'] },
   { command: 'mark-landed', status: null, writes: ['已答决策的 landed/landedAt/可选 landedCommit；--all 只标未落地项，无目标拒绝'] },
-  ...['brief', 'list', 'show', 'inbox'].map((command) => ({ command, status: null, writes: ['只读，无写入'] })),
+  ...READ_ONLY_COMMANDS.map((command) => ({ command, status: null, writes: ['只读，无写入'] })),
 ];
 
 const RULES = [
@@ -59,7 +67,8 @@ const RULES = [
   '岔路：pending --json-file pending.json；三件套 background（≥60 字）/ optionPros（每项≥20 字）/ recommendReason（≥30 字），缺一或太短拒收，等负责人拍板。',
   '被挡：block --by <上游卡号> --reason "卡在哪"，状态保持。',
   '挂起：park --reason "为什么停"；解除挂起先 unpark --reason "解除依据"，再 claim。',
-  '收官：done --pr <PR号> --commit <sha>；自动把本卡已拍板未落地的决策标落地；--collect 仅表示收尾中。',
+  '登记开销（收官前必做）：cost --agents "<平台>:1" 再带上这一单的量——按量付费给 --rmb <元>，订阅制给 --credits <数> --credit-unit "积分"，都取不到给 --tokens <n>，一个数都算不出给 --unknown "<理由>"。',
+  '收官：done --pr <PR号> --commit <sha>；自动把本卡已拍板未落地的决策标落地；--collect 仅表示收尾中。**没登记开销的卡 done 会被拒收**（不登记不得收官，0914 负责人当面下达）。',
   '不干了：unclaim --reason "转手原因"，活还在，进度保留。',
   '作废：cancel --reason "不再做的原因"，不算完工，也不计完成度分母。',
   '重开：reopen --reason "返工原因"，仅已完工/已作废可用。',
@@ -87,6 +96,7 @@ function buildExamples(project) {
     add: `${cli} add ${task} --project ${pid} --title "统一看板协议入口与锚段" --plain-title "把分散的施工规矩收在一处让每次开工都能直接照着做" --model "opus·中" --scope "cli/protocol.cjs"`,
     claim: `${cli} claim ${task} --project ${pid} --branch feat/protocol --scope "cli/protocol.cjs"`,
     pending: `${cli} pending ${task} --project ${pid} --json-file pending.json\n${JSON.stringify(payload)}`,
+    cost: `${cli} cost ${task} --project ${pid} --agents "glm:1" --tokens 15271358 --credits 6209 --credit-unit "积分"`,
     done: `${cli} done ${task} --project ${pid} --pr 42 --commit a1b2c3d`,
   };
 }
@@ -109,12 +119,18 @@ function renderMarkdown(card) {
     '写命令共同追加 activity、刷新 project.updatedAt；“按参数”字段仅在传入时写。JSON 的 status=null 表示保持。',
     '| 命令 | 改不改状态、改到哪 | 实际写了什么字段 |',
     '|---|---|---|',
-    ...card.transitions.map(({ command, status, writes }) => `| ${command} | ${renderStatus(status)} | ${writes.join('；')} |`),
+    // 只读命令那几行全是一模一样的「保持 / 只读，无写入」，在 md 里并成一行 —— 协议卡有 60 行
+    // 硬上限（它存在的意义就是短到能一口气读完），四行同义重复是这里最不值钱的三行。
+    // JSON 侧照旧逐条给（它是机器契约，protocol.test.cjs 按 NAMES 逐条对照），只压人看的这一份。
+    ...card.transitions.filter(({ command }) => !READ_ONLY_COMMANDS.includes(command))
+      .map(({ command, status, writes }) => `| ${command} | ${renderStatus(status)} | ${writes.join('；')} |`),
+    `| ${READ_ONLY_COMMANDS.join(' / ')} | 保持 | 只读，无写入 |`,
     card.rules.at(-1),
     '## 正确示例（pending.json 骨架可按实际问题替换，须保持三件套字数）',
     `- add：\`${card.examples.add}\``,
     `- claim：\`${card.examples.claim}\``,
     `- pending：\`${pending[0]}\`；pending.json：\`${pending[1]}\``,
+    `- cost（收官前必做，没它 done 会被拒收）：\`${card.examples.cost}\``,
     `- done：\`${card.examples.done}\``,
   ].join('\n');
 }

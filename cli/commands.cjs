@@ -643,7 +643,68 @@ function block(flags) {
   return okTask(board, id, changed);
 }
 
+/**
+ * 这条账目条目里有没有「消耗量」—— 即它到底说出了花掉多少,而不只是谁干的。
+ *
+ * 四种算:人民币(按量付费平台的真实开销)/ 额度(订阅制平台的积分、额度百分点)/ token 数 /
+ * 显式标注「量不出 + 为什么」的留痕条目。
+ *
+ * 【agents 刻意不算】它回答的是「谁干的」不是「耗了多少」,而且 cost 命令本来就强制要填,
+ * 每张卡都填得出来。把它算进量里,下面那道闸就退化成「有没有人点过一次 cost」—— 等于没有闸。
+ * 真的只知道「跑了某平台一轮」的,走 cost --unknown "<理由>" 那条留痕路,别指望 agents 顶账。
+ */
+function hasCostQuantity(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (entry.unknown === true && String(entry.unknownReason || '').trim() !== '') return true;
+  for (const key of ['rmb', 'credits', 'tokens']) {
+    if (Number.isFinite(entry[key])) return true;
+  }
+  return false;
+}
+/** 这张卡有没有至少一条带量的账。 */
+function hasCostLedger(task) {
+  const entries = (task && task.cost && Array.isArray(task.cost.entries)) ? task.cost.entries : [];
+  return entries.some(hasCostQuantity);
+}
+/**
+ * 收官前的额度登记闸:该拦就回一段人话理由,放行回 null。
+ *
+ * 【闸位 = CLI 入口层,不在 done 函数体内】沿用本仓 --model / --plain-title 两个闸的既定位置
+ * (index.cjs 只拦命令行,内部编程调用不经此处)。理由:收官这件事只有一条真实路径 —— 人或代理
+ * 敲 CLI、派单器 spawn CLI,两者都走入口层;而 cmds.done() 的编程调用只有测试在搭夹具,让几十个
+ * 夹具替真实路径背锅,换不来一分钱的账。
+ *
+ * 【两处刻意不拦】①--collect(转「收官」不是「已完工」)还没到收官那一步;②卡已经是「已完工」时
+ * 再跑 done(补 PR 号 / 补提交号 / 幂等重试)—— 它当初过闸才进得了这个状态,这里拦只会把「回头
+ * 补登记 PR」这件正事堵死。
+ * 【读不到卡就放行】卡号打错、项目认不出这类错,由 done 自己报它本来的错;闸不抢着报一个更糊的。
+ */
+function costGateRefusal(flags) {
+  if (flags.collect === true || flags.collect === 'true') return null;
+  const id = flags._ && flags._[0];
+  if (!id) return null;
+  let task;
+  try {
+    task = findTask(readBoard(resolveProj(flags).board), String(id));
+  } catch (_) {
+    return null;
+  }
+  if (task.status === '已完工' || hasCostLedger(task)) return null;
+  return `${task.id} 还没登记这一单的开销/额度,收官被拦下(不登记不得收官,0914 负责人当面下达)。\n` +
+    '  补一条账再来。三类计价挑对得上的那一种:\n' +
+    `    按量付费(真花钱)      cost ${task.id} --agents "<平台>:1" --tokens <n> --rmb <元>\n` +
+    `    订阅制(记消耗的额度)  cost ${task.id} --agents "<平台>:1" --tokens <n> --credits <数> --credit-unit "积分"\n` +
+    `    只拿到 token 数        cost ${task.id} --agents "<平台>:1" --tokens <n>\n` +
+    `    一个数都算不出        cost ${task.id} --agents "<平台>:1" --unknown "<为什么算不出>"\n` +
+    '  最后那条是留痕逃生门:它照样算登记、但会标着「量不出」,评估时单独列一栏,别拿它当常规路。\n' +
+    '  (--collect 转「收官」不受本闸约束;已经是「已完工」的卡回头补 PR 号也不受约束。)';
+}
+
 // ---------- done（收官 / 完工） ----------
+// 【额度登记硬闸(COST-LEDGER-CLOSEOUT-DISCIPLINE,0914 负责人当面下达并当场加码)】
+// 「每张卡收官前必须把消耗登记入账,不登记不得收官」。判据与拒收文案在 costGateRefusal(上面),
+// 闸位在 index.cjs 入口层 —— 本函数体内刻意不查,理由见那段注释。逃生门在 cost --unknown 那一侧,
+// done 本身不给任何绕过开关:给了就会变成默认路径。
 function done(flags) {
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'done <taskId> [--pr <n>...] [--commit <sha>...] [--collect]');
@@ -917,9 +978,13 @@ function show(flags) {
 }
 
 // ---------- cost(施工成本登记:每卡记录用了哪些 agent/模型档;BOARD-COST-MONITOR 0901)----------
+// 三类计价对应三个结构化字段(COST-LEDGER-CLOSEOUT-DISCIPLINE,0914):按量付费的平台记人民币
+// (--rmb)、订阅制平台记消耗的额度(--credits + 单位)、都取不到退到 token 数。**数就是数,别塞进
+// --note**:埋在中文备注里的金额没法排序、没法汇总,负责人只能逐条读,那正是这次要治的病。
+// 取不到的量一律别传:传 0 与「没取到」是两件事,混了整份账就不能用。
 function cost(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'cost <taskId> --agents "<模型:个数,…>" [--tokens <n>] [--note <一句话>]');
+  const id = need(flags._[0], 'cost <taskId> --agents "<模型:个数,…>" [--tokens <n>] [--rmb <元>] [--credits <数> --credit-unit <单位>] [--unknown <理由>] [--note <一句话>]');
   const agentsRaw = need(flags.agents, '--agents "<模型:个数,…>"(如 "sonnet:3,opus:1";纯主对话施工写 "main:1")');
   const agents = {};
   for (const part of String(agentsRaw).split(',')) {
@@ -929,20 +994,59 @@ function cost(flags) {
   }
   const tokens = flags.tokens !== undefined ? parseInt(flags.tokens, 10) : undefined;
   if (flags.tokens !== undefined && (!Number.isInteger(tokens) || tokens < 0)) throw new Error('--tokens 应为非负整数');
+  // 裸 --rmb / --credits(解析成 true)与负数、NaN 一律拒:宁可这一笔不记,也不能记一个假数字。
+  const money = (key, label) => {
+    if (flags[key] === undefined) return undefined;
+    const v = Number(flags[key]);
+    if (flags[key] === true || !Number.isFinite(v) || v < 0) throw new Error(`--${key} 应为非负数字(${label});取不到就别传这个参数,别传 0`);
+    return v;
+  };
+  const rmb = money('rmb', '人民币元,如 2.2818');
+  const credits = money('credits', '订阅额度的消耗量,如 GLM 周窗积分 6209');
+  const unitRaw = flags['credit-unit'];
+  const creditUnit = unitRaw === undefined || unitRaw === true ? undefined : String(unitRaw).trim();
+  if (unitRaw === true || (unitRaw !== undefined && creditUnit === '')) throw new Error('--credit-unit 要带单位文本,如 "积分"(GLM)或 "额度百分点"(Codex)');
+  // 数字与单位是一对:一个没有单位的额度数字,读的人没法解读,更没法跨平台比。
+  if (credits !== undefined && creditUnit === undefined) throw new Error('--credits 必须和 --credit-unit 一起给:GLM 写 "积分",Codex 写 "额度百分点"');
+  if (credits === undefined && creditUnit !== undefined) throw new Error('只给了 --credit-unit 没给 --credits:单位是给数字用的,补上 --credits <数>,或者两个都别给');
+  const unknownRaw = flags.unknown;
+  const unknownReason = unknownRaw === undefined || unknownRaw === true ? undefined : String(unknownRaw).trim();
+  if (unknownRaw === true || (unknownRaw !== undefined && unknownReason === '')) {
+    throw new Error('--unknown 要写清为什么一个数都算不出(如 --unknown "平台没给用量,只知道跑了一轮")——这条会留在账上,评估时单独列一栏');
+  }
   const entry = { date: today(), author: flags.author || 'cli', agents };
   if (tokens !== undefined) entry.tokens = tokens;
+  if (rmb !== undefined) entry.rmb = rmb;
+  if (credits !== undefined) { entry.credits = credits; entry.creditUnit = creditUnit; }
+  if (unknownReason !== undefined) { entry.unknown = true; entry.unknownReason = unknownReason; }
   if (flags.note) entry.note = String(flags.note);
   const agentsText = Object.entries(agents).map(([k, v]) => `${k}×${v}`).join(' + ');
+  const amountText = [
+    tokens !== undefined ? `约 ${tokens} tokens` : null,
+    rmb !== undefined ? `¥${rmb}` : null,
+    credits !== undefined ? `${credits} ${creditUnit}` : null,
+    unknownReason !== undefined ? '量不出（' + summarize(unknownReason, 40) + '）' : null,
+  ].filter(Boolean).join('，');
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     t.cost = t.cost || { entries: [] };
     if (!Array.isArray(t.cost.entries)) t.cost.entries = [];
     t.cost.entries.push(entry);
-  }, act('cost', flags.author, `登记施工成本 ${id}：${agentsText}${tokens !== undefined ? '，约 ' + tokens + ' tokens' : ''}`, id));
-  return okTask(board, id, changed);
+  }, act('cost', flags.author, `登记施工成本 ${id}：${agentsText}${amountText ? '，' + amountText : ''}`, id));
+  const res = okTask(board, id, changed);
+  // 这一笔一个量都没有:照记(账目是流水,不该因为缺字段就丢掉这条记录),但当场说明白它不顶账,
+  // 免得收官时才发现被 done 拦下、还以为闸坏了。
+  if (!hasCostQuantity(entry)) {
+    res.text = `✔ cost ${id} → ${res.task.status}\n` +
+      '  ⚠ 这一笔没有任何消耗量(人民币 / 额度 / token 都没给),**不够 done 那道闸放行**。\n' +
+      `     补量:cost ${id} --agents "${agentsText.replace(/×\d+/g, ':1')}" --tokens <n>\n` +
+      `     真算不出:cost ${id} --agents "${agentsText.replace(/×\d+/g, ':1')}" --unknown "<为什么算不出>"`;
+  }
+  return res;
 }
 
 module.exports = {
   register, add, addBatch, isBatchAdd, claim, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
+  hasCostQuantity, hasCostLedger, costGateRefusal,
 };

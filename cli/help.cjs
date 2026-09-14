@@ -153,6 +153,8 @@ const COMMANDS = {
     ],
     examples: ['done FEAT-12 --project myproj --pr 42 --commit a1b2c3d'],
     notes: [
+      '**额度登记硬闸（0914 负责人当面下达）**：卡上没有一条带「消耗量」的账就拒收，先跑 `cost <卡号> …` 补账。实在算不出的走 `cost … --unknown "<理由>"` 留痕放行。`done` 本身没有绕过开关。',
+      '两处不拦：`--collect`（转「收官」还没到收官那一步）；卡已经是「已完工」时回头补 PR / 提交号。',
       '收官时顺手把本卡「已拍板却没标落地」的决策一起标掉（`--collect` 不做这件事）。',
       '写完立刻 `show <卡号>` 复核：多对话并行时后写的可能把先写的整份盖掉。',
     ],
@@ -228,15 +230,26 @@ const COMMANDS = {
     ],
   },
   cost: {
-    summary: '登记这张卡花了哪些 agent / 模型档',
-    usage: 'cost <卡号> --project <id> --agents "<模型:个数,…>" [--tokens <n>] [--note <一句话>]',
+    summary: '登记这张卡花了多少：哪些 agent / 模型档，以及钱、额度或 token',
+    usage: 'cost <卡号> --project <id> --agents "<模型:个数,…>" [--tokens <n>] [--rmb <元>] [--credits <数> --credit-unit <单位>] [--unknown <理由>] [--note <一句话>]',
     args: [
-      ['--agents <文本>', '如 "sonnet:3,opus:1"；纯主对话施工写 "main:1"'],
+      ['--agents <文本>', '如 "sonnet:3,opus:1"；纯主对话施工写 "main:1"。它说的是「谁干的」，不算消耗量'],
       ['--tokens <n>', '大致 token 数，非负整数'],
-      ['--note <文本>', '一句话备注'],
+      ['--rmb <元>', '按量付费平台的真实人民币开销，如 2.2818'],
+      ['--credits <数>', '订阅制平台消耗的额度，如周窗积分 6209。必须配 --credit-unit'],
+      ['--credit-unit <单位>', '上一项的单位文本，如 "积分" / "额度百分点"'],
+      ['--unknown <理由>', '留痕逃生门：一个数都算不出时写清为什么，条目会标着「量不出」'],
+      ['--note <文本>', '一句话备注。金额别塞这里——埋在文本里没法排序汇总'],
     ],
-    examples: ['cost FEAT-12 --project myproj --agents "main:1,sonnet:2" --tokens 120000'],
-    notes: [],
+    examples: [
+      'cost FEAT-12 --project myproj --agents "main:1,sonnet:2" --tokens 120000',
+      'cost FEAT-12 --project myproj --agents "deepseek:1" --tokens 15437329 --rmb 0.9632',
+      'cost FEAT-12 --project myproj --agents "glm:1" --tokens 15271358 --credits 6209 --credit-unit "积分"',
+    ],
+    notes: [
+      '**不登记不得收官**（0914 负责人当面下达）：`done` 要求这张卡至少有一条带「消耗量」的账——人民币 / 额度 / token 三者之一，或一条 `--unknown` 留痕条目。只给 `--agents` 不算。',
+      '取不到的量一律别传，**别传 0**：0 与「没取到」是两件事，混了整份账就不能用。',
+    ],
   },
   precheck: {
     summary: '开工三查：环境新鲜度 / 看板占用 / 正本必读清单（只读）',
