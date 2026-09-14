@@ -13,7 +13,7 @@ const { STATUS } = require('../core/boardSchema.cjs');
 const cmds = require('../cli/commands.cjs');
 
 const CLI = path.resolve(__dirname, '../cli/index.cjs');
-const NAMES = ['brief', 'claim', 'progress', 'pending', 'decide', 'done', 'note', 'unclaim',
+const NAMES = ['brief', 'claim', 'progress', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox'];
 const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const card = (flags = {}) => JSON.parse(protocol({ ...flags, format: 'json' }).text);
@@ -66,7 +66,7 @@ test('--format json 输出约定形状；显式项目无需预先注册', (t) =>
     assert.ok(entry.writes.length && entry.writes.every((text) => typeof text === 'string'));
   }
   assert.ok(result.rules.length && result.rules.every((text) => typeof text === 'string'));
-  assert.deepEqual(Object.keys(result.examples).sort(), ['add', 'claim', 'pending', 'done'].sort());
+  assert.deepEqual(Object.keys(result.examples).sort(), ['add', 'claim', 'pending', 'cost', 'done'].sort());
 });
 
 test('省略项目且认不出时使用占位符，不报错也不改 registry/board', (t) => {
@@ -99,13 +99,15 @@ test('省略项目时唯一命中自动选择，共仓歧义不被入口拒绝�
   assert.equal(result.project, 'chosen');
 });
 
-test('四条示例使用统一 CLI 前缀，参数及 pending JSON 均能被真实 CLI 接收', (t) => {
+test('五条示例使用统一 CLI 前缀，参数及 pending JSON 均能被真实 CLI 接收', (t) => {
   const f = setup(t);
   const examples = card(f.P).examples;
   const prefix = displayCliCommand() + ' ';
   const [pendingCommand, pendingJson] = examples.pending.split('\n');
   fs.writeFileSync(path.join(f.repo, 'pending.json'), pendingJson);
-  for (const example of [examples.add, examples.claim, pendingCommand, examples.done]) {
+  // cost 必须排在 done 前面:收官那一步有额度登记硬闸,没账的卡 done 直接拒收
+  // (COST-LEDGER-CLOSEOUT-DISCIPLINE,0914)。示例的顺序就是真实干活的顺序。
+  for (const example of [examples.add, examples.claim, pendingCommand, examples.cost, examples.done]) {
     assert.ok(example.startsWith(prefix));
     const args = example.slice(prefix.length).match(/"[^"]*"|\S+/g).map((arg) => arg.startsWith('"') ? JSON.parse(arg) : arg);
     run([...args, '--registry', f.reg], f.repo);
@@ -198,6 +200,13 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   apply('unpark', { reason: '再次就绪' });
   apply('claim', { branch: 'feat/test' });
   apply('progress', { percent: 60 });
+  // 收官前先登记这一单的开销(COST-LEDGER-CLOSEOUT-DISCIPLINE,0914):顺序照真实干活写。
+  // 硬闸本身在 CLI 入口层,这里是编程调用所以不被拦 —— 拦不拦另有 doneCostGate.test.cjs 专管。
+  task = apply('cost', { agents: 'glm:1', tokens: '15271358', credits: '6209', 'credit-unit': '积分' });
+  assert.equal(task.cost.entries.length, 1);
+  assert.equal(task.cost.entries[0].credits, 6209);
+  assert.equal(task.cost.entries[0].creditUnit, '积分');
+  assert.equal(task.percent, 60, 'cost 不碰进度');
   task = apply('done', { collect: true, pr: 42, commit: 'a1b2c3d' }, '--collect');
   assert.equal(task.percent, 60);
   assert.equal(task.dates.done, null);
