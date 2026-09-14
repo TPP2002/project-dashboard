@@ -55,6 +55,7 @@ const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
+const { createCiJobsMonitor, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
 const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
@@ -717,6 +718,21 @@ const auditionApi = createAuditionApi({
 
 const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, cpuBudget, resolveShare: resolveSchedShare });
 
+// 与 CLI 共用项目解析规则，只读各板；某个板读不到只缺它的人话标题，不阻断检查作业。
+async function readCiBoards() {
+  const projects = Object.keys(readRegistrySafe().projects || {}).map(resolveProjectSafe).filter(Boolean);
+  const results = await Promise.allSettled(projects.map(async project =>
+    JSON.parse(await fs.promises.readFile(project.board, 'utf8'))));
+  return results.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return [result.value];
+    console.warn(`[sched-ci] 项目 ${projects[index].id} 的标题暂不可读：${result.reason.message}`);
+    return [];
+  });
+}
+// DASHBOARD_CI_RUNNER_MAP 是 JSON 对象：runner 名 -> 机器名，或 { machine, project? }。
+const ciJobs = createCiJobsMonitor({ now: Date.now, readBoards: readCiBoards,
+  runnerOverrides: process.env.DASHBOARD_CI_RUNNER_MAP || '{}' });
+
 /**
  * 本机算力账本快照(GET /api/cpu)。
  * 只读账本文件,不动任何进程;看板据此显示"当前谁占了多少核、还剩多少"。
@@ -1352,6 +1368,9 @@ const server = http.createServer((req, res) => {
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'audition' && auditionApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
+      if (sub === 'sched' && segs.length === 3 && segs[2] === 'ci-jobs' && req.method === 'GET') {
+        return sendJson(res, 200, ciJobs.snapshot());
+      }
       if (sub === 'sched' && schedApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
 
       return sendJson(res, 404, { ok: false, error: `未知 API 或方法不匹配：${req.method} ${pathname}` });
@@ -1443,6 +1462,13 @@ function openBrowser(targetUrl) {
 function startIntervals() {
   const poll = setInterval(() => { try { pollBoards(); } catch (_) {} }, POLL_MS);
   const beat = setInterval(() => broadcast('ping', { ts: Date.now() }), HEARTBEAT_MS);
+  const refreshCi = () => {
+    if (resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
+  };
+  const ciPoll = setInterval(refreshCi, CI_POLL_MS);
+  ciPoll.unref();
+  server.once('close', () => clearInterval(ciPoll));
+  refreshCi();
   poll.unref(); beat.unref(); // 别因定时器卡住进程退出
 }
 

@@ -55,6 +55,17 @@
 :where(.sched-page) .sched-scroll-region .sched-tag,
 :where(.sched-page) .sched-scroll-region .sched-link,
 :where(.sched-page) .sched-scroll-region .sched-btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+/* 原生折叠不加过渡；固定行高对应三行窗口，长标题在窗口内横向查看。 */
+.sched-page .machine-ci-window { margin-top: var(--s2); min-width: 0; font-size: var(--fs-xs); }
+.sched-page .machine-ci-details summary { cursor: pointer; color: var(--text-2); }
+.sched-page .machine-ci-jobs {
+  list-style: none; padding: 0; margin: var(--s1) 0 0; max-width: 100%; max-height: 7.5em;
+  overflow: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface-2);
+}
+.sched-page .machine-ci-jobs > li { box-sizing: border-box; height: 2.5em; line-height: 2.5; padding-inline: var(--s2); white-space: nowrap; }
+.sched-page .machine-ci-jobs:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.sched-page .machine-ci-unknown { color: var(--text-3); font-weight: 600; }
 @media (max-width: 760px) {
   :where(.sched-page) .sched-scroll-region .sched-table th,
   :where(.sched-page) .sched-scroll-region .sched-table td { padding-inline: 2px; }

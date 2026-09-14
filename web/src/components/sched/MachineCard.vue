@@ -1,14 +1,52 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched'
+import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
-import { duration, freshness, stamp, ticketLabel, tone } from './format'
+import { age, ciJobLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, tone } from './format'
 import { machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string] }>()
 const fresh = computed(() => freshness(props.machine, props.now))
 const capacity = computed(() => machineCapacity(props.machine, fresh.value.stale))
 const jobs = computed(() => props.tickets.filter(ticket => !ticket.registerOnly && ticket.machine === props.machine.name))
+const ciSnapshot = ref<CiJobsSnapshot | null>(null), ciFailed = ref(false)
+const ciData = computed(() => ciSnapshot.value && !('unavailable' in ciSnapshot.value) ? ciSnapshot.value : null)
+const ciUnavailable = computed(() => ciSnapshot.value && 'unavailable' in ciSnapshot.value ? ciSnapshot.value.unavailable : null)
+const ownCiJobs = computed(() => ciData.value?.machines.find(group => group.machine === props.machine.name)?.jobs ?? [])
+// 未知 runner 不猜归属；在主机卡里单列一次，避免每张机器卡重复展示。
+const unknownCiJobs = computed(() => props.machine.name === props.host
+  ? ciData.value?.machines.find(group => group.machine === null)?.jobs ?? [] : [])
+const ciCount = computed(() => ownCiJobs.value.length + unknownCiJobs.value.length)
+const ciMismatch = computed(() => !!ciData.value?.updatedAt && ciRunnersDiffer(props.machine.ciRunners, ownCiJobs.value))
+const ciAge = computed(() => age(ciData.value?.updatedAt ?? null, props.now))
+const ciStale = computed(() => ciFailed.value || !!ciData.value?.staleSince || (ciAge.value !== null && ciAge.value > 60_000))
+let ciTimer: number | undefined, ciRequest: AbortController | null = null, mounted = false
+async function refreshCiJobs() {
+  if (ciRequest) return
+  const request = new AbortController()
+  ciRequest = request
+  const timeout = window.setTimeout(() => request.abort(), 10_000)
+  try {
+    const snapshot = await fetchCiJobs(request.signal)
+    if (mounted) { ciSnapshot.value = snapshot; ciFailed.value = false }
+  } catch {
+    if (mounted) ciFailed.value = true
+  } finally {
+    window.clearTimeout(timeout)
+    ciRequest = null
+  }
+}
+onMounted(() => {
+  mounted = true
+  void refreshCiJobs()
+  ciTimer = window.setInterval(() => { void refreshCiJobs() }, 30_000)
+})
+onUnmounted(() => {
+  mounted = false
+  window.clearInterval(ciTimer)
+  ciRequest?.abort()
+})
 </script>
 
 <template>
@@ -28,6 +66,27 @@ const jobs = computed(() => props.tickets.filter(ticket => !ticket.registerOnly 
       </span>
       <span v-if="machine.overCommitted" class="sched-tag bad">超额中</span>
       <span v-if="machine.ownerHold" class="sched-tag info">你在用电脑 · 已暂停</span>
+    </div>
+    <div class="machine-ci-window">
+      <p v-if="ciUnavailable" class="sched-note">{{ ciUnavailable }}</p>
+      <template v-else>
+        <p v-if="ciStale" class="sched-note warn" role="status">
+          {{ ciAge === null ? '暂时读不到检查作业' : `数据 ${Math.floor(ciAge / 1000)} 秒前` }}
+        </p>
+        <small v-if="ciMismatch" class="sched-muted">与派单员观测不一致</small>
+        <details v-if="ciCount" class="machine-ci-details">
+          <summary>CI 在跑什么（{{ ciCount }}）</summary>
+          <ul class="machine-ci-jobs" tabindex="0" :aria-label="`${machine.name} 的检查作业，超出三行可滚动`">
+            <li v-for="job in ownCiJobs" :key="job.id" :title="ciJobLabel(job, now)">{{ ciJobLabel(job, now) }}</li>
+            <li v-if="unknownCiJobs.length" class="machine-ci-unknown">未知机器</li>
+            <li v-for="job in unknownCiJobs" :key="`unknown-${job.id}`" :title="ciJobLabel(job, now)">
+              {{ ciJobLabel(job, now) }}
+            </li>
+          </ul>
+        </details>
+        <p v-else-if="ciData?.updatedAt" class="sched-note">{{ ciStale ? '上次没有查到正在跑的检查' : '没有查到正在跑的检查' }}</p>
+        <p v-else-if="!ciStale" class="sched-note">正在读取检查作业…</p>
+      </template>
     </div>
     <div class="machine-bar" :class="capacity.tone" :title="capacity.barLabel" role="img" :aria-label="capacity.barLabel">
       <span :style="{ width: `${capacity.barPercent ?? 0}%` }" />

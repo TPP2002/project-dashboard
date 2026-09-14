@@ -14,6 +14,7 @@ export interface MachineSnapshot {
   name: string; preference: number; quotaCores: number; grantedCores: number; externalLoadCores: number
   availableCores: number; overCommitted: boolean; fresh: boolean; online: boolean
   ci: 'active' | 'idle' | 'unknown'; ownerHold: boolean; reservation: Reservation | null
+  ciRunners?: string[] | null; ciReserveCores?: number
   heartbeatAt: string | null; loadSampledAt: string | null
 }
 export interface QueueEntry {
