@@ -162,6 +162,12 @@ function validateHeartbeat(value) {
       ci: oneOf(['active', 'idle', 'unknown']), ownerHold: boolean,
       reservation: nullable(r => fields(r, { requestedCores: oneOf(RESERVATION_LEVELS), fulfilledCores: nonNegative, untilAt: nullable(isoTime) })),
       heartbeatAt: nullable(isoTime), loadSampledAt: nullable(isoTime),
+    }, {
+      // 派单员 2026-09-14 起(rogue 卡 UDQ-T4B-CI-LANE-HEADROOM,PR #696)按 CI 车道留余量:
+      // ciRunners = 心跳里正在跑的 CI runner 名(认不出/非 active 为 null),ciReserveCores = 据此给 CI 留的核数。
+      // 两项都是可选展示字段、不升版:旧派单员的心跳没有它们仍合法,新派单员的心跳带了也不能整份拒读
+      // (0914 看板因此「读不到调度共享盘:未知字段 ciReserveCores」)。
+      ciRunners: nullable(list(segment, 0, true)), ciReserveCores: count,
     })),
     queue: list(v => fields(v, { ticketId, position: positive, band: oneOf([0, 1]), requestedCores: positive,
       allowedMachines: list(segment, 1, true), queuedAt: isoTime, state: oneOf(['queued', 'unsatisfiable']), reason: nullable(text) })),
