@@ -55,7 +55,10 @@ function validateTicket(value, id) {
       c.requireRecord(attempt.permit, '许可'); c.segment(attempt.permit.machine); c.integer(attempt.permit.grantedCores);
     }
     if (attempt.intent !== null) { c.requireRecord(attempt.intent, '派发意图'); c.segment(attempt.intent.machine); }
-    if (attempt.result !== null) c.fields(attempt.result, { outcome: c.oneOf(['passed', 'failed', 'voided', 'cancelled', 'handoff-interrupted']), reason: c.text });
+    // 派单员正本(rogue scripts/sched/sched-contract.ts)的 result 可带 exitCode(安全整数)与 logFile(共享盘相对路径),
+    // 集群作业(T3)与验收单会写进来;看板只展示、不拒读(0914 曾因「未知字段:exitCode」整页读不到调度共享盘)。
+    if (attempt.result !== null) c.fields(attempt.result, { outcome: c.oneOf(['passed', 'failed', 'voided', 'cancelled', 'handoff-interrupted']), reason: c.text },
+      { exitCode: v => { if (!Number.isSafeInteger(v)) throw new Error('[sched] 退出码必须是安全整数'); }, logFile: c.text });
   })(value.attempts);
   c.list(event => {
     c.requireRecord(event, '时间线'); c.isoTime(event.at); c.text(event.type); c.requireRecord(event.data, '事件 data');

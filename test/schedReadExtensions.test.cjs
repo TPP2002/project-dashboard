@@ -141,3 +141,13 @@ test('台账校验和损坏不会成为执行样本，读取过程不修盘、�
   const result = readLedger(api.share); assert.equal(result.readable, false); assert.match(result.reason, /校验和/);
   assert.equal(fs.readFileSync(api.ledgerFile, 'utf8'), bytes);
 });
+
+test('单子结果带派单员正本的可选字段(exitCode/logFile,集群作业与验收单会写)时看板照读、不整份拒读', async t => {
+  const api = await apiFixture(t), record = ticket(1); api.save(record);
+  const withExtras = ticket(2); withExtras.attempts[0].result = { outcome: 'passed', reason: 'fixture result', exitCode: 0, logFile: 'logs/fixture.log' }; api.save(withExtras);
+  const result = await api.json('tickets');
+  assert.equal(result.status, 200);
+  assert.ok(result.body.items.some(item => item.ticketId === withExtras.ticketId), '带可选字段的单子应正常进入列表');
+  const bad = ticket(3); bad.attempts[0].result = { outcome: 'passed', reason: 'fixture result', exitCode: 'zero' }; api.save(bad);
+  assert.equal((await api.json('tickets')).status, 503, '退出码不是整数仍按坏单拒读');
+});
