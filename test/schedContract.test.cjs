@@ -85,3 +85,19 @@ test('暂存碰撞不删别人的文件；目标目录缺失不降级成非原�
   assert.throws(() => c.writeCommand(share, command, { nonce: () => 'missing-directory' }));
   assert.deepEqual(fs.readdirSync(paths.staging), ['.dashboard-collision.tmp']);
 });
+
+test('派单员心跳可带 CI 车道字段(ciRunners/ciReserveCores),缺省仍合法;别的未知字段照拒(0914 看板读不到共享盘的病根)', () => {
+  const { heartbeat } = require('./fixtures/sched/support.cjs');
+  const plain = heartbeat();
+  assert.doesNotThrow(() => c.validateHeartbeat(plain));
+  const laned = heartbeat();
+  laned.machines[0] = { ...laned.machines[0], ciRunners: ['rogue-local-win-2'], ciReserveCores: 12 };
+  laned.machines[1] = { ...laned.machines[1], ciRunners: null, ciReserveCores: 0 };
+  assert.doesNotThrow(() => c.validateHeartbeat(laned));
+  const bad = heartbeat();
+  bad.machines[0] = { ...bad.machines[0], ciReserveCores: -1 };
+  assert.throws(() => c.validateHeartbeat(bad));
+  const unknown = heartbeat();
+  unknown.machines[0] = { ...unknown.machines[0], somethingElse: 1 };
+  assert.throws(() => c.validateHeartbeat(unknown), { message: '[sched] 未知字段:somethingElse' });
+});
