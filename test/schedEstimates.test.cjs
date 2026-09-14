@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { estimateTickets } = require('../core/schedEstimates.cjs');
+const { estimateTickets, CI_AWARE_SLOWDOWN } = require('../core/schedEstimates.cjs');
 const { durationSamples, connectedProjects, sampleKey } = require('../core/schedLedger.cjs');
 const { ticket, heartbeat, AT } = require('./fixtures/sched/support.cjs');
 const NOW = Date.parse(AT) + 3600000;
@@ -52,12 +52,89 @@ test('中位数与剩余时长决定排队等待、预计完成；输入不可�
   assert.equal(JSON.stringify([input, samples]), before);
 });
 
+test('CI 在跑且有可派核仍给等待估值；CI 余量只标注，不重复扣核', () => {
+  const first = job(1), second = job(2), host = machine({ ci: 'active', quotaCores: 12, grantedCores: 0, availableCores: 4, ciReserveCores: 8 });
+  const input = freeze(snapshot([first, second], [host])), samples = freeze(history([8000, 10000, 12000]));
+  const before = JSON.stringify([input, samples]), result = estimateTickets(input, samples);
+  const expected = { kind: 'wait', sampleCount: 3, medianMs: 10000, ciHeadroom: 8, machine: 'fixture-worker', startAt: iso(NOW), waitMs: 0 };
+  assert.deepEqual(result[first.ticketId], expected);
+  assert.deepEqual(result[second.ticketId], { ...expected, startAt: iso(NOW + 10000), waitMs: 10000 });
+  assert.deepEqual(estimateTickets(input, samples), result);
+  assert.equal(JSON.stringify([input, samples]), before);
+  assert.deepEqual(estimateTickets(snapshot([first], [{ ...host, ciReserveCores: 0 }]), samples)[first.ticketId], { ...expected, ciHeadroom: 0 });
+  assert.equal(estimateTickets(snapshot([first], [{ ...host, availableCores: 3.75 }]), samples)[first.ticketId].code, 'load');
+});
+
+test('ciAware 在跑按中位耗时的 1.5 倍估完成，排队等待沿用同一释放时刻', () => {
+  assert.equal(CI_AWARE_SLOWDOWN, 1.5);
+  const running = job(1, 'running', 4000), waiting = job(2), samples = history([8000, 10000, 12000]);
+  running.attempts[0].permit.ciAware = true;
+  const input = snapshot([running, waiting], [machine({ ci: 'active', quotaCores: 12, ciReserveCores: 8 })]);
+  const completion = { kind: 'completion', sampleCount: 3, medianMs: 10000, slowdown: 1.5,
+    finishAt: iso(NOW + 11000), remainingMs: 11000, overdue: false, ciHeadroom: 8 };
+  const wait = { kind: 'wait', sampleCount: 3, medianMs: 10000, ciHeadroom: 8, machine: 'fixture-worker', startAt: iso(NOW + 11000), waitMs: 11000 };
+  for (const state of ['running', 'slow']) for (const pauseReasons of [[], ['ci']]) {
+    running.state = state; running.pauseReasons = pauseReasons;
+    assert.deepEqual(estimateTickets(input, samples), { [running.ticketId]: completion, [waiting.ticketId]: wait });
+  }
+  const calibrated = estimateTickets(input, samples, { ciAwareSlowdown: 2 });
+  assert.deepEqual(calibrated[running.ticketId], { ...completion, slowdown: 2, finishAt: iso(NOW + 16000), remainingMs: 16000 });
+  assert.deepEqual(calibrated[waiting.ticketId], { ...wait, startAt: iso(NOW + 16000), waitMs: 16000 });
+  // 系数来自本次许可，CI 结束后仍按这次低优先级执行估，不能由整机状态反推许可。
+  input.machines[0].ci = 'idle';
+  assert.deepEqual(estimateTickets(input, samples)[running.ticketId], completion);
+  for (const ciAwareSlowdown of [0, 0.5, NaN, Infinity, '1.5']) assert.throws(() => estimateTickets(input, samples, { ciAwareSlowdown }), RangeError);
+});
+
+test('被 CI 冻住且没有 ciAware 真值的执行算不出，并把原因传给等待释放的单子', () => {
+  const running = job(1, 'paused', 4000), waiting = job(2), samples = history([10000]);
+  running.pauseReasons = ['ci'];
+  const input = snapshot([running, waiting], [machine({ ci: 'active' })]);
+  const frozen = { kind: 'unavailable', code: 'ci', reason: '被 CI 冻住，恢复时刻未知' };
+  for (const ciAware of [undefined, false, 'true']) {
+    if (ciAware === undefined) delete running.attempts[0].permit.ciAware;
+    else running.attempts[0].permit.ciAware = ciAware;
+    assert.deepEqual(estimateTickets(input, samples), { [running.ticketId]: frozen, [waiting.ticketId]: frozen });
+  }
+  input.machines[0].quotaCores = 12; input.machines[0].ciReserveCores = 8;
+  const frozenWithHeadroom = { ...frozen, ciHeadroom: 8 };
+  assert.deepEqual(estimateTickets(input, samples), { [running.ticketId]: frozenWithHeadroom, [waiting.ticketId]: frozenWithHeadroom });
+  input.machines[0].quotaCores = 16; input.machines[0].availableCores = 4;
+  assert.equal(estimateTickets(input, samples)[waiting.ticketId].waitMs, 0);
+});
+
+test('CI 状态未知时，即使有可派核或 ciAware 许可也仍 unavailable', () => {
+  const running = job(1, 'running', 4000), waiting = job(2); running.attempts[0].permit.ciAware = true;
+  const input = snapshot([running, waiting], [machine({ ci: 'unknown', quotaCores: 8, availableCores: 4 })]);
+  const unavailable = { kind: 'unavailable', code: 'unavailable', reason: '允许使用的机器离线、读数过期，或暂时不能接活' };
+  assert.deepEqual(estimateTickets(input, history([10000])), { [running.ticketId]: unavailable, [waiting.ticketId]: unavailable });
+});
+
+test('ciAware 不掩盖真正暂停、其他原因降速、未开跑和缺少历史', () => {
+  const running = job(1, 'paused', 4000); running.attempts[0].permit.ciAware = true;
+  const input = snapshot([running], [machine({ ci: 'active' })]), samples = history([10000]);
+  const paused = { kind: 'unavailable', code: 'paused', reason: '任务已暂停或降速，何时恢复还不知道' };
+  assert.deepEqual(estimateTickets(input, samples)[running.ticketId], paused);
+  running.state = 'slow'; running.pauseReasons = ['ci', 'manual'];
+  assert.deepEqual(estimateTickets(input, samples)[running.ticketId], paused);
+  running.pauseReasons = []; running.attempts[0].permit.ciAware = false;
+  assert.deepEqual(estimateTickets(input, samples)[running.ticketId], paused);
+  running.state = 'running';
+  assert.deepEqual(estimateTickets(input, samples)[running.ticketId], { kind: 'completion', sampleCount: 1, medianMs: 10000,
+    finishAt: iso(NOW + 6000), remainingMs: 6000, overdue: false });
+  running.attempts[0].permit.ciAware = true;
+  assert.deepEqual(estimateTickets(input, history([]))[running.ticketId], { kind: 'unavailable', code: 'history', reason: '还没有同类任务的历史耗时' });
+  running.state = 'granted'; running.attempts[0].startedAt = null;
+  assert.deepEqual(estimateTickets(input, samples)[running.ticketId], { kind: 'unavailable', code: 'start', reason: '还没收到任务开跑的消息' });
+});
+
 test('超时执行保持占用并报告原因，已有空闲核与其他执行的释放仍可用', () => {
   const running = job(1, 'running', 15000), waiting = job(2), estimates = estimateTickets(snapshot([running, waiting]), history([10000]));
   assert.equal(estimates[running.ticketId].overdue, true);
   assert.equal(estimates[running.ticketId].remainingMs, 0);
   assert.equal(estimates[running.ticketId].finishAt, iso(NOW - 5000));
-  const unavailable = { kind: 'unavailable', code: 'overdue', reason: '在跑执行已超出平均耗时' };
+  // 金样文案改为预计耗时：依据是历史中位数，ciAware 时还包含低优先级系数，并非算术平均。
+  const unavailable = { kind: 'unavailable', code: 'overdue', reason: '任务已超过预计耗时，何时结束还不知道' };
   assert.deepEqual(estimates[waiting.ticketId], unavailable);
   const spare = snapshot([running, waiting], [machine({ quotaCores: 8, availableCores: 4 })]);
   assert.equal(estimateTickets(spare, history([10000]))[waiting.ticketId].waitMs, 0);
@@ -71,10 +148,12 @@ test('超时执行保持占用并报告原因，已有空闲核与其他执行�
 test('四种不可预估原因分别保留，不以零等待冒充', () => {
   const waiting = job(1);
   const cases = [
-    [machine({ ci: 'active' }), history([10000]), 'ci', 'CI 在跑'],
-    [machine({ reservation: { requestedCores: 5, fulfilledCores: 2, untilAt: null } }), history([10000]), 'reservation', '预留未兑现'],
-    [machine({ quotaCores: 3 }), history([10000]), 'capacity', '需求超过容量'],
-    [machine(), history([]), 'history', '没有历史样本'],
+    // 金样变化：CI 不再封锁整机；本夹具无可派核、也无可知的释放，故原因由 ci 改为 load。
+    [machine({ ci: 'active' }), history([10000]), 'load', '正在占用的核数何时能腾出来还不知道'],
+    // 以下三项只把原因改成人话，原阻断条件与结果形状不变。
+    [machine({ reservation: { requestedCores: 5, fulfilledCores: 2, untilAt: null } }), history([10000]), 'reservation', '预留的核数还没腾出来'],
+    [machine({ quotaCores: 3 }), history([10000]), 'capacity', '这项任务要的核数超过了允许机器的容量'],
+    [machine(), history([]), 'history', '还没有同类任务的历史耗时'],
   ];
   for (const [host, samples, code, reason] of cases) {
     assert.deepEqual(estimateTickets(snapshot([waiting], [host]), samples)[waiting.ticketId], { kind: 'unavailable', code, reason });
@@ -87,15 +166,18 @@ test('只选允许且在线新鲜的机器；在跑机器缺失不编造完成�
     machine({ name: 'not-allowed', grantedCores: 0, availableCores: 100 })]);
   assert.equal(estimateTickets(input, history([10000]))[waiting.ticketId].machine, 'fixture-alternative');
   input.machines[1].fresh = false;
-  assert.equal(estimateTickets(input, history([10000]))[waiting.ticketId].code, 'ci');
+  // 金样变化：另一台机器过期后，CI 活跃机器仍可尝试估，但本夹具没有已知释放时刻。
+  assert.equal(estimateTickets(input, history([10000]))[waiting.ticketId].code, 'load');
   input.machines[0].ci = 'idle'; input.machines[0].online = false;
   assert.equal(estimateTickets(input, history([10000]))[waiting.ticketId].code, 'unavailable');
   const running = job(2, 'running', 4000);
   for (const hosts of [[], [machine({ name: 'fixture-alternative' })]]) {
+    // 仅文案变化，机器缺失时仍不可估算，不用旧机器信息编造完成时刻。
     assert.deepEqual(estimateTickets(snapshot([running], hosts), history([10000]))[running.ticketId],
-      { kind: 'unavailable', code: 'missingMachine', reason: '执行所在机器已不在快照中' });
+      { kind: 'unavailable', code: 'missingMachine', reason: '找不到这项任务所在机器的最新信息' });
   }
-  for (const host of [machine({ online: false }), machine({ fresh: false }), machine({ heartbeatAt: iso(NOW - 31000) })]) {
+  for (const host of [machine({ online: false }), machine({ fresh: false }), machine({ heartbeatAt: iso(NOW - 31000) }),
+    machine({ ci: 'active', ownerHold: true }), machine({ ci: 'active', loadSampledAt: iso(NOW - 31000) })]) {
     assert.equal(estimateTickets(snapshot([running], [host]), history([10000]))[running.ticketId].code, 'unavailable');
   }
   const registered = ticket(3, { state: 'running', registerOnly: true, machine: null });
@@ -128,6 +210,12 @@ test('保护队首未来核数，允许别的机器补位；被保护的机器�
   assert.equal(result[other.ticketId].waitMs, 0);
   input.locks = [];
   assert.equal(estimateTickets(input, samples)[small.ticketId].waitMs, 0);
+  input.locks = [{ machine: 'fixture-worker', byTicketId: head.ticketId }];
+  input.machines[0].ci = 'active'; running.attempts[0].permit.ciAware = true;
+  const duringCI = estimateTickets(input, samples);
+  assert.equal(duringCI[head.ticketId].waitMs, 11000);
+  assert.equal(duringCI[small.ticketId].waitMs, 21000);
+  assert.equal(duringCI[other.ticketId].waitMs, 0);
 });
 
 test('无法满足的队首不挡后单；没有历史的在跑单不凭空释放核数', () => {
