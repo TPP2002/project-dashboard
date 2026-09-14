@@ -1,4 +1,5 @@
 import type { CommandInput, MachineSnapshot, TicketSummary, TicketState } from '@/api/sched'
+import type { CiJob } from '@/api/schedCiJobs'
 
 export const stateLabels: Record<TicketState, string> = { queued: '排队中', granted: '已授予，等待开跑', running: '运行中',
   paused: '暂停中', slow: '低速继续', unsatisfiable: '无法满足', passed: '通过', failed: '失败', cancelled: '已撤单', voided: '已作废' }
@@ -32,6 +33,22 @@ export function freshness(machine: MachineSnapshot, now: number) {
   const heartbeat = age(machine.heartbeatAt, now), load = age(machine.loadSampledAt, now)
   const ageMs = heartbeat === null || load === null ? null : Math.max(heartbeat, load)
   return { ageMs, stale: !machine.fresh || ageMs === null || ageMs > 30000 }
+}
+export function ciJobLabel(job: CiJob, now: number) {
+  const elapsed = age(job.startedAt, now)
+  const remaining = elapsed === null || job.expectedMs === null ? null : job.expectedMs - elapsed
+  const estimate = remaining === null ? '预计还要多久：算不出'
+    : remaining < 0 ? '已超出平均' : `预计还要 ${duration(remaining)}`
+  const dataAge = age(job.updatedAt ?? null, now)
+  const stale = job.staleSince ? dataAge === null ? '数据时间未知' : `数据 ${Math.floor(dataAge / 1000)} 秒前` : null
+  return [job.project, job.workflow, job.job, job.cardTitle || job.title,
+    elapsed === null ? '已跑时长未知' : `已跑 ${duration(elapsed)}`, estimate, stale].filter(Boolean).join(' · ')
+}
+export function ciRunnersDiffer(observed: string[] | null | undefined, jobs: CiJob[]) {
+  if (!Array.isArray(observed) || !observed.every(runner => typeof runner === 'string')) return false
+  const actual = new Set(jobs.flatMap(job => job.runner === null ? [] : [job.runner]))
+  const heartbeat = new Set(observed)
+  return actual.size !== heartbeat.size || [...actual].some(runner => !heartbeat.has(runner))
 }
 export function commandLabel(input: CommandInput) {
   if (input.kind === 'jump-queue') return `插队 ${input.data.ticketId}`
