@@ -44,6 +44,13 @@ export function ciJobLabel(job: CiJob, now: number) {
   return [job.project, job.workflow, job.job, job.cardTitle || job.title,
     elapsed === null ? '已跑时长未知' : `已跑 ${duration(elapsed)}`, estimate, stale].filter(Boolean).join(' · ')
 }
+export function ciQueuedLabel(job: CiJob, now: number) {
+  const queuedMs = age(job.queuedAt, now)
+  const dataAge = age(job.updatedAt ?? null, now)
+  const stale = job.staleSince ? dataAge === null ? '数据时间未知' : `数据 ${Math.floor(dataAge / 1000)} 秒前` : null
+  return [job.project || job.repository, job.workflow, job.job, job.cardTitle || job.title,
+    queuedMs === null ? '排队时长未知' : `排队 ${Math.floor(queuedMs / 60_000)} 分钟`, stale].filter(Boolean).join(' · ')
+}
 export function ciRunnersDiffer(observed: string[] | null | undefined, jobs: CiJob[]) {
   if (!Array.isArray(observed) || !observed.every(runner => typeof runner === 'string')) return false
   const actual = new Set(jobs.flatMap(job => job.runner === null ? [] : [job.runner]))

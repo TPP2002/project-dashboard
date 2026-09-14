@@ -41,7 +41,7 @@ test('客户端逐字段检查作业数据，接受未知扩展字段；坏响�
       ...[{ elapsedMs: -1 }, { expectedMs: '900' }, { machine: 'other' }, { startedAt: 'bad' }]
         .map(change => ({ ...data, machines: [{ machine: job.machine, jobs: [{ ...job, ...change }] }] }))]
       .map(isCiJobsSnapshot)));`);
-  assert.deepEqual(values, [true, true, true, false, false, false, false, false, false, false]);
+  assert.deepEqual(values, [false, false, true, false, false, false, false, false, false, false]);
 });
 
 test('只读客户端向独立接口传取消信号；服务不可用和坏响应向卡片报错', () => {
@@ -138,6 +138,126 @@ test('仓库清单覆盖不依赖注册表可读，不额外采集其它仓库',
   const monitor = c.createCiJobsMonitor({ now: () => 0, repositoryOverrides: 'owner/override',
     readBoards: async () => { throw new Error('fixture unreadable registry'); },
     gh: async endpoint => { calls.push(endpoint); return { workflow_runs: [] }; } });
-  assert.deepEqual(await monitor.refresh(), { machines: [], updatedAt: new Date(0).toISOString(), staleSince: null });
-  assert.deepEqual(calls, ['repos/owner/override/actions/runs?status=in_progress&per_page=20', 'repos/owner/override/actions/runs?status=completed&per_page=100']);
+  assert.deepEqual(await monitor.refresh(), { machines: [], queued: [], updatedAt: new Date(0).toISOString(), staleSince: null });
+  assert.deepEqual(calls, ['repos/owner/override/actions/runs?status=in_progress&per_page=20', 'repos/owner/override/actions/runs?status=queued&per_page=20', 'repos/owner/override/actions/runs?status=completed&per_page=100']);
+});
+
+const currentFixture = `${fixture}
+  Object.assign(job, { phase: 'running', queuedAt: '2026-09-14T09:47:00Z', queuedMs: 60000,
+    repository: 'owner/repo', runner: 'runner-1', machine: 'machine-a' });
+  const queued = { ...job, id: 2, phase: 'queued', runner: null, machine: null, startedAt: null,
+    queuedAt: '2026-09-14T09:03:00Z', queuedMs: 3420000, elapsedMs: null, remainingMs: null };
+  const data = { updatedAt: new Date(now).toISOString(), staleSince: null,
+    machines: [{ machine: job.machine, jobs: [job] }], queued: [queued] };`;
+
+test('新快照必有排队数组及作业阶段、排队时间；每个字段缺失或类型错误均拒绝', () => {
+  const result = runTs(`import { isCiJobsSnapshot } from './web/src/api/schedCiJobs.ts'; ${currentFixture}
+    const without = (value, key) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+    const runningData = item => ({ ...data, machines: [{ machine: job.machine, jobs: [item] }] });
+    const queuedData = item => ({ ...data, queued: [item] });
+    const valid = [data, { ...data, future: true }, { ...data, queued: [] }, { ...data, machines: [] },
+      queuedData({ ...queued, queuedAt: null, queuedMs: null }),
+      runningData({ ...job, startedAt: null, queuedAt: null, queuedMs: null, elapsedMs: null, remainingMs: null })];
+    const invalid = [without(data, 'queued'), { ...data, queued: null }, { ...data, queued: {} },
+      ...['phase', 'queuedAt', 'queuedMs'].flatMap(key => [runningData(without(job, key)), queuedData(without(queued, key))]),
+      ...[{ phase: 'waiting' }, { phase: null }, { queuedAt: 'bad' }, { queuedMs: -1 }, { queuedMs: '60000' },
+        { queuedMs: NaN }, { queuedMs: Infinity }].flatMap(change => [runningData({ ...job, ...change }), queuedData({ ...queued, ...change })]),
+      ...[{ elapsedMs: -1 }, { expectedMs: '900' }, { machine: 'other' }, { startedAt: 'bad' }]
+        .map(change => runningData({ ...job, ...change })),
+      ...[{ phase: 'running' }, { runner: 'runner-1' }, { machine: 'machine-a' }, { startedAt: job.startedAt },
+        { elapsedMs: 0 }, { remainingMs: 0 }].map(change => queuedData({ ...queued, ...change })),
+      { ...data, machines: [{ machine: null, jobs: [queued] }] }, queuedData(job)];
+    console.log(JSON.stringify({ valid: valid.map(isCiJobsSnapshot), invalid: invalid.map(isCiJobsSnapshot) }));`);
+  assert.deepEqual(result.valid, [true, true, true, true, true, true]);
+  assert.equal(result.invalid.length, 35);
+  assert.ok(result.invalid.every(value => value === false));
+});
+
+test('排队文案显示项目、人话标题和整分钟，时钟走动、缺时间与过期分别说明', () => {
+  const labels = runTs(`import { ciQueuedLabel } from './web/src/components/sched/format.ts'; ${currentFixture}
+    console.log(JSON.stringify([ciQueuedLabel(queued, now), ciQueuedLabel(queued, now + 60000),
+      ciQueuedLabel(queued, now + 600000), ciQueuedLabel({ ...queued, queuedAt: new Date(now).toISOString(), queuedMs: 0 }, now),
+      ciQueuedLabel({ ...queued, project: '项目甲', cardTitle: null }, now),
+      ciQueuedLabel({ ...queued, queuedAt: null, queuedMs: null }, now),
+      ciQueuedLabel({ ...queued, updatedAt: '2026-09-14T09:59:30Z', staleSince: new Date(now).toISOString() }, now)]));`);
+  assert.equal(labels[0], 'owner/repo · 主干守门 · 全量单测 · 看清进度 · 排队 57 分钟');
+  assert.equal(labels[1], 'owner/repo · 主干守门 · 全量单测 · 看清进度 · 排队 58 分钟');
+  assert.equal(labels[2], 'owner/repo · 主干守门 · 全量单测 · 看清进度 · 排队 67 分钟');
+  assert.equal(labels[3], 'owner/repo · 主干守门 · 全量单测 · 看清进度 · 排队 0 分钟');
+  assert.equal(labels[4], '项目甲 · 主干守门 · 全量单测 · 检查改动 · 排队 57 分钟');
+  assert.equal(labels[5], 'owner/repo · 主干守门 · 全量单测 · 看清进度 · 排队时长未知');
+  assert.equal(labels[6], 'owner/repo · 主干守门 · 全量单测 · 看清进度 · 排队 57 分钟 · 数据 30 秒前');
+  assert.doesNotMatch(labels.join('\n'), /已跑|预计还要|已超出平均/);
+});
+
+// 内存中编译实际组件与依赖，仅为组件初始快照注入夹具；计数、分组和文案仍走实际代码。
+function machineRenderer() {
+  const fs = require('node:fs');
+  const webRequire = require('node:module').createRequire(path.join(__dirname, '../web/package.json'));
+  const { parse, compileScript, compileTemplate } = webRequire('vue/compiler-sfc');
+  const ts = webRequire('typescript'), { createSSRApp, h } = webRequire('vue');
+  const { renderToString } = webRequire('vue/server-renderer');
+  const directory = path.join(__dirname, '../web/src/components/sched');
+  function evaluate(source, requireFn = webRequire) {
+    const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } });
+    const output = { exports: {} };
+    new Function('require', 'module', 'exports', outputText)(requireFn, output, output.exports);
+    return output.exports;
+  }
+  const format = evaluate(fs.readFileSync(path.join(directory, 'format.ts'), 'utf8'));
+  const api = evaluate(fs.readFileSync(path.join(__dirname, '../web/src/api/schedCiJobs.ts'), 'utf8'));
+  const capacity = evaluate(fs.readFileSync(path.join(__dirname, '../core/schedMachineDisplay.mjs'), 'utf8'));
+  function compile(name, dependencies) {
+    const filename = path.join(directory, name);
+    const { descriptor, errors } = parse(fs.readFileSync(filename, 'utf8'), { filename });
+    assert.deepEqual(errors, []);
+    const script = compileScript(descriptor, { id: name });
+    const template = compileTemplate({ id: name, filename, source: descriptor.template.content,
+      compilerOptions: { bindingMetadata: script.bindings } });
+    assert.deepEqual(template.errors, []);
+    const resolve = id => Object.hasOwn(dependencies, id) ? dependencies[id] : webRequire(id);
+    const component = evaluate(script.content, resolve).default;
+    component.render = evaluate(template.code, resolve).render;
+    return component;
+  }
+  const EstimateText = compile('EstimateText.vue', { './format': format });
+  const MachineCard = compile('MachineCard.vue', { './format': format, './EstimateText.vue': { default: EstimateText },
+    '@/api/schedCiJobs': api, '../../../../core/schedMachineDisplay.mjs': capacity });
+  return async (snapshot, name, now) => {
+    const component = { ...MachineCard, setup(props, context) {
+      const state = MachineCard.setup(props, context);
+      state.ciSnapshot.value = snapshot;
+      return state;
+    } };
+    const machine = { name, online: true, fresh: true, ci: 'idle', ciRunners: null,
+      heartbeatAt: new Date(now).toISOString(), loadSampledAt: new Date(now).toISOString(),
+      quotaCores: 4, grantedCores: 0, externalLoadCores: 0, availableCores: 4 };
+    const html = await renderToString(createSSRApp({ render: () => h(component, {
+      machine, host: 'machine-a', tickets: [], estimates: {}, now, busy: false,
+    }) }));
+    return { html, visible: html.replace(/<[^>]*>/g, '') };
+  };
+}
+
+test('实际机器卡标题分开数在跑与排队，排队和未知机器仅在主机出现，只有排队也能展开', async () => {
+  const { data, now } = runTs(`${currentFixture}
+    data.machines.push({ machine: 'machine-b', jobs: [{ ...job, id: 3, machine: 'machine-b', runner: 'runner-2' }] },
+      { machine: null, jobs: [{ ...job, id: 4, machine: null, runner: null }] });
+    data.queued.push({ ...queued, id: 5 });
+    console.log(JSON.stringify({ data, now }));`);
+  const render = machineRenderer();
+  const host = await render(data, 'machine-a', now), worker = await render(data, 'machine-b', now);
+  assert.match(host.html, /<summary>CI:在跑 2 · 排队 2<\/summary>/);
+  assert.match(host.visible, /排队等 runner\(2\)/); assert.match(host.visible, /排队 57 分钟/);
+  assert.match(host.visible, /未知机器/);
+  assert.equal((host.html.match(/class="machine-ci-jobs"/g) || []).length, 1);
+  assert.doesNotMatch(host.html, /<details[^>]*\sopen(?:\s|=|>)/);
+  assert.match(worker.html, /<summary>CI:在跑 1 · 排队 0<\/summary>/);
+  assert.doesNotMatch(worker.visible, /排队等 runner|排队 57 分钟|未知机器/);
+  const onlyQueued = await render({ ...data, machines: [] }, 'machine-a', now);
+  assert.match(onlyQueued.html, /<summary>CI:在跑 0 · 排队 2<\/summary>/);
+  assert.match(onlyQueued.visible, /排队等 runner\(2\)/);
+  const empty = await render({ ...data, machines: [], queued: [] }, 'machine-a', now);
+  assert.doesNotMatch(empty.html, /machine-ci-details/);
+  assert.match(empty.visible, /没有查到正在跑或排队的检查/);
 });

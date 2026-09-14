@@ -76,13 +76,15 @@ function historicalMedians(entries) {
 }
 
 function jobTiming(job, nowMs) {
-  const start = timestamp(job.startedAt);
+  const start = timestamp(job.startedAt), queued = timestamp(job.queuedAt);
   const elapsedMs = start === null ? null : Math.max(0, nowMs - start);
-  return { ...job, elapsedMs, remainingMs: elapsedMs === null || job.expectedMs === null ? null : job.expectedMs - elapsedMs };
+  const queueEnd = job.phase === 'queued' ? nowMs : start;
+  const queuedMs = queued === null || queueEnd === null ? null : Math.max(0, queueEnd - queued);
+  return { ...job, queuedMs, elapsedMs, remainingMs: elapsedMs === null || job.expectedMs === null ? null : job.expectedMs - elapsedMs };
 }
 
 /** 不凭分支相似度猜卡；没有精确命中时保留 null。未知 runner 保留在 machine=null 的独立组。 */
-function groupJobs(entries, { boards = [], estimates = new Map(), mapping = runnerMapping(), nowMs }) {
+function partitionJobs(entries, { boards = [], estimates = new Map(), mapping = runnerMapping(), nowMs }) {
   const titles = new Map();
   for (const board of boards) for (const task of Array.isArray(board?.tasks) ? board.tasks : []) {
     if (!nonempty(task?.plainTitle) || !Array.isArray(task.gitBranch)) continue;
@@ -91,24 +93,33 @@ function groupJobs(entries, { boards = [], estimates = new Map(), mapping = runn
       if (nonempty(branch) && !titles.has(key)) titles.set(key, task.plainTitle);
     }
   }
-  const groups = new Map();
+  const groups = new Map(), queued = [];
   for (const { repository, run, jobs, prTitle } of entries) for (const job of jobs) {
-    if (job.status !== 'in_progress') continue;
-    const runner = nonempty(job.runner_name) ? job.runner_name : null;
-    const location = mapping.get(runner) || { machine: null, project: null };
+    if (job.status !== 'in_progress' && job.status !== 'queued') continue;
+    const phase = job.status === 'queued' ? 'queued' : 'running';
+    const runner = phase === 'running' && nonempty(job.runner_name) ? job.runner_name : null;
+    const location = (phase === 'running' && mapping.get(runner)) || { machine: null, project: null };
     const branch = nonempty(run.head_branch) ? run.head_branch : '';
     const commitTitle = run.event === 'push' && branch === 'main' && nonempty(run.head_commit?.message)
       ? run.head_commit.message.split(/\r?\n/, 1)[0] : null;
     const item = jobTiming({ id: apiId(job.id), ...(repository === undefined ? {} : { repository }), workflow: label(WORKFLOWS, run.name, '工作流名称未知'),
       job: label(JOBS, job.name, '作业名称未知'), title: prTitle || commitTitle || branch || '名称未知', branch,
-      cardTitle: titles.get(JSON.stringify([repository, branch])) ?? null, runner, ...location,
-      startedAt: timestamp(job.started_at) === null ? null : job.started_at,
+      cardTitle: titles.get(JSON.stringify([repository, branch])) ?? null, phase, runner, ...location,
+      startedAt: phase === 'queued' || timestamp(job.started_at) === null ? null : job.started_at,
+      queuedAt: timestamp(job.created_at) !== null ? job.created_at : timestamp(run.created_at) !== null ? run.created_at : null,
       expectedMs: estimates.get(sampleKey(run.name, job.name, repository)) ?? null }, nowMs);
+    if (phase === 'queued') { queued.push(item); continue; }
     if (!groups.has(location.machine)) groups.set(location.machine, []);
     groups.get(location.machine).push(item);
   }
-  return [...groups].map(([machine, jobs]) => ({ machine, jobs })).sort((a, b) =>
+  const machines = [...groups].map(([machine, jobs]) => ({ machine, jobs })).sort((a, b) =>
     a.machine === b.machine ? 0 : a.machine === null ? 1 : b.machine === null ? -1 : a.machine.localeCompare(b.machine));
+  return { machines, queued };
+}
+
+/** 机器分组仍只含已开跑作业；未分配 runner 的排队项由快照的 queued 单独返回。 */
+function groupJobs(entries, options) {
+  return partitionJobs(entries, options).machines;
 }
 
 /** 只读 gh API，数组传参不经 shell；每个子进程最多 10 秒，ENOENT 原样交给采集层区分。 */
@@ -169,9 +180,15 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
   async function collectRepository(repository, state) {
     const base = `repos/${repository}`;
     try {
-      const runs = apiList(await gh(`${base}/actions/runs?status=in_progress&per_page=20`), 'workflow_runs');
+      const runs = new Map();
+      for (const status of ['in_progress', 'queued']) {
+        for (const run of apiList(await gh(`${base}/actions/runs?status=${status}&per_page=20`), 'workflow_runs')) {
+          const id = apiId(run.id);
+          if (!runs.has(id)) runs.set(id, run);
+        }
+      }
       const pulls = new Map();
-      const entries = await mapLimited(runs, async run => {
+      const entries = await mapLimited([...runs.values()], async run => {
         const jobs = await jobsFor(base, run);
         const pull = run.pull_requests?.[0];
         let prTitle = nonempty(pull?.title) ? pull.title : null;
@@ -194,7 +211,7 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
         historyAt = now();
       }
       // 完整校验后一起替换本仓作业和样本，坏作业不能污染上一拍。
-      groupJobs(entries, { boards, mapping, estimates: history, nowMs: now() });
+      partitionJobs(entries, { boards, mapping, estimates: history, nowMs: now() });
       Object.assign(state, { entries, history, historyAt, updatedAt: new Date(observedAt).toISOString(), staleSince: null, error: null });
     } catch (error) {
       if (error?.code === 'ENOENT') { unavailable = true; return; }
@@ -231,13 +248,15 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
 
   function snapshot() {
     if (unavailable) return { unavailable: '本机没有 gh' };
-    const nowMs = now(), machines = new Map(), statuses = [];
+    const nowMs = now(), machines = new Map(), queued = [], statuses = [];
     for (const [repository, state] of states) {
       const updated = timestamp(state.updatedAt);
       const staleSince = failedAt || state.staleSince || (updated !== null && nowMs - updated > POLL_MS * 2
         ? new Date(updated + POLL_MS * 2).toISOString() : null);
       statuses.push({ repository, updatedAt: state.updatedAt, staleSince });
-      for (const group of groupJobs(state.entries, { boards, mapping, estimates: state.history, nowMs })) {
+      const current = partitionJobs(state.entries, { boards, mapping, estimates: state.history, nowMs });
+      queued.push(...current.queued.map(job => ({ ...job, updatedAt: state.updatedAt, staleSince })));
+      for (const group of current.machines) {
         if (!machines.has(group.machine)) machines.set(group.machine, []);
         machines.get(group.machine).push(...group.jobs.map(job => ({ ...job, updatedAt: state.updatedAt, staleSince })));
       }
@@ -245,7 +264,7 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
     const dates = statuses.map(status => status.updatedAt).filter(Boolean).sort();
     const staleSince = failedAt || (statuses.length && statuses.every(status => status.staleSince)
       ? statuses.map(status => status.staleSince).sort()[0] : null);
-    return { machines: [...machines].map(([machine, jobs]) => ({ machine, jobs })),
+    return { machines: [...machines].map(([machine, jobs]) => ({ machine, jobs })), queued,
       updatedAt: statuses.length ? dates.at(-1) ?? null : readAt, staleSince,
       ...(statuses.length > 1 ? { repositories: statuses } : {}),
       ...(failedAt || [...states.values()].some(state => state.error) ? { error: '暂时读不到检查作业' } : {}) };

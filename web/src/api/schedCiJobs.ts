@@ -1,6 +1,7 @@
 /** 独立只读窗口；失败由机器卡保留旧拍，不进入调度快照的整页错误通道。所有时长单位为毫秒。 */
 export interface CiJob {
   repository?: string; updatedAt?: string | null; staleSince?: string | null
+  phase: 'running' | 'queued'; queuedAt: string | null; queuedMs: number | null
   id: number; workflow: string; job: string; title: string; branch: string; cardTitle: string | null
   runner: string | null; machine: string | null; project: string | null; startedAt: string | null
   elapsedMs: number | null; expectedMs: number | null; remainingMs: number | null
@@ -8,7 +9,7 @@ export interface CiJob {
 export interface CiMachineJobs { machine: string | null; jobs: CiJob[] }
 export interface CiRepositoryStatus { repository: string; updatedAt: string | null; staleSince: string | null }
 export interface CiJobsData {
-  machines: CiMachineJobs[]; updatedAt: string | null; staleSince: string | null; error?: string
+  machines: CiMachineJobs[]; queued: CiJob[]; updatedAt: string | null; staleSince: string | null; error?: string
   repositories?: CiRepositoryStatus[]
 }
 export type CiJobsSnapshot = CiJobsData | { unavailable: string }
@@ -17,11 +18,13 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const nullableText = (value: unknown) => value === null || typeof value === 'string'
 const nullableTime = (value: unknown) => value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)))
 const nullableMs = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value))
-function validJob(value: unknown, machine: unknown): boolean {
-  if (!record(value) || !Number.isSafeInteger(value.id) || (value.id as number) <= 0 || value.machine !== machine) return false
+function validJob(value: unknown, machine: unknown, phase: CiJob['phase']): boolean {
+  if (!record(value) || !Number.isSafeInteger(value.id) || (value.id as number) <= 0 || value.machine !== machine || value.phase !== phase) return false
+  if (phase === 'queued' && (value.runner !== null || value.startedAt !== null || value.elapsedMs !== null || value.remainingMs !== null)) return false
   return ['workflow', 'job', 'title', 'branch'].every(key => typeof value[key] === 'string')
     && ['cardTitle', 'runner', 'machine', 'project'].every(key => nullableText(value[key])) && nullableTime(value.startedAt)
-    && ['elapsedMs', 'expectedMs'].every(key => nullableMs(value[key]) && (value[key] === null || (value[key] as number) >= 0))
+    && nullableTime(value.queuedAt)
+    && ['elapsedMs', 'expectedMs', 'queuedMs'].every(key => nullableMs(value[key]) && (value[key] === null || (value[key] as number) >= 0))
     && nullableMs(value.remainingMs)
     && (value.repository === undefined || typeof value.repository === 'string')
     && ['updatedAt', 'staleSince'].every(key => value[key] === undefined || nullableTime(value[key]))
@@ -33,7 +36,8 @@ export function isCiJobsSnapshot(value: unknown): value is CiJobsSnapshot {
     && (value.repositories === undefined || (Array.isArray(value.repositories) && value.repositories.every(item => record(item)
       && typeof item.repository === 'string' && nullableTime(item.updatedAt) && nullableTime(item.staleSince))))
     && Array.isArray(value.machines) && value.machines.every(group => record(group) && nullableText(group.machine)
-      && Array.isArray(group.jobs) && group.jobs.every(job => validJob(job, group.machine)))
+      && Array.isArray(group.jobs) && group.jobs.every(job => validJob(job, group.machine, 'running')))
+    && Array.isArray(value.queued) && value.queued.every(job => validJob(job, null, 'queued'))
 }
 export async function fetchCiJobs(signal?: AbortSignal): Promise<CiJobsSnapshot> {
   const response = await fetch('/api/sched/ci-jobs', { signal, cache: 'no-store' })
