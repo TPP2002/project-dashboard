@@ -52,6 +52,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+const cp = require('node:child_process');
 const {
   CODE_ROOT, STAMP_NAME, RUNTIME_PATHS, WEB_SOURCE_PATHS, WEB_BUILD_DEPS_PATHS, WEB_DIST_REL,
   CLI_SHIMS, shimExt, isGitCheckout, releaseHome, readStamp,
@@ -349,13 +350,100 @@ function bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed }
   }
 }
 
-/** 目录换名,Windows 上被占就重试(hook 进程加载中 / 资源管理器窗口等)。 */
-function renameRetry(from, to, tries = 8) {
-  let last;
-  for (let i = 0; i < tries; i++) {
-    try { fs.renameSync(from, to); return; } catch (e) { last = e; sleepMs(150 * (i + 1)); }
+/**
+ * 换名被占时的两种错误码含义不同(0914 实测,每条都可复跑,见 test/releaseRenameDiagnosis.test.cjs
+ * 头注里的实验清单)。**判错方向会一路查错**,所以这里把它写死:
+ *
+ *  · `EBUSY` = 有进程把**这个目录当成自己的当前工作目录**(cwd)。启动器早就把 cwd 留在检出里
+ *    (`启动看板.bat` 的 `cd /d "%~dp0"`、`dashboard.sh` 同构),所以这一支正常不该出现;
+ *    出现了就说明有人从副本里面起了进程(例如在副本目录里跑 `npm run serve`)。
+ *  · `EPERM` = 有进程**在这个目录里开着某个文件**(它的 cwd 在外面也一样会拦)。
+ *  · 只监听端口、只 require 过里面的 .cjs(读完就关)都**不拦**换名 —— 这两条实测排除了,
+ *    别再往"服务在跑"或"钩子在跑"上猜。
+ */
+const RENAME_CODE_MEANING = {
+  EBUSY: '有进程把这个目录当成了自己的当前工作目录(cwd)。正常不该发生 —— 启动器会把 cwd 留在检出里;' +
+    '多半是有人从副本目录里面起了进程(比如在副本里跑 npm run serve)。',
+  EPERM: '有进程在这个目录里开着某个文件(它的当前工作目录在不在里面都一样会拦)。',
+  EACCES: '权限或占用:同 EPERM 一类处理。',
+};
+
+/**
+ * 换名失败时把「谁可能握着它」抓现行。
+ *
+ * 【为什么必须有这一段】Windows 上换名失败只给一行错误码,不说是谁。0914 真实撞上一次,
+ * 为了定位烧掉一上午做了五轮隔离复现,最后**病根仍未定位**(服务空转 / 狂刷静态页 / 反复起
+ * 短命 CLI / 触发全项目扫描,四种都复现不出 EPERM)。而当时人工定位靠的就是本函数干的事:
+ * 按命令行里带不带副本路径,把嫌疑进程列出来。**把那一上午变成一眼**,这是本段存在的唯一理由。
+ *
+ * 【为什么不去枚举文件句柄】那要内核接口(Sysinternals handle.exe 之类),本仓零依赖、也不该
+ * 为一条诊断路径引外部工具。按命令行反查覆盖了实际会出现的持有者(从副本起的服务、从副本起的
+ * CLI),抓不到的情形照实说抓不到,不假装给出结论。
+ */
+function holdersOf(dir) {
+  if (process.platform !== 'win32') return { supported: false, lines: [] };
+  // 路径经**环境变量**递进去,再用 .Contains() 比对:
+  //  · 不拼进脚本字符串 ⇒ 路径里的引号、空格、`$` 一律不会把脚本弄坏;
+  //  · 不用 `-like` ⇒ 不必操心通配符。反斜杠在 `-like` 里**不是**转义符,按正则习惯把它翻倍
+  //    反而会一条都匹配不到(0914 亲踩,本文件的两条反查用例当场红)。
+  const ps = 'try { $n = $env:DASHBOARD_HOLDERS_NEEDLE;' +
+    ' Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($n) }' +
+    ' | ForEach-Object { "$($_.ProcessId)`t$($_.CreationDate)`t$($_.CommandLine)" } } catch { exit 3 }';
+  try {
+    const r = cp.spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], {
+      encoding: 'utf8', windowsHide: true, timeout: 20000,
+      env: { ...process.env, DASHBOARD_HOLDERS_NEEDLE: dir },
+    });
+    if (r.status !== 0) return { supported: true, lines: [], why: (r.stderr || '').trim().split('\n')[0] };
+    const lines = String(r.stdout || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+      // 排掉自己:发布进程的命令行里当然带着目标路径
+      .filter((s) => !s.startsWith(String(process.pid) + '\t'));
+    return { supported: true, lines };
+  } catch (e) {
+    return { supported: true, lines: [], why: e.message };
   }
-  throw new Error(`换名失败 ${from} → ${to}:${last && last.message}`);
+}
+
+/**
+ * 目录换名,被占就重试。
+ *
+ * 【为什么窗口要放宽】原先 8 次、间隔 150ms×n,总共约 5.4 秒。真实持有者可能是**别的会话正在跑的
+ * 一条命令**,几秒根本不够;而发布是"让改动生效"的唯一通道,失败的代价远大于多等几十秒。
+ * 改成按**时间预算**重试(默认 30 秒,间隔封顶 1 秒),等得起也放得下。
+ */
+function renameRetry(from, to, budgetMs = 30000) {
+  const deadline = Date.now() + budgetMs;
+  let last;
+  let i = 0;
+  for (;;) {
+    try { fs.renameSync(from, to); return; } catch (e) { last = e; }
+    if (Date.now() >= deadline) break;
+    sleepMs(Math.min(1000, 150 * (i + 1)));
+    i += 1;
+  }
+  const code = last && last.code ? last.code : '?';
+  const meaning = RENAME_CODE_MEANING[code] || '未见过的错误码,照原样报出。';
+  const held = holdersOf(from);
+  const parts = [
+    `换名失败 ${from} → ${to}`,
+    `  错误码 ${code} —— ${meaning}`,
+    `  已重试 ${i + 1} 次、约 ${Math.round(budgetMs / 1000)} 秒,仍被占着。`,
+  ];
+  if (!held.supported) {
+    parts.push('  (非 Windows,不做持有者反查)');
+  } else if (held.lines.length > 0) {
+    parts.push('  命令行里带着这个目录的进程(**嫌疑持有者**,按 PID / 启动时刻 / 命令行):');
+    for (const line of held.lines.slice(0, 8)) parts.push('    ' + line);
+    const pids = held.lines.map((s) => s.split('\t')[0]).filter(Boolean).join(',');
+    parts.push('  确认是它们之后可以收掉:powershell -NoProfile -Command "Stop-Process -Id ' + pids + ' -Force"');
+    parts.push('  (看板网页服务被收掉不要紧:下次双击启动器会自己重起。)');
+  } else {
+    parts.push('  按命令行反查没抓到嫌疑进程 —— 持有者的命令行里不带这个路径。');
+    parts.push('  这种情况请把上面那行错误码连同这段话记到卡 DASH-RELEASE-BLOCKED-BY-OWN-SERVER 上:');
+    parts.push('  0914 那次就是这一类,五轮隔离复现都没复现出来,病根至今未定位,缺的正是现场证据。');
+  }
+  if (held.why) parts.push('  (反查本身没跑成:' + held.why + ')');
+  throw new Error(parts.join('\n'));
 }
 
 /**
@@ -563,4 +651,6 @@ function release(flags = {}, deps = {}) {
 module.exports = {
   release, releaseStatus, serviceStatus, detectTrunk, buildWebDist, writeCliShims,
   staleReleaseLogic, releaseLogicDigest, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV,
+  // 换名诊断:被占时要能自己说清是谁、以及那个错误码什么意思(DASH-RELEASE-BLOCKED-BY-OWN-SERVER)
+  renameRetry, holdersOf, RENAME_CODE_MEANING,
 };
