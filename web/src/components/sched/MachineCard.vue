@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched'
 import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
-import { age, ciJobLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, tone } from './format'
+import { age, ciJobLabel, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, tone } from './format'
 import { machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string] }>()
@@ -17,7 +17,9 @@ const ownCiJobs = computed(() => ciData.value?.machines.find(group => group.mach
 // 未知 runner 不猜归属；在主机卡里单列一次，避免每张机器卡重复展示。
 const unknownCiJobs = computed(() => props.machine.name === props.host
   ? ciData.value?.machines.find(group => group.machine === null)?.jobs ?? [] : [])
-const ciCount = computed(() => ownCiJobs.value.length + unknownCiJobs.value.length)
+const queuedCiJobs = computed(() => props.machine.name === props.host ? ciData.value?.queued ?? [] : [])
+const ciRunningCount = computed(() => ownCiJobs.value.length + unknownCiJobs.value.length)
+const ciCount = computed(() => ciRunningCount.value + queuedCiJobs.value.length)
 const ciMismatch = computed(() => !!ciData.value?.updatedAt && ciRunnersDiffer(props.machine.ciRunners, ownCiJobs.value))
 const ciAge = computed(() => age(ciData.value?.updatedAt ?? null, props.now))
 const ciStale = computed(() => ciFailed.value || !!ciData.value?.staleSince || (ciAge.value !== null && ciAge.value > 60_000))
@@ -76,16 +78,20 @@ onUnmounted(() => {
         <p v-else-if="ciData?.error" class="sched-note warn" role="status">部分检查作业暂时读不到，其余仍在更新</p>
         <small v-if="ciMismatch" class="sched-muted">与派单员观测不一致</small>
         <details v-if="ciCount" class="machine-ci-details">
-          <summary>CI 在跑什么（{{ ciCount }}）</summary>
+          <summary>CI:在跑 {{ ciRunningCount }} · 排队 {{ queuedCiJobs.length }}</summary>
           <ul class="machine-ci-jobs" tabindex="0" :aria-label="`${machine.name} 的检查作业，超出三行可滚动`">
             <li v-for="job in ownCiJobs" :key="`${job.repository ?? ''}:${job.id}`" :title="ciJobLabel(job, now)">{{ ciJobLabel(job, now) }}</li>
             <li v-if="unknownCiJobs.length" class="machine-ci-unknown">未知机器</li>
             <li v-for="job in unknownCiJobs" :key="`unknown-${job.repository ?? ''}:${job.id}`" :title="ciJobLabel(job, now)">
               {{ ciJobLabel(job, now) }}
             </li>
+            <li v-if="queuedCiJobs.length" class="machine-ci-queued">排队等 runner({{ queuedCiJobs.length }})</li>
+            <li v-for="job in queuedCiJobs" :key="`queued-${job.repository ?? ''}:${job.id}`" :title="ciQueuedLabel(job, now)">
+              {{ ciQueuedLabel(job, now) }}
+            </li>
           </ul>
         </details>
-        <p v-else-if="ciData?.updatedAt" class="sched-note">{{ ciStale ? '上次没有查到正在跑的检查' : '没有查到正在跑的检查' }}</p>
+        <p v-else-if="ciData?.updatedAt" class="sched-note">{{ ciStale ? '上次没有查到正在跑或排队的检查' : '没有查到正在跑或排队的检查' }}</p>
         <p v-else-if="!ciStale" class="sched-note">正在读取检查作业…</p>
       </template>
     </div>

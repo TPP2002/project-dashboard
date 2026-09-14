@@ -65,7 +65,7 @@
 }
 .sched-page .machine-ci-jobs > li { box-sizing: border-box; height: 2.5em; line-height: 2.5; padding-inline: var(--s2); white-space: nowrap; }
 .sched-page .machine-ci-jobs:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
-.sched-page .machine-ci-unknown { color: var(--text-3); font-weight: 600; }
+.sched-page .machine-ci-unknown, .sched-page .machine-ci-queued { color: var(--text-3); font-weight: 600; }
 @media (max-width: 760px) {
   :where(.sched-page) .sched-scroll-region .sched-table th,
   :where(.sched-page) .sched-scroll-region .sched-table td { padding-inline: 2px; }

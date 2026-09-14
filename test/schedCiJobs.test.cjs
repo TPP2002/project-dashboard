@@ -8,6 +8,7 @@ const base = 'repos/owner/repo';
 const runnerFixture = new Map([['runner-1', 'machine-a'], ['runner-2', 'machine-a'], ['runner-3', 'machine-a'],
   ['runner-4', 'machine-b'], ['runner-5', 'machine-b'], ['runner-6', 'machine-a']]);
 const runningPath = `${base}/actions/runs?status=in_progress&per_page=20`;
+const queuedPath = `${base}/actions/runs?status=queued&per_page=20`;
 const historyPath = `${base}/actions/runs?status=completed&per_page=100`;
 const jobsPath = (id, page = 1) => `${base}/actions/runs/${id}/jobs?per_page=100&page=${page}`;
 const run = (extra = {}) => ({ id: 1, name: 'CI', head_branch: 'feat/window', status: 'in_progress',
@@ -22,6 +23,7 @@ function fixture() {
   const calls = [];
   const responses = new Map([
     [runningPath, { workflow_runs: [run()] }],
+    [queuedPath, { workflow_runs: [] }],
     [jobsPath(1), { total_count: 1, jobs: [job()] }],
     [`${base}/pulls/9`, { title: '让检查进度一眼可见' }],
     [historyPath, { workflow_runs: [run({ id: 2, status: 'completed' })] }],
@@ -153,7 +155,7 @@ test('gh 超时、缺程序及损坏 JSON 原样拒绝，不重试不伪装空�
 
 test('首次采集包含 PR 与卡标题；历史恰好缓存十分钟，普通刷新不重采样', async () => {
   const h = fixture();
-  assert.deepEqual(h.monitor.snapshot(), { machines: [], updatedAt: null, staleSince: null });
+  assert.deepEqual(h.monitor.snapshot(), { machines: [], queued: [], updatedAt: null, staleSince: null });
   const first = await h.monitor.refresh(), item = first.machines[0].jobs[0];
   assert.equal(item.title, '让检查进度一眼可见'); assert.equal(item.cardTitle, '看清机器正在忙什么');
   assert.equal(item.expectedMs, 900_000); assert.equal(item.remainingMs, 180_000);
@@ -201,6 +203,7 @@ test('历史采样慢时不把旧的正在跑作业标成刚刚更新', async ()
   const monitor = c.createCiJobsMonitor({ now: () => now, repositoryOverrides: 'owner/repo', gh: async endpoint => {
     if (endpoint === runningPath) return { workflow_runs: [run({ pull_requests: [] })] };
     if (endpoint === jobsPath(1)) return { total_count: 1, jobs: [job()] };
+    if (endpoint === queuedPath) return { workflow_runs: [] };
     assert.equal(endpoint, historyPath); now += 120_000; return { workflow_runs: [] };
   } });
   const data = await monitor.refresh();
@@ -235,13 +238,13 @@ test('重叠刷新共用一个采集过程；没有任务及历史时明确返�
   const monitor = c.createCiJobsMonitor({ now: () => AT, repositoryOverrides: 'owner/repo', gh: async endpoint => {
     calls++;
     if (endpoint === runningPath) return new Promise(resolve => { release = resolve; entered(); });
-    assert.equal(endpoint, historyPath); return { workflow_runs: [] };
+    assert.equal(endpoint, calls === 2 ? queuedPath : historyPath); return { workflow_runs: [] };
   } });
   const first = monitor.refresh(), second = monitor.refresh();
   await started;
   assert.equal(first, second); assert.equal(calls, 1);
   release({ workflow_runs: [] });
-  assert.deepEqual(await first, { machines: [], updatedAt: iso(0), staleSince: null }); assert.equal(calls, 2);
+  assert.deepEqual(await first, { machines: [], queued: [], updatedAt: iso(0), staleSince: null }); assert.equal(calls, 3);
 });
 
 test('多仓分别采样和保留失败拍；同名工作流、作业和分支不能串仓', async () => {
@@ -256,6 +259,7 @@ test('多仓分别采样和保留失败拍；同名工作流、作业和分支�
       assert.ok(repository);
       if (broken && repository === names[0]) throw new Error('fixture repository failure');
       if (endpoint.includes('status=in_progress')) return { workflow_runs: [run({ pull_requests: [{ title: String(now) }] })] };
+      if (endpoint.includes('status=queued')) return { workflow_runs: [] };
       if (endpoint.includes('status=completed')) return { workflow_runs: [run({ id: 2, status: 'completed' })] };
       if (endpoint.includes('/runs/1/jobs')) return { total_count: 1, jobs: [job()] };
       assert.ok(endpoint.includes('/runs/2/jobs'));
@@ -273,4 +277,89 @@ test('多仓分别采样和保留失败拍；同名工作流、作业和分支�
   for (const repository of names) assert.equal(calls.filter(endpoint => endpoint === `repos/${repository}/actions/runs?status=completed&per_page=100`).length, 1);
   broken = false; now += 30_000;
   assert.ok((await monitor.refresh()).repositories.every(item => item.staleSince === null));
+});
+
+test('两类 run 按编号合并去重；任一 run 内的排队作业单列且不归属机器', async () => {
+  const h = fixture();
+  h.responses.set(runningPath, { workflow_runs: [run(), run()] });
+  h.responses.set(queuedPath, { workflow_runs: [run({ status: 'queued' }), run({ id: 3, status: 'queued', pull_requests: [] })] });
+  h.responses.set(jobsPath(1), { jobs: [job(), job({ id: 12, status: 'queued', created_at: iso(-3420_000) })] });
+  h.responses.set(jobsPath(3), { jobs: [job({ id: 13, status: 'queued', runner_name: 'runner-4', created_at: iso(-60_000) })] });
+  const data = await h.monitor.refresh();
+  assert.deepEqual(h.calls.slice(0, 2), [runningPath, queuedPath]);
+  for (const endpoint of [runningPath, queuedPath, jobsPath(1), jobsPath(3)]) {
+    assert.equal(h.calls.filter(call => call === endpoint).length, 1, endpoint);
+  }
+  assert.deepEqual(data.machines.map(group => [group.machine, group.jobs.map(item => [item.id, item.phase])]),
+    [['machine-a', [[11, 'running']]]]);
+  assert.deepEqual(data.queued.map(item => [item.id, item.phase, item.runner, item.machine, item.startedAt, item.elapsedMs, item.remainingMs]),
+    [[12, 'queued', null, null, null, null, null], [13, 'queued', null, null, null, null, null]]);
+  assert.deepEqual(data.queued.map(item => [item.queuedAt, item.queuedMs]), [[iso(-3420_000), 3420_000], [iso(-60_000), 60_000]]);
+  assert.equal(data.queued[0].title, '让检查进度一眼可见');
+  assert.equal(data.queued[0].cardTitle, '看清机器正在忙什么');
+  assert.equal(data.machines[0].jobs[0].expectedMs, 900_000);
+});
+
+test('排队起点优先取作业创建时间再取 run，缺时间保留 null，读快照随注入时钟计时', async () => {
+  const h = fixture();
+  h.responses.set(runningPath, { workflow_runs: [] });
+  h.responses.set(queuedPath, { workflow_runs: [run({ id: 3, status: 'queued', created_at: iso(-3600_000), pull_requests: [] }),
+    run({ id: 4, status: 'queued', pull_requests: [] })] });
+  h.responses.set(jobsPath(3), { jobs: [job({ status: 'queued', created_at: iso(-3420_000) }),
+    job({ id: 12, status: 'queued' }), job({ id: 13, status: 'queued', created_at: 'invalid' })] });
+  h.responses.set(jobsPath(4), { jobs: [job({ id: 14, status: 'queued' }), job({ id: 15, status: 'queued', created_at: iso(1000) })] });
+  const first = await h.monitor.refresh();
+  assert.deepEqual(first.machines, []);
+  assert.deepEqual(first.queued.map(item => [item.queuedAt, item.queuedMs]),
+    [[iso(-3420_000), 3420_000], [iso(-3600_000), 3600_000], [iso(-3600_000), 3600_000], [null, null], [iso(1000), 0]]);
+  const calls = h.calls.length;
+  h.time(AT + 60_000);
+  first.queued[0].title = '污染';
+  const next = h.monitor.snapshot();
+  assert.deepEqual(next.queued.map(item => item.queuedMs), [3480_000, 3660_000, 3660_000, null, 59_000]);
+  assert.equal(next.queued[0].title, 'feat/window');
+  assert.equal(h.calls.length, calls);
+});
+
+test('在跑作业的排队时长停在开跑时刻，缺起点或开跑时间为 null，历史耗时不变', () => {
+  const entries = [{ run: run({ created_at: iso(-900_000) }), jobs: [job({ created_at: iso(-780_000) }),
+    job({ id: 12 }), job({ id: 13, started_at: null })] }, { run: run(), jobs: [job({ id: 14 })] }];
+  const options = { nowMs: AT, estimates: new Map([[JSON.stringify(['CI', 'fast']), 900_000]]) };
+  const first = c.groupJobs(entries, options)[0].jobs;
+  assert.deepEqual(first.map(item => [item.phase, item.queuedAt, item.queuedMs]),
+    [['running', iso(-780_000), 60_000], ['running', iso(-900_000), 180_000],
+      ['running', iso(-900_000), null], ['running', null, null]]);
+  const later = c.groupJobs(entries, { ...options, nowMs: AT + 60_000 })[0].jobs;
+  assert.deepEqual(later.map(item => item.queuedMs), [60_000, 180_000, null, null]);
+  assert.equal(later[0].elapsedMs, 780_000); assert.equal(later[0].remainingMs, 120_000);
+});
+
+test('排队查询失败与在跑查询失败同样保留整拍，不重试；恢复后清除过期', async () => {
+  let now = AT, failure = null;
+  const calls = [], responses = new Map([
+    [runningPath, { workflow_runs: [run({ pull_requests: [] })] }],
+    [queuedPath, { workflow_runs: [run({ id: 3, status: 'queued', pull_requests: [] })] }],
+    [historyPath, { workflow_runs: [] }], [jobsPath(1), { jobs: [job()] }],
+    [jobsPath(3), { jobs: [job({ id: 13, status: 'queued', created_at: iso(-3420_000) })] }],
+  ]);
+  const monitor = c.createCiJobsMonitor({ now: () => now, repositoryOverrides: 'owner/repo', gh: async endpoint => {
+    calls.push(endpoint);
+    if (endpoint === queuedPath && failure) throw failure;
+    assert.ok(responses.has(endpoint), endpoint);
+    return structuredClone(responses.get(endpoint));
+  } });
+  const first = await monitor.refresh();
+  responses.set(runningPath, { workflow_runs: [] });
+  for (const offset of [30_000, 60_000]) {
+    now = AT + offset; failure = new Error('fixture queued request failed');
+    const before = calls.length, stale = await monitor.refresh();
+    assert.deepEqual(calls.slice(before), [runningPath, queuedPath]);
+    assert.equal(stale.updatedAt, first.updatedAt); assert.equal(stale.staleSince, iso(30_000));
+    assert.equal(stale.error, '暂时读不到检查作业');
+    assert.equal(stale.machines[0].jobs[0].id, 11); assert.equal(stale.queued[0].id, 13);
+    assert.equal(stale.queued[0].queuedMs, 3420_000 + offset);
+    assert.equal(stale.queued[0].updatedAt, iso(0)); assert.equal(stale.queued[0].staleSince, iso(30_000));
+  }
+  failure = null; responses.set(queuedPath, { workflow_runs: [] });
+  assert.deepEqual(await monitor.refresh(), { machines: [], queued: [], updatedAt: iso(60_000), staleSince: null });
 });
