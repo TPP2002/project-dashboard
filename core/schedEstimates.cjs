@@ -1,37 +1,43 @@
 'use strict';
 const { durationSamples, sampleKey } = require('./schedLedger.cjs');
 
+// CI 期间低优先级执行的耗时系数，待实测校准；可经 estimateTickets 的选项覆盖。
+const CI_AWARE_SLOWDOWN = 1.5;
 const REASONS = Object.freeze({
-  ci: 'CI 在跑', reservation: '预留未兑现', capacity: '需求超过容量', history: '没有历史样本',
-  unavailable: '允许的机器离线、数据过期或暂不可派', start: '尚未收到开跑回报',
-  paused: '执行已暂停或处于低速，恢复时刻未知', load: '现有占用的释放时刻未知',
-  overdue: '在跑执行已超出平均耗时', missingMachine: '执行所在机器已不在快照中',
-  head: '队首单子的开跑时刻未知',
-  snapshot: '调度快照不可读、已过期或尚未同步', ledger: '调度台账不可读',
+  ci: '被 CI 冻住，恢复时刻未知', reservation: '预留的核数还没腾出来',
+  capacity: '这项任务要的核数超过了允许机器的容量', history: '还没有同类任务的历史耗时',
+  unavailable: '允许使用的机器离线、读数过期，或暂时不能接活', start: '还没收到任务开跑的消息',
+  paused: '任务已暂停或降速，何时恢复还不知道', load: '正在占用的核数何时能腾出来还不知道',
+  overdue: '任务已超过预计耗时，何时结束还不知道', missingMachine: '找不到这项任务所在机器的最新信息',
+  head: '还不知道前面的任务何时开跑',
+  snapshot: '还没读到最新的调度信息', ledger: '读不到历史执行记录',
 });
 const unknown = (code, extra = {}) => ({ kind: 'unavailable', code, reason: REASONS[code], ...extra });
 const currentAttempt = ticket => ticket.attempts.find(attempt => attempt.attemptId === ticket.currentAttemptId);
+const headroom = machine => machine?.ciReserveCores === undefined ? {} : { ciHeadroom: machine.ciReserveCores };
 
 function machineBlock(machine, nowMs) {
-  if (machine.ci === 'active') return 'ci';
   if (machine.reservation?.requestedCores > 0 && machine.reservation.fulfilledCores < machine.reservation.requestedCores) return 'reservation';
   const stale = [machine.heartbeatAt, machine.loadSampledAt].some(at => !at || nowMs - Date.parse(at) > 30000);
-  if (!machine.online || !machine.fresh || stale || machine.ci !== 'idle' || machine.ownerHold) return 'unavailable';
+  if (!machine.online || !machine.fresh || stale || machine.ci === 'unknown' || machine.ownerHold) return 'unavailable';
   return null;
 }
 
-function runningEstimate(ticket, machines, samples, nowMs) {
+function runningEstimate(ticket, machines, samples, nowMs, ciAwareSlowdown) {
   const attempt = currentAttempt(ticket), machine = machines.find(item => item.name === (attempt?.permit?.machine ?? attempt?.intent?.machine));
   if (!machine && !ticket.registerOnly) return unknown('missingMachine');
   const block = machine && machineBlock(machine, nowMs);
   if (block) return unknown(block);
-  if (ticket.pauseReasons.includes('ci')) return unknown('ci');
+  const ciAware = attempt?.permit?.ciAware === true;
+  if (ticket.pauseReasons.includes('ci') && !ciAware) return unknown('ci');
   const sample = samples.get(sampleKey(ticket.request));
   if (!sample) return unknown('history');
   if (!attempt?.startedAt) return unknown('start');
-  if (['paused', 'slow'].includes(ticket.state)) return unknown('paused');
-  const finishMs = Date.parse(attempt.startedAt) + sample.medianMs;
-  return { kind: 'completion', ...sample, finishAt: new Date(finishMs).toISOString(), remainingMs: Math.max(0, finishMs - nowMs), overdue: nowMs > finishMs };
+  // ciAware 只解释 CI 下的低优先级，不能把真正的暂停或其他原因的降速当作继续执行。
+  if (ticket.state === 'paused' || (ticket.state === 'slow' && (!ciAware || ticket.pauseReasons.some(reason => reason !== 'ci')))) return unknown('paused');
+  const finishMs = Date.parse(attempt.startedAt) + sample.medianMs * (ciAware ? ciAwareSlowdown : 1);
+  return { kind: 'completion', ...sample, ...(ciAware ? { slowdown: ciAwareSlowdown } : {}),
+    finishAt: new Date(finishMs).toISOString(), remainingMs: Math.max(0, finishMs - nowMs), overdue: nowMs > finishMs };
 }
 
 /** 在已预约区间里找最早可容纳整段执行的位置，不让后单挤掉前单的未来核数。 */
@@ -39,7 +45,7 @@ function earliestSlot(machine, cores, durationMs, nowMs, ticketId) {
   const from = machine.protectedBy === ticketId ? nowMs : Math.max(nowMs, machine.protectedUntil);
   if (!Number.isFinite(from)) return null;
   const changes = new Map();
-  // 超额时先偿还当前超出的核数，释放一个核不一定立刻得到一个可派核。
+  // availableCores 已扣 CI 余量，不重复扣 ciReserveCores；超额时先偿还当前超出的核数。
   let free = machine.availableCores - (machine.overCommitted ? Math.max(0,
     machine.grantedCores + machine.externalLoadCores + (machine.reservation?.requestedCores || 0) - machine.quotaCores) : 0);
   for (const change of machine.changes) {
@@ -58,34 +64,36 @@ function earliestSlot(machine, cores, durationMs, nowMs, ticketId) {
 
 function queueEstimate(entry, ticket, machines, samples, nowMs) {
   const allowed = machines.filter(machine => entry.allowedMachines.includes(machine.name));
-  if (entry.state === 'unsatisfiable' || (allowed.length === entry.allowedMachines.length && allowed.every(machine => machine.quotaCores < entry.requestedCores))) return unknown('capacity');
+  const unavailable = code => unknown(code, allowed.length === 1 ? headroom(allowed[0]) : {});
+  if (entry.state === 'unsatisfiable' || (allowed.length === entry.allowedMachines.length && allowed.every(machine => machine.quotaCores < entry.requestedCores))) return unavailable('capacity');
   const qualified = allowed.filter(machine => machine.quotaCores >= entry.requestedCores);
   const ready = qualified.filter(machine => !machine.block);
-  if (!ready.length) return unknown(qualified.find(machine => machine.block === 'ci') ? 'ci'
-    : qualified.find(machine => machine.block === 'reservation') ? 'reservation' : 'unavailable');
+  if (!ready.length) return unavailable(qualified.find(machine => machine.block === 'reservation') ? 'reservation' : 'unavailable');
   if (!ticket || ticket.state !== entry.state) {
     for (const machine of ready) machine.uncertain = 'snapshot';
-    return unknown('snapshot');
+    return unavailable('snapshot');
   }
   const sample = ticket && samples.get(sampleKey(ticket.request));
   if (!sample) {
     // 队首缺耗时，无法确认它何时释放；只阻止它能去的机器上的后续预测。
     for (const machine of ready) machine.uncertain = 'history';
-    return unknown('history');
+    return unavailable('history');
   }
   const candidates = ready.filter(machine => !machine.uncertain).map(machine => ({ machine,
     at: earliestSlot(machine, entry.requestedCores, sample.medianMs, nowMs, entry.ticketId) })).filter(slot => slot.at !== null)
     .sort((a, b) => a.at - b.at || a.machine.preference - b.machine.preference || (a.machine.name < b.machine.name ? -1 : 1));
   const chosen = candidates[0];
-  if (!chosen) return unknown(ready.find(machine => machine.uncertain)?.uncertain
+  if (!chosen) return unavailable(ready.find(machine => machine.uncertain)?.uncertain
     || (ready.some(machine => !Number.isFinite(machine.protectedUntil) && machine.protectedBy !== entry.ticketId) ? 'head' : 'load'));
   chosen.machine.changes.push({ at: chosen.at, cores: -entry.requestedCores }, { at: chosen.at + sample.medianMs, cores: entry.requestedCores });
   for (const machine of machines) if (machine.protectedBy === entry.ticketId) machine.protectedUntil = chosen.at;
-  return { kind: 'wait', ...sample, machine: chosen.machine.name, startAt: new Date(chosen.at).toISOString(), waitMs: chosen.at - nowMs };
+  return { kind: 'wait', ...sample, ...headroom(chosen.machine), machine: chosen.machine.name,
+    startAt: new Date(chosen.at).toISOString(), waitMs: chosen.at - nowMs };
 }
 
-/** 纯投影：输入完整快照、台账读取结果和显式 nowMs；不写输入、不读盘、不读取系统时钟。 */
-function estimateTickets(snapshot, history) {
+/** 纯投影：显式 nowMs，不写输入、不读盘/系统时钟；校准系数须为有限数且不小于 1，否则抛 RangeError。 */
+function estimateTickets(snapshot, history, { ciAwareSlowdown = CI_AWARE_SLOWDOWN } = {}) {
+  if (!Number.isFinite(ciAwareSlowdown) || ciAwareSlowdown < 1) throw new RangeError('CI 低优先级耗时系数必须是大于等于 1 的有限数');
   const { nowMs } = snapshot;
   const tickets = snapshot.tickets ?? [], queue = snapshot.queue ?? [], machines = snapshot.machines ?? [];
   const ids = [...new Set([...queue.map(entry => entry.ticketId), ...tickets.filter(ticket => ['granted', 'running', 'paused', 'slow'].includes(ticket.state)).map(ticket => ticket.ticketId)])];
@@ -101,9 +109,9 @@ function estimateTickets(snapshot, history) {
       protectedBy, protectedUntil: protectedBy ? Infinity : nowMs };
   });
   for (const ticket of tickets.filter(item => ['granted', 'running', 'paused', 'slow'].includes(item.state))) {
-    const estimate = runningEstimate(ticket, machines, samples, nowMs);
-    result[ticket.ticketId] = estimate;
+    const estimate = runningEstimate(ticket, machines, samples, nowMs, ciAwareSlowdown);
     const attempt = currentAttempt(ticket), machine = simulated.find(item => item.name === (attempt?.permit?.machine ?? attempt?.intent?.machine));
+    result[ticket.ticketId] = { ...estimate, ...headroom(machine) };
     if (!machine || ticket.registerOnly || !attempt?.grantedCores) continue;
     const releasing = Math.min(attempt.grantedCores, machine.releaseBudget);
     machine.releaseBudget -= releasing;
@@ -116,10 +124,10 @@ function estimateTickets(snapshot, history) {
     const estimate = queueEstimate(entry, byId.get(entry.ticketId), simulated, samples, nowMs);
     if (estimate.kind === 'unavailable' && estimate.code === 'load') {
       const code = simulated.find(machine => entry.allowedMachines.includes(machine.name) && machine.releaseUnknown)?.releaseUnknown;
-      result[entry.ticketId] = code ? unknown(code) : estimate;
+      result[entry.ticketId] = code ? { ...estimate, ...unknown(code) } : estimate;
     } else result[entry.ticketId] = estimate;
   }
   return result;
 }
 
-module.exports = { estimateTickets, REASONS };
+module.exports = { estimateTickets, REASONS, CI_AWARE_SLOWDOWN };
