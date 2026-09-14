@@ -40,6 +40,8 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const { createHash } = require('node:crypto');
+// 静态文件要用它善后:客户端中途断开时 pipe 不会关源流,句柄泄到进程退出(见 streamFile 头注)。
+const { pipeline } = require('node:stream');
 const { execFile } = require('child_process');
 
 const { resolveProject, readRegistry, REGISTRY_PATH, DASHBOARD_HOME } = require('../core/resolveProject.cjs');
@@ -1302,8 +1304,16 @@ function streamFile(res, fullPath, status) {
     'expires': '0',
   });
   const stream = fs.createReadStream(fullPath);
-  stream.on('error', () => { try { res.destroy(); } catch (_) {} });
-  stream.pipe(res);
+  // 【为什么不能只 pipe】客户端中途断开(浏览器刷新 / 关标签 / 导航走)时 res 被销毁,而 pipe
+  // **不会**把源流一起关掉 —— 那个文件句柄就一直开着,直到进程退出。攒够几个,`cli release`
+  // 换名发布副本就报 EPERM(Windows:目录里有进程开着文件 = 换不了名),而发布是"让改动生效"
+  // 的唯一通道。0914 真实撞上一次,为它烧掉一上午、做了六轮隔离复现才定位:前五轮都复现不出来,
+  // 只因为探针的请求全是**读完**的;第六轮改成"收到首个数据块就掐断",20 次之后换名立刻 EPERM
+  // (完整读完 20 次则一直 OK)。教训出处见 test/staticStreamLeak.test.cjs 与卡
+  // DASH-RELEASE-BLOCKED-BY-OWN-SERVER。
+  // pipeline 会在任一端出错或提前关闭时把两端都善后掉,正是这里要的;它的回调在客户端掐断时
+  // 必然带一个 ERR_STREAM_PREMATURE_CLOSE,那是正常现象不是故障,吞掉即可。
+  pipeline(stream, res, () => { /* 提前关闭是常态,善后已由 pipeline 做完 */ });
 }
 
 /** dist 未构建时的占位页：让 API 先可用、并提示怎么把前端 build 出来 */
