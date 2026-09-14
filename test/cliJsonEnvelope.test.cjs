@@ -61,6 +61,8 @@ test('changed[] 反映真实改了哪些字段(不是命令自己声明的)', (t
   assert.deepEqual(prog.changed.filter((k) => k === 'status'), [], '只报进度没改状态');
   assert.ok(prog.changed.includes('percent') && prog.changed.includes('nextMilestone'));
 
+  // 收官前必须登记这一单的开销,否则 done 被额度登记硬闸拒收(0914 负责人当面下达)。
+  json(['cost', 'FEAT-12', '--project', 't', '--agents', 'glm:1', '--tokens', '120000'], reg);
   const fin = json(['done', 'FEAT-12', '--project', 't', '--pr', '42', '--commit', 'a1b2c3d'], reg);
   assert.equal(fin.status, '已完工');
   for (const k of ['status', 'percent', 'dates.done', 'prNumbers', 'commitShas']) {

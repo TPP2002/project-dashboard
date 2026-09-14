@@ -195,6 +195,13 @@ function main() {
       '  （顺手可加 --scope "<glob>"（可重复）登记这张卡大概会改哪些文件，不必等 claim 才补）');
     process.exit(1);
   }
+  // COST-LEDGER-CLOSEOUT-DISCIPLINE(0914 负责人当面下达并当场加码):每张卡收官前必须把这一单
+  // 消耗的开销/额度登记入账,**不登记不得收官**。判据与拒收文案在 commands.costGateRefusal;
+  // 同上两道闸,只拦 CLI 入口(人敲的、派单器 spawn 的都走这条路),内部编程调用不经此处。
+  if (cmd === 'done') {
+    const refusal = require('./commands.cjs').costGateRefusal(flags);
+    if (refusal) { console.error('✖ ' + refusal); process.exit(1); }
+  }
   try {
     const res = fn(flags) || { ok: true };
     if (res.silent) return;
