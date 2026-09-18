@@ -21,18 +21,23 @@ const path = require('node:path');
 const os = require('node:os');
 const readline = require('node:readline');
 const { atomicWriteJsonSync } = require('./atomicWrite.cjs');
+const { cardForSession } = require('./costSessionDetail.cjs');
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects');
 const CACHE_PATH = path.join(__dirname, '..', 'data', 'costUsageCache.json');
-const CACHE_VERSION = 2; // v2: 缓存写按 TTL 分桶(cw5m/cw1h),供美元折算
+// v3: 字段 version 改名 schemaVersion(COST-UI-SESSION-DETAIL),且缓存里存的东西结构变了
+// (流水按 message.id 去重、新增按会话·按天的明细桶)——读缓存严格 === 比对,对不上整份丢掉重扫。
+// 前科:结构改了没升号,旧缓存被照单全收,新字段全空、老字段全对、一个错都不报。
+const CACHE_VERSION = 3;
 
 /**
  * API 牌价(USD / 百万 token,缓存自 claude-api skill 2026-06 牌价表;官方变价改这张表)。
- * 缓存价规则:读 = 0.1×input;写 5 分钟档 = 1.25×input;写 1 小时档 = 2×input。
+ * 缓存价规则:读 = 条目给了专门 cacheRead 价就用它(如 fable 官方 0.25),没给退回 0.1×input;
+ * 写 5 分钟档 = 1.25×input;写 1 小时档 = 2×input。
  * 【口径声明】订阅套餐实付的是订阅费——这里的美元是「同样的量若走 API 直购值多少钱」的等价参考。
  */
 const PRICE = {
-  fable: { in: 10, out: 50 },
+  fable: { in: 10, out: 50, cacheRead: 0.25 },
   opus: { in: 5, out: 25 },
   'sonnet-4-6': { in: 3, out: 15 },
   sonnet: { in: 2, out: 10 },
@@ -47,9 +52,10 @@ function priceFor(model) {
   if (m.includes('haiku')) return PRICE.haiku;
   return null; // 未知模型(如 <synthetic>)不计价
 }
-/** 折算实际成本(缓存价生效) */
+/** 折算实际成本(缓存价生效;有专门缓存读价用专门价,没有退回 0.1×input) */
 function usdActualOf(t, p) {
-  return (t.input * p.in + t.cacheRead * 0.1 * p.in + (t.cw5m || 0) * 1.25 * p.in + (t.cw1h || 0) * 2 * p.in + t.output * p.out) / 1e6;
+  const cacheReadPrice = Number.isFinite(p.cacheRead) ? p.cacheRead : 0.1 * p.in;
+  return (t.input * p.in + t.cacheRead * cacheReadPrice + (t.cw5m || 0) * 1.25 * p.in + (t.cw1h || 0) * 2 * p.in + t.output * p.out) / 1e6;
 }
 /** 无缓存假想成本(全部输入按全价) */
 function usdNoCacheOf(t, p) {
@@ -119,52 +125,135 @@ function emptyTally() {
 
 const TALLY_KEYS = ['input', 'output', 'cacheRead', 'cacheWrite', 'cw5m', 'cw1h', 'msgs'];
 
+/** 缓存写按 TTL 细分;老格式无细分时全按 1h(2×)记,成本从高、节省从低,保守口径。 */
+function cacheWriteSplit(u) {
+  const cw = u.cache_creation_input_tokens || 0;
+  const cc = u.cache_creation;
+  if (cc && (cc.ephemeral_5m_input_tokens || cc.ephemeral_1h_input_tokens)) {
+    return { cacheWrite: cw, cw5m: cc.ephemeral_5m_input_tokens || 0, cw1h: cc.ephemeral_1h_input_tokens || 0 };
+  }
+  return { cacheWrite: cw, cw5m: 0, cw1h: cw };
+}
+
 function addUsage(t, u) {
   t.input += u.input_tokens || 0;
   t.output += u.output_tokens || 0;
   t.cacheRead += u.cache_read_input_tokens || 0;
-  const cw = u.cache_creation_input_tokens || 0;
-  t.cacheWrite += cw;
-  const cc = u.cache_creation;
-  if (cc && (cc.ephemeral_5m_input_tokens || cc.ephemeral_1h_input_tokens)) {
-    t.cw5m += cc.ephemeral_5m_input_tokens || 0;
-    t.cw1h += cc.ephemeral_1h_input_tokens || 0;
-  } else {
-    t.cw1h += cw; // 老格式无 TTL 细分:全按 1h(2×)记,成本从高、节省从低,保守口径
-  }
+  const split = cacheWriteSplit(u);
+  t.cacheWrite += split.cacheWrite;
+  t.cw5m += split.cw5m;
+  t.cw1h += split.cw1h;
   t.msgs += 1;
 }
 
-/** 逐行流式扫一个 jsonl,产出 { days: { date: { models:{m:tally}, side:tally, main:tally } }, sessions } */
+/** 「上下文」口径(派单方建议,已定档):单轮上下文 = input + 缓存读 + 缓存写(这一轮喂进去的完整提示,不含输出)。 */
+const HEAVY_CONTEXT_TOKENS = 400000; // 「超大上下文轮次」的门槛:单轮上下文 > 40 万 token
+
+/** 一个会话某一天的明细桶(缓存存全量时间范围,窗口化推迟到出明细行时)。 */
+function emptySessionDay() {
+  return {
+    turns: 0, ctxSum: 0, ctxPeak: 0, heavyTurns: 0,
+    input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cw5m: 0, cw1h: 0,
+    firstTs: null, lastTs: null,
+    models: {}, // model → { input, output, cacheRead, cw5m, cw1h }(美元折算按模型价,必须分模型存)
+  };
+}
+
+/**
+ * 逐行流式扫一个 jsonl,产出:
+ *   days        —— 按天·按模型·主/子agent 聚合(原有口径,一字未改)
+ *   sessions    —— 有无 assistant 记录(原有口径)
+ *   sessionDays —— 按「会话·按天」的明细桶(COST-UI-SESSION-DETAIL):
+ *                  { [sessionId]: { cwd, compactions, days: { [date]: emptySessionDay() } } }
+ *
+ * 【去重】同一条 message.id 因流式输出会出现多条记录:只有 id 存在且是非空字符串的记录才参与
+ * 去重,同 id 只记第一次;没有 id / id 为空 / id 不是字符串的一律各算各的、全部计入 ——
+ * 若把 undefined 当成可去重的键,现有夹具里不带 message.id 的行会被塌缩成一条。
+ * 【压缩次数】压缩标记行(type=summary 或带 isCompactSummary)通常不含 "assistant",
+ * 预筛为此放宽(只放宽,不删:它挡住绝大多数行不做 JSON.parse);压缩标记行常无可靠时间戳,
+ * 所以压缩次数按整份流水计数,不做按天窗口。summary 行常常没有 sessionId(只有 leafUuid),
+ * 若按文件名回退会另造出一个 0 轮次的幻影会话行、把压缩计数拆散 —— 改为按文件顺序归到
+ * 「最近出现过的那个会话」(摘要在真实流水里就写在它所属对话的中间,这是落盘顺序事实,
+ * 不是猜);文件一开头就出现标记行的极端情况才退回文件名。
+ */
 function scanFile(file) {
   return new Promise((resolve) => {
     const days = {};
+    const sessionDays = {};
+    const seenIds = new Set();
+    const fallbackSid = path.basename(file).replace(/\.jsonl$/, '');
     let hadAssistant = false;
+    let lastSid = null; // 文件内最近一次出现过的真实 sessionId(压缩标记行的归属用)
     const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
     rl.on('line', (line) => {
-      if (!line || line.indexOf('"assistant"') === -1) return; // 便宜的预筛,坏行交给 try/catch
+      if (!line) return;
+      // 便宜的预筛,坏行交给 try/catch;为压缩标记行放宽,但绝不整条删掉(删了扫描明显变慢)。
+      if (line.indexOf('"assistant"') === -1
+        && line.indexOf('"summary"') === -1
+        && line.indexOf('"isCompactSummary"') === -1) return;
       let obj;
       try { obj = JSON.parse(line); } catch (_) { return; }
-      if (!obj || obj.type !== 'assistant' || !obj.message || !obj.message.usage) return;
+      if (!obj) return;
+      const hasSid = typeof obj.sessionId === 'string' && obj.sessionId;
+      const isMarker = obj.type === 'summary' || obj.isCompactSummary === true;
+      const sid = hasSid ? obj.sessionId : (isMarker && lastSid ? lastSid : fallbackSid);
+      if (hasSid) lastSid = obj.sessionId;
+      const session = (sessionDays[sid] = sessionDays[sid] || { cwd: null, compactions: 0, days: {} });
+      if (session.cwd === null && typeof obj.cwd === 'string' && obj.cwd) session.cwd = obj.cwd;
+      if (isMarker) { session.compactions += 1; return; }
+      if (obj.type !== 'assistant' || !obj.message || !obj.message.usage) return;
       const date = localDate(obj.timestamp);
       if (!date) return;
+      const mid = obj.message.id;
+      if (typeof mid === 'string' && mid) {
+        if (seenIds.has(mid)) return; // 流式重发的同一条消息,只记第一次
+        seenIds.add(mid);
+      }
       hadAssistant = true;
+      const usage = obj.message.usage;
       const d = (days[date] = days[date] || { models: {}, side: emptyTally(), main: emptyTally() });
       const model = obj.message.model || 'unknown';
-      addUsage((d.models[model] = d.models[model] || emptyTally()), obj.message.usage);
-      addUsage(obj.isSidechain ? d.side : d.main, obj.message.usage);
+      addUsage((d.models[model] = d.models[model] || emptyTally()), usage);
+      addUsage(obj.isSidechain ? d.side : d.main, usage);
+      // 会话·按天明细桶
+      const bucket = (session.days[date] = session.days[date] || emptySessionDay());
+      const input = usage.input_tokens || 0;
+      const output = usage.output_tokens || 0;
+      const cacheRead = usage.cache_read_input_tokens || 0;
+      const split = cacheWriteSplit(usage);
+      const ctx = input + cacheRead + split.cacheWrite;
+      bucket.turns += 1;
+      bucket.ctxSum += ctx;
+      if (ctx > bucket.ctxPeak) bucket.ctxPeak = ctx;
+      if (ctx > HEAVY_CONTEXT_TOKENS) bucket.heavyTurns += 1;
+      bucket.input += input;
+      bucket.output += output;
+      bucket.cacheRead += cacheRead;
+      bucket.cacheWrite += split.cacheWrite;
+      bucket.cw5m += split.cw5m;
+      bucket.cw1h += split.cw1h;
+      const mt = (bucket.models[model] = bucket.models[model] || { input: 0, output: 0, cacheRead: 0, cw5m: 0, cw1h: 0 });
+      mt.input += input;
+      mt.output += output;
+      mt.cacheRead += cacheRead;
+      mt.cw5m += split.cw5m;
+      mt.cw1h += split.cw1h;
+      if (typeof obj.timestamp === 'string' && obj.timestamp) {
+        if (bucket.firstTs === null || obj.timestamp < bucket.firstTs) bucket.firstTs = obj.timestamp;
+        if (bucket.lastTs === null || obj.timestamp > bucket.lastTs) bucket.lastTs = obj.timestamp;
+      }
     });
-    rl.on('close', () => resolve({ days, sessions: hadAssistant ? 1 : 0 }));
-    rl.on('error', () => resolve({ days, sessions: 0 }));
+    rl.on('close', () => resolve({ days, sessions: hadAssistant ? 1 : 0, sessionDays }));
+    rl.on('error', () => resolve({ days, sessions: 0, sessionDays }));
   });
 }
 
 function readCache(cachePath) {
   try {
     const c = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    if (c && c.version === CACHE_VERSION && c.files) return c;
-  } catch (_) { /* 无缓存/坏缓存 → 全量重扫 */ }
-  return { version: CACHE_VERSION, files: {} };
+    if (c && c.schemaVersion === CACHE_VERSION && c.files) return c;
+  } catch (_) { /* 无缓存/坏缓存/版本对不上 → 整份丢掉全量重扫 */ }
+  return { schemaVersion: CACHE_VERSION, files: {} };
 }
 
 /** 把一个文件的 days 聚进总账。 */
@@ -181,12 +270,100 @@ function mergeDays(total, days) {
   }
 }
 
+/** 会话内某一天明细桶的并集(数值相加、峰值取大、首末时间取小/大、分模型桶相加)。 */
+function mergeSessionDay(entry, date, bucket) {
+  const target = (entry.days[date] = entry.days[date] || emptySessionDay());
+  for (const k of ['turns', 'ctxSum', 'heavyTurns', 'input', 'output', 'cacheRead', 'cacheWrite', 'cw5m', 'cw1h']) {
+    target[k] += bucket[k] || 0;
+  }
+  if ((bucket.ctxPeak || 0) > target.ctxPeak) target.ctxPeak = bucket.ctxPeak || 0;
+  if (bucket.firstTs && (target.firstTs === null || bucket.firstTs < target.firstTs)) target.firstTs = bucket.firstTs;
+  if (bucket.lastTs && (target.lastTs === null || bucket.lastTs > target.lastTs)) target.lastTs = bucket.lastTs;
+  for (const [m, v] of Object.entries(bucket.models || {})) {
+    const mt = (target.models[m] = target.models[m] || { input: 0, output: 0, cacheRead: 0, cw5m: 0, cw1h: 0 });
+    mt.input += v.input || 0;
+    mt.output += v.output || 0;
+    mt.cacheRead += v.cacheRead || 0;
+    mt.cw5m += v.cw5m || 0;
+    mt.cw1h += v.cw1h || 0;
+  }
+}
+
+/** 把一个文件(实扫或缓存命中)的会话明细并进总账(跨文件同会话 id 时逐桶合并)。 */
+function mergeSessionFiles(acc, sessionDays) {
+  for (const [sid, file] of Object.entries(sessionDays || {})) {
+    if (!acc.has(sid)) acc.set(sid, { cwd: null, compactions: 0, days: {} });
+    const entry = acc.get(sid);
+    if (entry.cwd === null && file && file.cwd) entry.cwd = file.cwd;
+    entry.compactions += (file && file.compactions) || 0;
+    for (const [date, bucket] of Object.entries((file && file.days) || {})) {
+      mergeSessionDay(entry, date, bucket);
+    }
+  }
+}
+
+/**
+ * 由会话账出明细行。只收窗口内(cutoffStr 之后)日期的桶 —— 明细行与顶层合计同一窗口口径,
+ * 「所有明细行四类 token 相加 === 顶层合计」这条对账断言因此恒成立(漏进桶/重复进桶/旧缓存
+ * 没作废三类病都会被它当场抓住)。压缩次数不窗口化(标记行常无时间戳,见 scanFile)。
+ */
+function buildSessionRows(sessionAcc, cutoffStr, cardIds) {
+  const rows = [];
+  for (const [sessionId, entry] of sessionAcc) {
+    const row = {
+      sessionId, cwd: entry.cwd, card: cardForSession(entry.cwd, cardIds),
+      models: [], startedAt: null, endedAt: null,
+      turns: 0, peakContext: 0, avgContext: 0, heavyTurns: 0,
+      input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
+      compactions: entry.compactions || 0, usd: 0,
+    };
+    const perModel = new Map();
+    let ctxSum = 0;
+    for (const [date, bucket] of Object.entries(entry.days)) {
+      if (date < cutoffStr) continue;
+      row.turns += bucket.turns || 0;
+      row.heavyTurns += bucket.heavyTurns || 0;
+      ctxSum += bucket.ctxSum || 0;
+      if ((bucket.ctxPeak || 0) > row.peakContext) row.peakContext = bucket.ctxPeak || 0;
+      row.input += bucket.input || 0;
+      row.output += bucket.output || 0;
+      row.cacheRead += bucket.cacheRead || 0;
+      row.cacheWrite += bucket.cacheWrite || 0;
+      if (bucket.firstTs && (row.startedAt === null || bucket.firstTs < row.startedAt)) row.startedAt = bucket.firstTs;
+      if (bucket.lastTs && (row.endedAt === null || bucket.lastTs > row.endedAt)) row.endedAt = bucket.lastTs;
+      for (const [m, v] of Object.entries(bucket.models || {})) {
+        if (!perModel.has(m)) perModel.set(m, { input: 0, output: 0, cacheRead: 0, cw5m: 0, cw1h: 0 });
+        const mt = perModel.get(m);
+        mt.input += v.input || 0;
+        mt.output += v.output || 0;
+        mt.cacheRead += v.cacheRead || 0;
+        mt.cw5m += v.cw5m || 0;
+        mt.cw1h += v.cw1h || 0;
+      }
+    }
+    if (!row.turns && !row.compactions) continue; // 只有杂行、没有任何实际内容的会话不上明细
+    row.avgContext = row.turns > 0 ? ctxSum / row.turns : 0;
+    const ranked = [...perModel.entries()].sort((a, b) => (b[1].output - a[1].output) || a[0].localeCompare(b[0]));
+    row.models = ranked.map(([m]) => m);
+    for (const [m, v] of ranked) {
+      const p = priceFor(m);
+      if (p) row.usd += usdActualOf(v, p); // 未知模型不计价,与顶层 usd 同口径
+    }
+    rows.push(row);
+  }
+  rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
+  return rows;
+}
+
 /**
  * 聚合一个项目(按目录前缀清单)最近 days 天的 token 消耗。
  * prefixes 未给时兼容旧 prefix；无有效本项目前缀仍抛错。sharedDirs 暴露最长前缀并列的目录。
- * @returns {Promise<{byDay:Array, totals:Object, models:Object, dirs:string[], sharedDirs:string[], scanned:number, cachedFiles:number}>}
+ * cardIds(可选)是看板卡 id 清单,供会话明细判「所属卡」;判不出一律 null,不许猜。
+ * @returns {Promise<{byDay:Array, totals:Object, models:Object, dirs:string[], sharedDirs:string[],
+ *   scanned:number, cachedFiles:number, sessions:number,
+ *   sessionRows:Array, context:{turns,avgContext,load,heavyTurns,heavyRatio}}>}
  */
-async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH }) {
+async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH, cardIds = [] }) {
   prefixes = prefixes.filter(Boolean);
   if (!prefixes.length) throw new Error('缺 prefix(由 mainRepo 映射)');
   let allDirNames = [];
@@ -197,6 +374,7 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
 
   const cache = readCache(cachePath);
   const totalDays = {};
+  const sessionAcc = new Map(); // sessionId → { cwd, compactions, days }
   let scanned = 0, cachedFiles = 0, sessions = 0;
 
   for (const dir of dirNames) {
@@ -213,13 +391,15 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
         cachedFiles++;
         mergeDays(totalDays, hit.days);
         sessions += hit.sessions || 0;
+        mergeSessionFiles(sessionAcc, hit.sessionDays);
         continue;
       }
       const r = await scanFile(abs);
       scanned++;
-      cache.files[key] = { size: st.size, mtimeMs: st.mtimeMs, days: r.days, sessions: r.sessions };
+      cache.files[key] = { size: st.size, mtimeMs: st.mtimeMs, days: r.days, sessions: r.sessions, sessionDays: r.sessionDays };
       mergeDays(totalDays, r.days);
       sessions += r.sessions;
+      mergeSessionFiles(sessionAcc, r.sessionDays);
     }
   }
 
@@ -266,7 +446,25 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
     d.usdActual = a;
   }
 
-  return { byDay, totals, models, usd, dirs: dirNames, sharedDirs, scanned, cachedFiles, sessions };
+  // 会话明细行(与合计同一时间窗口)与两项新指标:
+  // 「轮次 × 平均上下文」量这个区间一共驮了多少上下文过河(load = Σ 轮次×该会话平均上下文);
+  // 「上下文 > 40 万的轮次占比」量有多少轮是在超大上下文里烧的(heavyRatio)。
+  const sessionRows = buildSessionRows(sessionAcc, cutoffStr, Array.isArray(cardIds) ? cardIds : []);
+  const ctx = { turns: 0, ctxSum: 0, heavyTurns: 0 };
+  for (const row of sessionRows) {
+    ctx.turns += row.turns;
+    ctx.ctxSum += row.turns * row.avgContext;
+    ctx.heavyTurns += row.heavyTurns;
+  }
+  const context = {
+    turns: ctx.turns,
+    avgContext: ctx.turns > 0 ? ctx.ctxSum / ctx.turns : 0,
+    load: ctx.ctxSum,
+    heavyTurns: ctx.heavyTurns,
+    heavyRatio: ctx.turns > 0 ? ctx.heavyTurns / ctx.turns : 0,
+  };
+
+  return { byDay, totals, models, usd, dirs: dirNames, sharedDirs, scanned, cachedFiles, sessions, sessionRows, context };
 }
 
 module.exports = {
@@ -278,5 +476,6 @@ module.exports = {
   totalClaudeTokens,
   usdActualOf,
   usdNoCacheOf,
+  HEAVY_CONTEXT_TOKENS,
   PROJECTS_ROOT,
 };
