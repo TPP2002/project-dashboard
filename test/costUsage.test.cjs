@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const cmds = require('../cli/commands.cjs');
-const { getUsage, mapRepoToPrefix, selectProjectDirs } = require('../core/costUsage.cjs');
+const { getUsage, mapRepoToPrefix, selectProjectDirs, priceFor, usdActualOf } = require('../core/costUsage.cjs');
 const { validate } = require('../core/boardSchema.cjs');
 
 function setup() {
@@ -120,6 +120,15 @@ test('getUsage:前缀匹配 worktree 目录、分桶聚合、坏行跳过、增�
   clean(dir);
 });
 
+test('usdActualOf:没拿到专门缓存读价的档折算不变——opus 与 sonnet 与改动前完全一致', () => {
+  const t = { input: 10, output: 100, cacheRead: 1000, cw5m: 0, cw1h: 50 };
+  // opus in$5/out$25,无专门缓存读价 → 退回 0.1×in = 0.5:
+  // (10×5 + 1000×0.5 + 50×2×5 + 100×25)/1e6 = 0.00355(改动前同式同值)
+  assert.ok(Math.abs(usdActualOf(t, priceFor('claude-opus-5')) - 0.00355) < 1e-9);
+  // sonnet in$2/out$10 → 退回 0.2:(10×2 + 1000×0.2 + 50×2×2 + 100×10)/1e6 = 0.00142
+  assert.ok(Math.abs(usdActualOf(t, priceFor('claude-sonnet-5')) - 0.00142) < 1e-9);
+});
+
 test('mapRepoToPrefix:非字母数字一律变 -(与 Claude Code 目录编码一致)', () => {
   assert.equal(mapRepoToPrefix('F:\\code-repo'), 'F--code-repo');
   assert.equal(mapRepoToPrefix('C:\\Users\\demo\\Documents\\job-repo'), 'C--Users-demo-Documents-job-repo');
@@ -136,11 +145,12 @@ test('getUsage:美元折算(缓存价生效,无TTL细分保守归1h桶)', async 
   const r = await getUsage({ prefix: 'Z--p', days: 30, projectsRoot: root, cachePath: path.join(dir, 'c.json') });
   assert.equal(r.totals.cw1h, 50, '无细分应全归 1h 桶');
   assert.equal(r.totals.cw5m, 0);
-  // actual = (10×10 + 1000×0.1×10 + 50×2×10 + 100×50)/1e6 = 0.0071
-  assert.ok(Math.abs(r.usd.actual - 0.0071) < 1e-9, `actual=${r.usd.actual}`);
-  // noCache = ((10+1000+50)×10 + 100×50)/1e6 = 0.0156
+  // fable 缓存读有专门价 0.25(COST-UI-SESSION-DETAIL):
+  // actual = (10×10 + 1000×0.25 + 50×2×10 + 100×50)/1e6 = 0.00635
+  assert.ok(Math.abs(r.usd.actual - 0.00635) < 1e-9, `actual=${r.usd.actual}`);
+  // noCache = ((10+1000+50)×10 + 100×50)/1e6 = 0.0156(全部输入按全价,与缓存读价无关,不跟着动)
   assert.ok(Math.abs(r.usd.noCache - 0.0156) < 1e-9, `noCache=${r.usd.noCache}`);
-  assert.ok(Math.abs(r.usd.saved - 0.0085) < 1e-9, `saved=${r.usd.saved}`);
+  assert.ok(Math.abs(r.usd.saved - 0.00925) < 1e-9, `saved=${r.usd.saved}`);
   assert.ok(r.byDay[0].usdActual > 0, '按天也应带折算');
   clean(dir);
 });
@@ -225,4 +235,77 @@ test('getUsage:没有有效本项目前缀时仍抛错,显式空 prefixes 不回
   }]) {
     await assert.rejects(getUsage(opts), /缺 prefix/);
   }
+});
+
+// ---------- COST-UI-SESSION-DETAIL:去重 / 压缩计数 / 缓存版本闸 ----------
+
+/** 带 message.id / cwd 的流水行(去重与会话明细用)。 */
+function sessionLine({ ts, id, sid, cwd, model = 'claude-sonnet-5', output = 0, input = 0, cacheRead = 0, cacheWrite = 0, type = 'assistant', extra = {} }) {
+  return JSON.stringify({
+    type, sessionId: sid, timestamp: ts, cwd, ...extra,
+    message: type === 'assistant' ? { id, model, usage: {
+      input_tokens: input, output_tokens: output,
+      cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheWrite,
+    } } : undefined,
+  });
+}
+
+test('getUsage:message.id 去重——同 id 只记第一次;无 id/空 id/非字符串 id 各算各的', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dedup-'));
+  const root = path.join(dir, 'projects');
+  fs.mkdirSync(path.join(root, 'D--p'), { recursive: true });
+  const ts = new Date().toISOString();
+  fs.writeFileSync(path.join(root, 'D--p', 'a.jsonl'), [
+    sessionLine({ ts, sid: 'sess-dedup-0001', id: 'msg_01', output: 10 }),
+    sessionLine({ ts, sid: 'sess-dedup-0001', id: 'msg_01', output: 999 }), // 流式重发,忽略
+    sessionLine({ ts, sid: 'sess-dedup-0001', id: '', output: 20 }), // 空 id:计入
+    sessionLine({ ts, sid: 'sess-dedup-0001', id: undefined, output: 30 }), // 无 id:计入
+    sessionLine({ ts, sid: 'sess-dedup-0001', id: 42, output: 40 }), // id 非字符串:计入
+  ].join('\n'));
+  const r = await getUsage({ prefix: 'D--p', days: 30, projectsRoot: root, cachePath: path.join(dir, 'c.json') });
+  assert.equal(r.totals.output, 100, '10+20+30+40;同 id 的 999 不得重复计入');
+  assert.equal(r.sessionRows.length, 1);
+  assert.equal(r.sessionRows[0].sessionId, 'sess-dedup-0001');
+  assert.equal(r.sessionRows[0].turns, 4, '轮次 = 去重后的计入条数');
+  clean(dir);
+});
+
+test('getUsage:压缩标记行不被预筛丢掉,type=summary 与 isCompactSummary 都计数', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'compact-'));
+  const root = path.join(dir, 'projects');
+  fs.mkdirSync(path.join(root, 'C--p'), { recursive: true });
+  const ts = new Date().toISOString();
+  fs.writeFileSync(path.join(root, 'C--p', 'a.jsonl'), [
+    sessionLine({ ts, sid: 'sess-compact-0001', id: 'msg_c1', output: 5 }),
+    '{"type":"summary","summary":"本轮压缩摘要","leafUuid":"u-1"}', // 不含 "assistant",旧预筛会扔
+    JSON.stringify({ type: 'user', isCompactSummary: true, sessionId: 'sess-compact-0001', timestamp: ts }), // 同上
+    '{"type":"user","text":"普通行,顺带提到 summary 这个词,不算压缩"}',
+  ].join('\n'));
+  const r = await getUsage({ prefix: 'C--p', days: 30, projectsRoot: root, cachePath: path.join(dir, 'c.json') });
+  assert.equal(r.sessionRows.length, 1, 'summary 行不带 sessionId 也归进文件里最近的会话,不另造幻影行');
+  assert.equal(r.sessionRows[0].sessionId, 'sess-compact-0001');
+  assert.equal(r.sessionRows[0].compactions, 2, '两种标记各计一次');
+  assert.equal(r.totals.output, 5, '压缩标记行不产 token');
+  assert.equal(r.totals.msgs, 1);
+  clean(dir);
+});
+
+test('getUsage:缓存版本字段 schemaVersion 对不上,整份丢掉重扫', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cachev-'));
+  const root = path.join(dir, 'projects');
+  fs.mkdirSync(path.join(root, 'V--p'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'V--p', 'a.jsonl'),
+    sessionLine({ ts: new Date().toISOString(), sid: 'sess-cache-0001', id: 'msg_v1', output: 7 }));
+  const cachePath = path.join(dir, 'cache.json');
+  const opts = { prefix: 'V--p', days: 30, projectsRoot: root, cachePath };
+  assert.equal((await getUsage(opts)).scanned, 1, '首跑实扫');
+  const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  assert.equal(cached.schemaVersion, 3, '新缓存写 schemaVersion 字段');
+  // 旧世界:字段还叫 version、号还是 2 —— 必须整份作废,而不是照单全收旧结构的桶
+  fs.writeFileSync(cachePath, JSON.stringify({ version: 2, files: cached.files }));
+  const r2 = await getUsage(opts);
+  assert.equal(r2.scanned, 1, '版本对不上 → 重扫');
+  assert.equal(r2.totals.output, 7, '重扫后数字正确');
+  assert.equal((await getUsage(opts)).scanned, 0, '版本对得上 → 走缓存');
+  clean(dir);
 });

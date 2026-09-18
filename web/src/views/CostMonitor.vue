@@ -15,16 +15,20 @@ import { useBoardStore } from '@/stores/board'
 import type { Task } from '@/types'
 import CodexCostSummary from '@/components/codex/CodexCostSummary.vue'
 import DeepseekCostSummary from '@/components/codex/DeepseekCostSummary.vue'
+import SessionDetailTable from '@/components/cost/SessionDetailTable.vue'
+import JobDetailTable from '@/components/cost/JobDetailTable.vue'
 import type { CodexUsage, CombinedUsage, DeepseekBalance, DeepseekUsage, QuotaSnapshot } from '@/types/codex'
 
 interface Tally { input: number; output: number; cacheRead: number; cacheWrite: number; msgs: number }
 interface UsdRow { actual: number; noCache: number; saved: number }
 interface DayRow { date: string; models: Record<string, Tally>; side: Tally; main: Tally; usdActual?: number }
+interface ContextStats { turns: number; avgContext: number; load: number; heavyTurns: number; heavyRatio: number }
 interface Usage {
   byDay: DayRow[]
   totals: Tally & { sideOutput: number; mainOutput: number; cacheHitRate: number }
   models: Record<string, Tally>
   usd: UsdRow & { byModel: Record<string, UsdRow> }
+  context: ContextStats
   dirs: string[]
   scanned: number
   cachedFiles: number
@@ -234,9 +238,16 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
             <div class="v">{{ deepseek ? (deepseek.totals.cacheHitRate * 100).toFixed(1) + '%' : '—' }}</div>
             <div class="l">DeepSeek 缓存命中率</div>
           </div>
-          <div class="card saved">
-            <div class="v">${{ usd0(usage.usd.saved) }}</div>
-            <div class="l">Claude 重复利用省下的钱</div>
+          <!-- COST-UI-SESSION-DETAIL:上下文两项新指标升到概览;省下的钱降级进「花销结构」表 -->
+          <div class="card">
+            <div v-if="usage.context" class="v">{{ fmt(usage.context.load) }}</div>
+            <div v-else class="v">—</div>
+            <div class="l">对话总驮载 · 轮次 × 平均上下文</div>
+          </div>
+          <div class="card">
+            <div v-if="usage.context" class="v">{{ (usage.context.heavyRatio * 100).toFixed(1) }}%</div>
+            <div v-else class="v">—</div>
+            <div class="l">超 40 万上下文的轮次占比</div>
           </div>
         </div>
       </section>
@@ -385,6 +396,10 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
                   </table>
                 </div>
               </section>
+
+              <!-- COST-UI-SESSION-DETAIL:两张按行明细,各自拉自己的接口、带筛选与筛后合计 -->
+              <SessionDetailTable :project-id="store.currentProjectId" :days="days" />
+              <JobDetailTable :project-id="store.currentProjectId" />
             </div>
           </section>
         </div>
@@ -411,11 +426,11 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .error-state > :nth-child(2) { flex: 1; }
 .loading-state { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s5); }
 .overview { display: grid; gap: var(--s2); }
-.summary-cards, .summary-skeleton { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s2); }
+.summary-cards, .summary-skeleton { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s2); }
 .summary-cards .card { min-width: 0; padding: var(--s3); }
 .summary-cards .v, .summary-reason { overflow-wrap: anywhere; }
 .summary-reason { color: var(--text-2); font-size: var(--fs-base); }
-.saved .v, .saved-value { color: var(--ok); }
+.saved-value { color: var(--ok); }
 .cost-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); align-items: start; gap: var(--s4); }
 .cost-left { display: grid; gap: var(--s4); min-width: 0; }
 .claude-spend { display: grid; gap: var(--s3); background: var(--surface); }

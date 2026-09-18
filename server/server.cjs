@@ -53,6 +53,8 @@ const { isUnlanded } = require('../core/decisionLanding.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
+const costSessionDetail = require('../core/costSessionDetail.cjs');
+const costJobDetail = require('../core/costJobDetail.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
@@ -788,10 +790,33 @@ function costPrefixes(pid) {
   return { prefixes, otherPrefixes: [...otherPrefixes] };
 }
 
+/** 看板卡 id 清单,给会话明细判「所属卡」用;board 读不出就给空表(卡的判定全部落空为 null,不猜)。 */
+function costCardIds(proj) {
+  try {
+    const board = readBoardFile(proj.board);
+    return ((board && board.tasks) || []).map((t) => t.id).filter((id) => typeof id === 'string' && id);
+  } catch (_) { return []; }
+}
+
+/** 明细接口的筛选参数:只收认识形状的值,其余当未设(core 侧纯函数再兜一层默认)。 */
+function costDetailFilters(query) {
+  const date = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+  const text = (v) => (typeof v === 'string' ? v : '');
+  return {
+    fromDate: date(query.fromDate),
+    toDate: date(query.toDate),
+    model: text(query.model),
+    card: text(query.card),
+    engine: text(query.engine),
+  };
+}
+
 /**
  * token 成本聚合(GET /api/cost?project=<id>&days=<n>)。
  * 读 ~/.claude/projects 下该项目(含其 worktree 目录)的对话流水,按天/按模型/主·子agent聚合;
  * 订阅套餐看不到美元,这里给的是本机流水里的真实 token 数(BOARD-COST-MONITOR,0901)。
+ * COST-UI-SESSION-DETAIL 起响应里多带 sessionRows(按会话明细)与 context(轮次×平均上下文、
+ * 上下文>40万轮次占比)。
  */
 function handleCostUsage(req, res, query) {
   const pid = String(query.project || '');
@@ -800,7 +825,7 @@ function handleCostUsage(req, res, query) {
   if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   return Promise.all([
-    costUsage.getUsage({ ...selected, days }),
+    costUsage.getUsage({ ...selected, days, cardIds: costCardIds(proj) }),
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
     codexApi.getDeepseekBalance().catch(() => ({
@@ -829,6 +854,60 @@ function handleCostUsage(req, res, query) {
       });
     })
     .catch((e) => sendJson(res, 500, { ok: false, error: '聚合成本失败：' + (e && e.message) }));
+}
+
+/**
+ * 每个对话的成本明细(GET /api/cost/session-detail?project=<id>&days=<n>&fromDate=&toDate=&model=&card=)。
+ * 行与合计同一时间窗口口径;筛选逻辑在 core/costSessionDetail.cjs 的纯函数里(机验覆盖),
+ * 这里只取数、调纯函数、回包。候选项(options)永远从「未筛的全集」取,筛完下拉不至于缩没。
+ */
+async function handleCostSessionDetail(req, res, query) {
+  const pid = String(query.project || '');
+  const proj = resolveProjectSafe(pid);
+  const selected = costPrefixes(pid);
+  if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
+  const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
+  try {
+    const usage = await costUsage.getUsage({ ...selected, days, cardIds: costCardIds(proj) });
+    const filters = costDetailFilters(query);
+    const rows = costSessionDetail.filterSessions(usage.sessionRows, filters);
+    sendJson(res, 200, {
+      ok: true,
+      rows,
+      totals: costSessionDetail.summarizeSessionRows(rows),
+      options: costSessionDetail.sessionFilterOptions(usage.sessionRows),
+      filters,
+    });
+  } catch (e) {
+    sendJson(res, 500, { ok: false, error: '会话明细读取失败：' + (e && e.message) });
+  }
+}
+
+/**
+ * 每张工单的成本明细(GET /api/cost/job-detail?project=<id>&fromDate=&toDate=&engine=&model=&card=)。
+ * jobsRoot 由这里算好传给 core(COST-UI-SESSION-DETAIL:模块里不许写死路径、不许 require
+ * 项目解析器),算法与 server/codexApi.cjs 的 jobsRoot 完全一致。
+ */
+async function handleCostJobDetail(req, res, query) {
+  const pid = String(query.project || '');
+  const proj = resolveProjectSafe(pid);
+  if (!proj) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
+  const jobsRoot = path.join(proj.codeRepo, '.codex', 'jobs');
+  try {
+    const all = await costJobDetail.collectJobRows(jobsRoot);
+    const filters = costDetailFilters(query);
+    const rows = costJobDetail.filterJobRows(all, filters);
+    sendJson(res, 200, {
+      ok: true,
+      // 每行补一列人民币(summarize 只出合计):core 的 jobCostRmb 判不出给 null,前端显示「—」。
+      rows: rows.map((row) => ({ ...row, costRmb: costJobDetail.jobCostRmb(row) })),
+      totals: costJobDetail.summarizeJobRows(rows),
+      options: costJobDetail.jobFilterOptions(all),
+      filters,
+    });
+  } catch (e) {
+    sendJson(res, 500, { ok: false, error: '工单明细读取失败：' + (e && e.message) });
+  }
 }
 
 /**
@@ -1395,6 +1474,9 @@ const server = http.createServer((req, res) => {
       if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
       if (sub === 'cpu' && req.method === 'GET') return handleCpuStatus(req, res);
       if (sub === 'cpu' && req.method === 'POST') return handleCpuReserve(req, res);
+      // 明细两条路由要排在通用 /api/cost 之前,否则被它截走(COST-UI-SESSION-DETAIL)
+      if (sub === 'cost' && segs[2] === 'session-detail' && req.method === 'GET') return handleCostSessionDetail(req, res, parsed.query || {});
+      if (sub === 'cost' && segs[2] === 'job-detail' && req.method === 'GET') return handleCostJobDetail(req, res, parsed.query || {});
       if (sub === 'cost' && req.method === 'GET') return handleCostUsage(req, res, parsed.query || {});
       if (sub === 'dispatch' && req.method === 'POST') return handleDispatch(req, res);
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
