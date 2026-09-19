@@ -94,6 +94,9 @@ const PORT_RANGE = 8;
 const POLL_MS = Math.max(500, parseInt(process.env.DASHBOARD_POLL_MS || '1500', 10)); // mtime 轮询间隔
 const HEARTBEAT_MS = 15000;                     // SSE 心跳
 const BODY_MAX = 256 * 1024;                    // POST 体上限，防滥用
+// 审阅台导入(READER-IMPORT-BUTTON)单独放宽:30MB 原件的 base64 约 40MB,给 45MB;
+// 只用于 POST /api/reader/import,其余路由一律仍用 BODY_MAX。
+const READER_IMPORT_BODY_MAX = 45 * 1024 * 1024;
 const DECIDE_TIMEOUT_MS = 15000;                // execFile 调 CLI 超时
 
 const MIME = {
@@ -702,11 +705,13 @@ const codexApi = createCodexApi({
 });
 
 // 审阅台(READER-INTO-BOARD):报告清单/正文/边注只读仓库文件,批注写数据根下的 data/reader 账本并镜像到卡 note。
+// 本机导入(READER-IMPORT-BUTTON):import 动作用 READER_IMPORT_BODY_MAX,其余动作仍走 bodyMax。
 const readerApi = createReaderApi({
   resolveProjectSafe,
   sendJson,
   readBody,
   bodyMax: BODY_MAX,
+  importBodyMax: READER_IMPORT_BODY_MAX,
   dashRoot: DASH_ROOT,
   dataRoot: DASHBOARD_HOME,
   cliIndex: CLI_INDEX,
