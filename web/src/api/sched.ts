@@ -3,7 +3,7 @@ export type TicketState = 'queued' | 'granted' | 'running' | 'paused' | 'slow' |
 export type ReserveCores = 0 | 5 | 10 | 15
 export interface ReserveData { requestedCores: ReserveCores; durationMinutes?: 60 | 180 }
 export type CommandInput =
-  | { kind: 'jump-queue' | 'cancel'; data: { ticketId: string } }
+  | { kind: 'jump-queue' | 'cancel' | 'pause-one' | 'resume-one'; data: { ticketId: string } }
   | { kind: 'owner-hold' | 'owner-release'; data: Record<string, never> }
   | { kind: 'reserve'; data: ReserveData }
 export interface LegacySync { ok: boolean; error?: string }

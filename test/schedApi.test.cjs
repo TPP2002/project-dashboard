@@ -59,10 +59,11 @@ test('真服务台账：项目/机器/派单方/结果/日期筛选、稳定游�
   assert.equal((await srv.json('/api/sched/ticket/tk-ffffffffffffffffffff')).status, 404);
 });
 
-test('五种指令原子写入：主机名由配置补齐、时间十分钟、同源放行、字段不可夹带', async t => {
+test('七种指令原子写入：主机名由配置补齐、时间十分钟、同源放行、字段不可夹带', async t => {
   const srv = await startServer(t);
   const id = ticket(1).ticketId;
   for (const input of [{ kind: 'jump-queue', data: { ticketId: id } }, { kind: 'cancel', data: { ticketId: id } },
+    { kind: 'pause-one', data: { ticketId: id } }, { kind: 'resume-one', data: { ticketId: id } },
     { kind: 'owner-hold', data: {} }, { kind: 'owner-release', data: {} }, { kind: 'reserve', data: { requestedCores: 5 } }]) {
     const result = await srv.json('/api/sched/command', input, { Origin: srv.base });
     assert.equal(result.status, 200); assert.equal(result.body.ok, true);
@@ -78,12 +79,9 @@ test('五种指令原子写入：主机名由配置补齐、时间十分钟、�
   for (const body of [null, [], { kind: 'owner-hold', data: { machine: 'attacker' } }, { kind: 'owner-release', data: { machine: 'attacker' } },
     { kind: 'reserve', data: { machine: 'attacker', requestedCores: 5 } }, { kind: 'reserve', data: { requestedCores: 0, durationMinutes: 60 } },
     { kind: 'reserve', data: { requestedCores: 5, durationMinutes: 30 } }, { kind: 'reserve', data: { requestedCores: '5' } },
-    { kind: 'cancel', data: { ticketId: '../escape' } }, { kind: 'owner-hold', data: {}, submitter: 'other' }]) {
+    { kind: 'cancel', data: { ticketId: '../escape' } }, { kind: 'pause-one', data: { ticketId: '../escape' } },
+    { kind: 'resume-one', data: { ticketId: 'tk-xyz' } }, { kind: 'owner-hold', data: {}, submitter: 'other' }]) {
     assert.equal((await srv.json('/api/sched/command', body)).status, 400, JSON.stringify(body));
-  }
-  for (const kind of ['pause-one', 'resume-one']) {
-    const result = await srv.json('/api/sched/command', { kind, data: { ticketId: id } });
-    assert.equal(result.status, 400); assert.equal(result.body.error, '本期未开放');
   }
   assert.deepEqual(commandFiles(srv), before);
   for (const endpoint of ['/api/sched/command', '/api/sched/legacy-reserve']) {

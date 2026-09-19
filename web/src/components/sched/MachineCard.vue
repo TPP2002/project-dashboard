@@ -6,7 +6,7 @@ import EstimateText from './EstimateText.vue'
 import { age, ciJobLabel, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, tone } from './format'
 import { machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
-const emit = defineEmits<{ open: [id: string]; cancel: [id: string] }>()
+const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
 const fresh = computed(() => freshness(props.machine, props.now))
 const capacity = computed(() => machineCapacity(props.machine, fresh.value.stale))
 const jobs = computed(() => props.tickets.filter(ticket => !ticket.registerOnly && ticket.machine === props.machine.name))
@@ -116,7 +116,11 @@ onUnmounted(() => {
           <div class="job-meta"><span>{{ ticket.submitter }}</span><span :class="tone(ticket.state)">{{ ticketLabel(ticket) }}</span></div>
           <div class="job-meta"><EstimateText :estimate="estimates[ticket.ticketId]" /></div>
           <div class="job-meta"><span>执行 {{ duration(ticket.runningMs) }} · 暂停 {{ duration(ticket.pausedMs) }} · 低速 {{ duration(ticket.slowMs) }}</span>
-            <button class="sched-btn small bad" :disabled="busy || ticket.cancelRequested" @click="emit('cancel', ticket.ticketId)">撤单</button>
+            <span class="job-actions">
+              <button v-if="ticket.pauseReasons.includes('manual')" class="sched-btn small" :disabled="busy" @click="emit('resume', ticket.ticketId)">恢复</button>
+              <button v-else class="sched-btn small" :disabled="busy" @click="emit('pause', ticket.ticketId)">暂停</button>
+              <button class="sched-btn small bad" :disabled="busy || ticket.cancelRequested" @click="emit('cancel', ticket.ticketId)">撤单</button>
+            </span>
           </div>
           <div class="sched-id">{{ ticket.ticketId }}</div>
         </li>
@@ -157,4 +161,5 @@ onUnmounted(() => {
 .job-title .sched-link { text-align: left; min-width: 0; overflow-wrap: anywhere; }
 .job-cores { margin-left: auto; white-space: nowrap; }
 .job-meta { justify-content: space-between; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--text-3); margin-top: var(--s1); overflow-wrap: anywhere; }
+.job-actions { display: flex; gap: 6px; }
 </style>

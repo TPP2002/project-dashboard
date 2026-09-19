@@ -22,6 +22,8 @@ const unassigned = computed(() => store.snapshot?.running.filter(ticket => !tick
 const latestReserve = computed(() => store.commands.find(command => command.input.kind === 'reserve'))
 const cancel = (ticketId: string) => store.command({ kind: 'cancel', data: { ticketId } })
 const jump = (ticketId: string) => store.command({ kind: 'jump-queue', data: { ticketId } })
+const pause = (ticketId: string) => store.command({ kind: 'pause-one', data: { ticketId } })
+const resume = (ticketId: string) => store.command({ kind: 'resume-one', data: { ticketId } })
 onMounted(store.start)
 onUnmounted(store.stop)
 </script>
@@ -70,10 +72,10 @@ onUnmounted(store.stop)
       </details>
       <p v-if="store.snapshot.historyError" class="warn" role="status">{{ store.snapshot.historyError }}；暂无法预估</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" /></div>
+        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       <details v-if="offline.length" class="sched-offline"><summary>离线机器 {{ offline.length }} 台（不参与派单）</summary>
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" /></div>
+          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       </details>
       <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
         :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />

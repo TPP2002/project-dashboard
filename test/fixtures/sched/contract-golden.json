@@ -59,6 +59,16 @@
       "command": { "commandId": "dash-20260912T000003-dddd4444", "kind": "owner-release", "data": { "machine": "Dx-202501231051" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
       "json": "{\"commandId\":\"dash-20260912T000003-dddd4444\",\"createdAt\":\"2026-09-12T00:00:00.000Z\",\"data\":{\"machine\":\"Dx-202501231051\"},\"expiresAt\":\"2026-09-12T00:10:00.000Z\",\"kind\":\"owner-release\",\"submitter\":\"dashboard\"}",
       "sha256": "60af81f2cee0f49dec84b0679560c07edee767a2be6012871dc10236d1bbc44f"
+    },
+    {
+      "command": { "commandId": "dash-20260912T000004-eeee5555", "kind": "pause-one", "data": { "ticketId": "tk-0123456789abcdef0123" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "json": "{\"commandId\":\"dash-20260912T000004-eeee5555\",\"createdAt\":\"2026-09-12T00:00:00.000Z\",\"data\":{\"ticketId\":\"tk-0123456789abcdef0123\"},\"expiresAt\":\"2026-09-12T00:10:00.000Z\",\"kind\":\"pause-one\",\"submitter\":\"dashboard\"}",
+      "sha256": "054331e29b8908e12d72c1ef5e9eb654c6e4bcddddf2e570bda191db73f97875"
+    },
+    {
+      "command": { "commandId": "dash-20260912T000005-ffff6666", "kind": "resume-one", "data": { "ticketId": "tk-0123456789abcdef0123" }, "submitter": "dashboard", "createdAt": "2026-09-12T00:00:00.000Z", "expiresAt": "2026-09-12T00:10:00.000Z" },
+      "json": "{\"commandId\":\"dash-20260912T000005-ffff6666\",\"createdAt\":\"2026-09-12T00:00:00.000Z\",\"data\":{\"ticketId\":\"tk-0123456789abcdef0123\"},\"expiresAt\":\"2026-09-12T00:10:00.000Z\",\"kind\":\"resume-one\",\"submitter\":\"dashboard\"}",
+      "sha256": "1ab3ff040e771080240f9eda54bed0d5372dc12e902980094f2d9863a3a3d667"
     }
   ],
   "invalidCommands": [

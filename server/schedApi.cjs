@@ -17,10 +17,9 @@ function createSchedApi({ sendJson, readBody, bodyMax, cpuBudget, resolveShare, 
   }
   function validateInput(body) {
     c.fields(body, { kind: c.text, data: v => c.requireRecord(v, '指令 data') });
-    if (['pause-one', 'resume-one'].includes(body.kind)) throw new Error('本期未开放');
     if (body.kind === 'reserve') c.validateReserve(body.data, false);
     else if (['owner-hold', 'owner-release'].includes(body.kind)) c.fields(body.data, {});
-    else if (['jump-queue', 'cancel'].includes(body.kind)) c.fields(body.data, { ticketId: c.ticketId });
+    else if (['jump-queue', 'cancel', 'pause-one', 'resume-one'].includes(body.kind)) c.fields(body.data, { ticketId: c.ticketId });
     else throw new Error('本期未开放');
   }
   function handlePost(req, res, legacyOnly) {
