@@ -4,10 +4,10 @@
   "private": true,
   "description": "多项目管理可视化看板（全局工具）：零依赖 CLI + 零依赖 server + Vite/Vue 前端",
   "//serve": "serve/start 起的是【开发实例】（代码根是本检出 → mode=dev、端口 6070 段）。负责人日常用的那份由 启动看板.bat / dashboard.sh 从发布副本起（6060 段）——见 SERVER-RUNS-ON-LIVE-CHECKOUT。",
-  "//test:fast": "test:fast 只圈成本监管这一片(COST-UI-SESSION-DETAIL)+ 审阅台本机导入(READER-IMPORT-T1)+ 本机标识符闸,不跑全量——两套 node --test 同跑会互相干扰,全量一红像成本代码坏了;CI 的 test 仍是全量,不许动。",
+  "//test:fast": "test:fast 只圈成本监管这一片(COST-UI-SESSION-DETAIL)+ 审阅台本机导入(READER-IMPORT-T1)+ 审阅台导出单(READER-EXPORT-REVIEW)+ 本机标识符闸,不跑全量——两套 node --test 同跑会互相干扰,全量一红像成本代码坏了;CI 的 test 仍是全量,不许动。",
   "scripts": {
     "test": "node --test",
-    "test:fast": "node --test test/costUsage.test.cjs test/costSessionDetail.test.cjs test/costJobDetail.test.cjs test/costPrefixes.test.cjs test/deepseekCostUsage.test.cjs test/readerImport.test.cjs test/noLocalIdentifiers.test.cjs",
+    "test:fast": "node --test test/costUsage.test.cjs test/costSessionDetail.test.cjs test/costJobDetail.test.cjs test/costPrefixes.test.cjs test/deepseekCostUsage.test.cjs test/readerImport.test.cjs test/readerReviewExport.test.cjs test/noLocalIdentifiers.test.cjs",
     "cli": "node cli/index.cjs",
     "build": "npm --prefix web run build",
     "release": "node cli/index.cjs release",

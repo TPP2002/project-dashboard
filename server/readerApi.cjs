@@ -3,7 +3,8 @@
  * readerApi.cjs —— 看板「审阅台」后端(READER-INTO-BOARD)。
  *
  * 干什么:把仓库里的审计/外脑报告(markdown)连同「上一版」「按日期分层的边注」端给前端;
- *        接住负责人写在段落旁的批注;把批注按需导出成仓库 docs 下的 JSON 供回流对话随 PR 入库。
+ *        接住负责人写在段落旁的批注;把批注按需导出成仓库 docs 下的 JSON 供回流对话随 PR 入库;
+ *        另有「导出给外脑」(READER-EXPORT-REVIEW):把批阅意见单拼成 md 只回给前端,不落盘。
  *
  * 事实源:
  *   · 报告清单 = <项目 docsRoot>/docs/design/审计回流/reader.json(仓库正本,每批回运往里加)
@@ -24,6 +25,7 @@ const { execFile } = require('node:child_process');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { withLock } = require('../core/lock.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
+const { buildReviewExport, exportFileName } = require('./readerReviewExport.cjs');
 const readerImport = require('./readerImport.cjs');
 
 const MANIFEST_REL = 'docs/design/审计回流/reader.json';
@@ -150,37 +152,54 @@ function createReaderApi(deps) {
     return sendJson(res, 200, { ok: true, project: projectId, manifest, ...shelfSummary(projectId, manifest) });
   }
 
-  function handleReport(res, query) {
-    const projectId = String(query.project || ''); const key = String(query.key || '');
-    if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+  /**
+   * 读一份报告的全部素材:清单定位 → 正文 → 上一版 → 边注 → 本机批注。
+   * handleReport 与 export-review 两处共用;失败返回 { status, message }。
+   * 这是纯读取,返回体怎么发由两个 handler 各自决定(handleReport 的返回体一个字节不许变)。
+   */
+  function loadReportBundle(projectId, key) {
     const proj = projectId && resolveProjectSafe(projectId);
-    if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
-    // 本机导入的报告(IMP- 开头):正文取本机 imports 目录,无边注层、无上一版;IMP- 之外的 key 走原有路径
+    if (!proj) return { status: 404, message: `未注册的项目「${projectId}」` };
+    // 本机导入的报告(IMP- 开头):正文取本机 imports 目录,无边注层、无上一版;IMP- 之外的 key 走原有路径。
+    // 放在 loadReportBundle 里,report 与 export-review 两条路都认导入报告
     if (key.startsWith('IMP-')) {
       const hit = readerImport.readImport(DATA_DIR, projectId, key);
-      if (!hit) return sendJson(res, 404, { ok: false, error: `没有这份本机导入「${key}」` });
+      if (!hit) return { status: 404, message: `没有这份本机导入「${key}」` };
       const doc = readAnnos(projectId, key);
-      return sendJson(res, 200, {
-        ok: true, project: projectId,
+      return {
+        proj,
         batch: { id: readerImport.BATCH_ID, name: readerImport.BATCH_NAME, baseline: readerImport.BATCH_BASELINE },
         report: readerImport.buildImportReportMeta(projectId, hit.meta, readerImport.hasOriginal(DATA_DIR, projectId, key)),
         md: hit.md, prevMd: null, notes: [],
         annos: doc.annos, highlights: doc.highlights, review: doc.review,
-      });
+      };
     }
     const m = readManifest(proj);
-    if (m.error) return sendJson(res, m.error, { ok: false, error: m.message });
+    if (m.error) return { status: m.error, message: m.message };
     const hit = findReport(m.manifest, key);
-    if (!hit) return sendJson(res, 404, { ok: false, error: `清单里没有报告「${key}」` });
+    if (!hit) return { status: 404, message: `清单里没有报告「${key}」` };
     const md = readRepoText(proj, hit.report.md);
-    if (md.error) return sendJson(res, md.error, { ok: false, error: md.message });
+    if (md.error) return { status: md.error, message: md.message };
     let prevMd = null;
     if (hit.report.prevMd) { const p = readRepoText(proj, hit.report.prevMd); prevMd = p.error ? null : p.text; }
     const doc = readAnnos(projectId, key);
-    return sendJson(res, 200, {
-      ok: true, project: projectId, batch: { id: hit.batch.id, name: hit.batch.name, baseline: hit.batch.baseline },
+    return {
+      proj,
+      batch: { id: hit.batch.id, name: hit.batch.name, baseline: hit.batch.baseline },
       report: hit.report, md: md.text, prevMd, notes: loadNoteLayers(proj, hit.batch, key),
       annos: doc.annos, highlights: doc.highlights, review: doc.review,
+    };
+  }
+
+  function handleReport(res, query) {
+    const projectId = String(query.project || ''); const key = String(query.key || '');
+    if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+    const b = loadReportBundle(projectId, key);
+    if (b.status) return sendJson(res, b.status, { ok: false, error: b.message });
+    return sendJson(res, 200, {
+      ok: true, project: projectId, batch: b.batch,
+      report: b.report, md: b.md, prevMd: b.prevMd, notes: b.notes,
+      annos: b.annos, highlights: b.highlights, review: b.review,
     });
   }
 
@@ -328,6 +347,28 @@ function createReaderApi(deps) {
     });
   }
 
+  /** 本机日历的今天,YYYY-MM-DD(导出单上的「批阅日期」;测试经纯函数注入固定值) */
+  function localToday() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  /** 导出给外脑(READER-EXPORT-REVIEW):拼「批阅意见单 + 回流对账 + 带批注的报告原文」md,只回给前端不落盘 */
+  function handleExportReview(res, query) {
+    const projectId = String(query.project || ''); const key = String(query.key || '');
+    if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+    const b = loadReportBundle(projectId, key);
+    if (b.status) return sendJson(res, b.status, { ok: false, error: b.message });
+    const today = localToday();
+    return sendJson(res, 200, {
+      ok: true,
+      fileName: exportFileName(b.report.title, today),
+      md: buildReviewExport({ meta: b.report, batch: b.batch, md: b.md, annos: b.annos, notes: b.notes, today }),
+      annoCount: b.annos.length,
+    });
+  }
+
   // ---------- 本机导入(READER-IMPORT-BUTTON T1:纯函数与存储层在 readerImport.cjs) ----------
   /** 导入:接住浏览器端转好的 markdown(可选带原件),校验后落本机数据目录;同内容同天 = 同 key,不重复存 */
   function handleImport(req, res) {
@@ -392,6 +433,7 @@ function createReaderApi(deps) {
   function route(action, req, res, query) {
     if (action === 'manifest' && req.method === 'GET') { handleManifest(res, query); return true; }
     if (action === 'report' && req.method === 'GET') { handleReport(res, query); return true; }
+    if (action === 'export-review' && req.method === 'GET') { handleExportReview(res, query); return true; }
     if (action === 'annos' && req.method === 'GET') { handleAnnosGet(res, query); return true; }
     if (action === 'annos' && req.method === 'POST') { handleAnnosPost(req, res); return true; }
     if (action === 'marks' && req.method === 'POST') { handleMarks(req, res); return true; }
