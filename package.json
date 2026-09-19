@@ -8,7 +8,7 @@
   "scripts": {
     "test": "node --test",
     "test:fast": "node --test test/costUsage.test.cjs test/costSessionDetail.test.cjs test/costJobDetail.test.cjs test/costPrefixes.test.cjs test/deepseekCostUsage.test.cjs test/readerImport.test.cjs test/readerReviewExport.test.cjs test/noLocalIdentifiers.test.cjs && npm run test:reader-import",
-    "test:reader-import": "node --import tsx --test test/readerImportConverters.test.mts",
+    "test:reader-import": "node --import tsx --test web/tests/readerImportConverters.check.mts",
     "cli": "node cli/index.cjs",
     "build": "npm --prefix web run build",
     "release": "node cli/index.cjs release",

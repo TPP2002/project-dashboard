@@ -1,5 +1,6 @@
 /**
- * readerImportConverters.test.mts —— 审阅台导入转换器(READER-IMPORT-BUTTON T2)的字符级断言。
+ * readerImportConverters.check.mts —— 审阅台导入转换器(READER-IMPORT-BUTTON T2)的字符级断言。
+ * 文件故意不放 test/ 目录、也不叫 *.test.*:CI 的全量 `node --test` 会自动扫这两类,而本测试必须带 tsx 才能跑(源码里是无扩展名引入),用 `npm run test:reader-import` 单独跑。
  *
  * 夹具全部是虚构样稿(test/fixtures/reader-import/),期望值清单在 expected.json。
  * 比较口径:结果与期望都去掉全部空白之后做「包含」判断(工单第 11 条)。
@@ -8,12 +9,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { convertFile, detectFormat, ImportError } from '../web/src/utils/reportImport/index.ts'
-import type { ImportErrorCode } from '../web/src/utils/reportImport/types.ts'
-import { digitsToHash, joinRow, splitParagraphs } from '../web/src/utils/reportImport/pdfToMd.ts'
+import { convertFile, detectFormat, ImportError } from '../src/utils/reportImport/index.ts'
+import type { ImportErrorCode } from '../src/utils/reportImport/types.ts'
+import { digitsToHash, joinRow, splitParagraphs } from '../src/utils/reportImport/pdfToMd.ts'
 
 /** 夹具与期望值:全部虚构,直接按相对路径读 */
-const FIXTURES = 'fixtures/reader-import/'
+const FIXTURES = '../../test/fixtures/reader-import/'
 const fixtureUrl = (name: string) => new URL(FIXTURES + name, import.meta.url)
 const expected = JSON.parse(readFileSync(fixtureUrl('expected.json'), 'utf8')) as {
   pdfMustContain: string[]

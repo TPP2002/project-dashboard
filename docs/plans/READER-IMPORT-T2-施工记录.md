@@ -23,7 +23,7 @@ md / txt / html / docx / 文字版 pdf 五种文件转成审阅台能读的 mark
 | pdfToMd.ts | 文字版 PDF 抽文字:归行/字号众数/页标题与三级标题/页眉页脚剔除/并段/疑似表格提醒/扫描件判定 |
 | shims.d.ts | turndown 最小类型声明;turndown-plugin-gfm 保持无类型(具名导入按 any 用) |
 
-测试 `test/readerImportConverters.test.mts`:12 条,覆盖 detectFormat 矩阵、五种格式对夹具
+测试 `web/tests/readerImportConverters.check.mts`:12 条,覆盖 detectFormat 矩阵、五种格式对夹具
 (expected.json)的字符级断言(去空白后包含/不包含)、pdf 页标题顺序、表格提醒,以及
 五种错误的 code 与 hint。脚本接线:`test:reader-import` 加进根 package.json,并追加到
 `test:fast` 末尾(原有部分未动)。
@@ -76,7 +76,7 @@ md / txt / html / docx / 文字版 pdf 五种文件转成审阅台能读的 mark
 
 ## 验证
 
-- 定向小测:`node --import tsx --test test/readerImportConverters.test.mts` →
+- 定向小测:`node --import tsx --test web/tests/readerImportConverters.check.mts` →
   tests 12 / pass 12 / fail 0(施工方自跑,证据在结论 acceptanceResults 之外的对话记录)。
 - 验收命令(全量单测、打包、typecheck)按工单留给派单器重跑,施工方未在沙箱硬跑。
 - 全部施工文件扫过一遍:无本机盘符路径、无不可见字符;web/src 无 emoji(①-⑨ 属排版符号,
@@ -84,7 +84,7 @@ md / txt / html / docx / 文字版 pdf 五种文件转成审阅台能读的 mark
 
 ## 返工记录(2026-09-19,验收人实机核出四问题,一轮改完)
 
-只动了 `web/src/utils/reportImport/pdfToMd.ts`、`test/readerImportConverters.test.mts` 与本记录:
+只动了 `web/src/utils/reportImport/pdfToMd.ts`、`web/tests/readerImportConverters.check.mts` 与本记录:
 
 1. **类型检查红(getDocument 多传 isEvalSupported)**:pdfjs-dist 6.x 的
    `DocumentInitParameters` 没这个键。已整键删掉,保留 `useWorkerFetch: false` 与
@@ -107,3 +107,7 @@ md / txt / html / docx / 文字版 pdf 五种文件转成审阅台能读的 mark
 测试由 12 条增到 **13 条**(12 条原有全保留、断言未松),定向小测 13/13 全绿;夹具与
 expected.json 未动,web/package.json、根 package-lock.json 未动。返工时本隔离工作区的
 web/node_modules 联接又被环境清掉了,照旧手工重建(联到主检出,gitignore 内,不影响 git)。
+
+## 派单方补记(2026-09-19)
+
+测试文件由 `test/readerImportConverters.test.mts` 挪到 `web/tests/readerImportConverters.check.mts`:公开仓 CI 的全量 `node --test` 会自动扫 `test/` 目录与 `*.test.*` 文件并用普通 node 跑,而本测试必须带 tsx(源码无扩展名引入)才能跑,放在原位会让 CI 全量崩。挪出后只由 `npm run test:reader-import` 单独跑。
