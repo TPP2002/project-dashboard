@@ -34,7 +34,7 @@ test('规范编码拒收 undefined、空洞、非有限数、非 JSON 值与原�
   assert.equal(c.canonicalJson(Object.assign(Object.create(null), { b: 1, a: 2 })), '{"a":2,"b":1}');
   assert.equal(c.canonicalJson(-0), '0');
 });
-test('五种指令严格字段：四档与手动/60/180 分钟期限，0 核不带期限', () => {
+test('七种指令严格字段：四档与手动/60/180 分钟期限，0 核不带期限', () => {
   const base = { commandId: 'reserve-fixture', kind: 'reserve', submitter: 'dashboard', createdAt: AT, expiresAt: '2026-09-12T00:10:00.000Z' };
   for (const cores of [0, 5, 10, 15]) for (const duration of [undefined, 60, 180]) {
     const command = { ...base, data: { machine: 'fixture-host', requestedCores: cores, ...(duration === undefined ? {} : { durationMinutes: duration }) } };
@@ -45,9 +45,15 @@ test('五种指令严格字段：四档与手动/60/180 分钟期限，0 核不�
     assert.throws(() => c.validateCommand({ ...base, data: { machine: 'fixture-host', requestedCores: 5, durationMinutes: duration } }));
   }
   for (const cores of [-1, 1, 20, '5', null]) assert.throws(() => c.validateCommand({ ...base, data: { machine: 'fixture-host', requestedCores: cores } }));
+  // pause-one/resume-one 与 jump-queue/cancel 同款:只带 ticketId 即合法,原样返回(改动前这两种被拒)。
+  for (const kind of ['pause-one', 'resume-one']) {
+    const command = { ...golden.commands[0].command, kind };
+    assert.deepEqual(c.validateCommand(command), command);
+  }
   for (const command of [
     { ...golden.commands[0].command, extra: true }, { ...golden.commands[0].command, data: { ticketId: golden.ticketIds[0].ticketId, machine: 'forbidden' } },
-    { ...golden.commands[0].command, kind: 'pause-one' }, { ...golden.commands[0].command, kind: 'resume-one' },
+    { ...golden.commands[0].command, kind: 'pause-one', data: {} },
+    { ...golden.commands[0].command, kind: 'resume-one', data: { ticketId: golden.ticketIds[0].ticketId, machine: 'forbidden' } },
     { ...golden.commands[0].command, expiresAt: '2026-09-11T23:59:59.999Z' },
   ]) assert.throws(() => c.validateCommand(command));
 });

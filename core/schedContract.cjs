@@ -96,6 +96,7 @@ function validateReserve(data, withMachine = true) {
 function validateCommand(value) {
   const data = {
     'jump-queue': v => fields(v, { ticketId }), cancel: v => fields(v, { ticketId }),
+    'pause-one': v => fields(v, { ticketId }), 'resume-one': v => fields(v, { ticketId }),
     reserve: v => validateReserve(v),
     'owner-hold': v => fields(v, { machine: segment }), 'owner-release': v => fields(v, { machine: segment }),
   };

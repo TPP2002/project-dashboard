@@ -60,6 +60,8 @@ export function ciRunnersDiffer(observed: string[] | null | undefined, jobs: CiJ
 export function commandLabel(input: CommandInput) {
   if (input.kind === 'jump-queue') return `插队 ${input.data.ticketId}`
   if (input.kind === 'cancel') return `撤单 ${input.data.ticketId}`
+  if (input.kind === 'pause-one') return `暂停 ${input.data.ticketId}`
+  if (input.kind === 'resume-one') return `恢复 ${input.data.ticketId}`
   if (input.kind === 'owner-hold') return '一键全部暂停（主机）'
   if (input.kind === 'owner-release') return '恢复主机上的活'
   if (input.kind === 'reserve') return `预留主机 ${input.data.requestedCores} 核${input.data.durationMinutes ? ` · ${input.data.durationMinutes / 60} 小时` : ''}`
