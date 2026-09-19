@@ -30,6 +30,13 @@ export interface ReaderReportMeta {
   docAnswers?: Record<string, string>
   superseded?: Record<string, string>
   decisionAnchors?: Record<string, string>
+  /** 本机导入(READER-IMPORT-BUTTON)专有字段;仓库里的报告没有这些 */
+  imported?: boolean
+  importedAt?: string
+  format?: string
+  fileName?: string
+  warnings?: string[]
+  hasOriginal?: boolean
 }
 export interface ReaderBatch {
   id: string
@@ -167,4 +174,42 @@ export interface ReaderExportReviewResult { ok: boolean; fileName: string; md: s
 /** 导出给外脑(READER-EXPORT-REVIEW):批阅意见单 + 回流对账 + 带批注的报告原文,一份 md 只回给前端不落盘 */
 export async function exportReview(project: string, key: string): Promise<ReaderExportReviewResult> {
   return asJson<ReaderExportReviewResult>(await fetch(`${API}/export-review?${q({ project, key })}`))
+}
+
+/** 本机导入(READER-IMPORT-BUTTON T3)的请求与回包;md 是 T2 浏览器端转好的,original 是原件的 base64(不带 data: 前缀) */
+export interface ReaderImportOriginal { name: string; mime: string; base64: string }
+export interface ReaderImportRequest {
+  project: string
+  title: string
+  fileName: string
+  format: string
+  md: string
+  warnings?: string[]
+  original?: ReaderImportOriginal
+}
+export interface ReaderImportResult { ok: boolean; key: string; duplicate: boolean; report: ReaderReportMeta }
+/** 本机导入:把转好的 markdown(可选带原件)交给 server 落本机数据目录;同内容同天 = 同 key,回 duplicate:true */
+export async function importReport(payload: ReaderImportRequest): Promise<ReaderImportResult> {
+  return asJson<ReaderImportResult>(
+    await fetch(`${API}/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+export interface ReaderImportDeleteResult { ok: boolean; removedAnnos: number }
+/** 删除一份本机导入(IMP- 开头的 key,仓库报告删不了);写在这份报告上的批注一起清 */
+export async function deleteImport(project: string, key: string): Promise<ReaderImportDeleteResult> {
+  return asJson<ReaderImportDeleteResult>(
+    await fetch(`${API}/import-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, key }),
+    }),
+  )
+}
+/** 原件下载地址(server 以附件形式回);直接给 <a href> 用,点击即下载 */
+export function importOriginalUrl(project: string, key: string): string {
+  return `${API}/import-original?${q({ project, key })}`
 }

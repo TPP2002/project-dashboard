@@ -6,11 +6,12 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { useReaderStore, FONT_MIN, FONT_MAX, type DiffMode, type NotesLayout } from '@/stores/reader'
 import type { MarkColor } from '@/api/reader'
-import { exportReview } from '@/api/reader'
+import { exportReview, importOriginalUrl } from '@/api/reader'
 import ReportShelf from '@/components/reader/ReportShelf.vue'
 import ReportBody from '@/components/reader/ReportBody.vue'
 import ReaderRail from '@/components/reader/ReaderRail.vue'
 import ReviewExportDialog from '@/components/reader/ReviewExportDialog.vue'
+import ImportDialog from '@/components/reader/ImportDialog.vue'
 import type { Task } from '@/types'
 
 const board = useBoardStore()
@@ -123,6 +124,37 @@ async function decide(p: { did: string; answer: string }) {
   catch (e) { decideErrors[p.did] = e instanceof Error ? e.message : String(e) }
   finally { deciding[p.did] = false }
 }
+
+// 本机导入(READER-IMPORT-BUTTON T3):页头按钮弹对话框;全部导完由对话框交回结果一句话,
+// 这里负责刷新清单、选中第一份新报告、给一行提示。部分失败时对话框不关(失败原因留给
+// 负责人看),只走 onImported 把清单刷新,成功的马上进报告架。
+const importOpen = ref(false)
+async function onImportDone(p: { message: string; firstKey: string | null }) {
+  importOpen.value = false
+  try {
+    await reader.refreshManifest()
+    if (p.firstKey) await reader.openReport(p.firstKey)
+  } catch (e) { say('刷新报告清单失败:' + (e instanceof Error ? e.message : String(e))) }
+  say(p.message)
+}
+function onImported() {
+  void reader.refreshManifest()
+}
+// 导入报告的页头:转换提示可展开、下载原件、删除(二次确认后连这份报告的批注一起清)。
+const warningsOpen = ref(false)
+const currentImported = computed(() => reader.currentReport?.imported === true)
+const importWarns = computed(() => (currentImported.value ? reader.currentReport?.warnings ?? [] : []))
+const originalHref = computed(() => (project.value && reader.currentKey ? importOriginalUrl(project.value, reader.currentKey) : ''))
+watch(() => reader.currentKey, () => { warningsOpen.value = false })
+async function confirmRemoveImport() {
+  const rep = reader.currentReport
+  if (!rep || !currentImported.value) return
+  if (!window.confirm(`确定删除「${rep.title}」这份本机导入吗?\n\n报告正文、原件和写在这份报告上的批注会一起删掉;仓库里的其它报告不受影响。`)) return
+  try {
+    await reader.removeImport(rep.key)
+    say('已删除这份本机导入')
+  } catch (e) { say('删除失败:' + (e instanceof Error ? e.message : String(e))) }
+}
 </script>
 
 <template>
@@ -134,6 +166,7 @@ async function decide(p: { did: string; answer: string }) {
           {{ reader.currentReport?.title || '审阅台' }}
           <span v-if="reader.currentReport?.version" class="badge info">{{ reader.currentReport.version }}</span>
           <span v-if="diffPill" class="badge n">{{ diffPill }}</span>
+          <span v-if="currentImported" class="badge n" title="没有边注,也没有登记拍板项;需要对账请找回流对话">本机导入 · 未回流对账</span>
         </h1>
         <p class="sub">
           <template v-if="reader.payload">{{ reader.payload.batch.name }}<template v-if="reader.payload.batch.baseline"> · {{ reader.payload.batch.baseline }}</template><template v-if="reader.statusLine"> · <span class="mono" :title="reader.statusLine">仓库状态行已收起</span></template></template>
@@ -142,6 +175,7 @@ async function decide(p: { did: string; answer: string }) {
       </div>
       <span class="spacer" />
       <div class="head-actions">
+        <button type="button" class="btn btn-sm" title="把电脑里的 pdf / docx / html / md / txt 报告导入审阅台,导入后就能直接读、写批注" @click="importOpen = true"><Icon name="file" :size="14" /> 导入报告</button>
         <button
           type="button"
           class="btn btn-sm"
@@ -153,6 +187,9 @@ async function decide(p: { did: string; answer: string }) {
         <button type="button" class="btn btn-sm" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Icon name="settings" :size="14" /> 阅读设置</button>
         <button type="button" class="btn btn-sm" :disabled="!reader.annos.length" title="把本报告的批注写成仓库 docs 下的 JSON(不 commit)" @click="exportAnnos">导出批注 {{ reader.annos.length || '' }}</button>
         <button type="button" class="btn btn-sm" :disabled="!reader.payload || reviewExporting" title="把批阅意见单连同带批注的报告原文导出成一份 md,直接贴给外脑继续讨论" @click="openReviewExport"><Icon name="download" :size="14" /> 导出给外脑</button>
+        <button v-if="currentImported && importWarns.length" type="button" class="btn btn-sm" :aria-expanded="warningsOpen" title="这份文件转成可读文本时的几点提示" @click="warningsOpen = !warningsOpen"><Icon name="alertTri" :size="14" /> 转换提示 {{ importWarns.length }} 条</button>
+        <a v-if="currentImported && reader.currentReport?.hasOriginal" class="btn btn-sm" :href="originalHref" title="下载导入时的原文件"><Icon name="download" :size="14" /> 下载原件</a>
+        <button v-if="currentImported" type="button" class="btn btn-sm" title="删掉这份本机导入;写在上面的批注会一起删,仓库里的报告不受影响" @click="confirmRemoveImport"><Icon name="x" :size="14" /> 删除此导入</button>
       </div>
       <section v-if="settingsOpen" class="settings card" role="dialog" aria-label="阅读设置">
         <div class="sg">
@@ -209,6 +246,10 @@ async function decide(p: { did: string; answer: string }) {
         </div>
         <label class="sg row"><input type="checkbox" :checked="reader.prefs.showPendingIntake" @change="reader.setPrefs({ showPendingIntake: ($event.target as HTMLInputElement).checked })"> 报告架里显示「待接入」的报告</label>
         <div class="hint">这些都是你个人的阅读习惯,只存在这台电脑的浏览器里。</div>
+      </section>
+      <section v-if="warningsOpen && importWarns.length" class="import-warns card" role="dialog" aria-label="转换提示">
+        <p class="iw-title">这份文件转成可读文本时,有几件事:</p>
+        <ul class="iw-list"><li v-for="(w, i) in importWarns" :key="i">{{ w }}</li></ul>
       </section>
     </header>
 
@@ -279,6 +320,14 @@ async function decide(p: { did: string; answer: string }) {
       @close="reviewExportOpen = false"
     />
 
+    <ImportDialog
+      v-if="importOpen"
+      :project="project || ''"
+      @close="importOpen = false"
+      @imported="onImported"
+      @done="onImportDone"
+    />
+
     <div v-if="toast" class="toast">{{ toast }}</div>
   </div>
 </template>
@@ -292,6 +341,9 @@ async function decide(p: { did: string; answer: string }) {
 .spacer { flex: 1; }
 .head-actions { display: flex; gap: var(--s2); align-items: center; }
 .settings { position: absolute; right: var(--s4); top: calc(100% + 6px); z-index: 20; width: 420px; display: grid; gap: var(--s3); box-shadow: 0 12px 32px rgba(0, 0, 0, .18); }
+.import-warns { position: absolute; right: var(--s4); top: calc(100% + 6px); z-index: 20; width: 420px; display: grid; gap: var(--s2); box-shadow: var(--shadow); }
+.iw-title { margin: 0; font-size: var(--fs-sm); font-weight: 600; }
+.iw-list { margin: 0; padding-left: var(--s4); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; display: grid; gap: var(--s1); }
 .sg { display: grid; gap: 4px; }
 .sg.row { grid-template-columns: auto 1fr; align-items: center; gap: var(--s2); font-size: var(--fs-sm); }
 .sl { font-size: var(--fs-xs); color: var(--text-3); letter-spacing: .04em; }
