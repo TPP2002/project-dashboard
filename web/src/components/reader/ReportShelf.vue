@@ -58,6 +58,7 @@ const fmtDay = (iso?: string) => (iso ? iso.slice(5, 10).replace('-', '-') : '')
             <div class="t">{{ rep.title }}</div>
             <div class="meta">
               <span class="badge" :class="statusClass(rep.status)">{{ rep.status || '待审阅' }}</span>
+              <span v-if="rep.imported" class="badge n" title="没有边注,也没有登记拍板项;需要对账请找回流对话">本机导入 · 未回流对账</span>
               <span v-if="rep.version" class="badge n">{{ rep.version }}</span>
               <span v-if="rep.prevMd" class="badge info">有上一版</span>
               <span v-if="annoCounts[rep.key]" class="badge info">批注 {{ annoCounts[rep.key] }}</span>
@@ -88,6 +89,7 @@ const fmtDay = (iso?: string) => (iso ? iso.slice(5, 10).replace('-', '-') : '')
               <div class="t">{{ rep.title }}</div>
               <div class="meta">
                 <span class="badge ok with-icon"><Icon name="check" :size="14" />已审阅<template v-if="reviews[rep.key]"> {{ fmtDay(reviews[rep.key].at) }}</template></span>
+                <span v-if="rep.imported" class="badge n" title="没有边注,也没有登记拍板项;需要对账请找回流对话">本机导入 · 未回流对账</span>
                 <span v-if="annoCounts[rep.key]" class="badge info">批注 {{ annoCounts[rep.key] }}</span>
                 <span v-if="markCounts[rep.key]" class="badge n">标记 {{ markCounts[rep.key] }}</span>
               </div>

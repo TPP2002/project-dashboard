@@ -181,6 +181,26 @@ export const useReaderStore = defineStore('reader', () => {
     return api.postReaderExport(project.value, currentKey.value)
   }
 
+  /** 导入完成后刷新清单:重新拉 manifest,「本机导入」批次才会进报告架(READER-IMPORT-BUTTON T3) */
+  async function refreshManifest() {
+    if (!project.value) return
+    await loadManifest(project.value)
+  }
+
+  /** 删除一份本机导入:成功后刷新清单;删的是当前打开的报告时退回报告架 */
+  async function removeImport(key: string) {
+    if (!project.value) throw new Error('没有打开的项目')
+    const res = await api.deleteImport(project.value, key)
+    if (currentKey.value === key) {
+      currentKey.value = null
+      payload.value = null
+      annos.value = []
+      highlights.value = []
+    }
+    await refreshManifest()
+    return res
+  }
+
   function setPrefs(patch: Partial<ReaderPrefs>) {
     const next = { ...prefs.value, ...patch }
     if (patch.fontSize !== undefined) next.fontSize = clampFont(patch.fontSize)
@@ -198,5 +218,6 @@ export const useReaderStore = defineStore('reader', () => {
     project, manifest, annoCounts, markCounts, reviews, manifestError, currentKey, payload, loading, error, prefs, annos, highlights, lastMirror,
     reportsFlat, currentReport, statusLine, blocks, stats, noteLayers, visibleNoteLayers, pendingReviewCount, currentReviewed, isReviewed,
     loadManifest, openReport, addAnno, removeAnno, addMark, removeMark, setReviewed, exportAnnos, setPrefs, toggleLayer,
+    refreshManifest, removeImport,
   }
 })
