@@ -3,7 +3,8 @@
  * readerApi.cjs —— 看板「审阅台」后端(READER-INTO-BOARD)。
  *
  * 干什么:把仓库里的审计/外脑报告(markdown)连同「上一版」「按日期分层的边注」端给前端;
- *        接住负责人写在段落旁的批注;把批注按需导出成仓库 docs 下的 JSON 供回流对话随 PR 入库。
+ *        接住负责人写在段落旁的批注;把批注按需导出成仓库 docs 下的 JSON 供回流对话随 PR 入库;
+ *        另有「导出给外脑」(READER-EXPORT-REVIEW):把批阅意见单拼成 md 只回给前端,不落盘。
  *
  * 事实源:
  *   · 报告清单 = <项目 docsRoot>/docs/design/审计回流/reader.json(仓库正本,每批回运往里加)
@@ -12,6 +13,9 @@
  *   · 批注镜像 = 对应看板卡的 note(经 CLI,和 decide 一样只经 execFile 数组传参,不拼 shell)
  *   · 荧光笔与「已审阅」标记(READER-USABILITY-ROUND2)同住这份账本、同一把锁:
  *     荧光笔是纯阅读痕迹不镜像看板;「已审阅」只记在本机,不回写仓库 reader.json 的 status。
+ *   · 本机导入(READER-IMPORT-BUTTON):浏览器端(T2)转好的 markdown 连同可选原件,落在
+ *     <数据根>/data/reader/<项目>/imports/<key>/(纯函数与存储层见 readerImport.cjs);
+ *     manifest 在 shelfSummary 之前动态并入「本机导入」虚拟批次;IMP- 开头的 key 读本机 md。
  *
  * 明确不做:不 commit / 不 push。进仓库那一步只提供「导出」,由回流对话随 PR 提交(负责人 2026-09-05 质疑后定)。
  */
@@ -21,6 +25,8 @@ const { execFile } = require('node:child_process');
 const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { withLock } = require('../core/lock.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
+const { buildReviewExport, exportFileName } = require('./readerReviewExport.cjs');
+const readerImport = require('./readerImport.cjs');
 
 const MANIFEST_REL = 'docs/design/审计回流/reader.json';
 const EXPORT_DIR_REL = 'docs/design/审计回流/批注';
@@ -30,12 +36,19 @@ const NOTE_TIMEOUT_MS = 15000;
 const HL_COLORS = new Set(['yellow', 'green', 'blue', 'pink']);
 /** 「已审阅」只有两态;未标记 = review 为 null */
 const REVIEW_STATES = new Set(['已审阅', '未审阅']);
+/** 原件回包的 Content-Type:只认 pdf/docx 两种正经类型,其余(含 html)一律按二进制流回,防脚本执行 */
+const ORIGINAL_MIME = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
 
 function createReaderApi(deps) {
   // dashRoot 是代码根,用于启动 CLI 的工作目录。
   // dataRoot 是 DASHBOARD_HOME 数据根,批注主存不随发布副本替换。
-  const { resolveProjectSafe, sendJson, readBody, bodyMax, dashRoot, dataRoot, cliIndex, registry, registryPath, pollBoards } = deps;
+  const { resolveProjectSafe, sendJson, readBody, bodyMax, dashRoot, dataRoot, cliIndex, registry, registryPath, pollBoards, importBodyMax } = deps;
   const DATA_DIR = path.join(dataRoot, 'data', 'reader');
+  // 本机导入的 POST 体上限(30MB 原件 base64 约 40MB,放宽到 45MB);只用于 /api/reader/import,其它动作仍用 bodyMax
+  const IMPORT_BODY_MAX = importBodyMax || 45 * 1024 * 1024;
 
   // ---------- 读仓库文件(全部走白名单根) ----------
   function readRepoText(proj, rel) {
@@ -128,27 +141,65 @@ function createReaderApi(deps) {
     if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
     const m = readManifest(proj);
     if (m.error) return sendJson(res, m.error, { ok: false, error: m.message, manifestPath: MANIFEST_REL });
-    return sendJson(res, 200, { ok: true, project: projectId, manifest: m.manifest, ...shelfSummary(projectId, m.manifest) });
+    // 本机导入:追加「本机导入」虚拟批次,且必须发生在 shelfSummary 之前,
+    // 导入报告的批注数/荧光笔数/已审阅标记才进货架汇总;没有导入时不动 manifest,回包与从前逐字节一致。
+    const imports = readerImport.listImports(DATA_DIR, projectId);
+    if (!imports.length) {
+      return sendJson(res, 200, { ok: true, project: projectId, manifest: m.manifest, ...shelfSummary(projectId, m.manifest) });
+    }
+    const batch = readerImport.buildLocalImportBatch(projectId, imports, DATA_DIR);
+    const manifest = { ...m.manifest, batches: [...(m.manifest.batches || []), batch] };
+    return sendJson(res, 200, { ok: true, project: projectId, manifest, ...shelfSummary(projectId, manifest) });
+  }
+
+  /**
+   * 读一份报告的全部素材:清单定位 → 正文 → 上一版 → 边注 → 本机批注。
+   * handleReport 与 export-review 两处共用;失败返回 { status, message }。
+   * 这是纯读取,返回体怎么发由两个 handler 各自决定(handleReport 的返回体一个字节不许变)。
+   */
+  function loadReportBundle(projectId, key) {
+    const proj = projectId && resolveProjectSafe(projectId);
+    if (!proj) return { status: 404, message: `未注册的项目「${projectId}」` };
+    // 本机导入的报告(IMP- 开头):正文取本机 imports 目录,无边注层、无上一版;IMP- 之外的 key 走原有路径。
+    // 放在 loadReportBundle 里,report 与 export-review 两条路都认导入报告
+    if (key.startsWith('IMP-')) {
+      const hit = readerImport.readImport(DATA_DIR, projectId, key);
+      if (!hit) return { status: 404, message: `没有这份本机导入「${key}」` };
+      const doc = readAnnos(projectId, key);
+      return {
+        proj,
+        batch: { id: readerImport.BATCH_ID, name: readerImport.BATCH_NAME, baseline: readerImport.BATCH_BASELINE },
+        report: readerImport.buildImportReportMeta(projectId, hit.meta, readerImport.hasOriginal(DATA_DIR, projectId, key)),
+        md: hit.md, prevMd: null, notes: [],
+        annos: doc.annos, highlights: doc.highlights, review: doc.review,
+      };
+    }
+    const m = readManifest(proj);
+    if (m.error) return { status: m.error, message: m.message };
+    const hit = findReport(m.manifest, key);
+    if (!hit) return { status: 404, message: `清单里没有报告「${key}」` };
+    const md = readRepoText(proj, hit.report.md);
+    if (md.error) return { status: md.error, message: md.message };
+    let prevMd = null;
+    if (hit.report.prevMd) { const p = readRepoText(proj, hit.report.prevMd); prevMd = p.error ? null : p.text; }
+    const doc = readAnnos(projectId, key);
+    return {
+      proj,
+      batch: { id: hit.batch.id, name: hit.batch.name, baseline: hit.batch.baseline },
+      report: hit.report, md: md.text, prevMd, notes: loadNoteLayers(proj, hit.batch, key),
+      annos: doc.annos, highlights: doc.highlights, review: doc.review,
+    };
   }
 
   function handleReport(res, query) {
     const projectId = String(query.project || ''); const key = String(query.key || '');
     if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
-    const proj = projectId && resolveProjectSafe(projectId);
-    if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
-    const m = readManifest(proj);
-    if (m.error) return sendJson(res, m.error, { ok: false, error: m.message });
-    const hit = findReport(m.manifest, key);
-    if (!hit) return sendJson(res, 404, { ok: false, error: `清单里没有报告「${key}」` });
-    const md = readRepoText(proj, hit.report.md);
-    if (md.error) return sendJson(res, md.error, { ok: false, error: md.message });
-    let prevMd = null;
-    if (hit.report.prevMd) { const p = readRepoText(proj, hit.report.prevMd); prevMd = p.error ? null : p.text; }
-    const doc = readAnnos(projectId, key);
+    const b = loadReportBundle(projectId, key);
+    if (b.status) return sendJson(res, b.status, { ok: false, error: b.message });
     return sendJson(res, 200, {
-      ok: true, project: projectId, batch: { id: hit.batch.id, name: hit.batch.name, baseline: hit.batch.baseline },
-      report: hit.report, md: md.text, prevMd, notes: loadNoteLayers(proj, hit.batch, key),
-      annos: doc.annos, highlights: doc.highlights, review: doc.review,
+      ok: true, project: projectId, batch: b.batch,
+      report: b.report, md: b.md, prevMd: b.prevMd, notes: b.notes,
+      annos: b.annos, highlights: b.highlights, review: b.review,
     });
   }
 
@@ -296,14 +347,101 @@ function createReaderApi(deps) {
     });
   }
 
+  /** 本机日历的今天,YYYY-MM-DD(导出单上的「批阅日期」;测试经纯函数注入固定值) */
+  function localToday() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  /** 导出给外脑(READER-EXPORT-REVIEW):拼「批阅意见单 + 回流对账 + 带批注的报告原文」md,只回给前端不落盘 */
+  function handleExportReview(res, query) {
+    const projectId = String(query.project || ''); const key = String(query.key || '');
+    if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+    const b = loadReportBundle(projectId, key);
+    if (b.status) return sendJson(res, b.status, { ok: false, error: b.message });
+    const today = localToday();
+    return sendJson(res, 200, {
+      ok: true,
+      fileName: exportFileName(b.report.title, today),
+      md: buildReviewExport({ meta: b.report, batch: b.batch, md: b.md, annos: b.annos, notes: b.notes, today }),
+      annoCount: b.annos.length,
+    });
+  }
+
+  // ---------- 本机导入(READER-IMPORT-BUTTON T1:纯函数与存储层在 readerImport.cjs) ----------
+  /** 导入:接住浏览器端转好的 markdown(可选带原件),校验后落本机数据目录;同内容同天 = 同 key,不重复存 */
+  function handleImport(req, res) {
+    readBody(req, IMPORT_BODY_MAX, (err, raw) => {
+      if (err) return sendJson(res, 413, { ok: false, error: err.message });
+      let body; try { body = raw ? JSON.parse(raw) : {}; } catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+      const projectId = String(body.project || '');
+      const proj = resolveProjectSafe(projectId);
+      if (!proj) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
+      const v = readerImport.validateImportBody(body);
+      if (!v.ok) return sendJson(res, v.status, { ok: false, error: v.message });
+      let saved;
+      try { saved = readerImport.saveImport(DATA_DIR, projectId, v.value); }
+      catch (e) { return sendJson(res, 500, { ok: false, error: '落盘导入失败:' + e.message }); }
+      return sendJson(res, 200, {
+        ok: true, key: saved.key, duplicate: saved.duplicate,
+        report: readerImport.buildImportReportMeta(projectId, saved.meta, readerImport.hasOriginal(DATA_DIR, projectId, saved.key)),
+      });
+    });
+  }
+
+  /** 回原件:附件下载;Content-Type 只认 pdf/docx,其余(含 html)一律二进制流,防把上传内容当网页执行 */
+  function handleImportOriginal(res, query) {
+    const projectId = String(query.project || ''); const key = String(query.key || '');
+    if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+    if (!resolveProjectSafe(projectId)) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
+    const hit = readerImport.readImportOriginal(DATA_DIR, projectId, key);
+    if (!hit) return sendJson(res, 404, { ok: false, error: '这份导入没有原件' });
+    let data;
+    try { data = fs.readFileSync(hit.file); } catch (e) { return sendJson(res, 500, { ok: false, error: '读原件失败:' + e.message }); }
+    res.writeHead(200, {
+      'Content-Type': ORIGINAL_MIME[hit.ext] || 'application/octet-stream',
+      'Content-Length': data.length,
+      'Content-Disposition': 'attachment; filename="' + path.basename(hit.file) + '"',
+    });
+    res.end(data);
+  }
+
+  /** 删导入:只许删 IMP- 开头的本机导入(仓库里的报告绝不能从这里被删);连同该 key 的批注账本一起清 */
+  function handleImportDelete(req, res) {
+    readBody(req, bodyMax, (err, raw) => {
+      if (err) return sendJson(res, 413, { ok: false, error: err.message });
+      let body; try { body = raw ? JSON.parse(raw) : {}; } catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
+      const projectId = String(body.project || ''); const key = String(body.key || '');
+      if (!KEY_RE.test(key)) return sendJson(res, 400, { ok: false, error: '非法报告 key' });
+      if (!key.startsWith('IMP-')) return sendJson(res, 400, { ok: false, error: '只允许删除本机导入(IMP- 开头)的报告' });
+      if (!resolveProjectSafe(projectId)) return sendJson(res, 404, { ok: false, error: `未注册的项目「${projectId}」` });
+      let removed;
+      try { removed = readerImport.deleteImport(DATA_DIR, projectId, key); }
+      catch (e) { return sendJson(res, 500, { ok: false, error: '删除导入失败:' + e.message }); }
+      if (!removed) return sendJson(res, 404, { ok: false, error: `没有这份本机导入「${key}」` });
+      // 批注账本(及锁)一并清:删账本也走锁,杜绝「删到一半又被并发写回」
+      const ledger = annoPath(projectId, key);
+      let removedAnnos = 0;
+      try { removedAnnos = readAnnos(projectId, key).annos.length; } catch (_) { /* 账本读不出就按 0 条回 */ }
+      try { withLock(ledger + '.lock', () => { fs.rmSync(ledger, { force: true }); }); } catch (_) { /* 删锁失败不阻塞回包 */ }
+      try { fs.rmSync(ledger + '.lock', { force: true }); } catch (_) { /* ignore */ }
+      return sendJson(res, 200, { ok: true, removedAnnos });
+    });
+  }
+
   function route(action, req, res, query) {
     if (action === 'manifest' && req.method === 'GET') { handleManifest(res, query); return true; }
     if (action === 'report' && req.method === 'GET') { handleReport(res, query); return true; }
+    if (action === 'export-review' && req.method === 'GET') { handleExportReview(res, query); return true; }
     if (action === 'annos' && req.method === 'GET') { handleAnnosGet(res, query); return true; }
     if (action === 'annos' && req.method === 'POST') { handleAnnosPost(req, res); return true; }
     if (action === 'marks' && req.method === 'POST') { handleMarks(req, res); return true; }
     if (action === 'review' && req.method === 'POST') { handleReview(req, res); return true; }
     if (action === 'export' && req.method === 'POST') { handleExport(req, res); return true; }
+    if (action === 'import' && req.method === 'POST') { handleImport(req, res); return true; }
+    if (action === 'import-original' && req.method === 'GET') { handleImportOriginal(res, query); return true; }
+    if (action === 'import-delete' && req.method === 'POST') { handleImportDelete(req, res); return true; }
     return false;
   }
 

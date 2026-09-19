@@ -163,3 +163,8 @@ export async function postReaderExport(project: string, key: string): Promise<Re
     }),
   )
 }
+export interface ReaderExportReviewResult { ok: boolean; fileName: string; md: string; annoCount: number }
+/** 导出给外脑(READER-EXPORT-REVIEW):批阅意见单 + 回流对账 + 带批注的报告原文,一份 md 只回给前端不落盘 */
+export async function exportReview(project: string, key: string): Promise<ReaderExportReviewResult> {
+  return asJson<ReaderExportReviewResult>(await fetch(`${API}/export-review?${q({ project, key })}`))
+}

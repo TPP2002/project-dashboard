@@ -6,9 +6,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useBoardStore } from '@/stores/board'
 import { useReaderStore, FONT_MIN, FONT_MAX, type DiffMode, type NotesLayout } from '@/stores/reader'
 import type { MarkColor } from '@/api/reader'
+import { exportReview } from '@/api/reader'
 import ReportShelf from '@/components/reader/ReportShelf.vue'
 import ReportBody from '@/components/reader/ReportBody.vue'
 import ReaderRail from '@/components/reader/ReaderRail.vue'
+import ReviewExportDialog from '@/components/reader/ReviewExportDialog.vue'
 import type { Task } from '@/types'
 
 const board = useBoardStore()
@@ -98,6 +100,19 @@ async function exportAnnos() {
   try { const r = await reader.exportAnnos(); say(`已导出 ${r.count} 条到仓库 ${r.path}(未 commit,回流对话随 PR 提交)`) }
   catch (e) { say('导出失败:' + (e instanceof Error ? e.message : String(e))) }
 }
+// 导出给外脑(READER-EXPORT-REVIEW):取回拼好的 md,弹对话框下载 / 复制;不经服务器落盘
+const reviewExportOpen = ref(false)
+const reviewExporting = ref(false)
+const reviewExportResult = ref<{ fileName: string; md: string; annoCount: number } | null>(null)
+async function openReviewExport() {
+  if (!project.value || !reader.currentKey || reviewExporting.value) return
+  reviewExporting.value = true
+  try {
+    reviewExportResult.value = await exportReview(project.value, reader.currentKey)
+    reviewExportOpen.value = true
+  } catch (e) { say('导出失败:' + (e instanceof Error ? e.message : String(e))) }
+  finally { reviewExporting.value = false }
+}
 async function decide(p: { did: string; answer: string }) {
   const t = task.value
   const rep = reader.currentReport
@@ -137,6 +152,7 @@ async function decide(p: { did: string; answer: string }) {
         ><Icon v-if="reader.currentReviewed" name="check" :size="14" />{{ reader.currentReviewed ? '已审阅' : '标记已审阅' }}</button>
         <button type="button" class="btn btn-sm" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><Icon name="settings" :size="14" /> 阅读设置</button>
         <button type="button" class="btn btn-sm" :disabled="!reader.annos.length" title="把本报告的批注写成仓库 docs 下的 JSON(不 commit)" @click="exportAnnos">导出批注 {{ reader.annos.length || '' }}</button>
+        <button type="button" class="btn btn-sm" :disabled="!reader.payload || reviewExporting" title="把批阅意见单连同带批注的报告原文导出成一份 md,直接贴给外脑继续讨论" @click="openReviewExport"><Icon name="download" :size="14" /> 导出给外脑</button>
       </div>
       <section v-if="settingsOpen" class="settings card" role="dialog" aria-label="阅读设置">
         <div class="sg">
@@ -253,6 +269,14 @@ async function decide(p: { did: string; answer: string }) {
       @toggle-layer="reader.toggleLayer"
       @delete-anno="deleteAnno"
       @decide="decide"
+    />
+
+    <ReviewExportDialog
+      v-if="reviewExportOpen && reviewExportResult"
+      :file-name="reviewExportResult.fileName"
+      :md="reviewExportResult.md"
+      :anno-count="reviewExportResult.annoCount"
+      @close="reviewExportOpen = false"
     />
 
     <div v-if="toast" class="toast">{{ toast }}</div>
