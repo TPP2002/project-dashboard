@@ -35,7 +35,7 @@ const TRANSITIONS = [
     '不改卡状态；一个「消耗量」都没有时照记，但当场提醒这一笔不够 done 那道闸放行',
   ] },
   { command: 'done', status: { '默认': '已完工', '--collect': '收官' }, writes: [
-    '按参数合并 prNumbers、commitShas；默认写 dates.done、percent=100，并自动落地已答未落地决策（landed/landedAt/landedCommit，取首个 commit，已落地不覆盖）',
+    '按参数合并 prNumbers、commitShas；默认写 dates.done、percent=100、删除 nextMilestone，并自动落地已答未落地决策（landed/landedAt/landedCommit，取首个 commit，已落地不覆盖）',
     '--collect 保留进度/完工日期/决策；无原状态限制',
     '**额度登记硬闸**：默认路径要求本卡已有一条带「消耗量」的 cost 账（rmb / credits / tokens 之一，或 unknown+理由），否则拒收、退出码 1、不改任何字段；--collect 与「已完工卡补 PR 号」两处不查',
   ] },
