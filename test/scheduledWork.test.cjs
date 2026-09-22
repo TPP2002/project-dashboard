@@ -65,4 +65,7 @@ test('全量测试显式列出本仓文件，拒绝覆盖授予并发；构建�
   assert.throws(() => scheduledJob('test', root, ['--test-concurrency=20']), /不接受/);
   assert.equal(scheduledJob('typecheck', root).cores, 1);
   assert.equal(scheduledJob('build', root).cores, 1);
+  for (const file of ['web/index.html', 'web/env.d.ts', 'web/mock', 'cli']) {
+    assert.ok(scheduledJob('build', root).targets.includes(file), `内容指纹不能漏掉构建输入 ${file}`);
+  }
 });

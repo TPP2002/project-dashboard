@@ -156,7 +156,7 @@ function buildWebDist({ source, sha, outRoot }, { runBuild = queuedWebBuild } = 
     const pkg = JSON.parse(fs.readFileSync(path.join(webRoot, 'package.json'), 'utf8'));
     const buildScript = (pkg.scripts || {}).build;
     if (!['vite build', 'node ../cli/scheduledWork.cjs build'].includes(buildScript)) {
-      throw new Error(`web/package.json 的 build 脚本变成了 ${JSON.stringify(buildScript)},不再是 "vite build"。\n  发布命令是直接用 node 跑 vite 入口的(见 buildWebDist 头注),脚本改了这里必须跟着改,不许悄悄发一份用旧办法建出来的界面。`);
+      throw new Error(`web/package.json 的 build 脚本变成了 ${JSON.stringify(buildScript)},不属于已支持的 vite 或调度入口。\n  发布命令通过调度许可运行 Vite(见 buildWebDist 头注)，脚本改了这里必须跟着改，不许悄悄发一份用旧办法建出来的界面。`);
     }
     // 依赖借来源检出的(只读)。它没装 → 明确指路,不擅自 npm ci(装依赖是几分钟的事,不该藏在发布里)。
     const deps = path.join(source, 'web', 'node_modules');
