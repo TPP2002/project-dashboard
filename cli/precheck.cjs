@@ -11,7 +11,7 @@
  *
  * 用法:node cli/index.cjs precheck --project <id> [--repo <worktree路径>] [--no-fetch]
  *   --repo 不传用主仓;多 worktree 并行时传自己工位的完整路径(§11.4 完整路径纪律)。
- * 只读命令:不写看板、不改仓库(fetch 只更新远程追踪引用)。
+ * 不写看板；fetch 更新远程追踪引用，有脚本与依赖时刷新本工位的本地文档地图。
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -21,6 +21,7 @@ const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { releaseStatus, serviceStatus } = require('./release.cjs');
 const { recentHumanNotes } = require('./brief.cjs');
 const { requestedInfoIssues } = require('./requestInfo.cjs');
+const { refreshDocsIndex } = require('./docsIndexRefresh.cjs');
 
 function git(repo, args, opts = {}) {
   try {
@@ -145,6 +146,8 @@ function precheck(flags) {
 
   // ── ③ 正本三读 ──
   L.push('', '【③ 正本必读(读了再动手,禁止凭记忆臆定)】');
+  const docsIndex = refreshDocsIndex(repo);
+  if (docsIndex.text) L.push(docsIndex.text);
   const musts = [
     ['开工须知', path.join(proj.codeRepo, 'docs', '开工须知.md')],
     ['口径速查表', path.join(proj.codeRepo, 'docs', '口径速查表.md')],
