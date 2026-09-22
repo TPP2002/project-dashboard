@@ -524,6 +524,8 @@ function handleHealth(req, res) {
     // 启动器据此判断要不要换新，体检据此提醒"合了主干还没生效"。
     mode: MODE,
     codeRoot: DASH_ROOT,
+    registryPath: REGISTRY,
+    dataRoot: DASHBOARD_HOME,
     releaseCommit: RELEASE_COMMIT,
     releaseBehind: releaseBehindOf(RELEASE_COMMIT, latestReleaseCommit, MODE),
     latestReleaseCommit,
@@ -1524,7 +1526,7 @@ function probeHealth(port) {
 async function findExistingInstance() {
   for (let p = PORT_BASE; p <= PORT_BASE + PORT_RANGE; p++) {
     const h = await probeHealth(p);
-    if (h && h.service === SERVICE) return { port: p, health: h };
+    if (h && h.service === SERVICE && sameDataScope(h)) return { port: p, health: h };
   }
   return null;
 }
@@ -1540,6 +1542,18 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 function isSameRuntime(h) {
   if (!h || h.codeRoot === undefined) return false;
   return path.resolve(h.codeRoot) === path.resolve(DASH_ROOT) && (h.releaseCommit || null) === RELEASE_COMMIT;
+}
+
+/** 端口相邻不代表同一实例。旧版无归属信息时只允许默认生产实例升级接管。 */
+function sameDataScope(h) {
+  if (!h.registryPath || !h.dataRoot) {
+    return !process.env.DASHBOARD_REGISTRY && !process.env.DASHBOARD_HOME && !process.env.DASHBOARD_PORT;
+  }
+  const identity = value => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return identity(h.registryPath) === identity(REGISTRY) && identity(h.dataRoot) === identity(DASHBOARD_HOME);
 }
 
 /**
@@ -1596,6 +1610,8 @@ function startIntervals() {
 
 function tryListen(port, attemptsLeft) {
   server.removeAllListeners('error');
+  // 上次端口占用留下的回调不能在下一次成功时重复宣布旧地址、启动重复轮询。
+  server.removeAllListeners('listening');
   server.listen(port, '127.0.0.1');
   server.once('listening', () => {
     state.actualPort = port;
