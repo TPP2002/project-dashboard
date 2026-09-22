@@ -1,7 +1,7 @@
 'use strict';
 const { durationSamples, sampleKey } = require('./schedLedger.cjs');
 
-// CI 期间低优先级执行的耗时系数，待实测校准；可经 estimateTickets 的选项覆盖。
+// 样本不足时的估算系数；同类 ciAware 至少五次且普通中位数有效时改用实测比值。
 const CI_AWARE_SLOWDOWN = 1.5;
 const REASONS = Object.freeze({
   ci: '被 CI 冻住，恢复时刻未知', reservation: '预留的核数还没腾出来',
@@ -23,7 +23,7 @@ function machineBlock(machine, nowMs) {
   return null;
 }
 
-function runningEstimate(ticket, machines, samples, nowMs, ciAwareSlowdown) {
+function runningEstimate(ticket, machines, samples, ciSamples, nowMs, ciAwareSlowdown) {
   const attempt = currentAttempt(ticket), machine = machines.find(item => item.name === (attempt?.permit?.machine ?? attempt?.intent?.machine));
   if (!machine && !ticket.registerOnly) return unknown('missingMachine');
   const block = machine && machineBlock(machine, nowMs);
@@ -35,8 +35,12 @@ function runningEstimate(ticket, machines, samples, nowMs, ciAwareSlowdown) {
   if (!attempt?.startedAt) return unknown('start');
   // ciAware 只解释 CI 下的低优先级，不能把真正的暂停或其他原因的降速当作继续执行。
   if (ticket.state === 'paused' || (ticket.state === 'slow' && (!ciAware || ticket.pauseReasons.some(reason => reason !== 'ci')))) return unknown('paused');
-  const finishMs = Date.parse(attempt.startedAt) + sample.medianMs * (ciAware ? ciAwareSlowdown : 1);
-  return { kind: 'completion', ...sample, ...(ciAware ? { slowdown: ciAwareSlowdown } : {}),
+  const measured = ciSamples.get(sampleKey(ticket.request));
+  const ratio = measured?.sampleCount >= 5 && sample.medianMs > 0 ? measured.medianMs / sample.medianMs : NaN;
+  const calibrated = ciAwareSlowdown === undefined && Number.isFinite(ratio) && ratio > 0;
+  const slowdown = calibrated ? ratio : ciAwareSlowdown ?? CI_AWARE_SLOWDOWN;
+  const finishMs = Date.parse(attempt.startedAt) + sample.medianMs * (ciAware ? slowdown : 1);
+  return { kind: 'completion', ...sample, ...(ciAware ? { slowdown, slowdownEstimated: !calibrated } : {}),
     finishAt: new Date(finishMs).toISOString(), remainingMs: Math.max(0, finishMs - nowMs), overdue: nowMs > finishMs };
 }
 
@@ -91,9 +95,9 @@ function queueEstimate(entry, ticket, machines, samples, nowMs) {
     startAt: new Date(chosen.at).toISOString(), waitMs: chosen.at - nowMs };
 }
 
-/** 纯投影：显式 nowMs，不写输入、不读盘/系统时钟；校准系数须为有限数且不小于 1，否则抛 RangeError。 */
-function estimateTickets(snapshot, history, { ciAwareSlowdown = CI_AWARE_SLOWDOWN } = {}) {
-  if (!Number.isFinite(ciAwareSlowdown) || ciAwareSlowdown < 1) throw new RangeError('CI 低优先级耗时系数必须是大于等于 1 的有限数');
+/** 纯投影：显式 nowMs，不写输入、不读盘/系统时钟；显式覆盖系数须为有限数且不小于 1。 */
+function estimateTickets(snapshot, history, { ciAwareSlowdown } = {}) {
+  if (ciAwareSlowdown !== undefined && (!Number.isFinite(ciAwareSlowdown) || ciAwareSlowdown < 1)) throw new RangeError('CI 低优先级耗时系数必须是大于等于 1 的有限数');
   const { nowMs } = snapshot;
   const tickets = snapshot.tickets ?? [], queue = snapshot.queue ?? [], machines = snapshot.machines ?? [];
   const ids = [...new Set([...queue.map(entry => entry.ticketId), ...tickets.filter(ticket => ['granted', 'running', 'paused', 'slow'].includes(ticket.state)).map(ticket => ticket.ticketId)])];
@@ -103,13 +107,14 @@ function estimateTickets(snapshot, history, { ciAwareSlowdown = CI_AWARE_SLOWDOW
   if (stale || !history?.readable) return Object.fromEntries(ids.map(id => [id, unknown(stale ? 'snapshot' : 'ledger')]));
   const events = history.events.filter(event => event.seq <= snapshot.cursorSeq);
   const samples = durationSamples(tickets, events, nowMs), result = {};
+  const ciSamples = durationSamples(tickets, events, nowMs, { ciAware: true });
   const simulated = machines.map(machine => {
     const protectedBy = snapshot.locks?.find(lock => lock.machine === machine.name && queue.some(entry => entry.ticketId === lock.byTicketId && entry.state === 'queued'))?.byTicketId;
     return { ...machine, block: machineBlock(machine, nowMs), changes: [], uncertain: null, releaseBudget: machine.grantedCores,
       protectedBy, protectedUntil: protectedBy ? Infinity : nowMs };
   });
   for (const ticket of tickets.filter(item => ['granted', 'running', 'paused', 'slow'].includes(item.state))) {
-    const estimate = runningEstimate(ticket, machines, samples, nowMs, ciAwareSlowdown);
+    const estimate = runningEstimate(ticket, machines, samples, ciSamples, nowMs, ciAwareSlowdown);
     const attempt = currentAttempt(ticket), machine = simulated.find(item => item.name === (attempt?.permit?.machine ?? attempt?.intent?.machine));
     result[ticket.ticketId] = { ...estimate, ...headroom(machine) };
     if (!machine || ticket.registerOnly || !attempt?.grantedCores) continue;

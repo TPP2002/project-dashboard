@@ -42,8 +42,15 @@ test('排队可见文字同时给等待、开跑时刻、预计耗时和 CI 预�
 test('低优先级执行显示调整后的耗时，历史中位耗时仍如实显示在说明中', async () => {
   const { html, visible } = await render({ kind: 'completion', ...sample, remainingMs: 11000, finishAt: '2026-09-12T01:00:11.000Z', overdue: false, slowdown: 1.5, ciHeadroom: 8 });
   assert.match(visible, /预计完成/); assert.match(visible, /预计跑 15 秒/);
-  assert.match(visible, /低优先级按 1.5 倍耗时估算/); assert.match(visible, /CI 留了 8 核/);
+  assert.match(visible, /低优先级耗时 1.5 倍（估）/); assert.match(visible, /CI 留了 8 核/);
   assert.match(html, /同类最近 3 次执行的中位耗时：10 秒/);
+});
+
+test('样本充足的倍数标实测，小数仅在展示层保留两位', async () => {
+  const { visible } = await render({ kind: 'completion', ...sample, remainingMs: 11000, finishAt: '2026-09-12T01:00:11.000Z',
+    overdue: false, slowdown: 2.3456789, slowdownEstimated: false });
+  assert.match(visible, /低优先级耗时 2.35 倍（实测）/);
+  assert.doesNotMatch(visible, /（估）/);
 });
 
 test('未知结果与缺失数据都明确写算不出及原因', async () => {

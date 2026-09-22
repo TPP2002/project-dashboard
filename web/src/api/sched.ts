@@ -23,7 +23,7 @@ export interface QueueEntry {
 export type TicketEstimate =
   | { kind: 'unavailable'; code: string; reason: string }
   | { kind: 'wait'; startAt: string; waitMs: number; machine: string; medianMs: number; sampleCount: number }
-  | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number }
+  | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number; slowdown?: number; slowdownEstimated?: boolean }
 export interface TicketRelations {
   readable: boolean; reason: string | null
   children: { ticketId: string; title: string; state: TicketState }[] | null

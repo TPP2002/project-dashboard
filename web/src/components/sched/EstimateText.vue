@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TicketEstimate } from '@/api/sched'
 import { duration, stamp } from './format'
-type EstimateContext = { ciHeadroom?: number; slowdown?: number }
+type EstimateContext = { ciHeadroom?: number; slowdown?: number; slowdownEstimated?: boolean }
 defineProps<{ estimate?: TicketEstimate & EstimateContext }>()
 </script>
 
@@ -13,7 +13,7 @@ defineProps<{ estimate?: TicketEstimate & EstimateContext }>()
       <template v-if="estimate.kind === 'wait'">预计等待 {{ duration(estimate.waitMs) }}<span class="sched-note"> · {{ stamp(estimate.startAt) }} 开跑</span></template>
       <template v-else><span v-if="estimate.overdue" class="warn">已超出预计耗时</span><span v-else>预计完成 {{ stamp(estimate.finishAt) }}</span></template>
       <span class="sched-note"> · 预计跑 {{ duration(estimate.medianMs * (estimate.slowdown ?? 1)) }}</span>
-      <span v-if="estimate.slowdown !== undefined" class="sched-note"> · 低优先级按 {{ estimate.slowdown }} 倍耗时估算</span>
+      <span v-if="estimate.slowdown !== undefined" class="sched-note"> · 低优先级耗时 {{ Number(estimate.slowdown.toFixed(2)) }} 倍（{{ estimate.slowdownEstimated === false ? '实测' : '估' }}）</span>
     </span>
     <span v-if="estimate?.ciHeadroom !== undefined" class="sched-note"> · CI 留了 {{ estimate.ciHeadroom }} 核</span>
   </span>
