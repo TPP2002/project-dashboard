@@ -7,9 +7,9 @@
   "scripts": {
     "dev": "vite",
     "dev:mock": "vite --mode mock",
-    "build": "vite build",
+    "build": "node ../cli/scheduledWork.cjs build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "node ../cli/scheduledWork.cjs typecheck",
     "icons": "node scripts/sync-icons.cjs",
     "check:no-emoji": "node scripts/check-no-emoji.cjs"
   },

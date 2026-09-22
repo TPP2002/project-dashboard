@@ -17,7 +17,10 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const { release, releaseStatus, buildWebDist } = require('../cli/release.cjs');
+const { release, releaseStatus, buildWebDist: realBuildWebDist } = require('../cli/release.cjs');
+// 本文件用假的 Vite 验证发布的文件操作；排队生命周期在 scheduledWork.test 中独立验证。
+const buildWebDist = args => realBuildWebDist(args, { runBuild: ({ viteBin, webRoot }) =>
+  execFileSync(process.execPath, [viteBin, 'build'], { cwd: webRoot, windowsHide: true, stdio: 'pipe' }) });
 
 function git(repo, args, opts = {}) {
   return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, ...opts }).trim();
