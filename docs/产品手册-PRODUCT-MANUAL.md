@@ -160,12 +160,8 @@
     `precheck`（第①查）会报「发布副本落后 N 个提交」兜底。不装计划任务，让 master 合坏时留一道人工缓冲。
   - `hooks-trunk-guard`：给看板主工位装 `post-checkout` 提醒——切离主干只在 stderr 吵一声、不拦；worktree 内不提醒。
 
-本机算力布局通过环境变量配置，仓里不写死任何人的机器：
-
-| 环境变量 | 默认值 | 作用 |
-|---|---|---|
-| `CPU_LEASE_DIR` | `path.join(DASHBOARD_HOME, '.cpu-leases')` | 算力租约账本目录；设置后覆盖默认值，与项目侧租约目录保持一致。 |
-| `CPU_DEDICATED_HOSTS` | 空集 | 专职算力机的主机名清单，用分号或逗号分隔，忽略首尾空白和大小写；匹配时默认配额为 100%，其余为 85%，仍可用 `CPU_QUOTA_PCT` 覆盖。 |
+算力状态统一读取共享盘 `sched/_control/dispatcher-heartbeat.json` 的 `machines[]`：配额、已授予、外部负载、可派核数、负责人预留和 CI 车道余量均来自派单员。
+共享盘通过 `DASHBOARD_SCHED_SHARE` 或看板设置配置。旧 `CPU_LEASE_DIR` / `CPU_DEDICATED_HOSTS` / `CPU_QUOTA_PCT` 不再使用；旧 `/api/cpu` 及预留同步接口返回 410，避免把退休空账本误判为空闲。
 
 ### 4.5 server 端点一览
 | 方法 & 路径 | 作用 |
