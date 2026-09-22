@@ -92,7 +92,7 @@ function recentReceipts(share) {
   }).sort((a, b) => compare(b.at, a.at) || compare(b.commandId, a.commandId)).slice(0, 20);
 }
 
-function snapshot(share, cpuBudget, nowMs) {
+function snapshot(share, nowMs) {
   try {
     const paths = c.schedPaths(share);
     const format = c.readJson(paths.format);
@@ -106,18 +106,16 @@ function snapshot(share, cpuBudget, nowMs) {
     const estimates = estimateTickets({ readable: true, nowMs, tickets: records, queue: heartbeat.queue,
       machines: heartbeat.machines, locks: heartbeat.locks, heartbeatAt: heartbeat.at, cursorSeq: heartbeat.cursorSeq }, history);
     const receipts = recentReceipts(share);
-    const legacy = cpuBudget.cpuStatus();
     return { ok: true, share, readable: true, format,
       dispatcher: { config, heartbeat, heartbeatAgeMs: Math.max(0, nowMs - Date.parse(heartbeat.at)) },
       machines: heartbeat.machines, queue: heartbeat.queue, locks: heartbeat.locks,
       running: tickets.filter(ticket => ACTIVE.includes(ticket.state)),
       registerOnly, registerOnlyGroups: groupExternalTickets(registerOnly, tickets), recentReceipts: receipts,
-      legacyReserve: { reservedCores: legacy.reservedCores, reserveExpiresAt: legacy.reserveExpiresAt },
       estimates, estimatesAt: new Date(nowMs).toISOString(), historyError: history.reason,
       connectedProjects: connectedProjects(records, history, nowMs) };
   } catch (error) {
     return { ...readFailure(error), share, format: null, dispatcher: null, machines: null, queue: null, locks: null,
-      running: null, registerOnly: null, registerOnlyGroups: null, recentReceipts: null, legacyReserve: null,
+      running: null, registerOnly: null, registerOnlyGroups: null, recentReceipts: null,
       estimates: null, estimatesAt: null, historyError: null, connectedProjects: null };
   }
 }

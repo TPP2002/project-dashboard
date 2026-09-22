@@ -119,7 +119,7 @@ test('主视图按按钮带、机器、排队、外派单、台账纵向排列�
   assert.equal(page.display, 'flex'); assert.equal(page['flex-direction'], 'column');
 });
 
-test('最近指令只出现在页底默认收起的折叠区，回执、提交记录与重试通道完整保留', () => {
+test('最近指令只出现在页底默认收起的折叠区，保留回执与提交记录，移除旧账本重试', () => {
   const view = component('../../views/SchedConsole.vue'), nodes = elements(view.ast);
   const commands = nodes.filter(node => node.tag === 'RecentCommands');
   assert.equal(commands.length, 1, '最近指令不能删掉，也不能在主视图重复展开');
@@ -131,7 +131,7 @@ test('最近指令只出现在页底默认收起的折叠区，回执、提交�
   const binding = (name, arg) => commands[0].props.find(prop => prop.type === 7 && prop.name === name && prop.arg?.content === arg)?.exp?.content;
   assert.equal(binding('bind', 'receipts'), 'store.snapshot.recentReceipts');
   assert.equal(binding('bind', 'submitted'), 'store.commands');
-  assert.equal(binding('on', 'retry'), 'store.retryLegacy');
+  assert.equal(binding('on', 'retry'), undefined);
   const foldStyle = view.styles.map(style => declarations(style, '.sched-more')).find(style => Object.keys(style).length);
   assert.equal(foldStyle.height || 'auto', 'auto'); assert.equal(foldStyle['min-height'] || '0', '0');
 });

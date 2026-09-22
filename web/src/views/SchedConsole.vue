@@ -19,7 +19,6 @@ const heartbeatAge = computed(() => age(store.snapshot?.dispatcher.heartbeat.at 
 const online = computed(() => store.snapshot?.machines.filter(machine => machine.online) ?? [])
 const offline = computed(() => store.snapshot?.machines.filter(machine => !machine.online) ?? [])
 const unassigned = computed(() => store.snapshot?.running.filter(ticket => !ticket.registerOnly && !store.snapshot?.machines.some(machine => machine.name === ticket.machine)) ?? [])
-const latestReserve = computed(() => store.commands.find(command => command.input.kind === 'reserve'))
 const cancel = (ticketId: string) => store.command({ kind: 'cancel', data: { ticketId } })
 const jump = (ticketId: string) => store.command({ kind: 'jump-queue', data: { ticketId } })
 const pause = (ticketId: string) => store.command({ kind: 'pause-one', data: { ticketId } })
@@ -31,8 +30,7 @@ onUnmounted(store.stop)
 <template>
   <main class="sched-page">
     <DispatcherBanner v-if="store.readable && store.snapshot" :heartbeat-at="store.snapshot.dispatcher.heartbeat.at" :now="store.now" />
-    <ReserveCard :host="store.readable ? store.host : null" :legacy="store.readable ? store.snapshot?.legacyReserve : null"
-      :latest="latestReserve" :busy="store.busy || !store.readable" @command="store.command" />
+    <ReserveCard :host="store.readable ? store.host : null" :busy="store.busy || !store.readable" @command="store.command" />
     <header class="sched-page-head">
       <h1>调度台</h1>
       <div class="sched-pills">
@@ -85,7 +83,7 @@ onUnmounted(store.stop)
         @filter="store.applyFilters" @page="store.movePage" @open="store.openDetail" @refresh="store.loadLedger" />
       <details class="sched-more">
         <summary>更多 · 最近指令</summary>
-        <RecentCommands :receipts="store.snapshot.recentReceipts" :submitted="store.commands" :now="store.now" :busy="store.busy" @retry="store.retryLegacy" />
+        <RecentCommands :receipts="store.snapshot.recentReceipts" :submitted="store.commands" :now="store.now" />
       </details>
     </template>
     <TicketDrawer v-if="store.detailId" :ticket-id="store.detailId" :ticket="store.detail" :loading="store.detailLoading" :error="store.detailError"

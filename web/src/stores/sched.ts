@@ -120,19 +120,11 @@ export const useSchedStore = defineStore('sched', () => {
     busy.value = true; commandError.value = ''; const share = snapshot.value.share
     try {
       const result = await api.postCommand(input)
-      submitted.value.unshift({ commandId: result.commandId, input, share, ...commandTimes(result.commandId), legacy: result.legacy })
+      submitted.value.unshift({ commandId: result.commandId, input, share, ...commandTimes(result.commandId) })
       submitted.value = submitted.value.slice(0, 50); rememberCommands(); void refreshSnapshot()
       return true
     } catch (error) { commandError.value = error instanceof Error ? error.message : String(error); return false }
     finally { busy.value = false }
-  }
-  async function retryLegacy(id: string) {
-    const item = commands.value.find(command => command.commandId === id)
-    if (!item || item.input.kind !== 'reserve' || busy.value || !readable.value) return
-    busy.value = true
-    try { item.legacy = (await api.retryLegacyReserve(item.input.data)).legacy; void refreshSnapshot() }
-    catch (error) { item.legacy = { ok: false, error: error instanceof Error ? error.message : String(error) } }
-    finally { rememberCommands(); busy.value = false }
   }
   function suspend() {
     exportRequest?.abort(); exportRequest = null; exporting.value = false
@@ -158,5 +150,5 @@ export const useSchedStore = defineStore('sched', () => {
 
   return { snapshot, snapshotError, loading, commandError, storageError, now, busy, readable, host, commands,
     filters, ledger, ledgerError, ledgerLoading, page, detail, detailId, detailError, detailLoading, related, queueDetails, queueErrors,
-    exporting, exportError, exportLedger, refreshSnapshot, loadLedger, applyFilters, movePage, openDetail, closeDetail, command, retryLegacy, start, stop }
+    exporting, exportError, exportLedger, refreshSnapshot, loadLedger, applyFilters, movePage, openDetail, closeDetail, command, start, stop }
 })

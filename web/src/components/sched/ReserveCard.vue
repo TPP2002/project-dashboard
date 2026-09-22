@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import type { CommandInput, MachineSnapshot, ReserveCores, SchedSnapshot } from '@/api/sched'
-import type { SubmittedCommand } from './preferences'
+import { ref, watch } from 'vue'
+import type { CommandInput, MachineSnapshot, ReserveCores } from '@/api/sched'
 import { clock } from './format'
-const props = defineProps<{ host: MachineSnapshot | null; legacy?: SchedSnapshot['legacyReserve'] | null; latest?: SubmittedCommand; busy: boolean }>()
+const props = defineProps<{ host: MachineSnapshot | null; busy: boolean }>()
 const emit = defineEmits<{ command: [input: CommandInput] }>()
 const selected = ref<ReserveCores>(props.host?.reservation?.requestedCores ?? 0)
 const minutes = ref<60 | 180 | null>(null)
@@ -14,12 +13,6 @@ const presets: { cores: ReserveCores; title: string; hint: string }[] = [
 const durations: { value: 60 | 180 | null; title: string }[] = [
   { value: 60, title: '1 小时后取消' }, { value: 180, title: '3 小时后取消' }, { value: null, title: '手动取消前一直留' },
 ]
-const legacyStatus = computed(() => {
-  if (!props.legacy) return '尚未读到旧账本预留状态。'
-  const expiry = props.legacy.reserveExpiresAt ? ` · ${clock(props.legacy.reserveExpiresAt)} 自动取消` : ''
-  const sync = props.latest?.legacy ? (props.latest.legacy.ok ? '最近一次同步成功' : '旧账本同步失败，请到最近指令重试同步') : '尚无本页同步记录'
-  return `旧账本：当前预留 ${props.legacy.reservedCores} 核${expiry}；${sync}。`
-})
 watch(() => props.host?.reservation?.requestedCores, value => { if (value !== undefined) selected.value = value })
 function apply(cores: ReserveCores, duration = minutes.value) {
   selected.value = cores
@@ -46,13 +39,12 @@ function chooseDuration(value: 60 | 180 | null) { minutes.value = value; if (sel
       @click="emit('command', { kind: host?.ownerHold ? 'owner-release' : 'owner-hold', data: {} })">
       {{ host?.ownerHold ? '一键恢复主机' : '一键全部暂停' }}
     </button>
-    <span class="reserve-status" :class="{ bad: latest?.legacy?.ok === false }" :title="legacyStatus" role="status">
+    <span class="reserve-status" role="status">
       <template v-if="host?.reservation">已留 {{ host.reservation.fulfilledCores }} 核<template v-if="host.reservation.fulfilledCores !== host.reservation.requestedCores">（已申请 {{ host.reservation.requestedCores }} 核）</template>
         <template v-if="host.reservation.untilAt"> · {{ clock(host.reservation.untilAt) }} 自动取消</template>
         <template v-else-if="host.reservation.requestedCores"> · 手动取消前一直留</template>
       </template>
       <template v-else>尚未读到预留状态</template>
-      <template v-if="latest?.legacy?.ok === false"> · 旧账本同步失败，请到最近指令重试</template>
     </span>
   </div>
 </template>

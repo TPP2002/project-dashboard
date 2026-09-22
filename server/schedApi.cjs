@@ -1,20 +1,11 @@
 'use strict';
-/** 调度 API：读盘快照、发指令、迁移期预留双写；所有业务写入只走已公开的契约。 */
+/** 调度 API：读盘快照、发指令；预留只由统一调度执行。 */
 const c = require('../core/schedContract.cjs');
 const read = require('../core/schedRead.cjs');
 
-function createSchedApi({ sendJson, readBody, bodyMax, cpuBudget, resolveShare, sources = c.productionSources }) {
+function createSchedApi({ sendJson, readBody, bodyMax, resolveShare, sources = c.productionSources }) {
   let previousStamp;
 
-  function syncLegacy(data, nowMs) {
-    try {
-      const status = data.requestedCores === 0 ? cpuBudget.clearReserve()
-        : cpuBudget.setReserve(data.requestedCores, data.durationMinutes ? { expiresAtMs: nowMs + data.durationMinutes * 60000 } : {});
-      // clearReserve 的旧实现会吞删除错误；回读仍有预留时必须向负责人报告失败。
-      if (data.requestedCores === 0 && status.reservedCores !== 0) throw new Error('旧账本仍有负责人预留，清除失败');
-      return { ok: true };
-    } catch (error) { return { ok: false, error: error.message }; }
-  }
   function validateInput(body) {
     c.fields(body, { kind: c.text, data: v => c.requireRecord(v, '指令 data') });
     if (body.kind === 'reserve') c.validateReserve(body.data, false);
@@ -22,19 +13,15 @@ function createSchedApi({ sendJson, readBody, bodyMax, cpuBudget, resolveShare, 
     else if (['jump-queue', 'cancel', 'pause-one', 'resume-one'].includes(body.kind)) c.fields(body.data, { ticketId: c.ticketId });
     else throw new Error('本期未开放');
   }
-  function handlePost(req, res, legacyOnly) {
+  function handlePost(req, res) {
     readBody(req, bodyMax, (error, raw) => {
       if (error) return sendJson(res, 413, { ok: false, error: error.message });
       let body;
       try {
         body = JSON.parse(raw);
-        if (legacyOnly) c.validateReserve(body, false); else validateInput(body);
+        validateInput(body);
       } catch (error) { return sendJson(res, 400, { ok: false, error: error.message }); }
       const nowMs = sources.now();
-      if (legacyOnly) {
-        const legacy = syncLegacy(body, nowMs);
-        return sendJson(res, 200, { ok: legacy.ok, legacy });
-      }
       const share = resolveShare();
       try {
         const data = ['reserve', 'owner-hold', 'owner-release'].includes(body.kind)
@@ -44,22 +31,24 @@ function createSchedApi({ sendJson, readBody, bodyMax, cpuBudget, resolveShare, 
         const command = { commandId, kind: body.kind, data, submitter: 'dashboard', createdAt,
           expiresAt: new Date(nowMs + 10 * 60000).toISOString() };
         c.writeCommand(share, command, sources);
-        const legacy = body.kind === 'reserve' ? syncLegacy(body.data, nowMs) : undefined;
-        return sendJson(res, 200, { ok: true, commandId, ...(legacy ? { legacy } : {}) });
+        return sendJson(res, 200, { ok: true, commandId });
       } catch (error) {
         return sendJson(res, error.code === 'EEXIST' ? 409 : 503, { ok: false, error: `指令未提交:${error.message}` });
       }
     });
   }
   function route(action, req, res, query = {}) {
-    if (req.method === 'POST' && ['command', 'legacy-reserve'].includes(action)) {
-      handlePost(req, res, action === 'legacy-reserve'); return true;
+    if (req.method === 'POST' && action === 'legacy-reserve') {
+      sendJson(res, 410, { ok: false, error: '旧算力账本已下线，请通过调度台提交预留指令' }); return true;
+    }
+    if (req.method === 'POST' && action === 'command') {
+      handlePost(req, res); return true;
     }
     if (req.method !== 'GET') return false;
     const share = resolveShare();
     try {
       if (action === 'snapshot') {
-        const result = read.snapshot(share, cpuBudget, sources.now());
+        const result = read.snapshot(share, sources.now());
         sendJson(res, result.readable ? 200 : 503, result);
       } else if (action === 'tickets') sendJson(res, 200, read.ticketPage(share, query));
       else if (action === 'tickets.csv') {

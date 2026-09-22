@@ -22,7 +22,7 @@ async function apiFixture(t) {
   for (const machine of beat.machines) { machine.heartbeatAt = beat.at; machine.loadSampledAt = beat.at; }
   write(paths.heartbeat, beat);
   const api = createSchedApi({ resolveShare: () => share, sources: { now: () => NOW, nonce: () => 'fixture-nonce' },
-    cpuBudget: { cpuStatus: () => ({ reservedCores: 0, reserveExpiresAt: null }) }, bodyMax: 1024,
+    bodyMax: 1024,
     readBody: () => { throw new Error('只读验收不应读取指令请求体'); },
     sendJson: (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); },
   });

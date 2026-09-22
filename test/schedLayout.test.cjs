@@ -53,7 +53,7 @@ function apiFixture(t, readable = true) {
   const share = temporary(t), paths = readable ? initialize(share) : null;
   if (paths) fs.mkdirSync(path.join(paths.root, 'ledger'));
   const api = createSchedApi({ resolveShare: () => share, sources: { now: () => Date.parse(AT) + 3600000, nonce: () => 'fixture' },
-    cpuBudget: { cpuStatus: () => ({ reservedCores: 0, reserveExpiresAt: null }) }, bodyMax: 1024,
+    bodyMax: 1024,
     readBody: () => { throw new Error('布局读盘用例不能发指令'); },
     sendJson: (res, status, body) => { res.status = status; res.body = body; },
   });
