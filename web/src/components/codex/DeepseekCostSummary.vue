@@ -16,6 +16,12 @@ function money(value: number) {
   return '¥' + value.toFixed(2)
 }
 
+function cacheRate(row: { input: number; cacheRead: number; cacheWrite: number }) {
+  const denominator = row.input + row.cacheRead + row.cacheWrite
+  return [row.input, row.cacheRead, row.cacheWrite].every((bucket) => Number.isFinite(bucket) && bucket >= 0)
+    && denominator > 0 ? `${(row.cacheRead / denominator * 100).toFixed(1)}%` : '无法计算'
+}
+
 function sampledTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '时间未知' : date.toLocaleString('zh-CN', { hour12: false })
@@ -35,7 +41,7 @@ function sampledTime(value: string) {
     </div>
     <dl v-if="deepseek" class="metric-list">
       <div class="metric-row"><dt>近 {{ days }} 天按价目折算 · 人民币</dt><dd>{{ money(deepseek.totals.costRmb) }}</dd></div>
-      <div class="metric-row"><dt>缓存命中率</dt><dd>{{ (deepseek.totals.cacheHitRate * 100).toFixed(1) }}%</dd></div>
+      <div class="metric-row"><dt>缓存命中率</dt><dd>{{ cacheRate(deepseek.totals) }}</dd></div>
       <div class="metric-row"><dt>DeepSeek 消耗 token</dt><dd :title="deepseek.totals.tokens.toLocaleString() + ' token'">{{ fmt(deepseek.totals.tokens) }}</dd></div>
       <div class="metric-row"><dt>工单数</dt><dd>{{ deepseek.totals.jobs }}</dd></div>
     </dl>
@@ -54,7 +60,7 @@ function sampledTime(value: string) {
       <dl class="model-list">
         <div v-for="[model, row] in modelRows" :key="model" class="model-row">
           <dt>{{ model }}</dt>
-          <dd>{{ money(row.costRmb) }}</dd>
+          <dd>{{ money(row.costRmb) }} · 缓存命中率 {{ cacheRate(row) }}</dd>
         </div>
       </dl>
     </div>

@@ -261,6 +261,26 @@ test('Codex 用量按天和项目聚合', () => {
   assert.equal(crossDay.totals.tokens, 40);
 });
 
+test('Codex 按模型分桶保留项目边界与缺桶覆盖量，缓存输入不重复相加', () => {
+  const usage = aggregateCodexUsage([
+    { startedAt: '2026-09-01T01:00:00Z', project: '甲', model: 'gpt-a', tokensUsed: 100,
+      tokenBuckets: { input: 80, output: 20, cachedInput: 60 } },
+    { startedAt: '2026-09-01T02:00:00Z', project: '甲', model: 'gpt-a', tokensUsed: 50 },
+    { startedAt: '2026-09-01T03:00:00Z', project: '甲', model: 'gpt-b', tokensUsed: 120,
+      tokenBuckets: { input: 100, output: 20, cachedInput: 20 } },
+    { startedAt: '2026-09-01T03:00:00Z', project: '乙', model: 'gpt-a', tokensUsed: 10,
+      tokenBuckets: { input: 9, output: 1, cachedInput: 0 } },
+  ], { days: 7, nowMs: NOW, projectName: '甲' });
+  assert.deepEqual(usage.selected.byModel.map(({ model, tokens, bucketedTokens, buckets }) =>
+    ({ model, tokens, bucketedTokens, buckets })), [
+    { model: 'gpt-a', tokens: 150, bucketedTokens: 100,
+      buckets: { input: 80, output: 20, cachedInput: 60 } },
+    { model: 'gpt-b', tokens: 120, bucketedTokens: 120,
+      buckets: { input: 100, output: 20, cachedInput: 20 } },
+  ]);
+  assert.equal(usage.byModel.find((row) => row.model === 'gpt-a').buckets.input, 89);
+});
+
 test('跨日 token_count 流式按累计增量拆日，并兼容外层包装', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-cost-days-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

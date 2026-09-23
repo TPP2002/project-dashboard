@@ -49,6 +49,9 @@ function aggregateCodexUsage(sessions, options = {}) {
   const currentDay = localDate(nowMs);
   const dayMap = new Map();
   const projectMap = new Map();
+  const modelMap = new Map();
+  const selectedModelMap = new Map();
+  const selectedName = options.projectName || '';
   let totalTokens = 0;
   let sessionCount = 0;
   const totalBuckets = { input: 0, output: 0, cachedInput: 0 };
@@ -96,11 +99,20 @@ function aggregateCodexUsage(sessions, options = {}) {
       projectUsage.buckets[key] += sessionBuckets[key];
     }
     projectMap.set(project, projectUsage);
+    const model = typeof session.model === 'string' && session.model.trim() ? session.model : '未知';
+    for (const map of project === selectedName ? [modelMap, selectedModelMap] : [modelMap]) {
+      const modelUsage = map.get(model) || { model, tokens: 0, sessions: 0, bucketedTokens: 0,
+        buckets: { input: 0, output: 0, cachedInput: 0 } };
+      modelUsage.tokens += sessionTokens;
+      modelUsage.sessions += 1;
+      modelUsage.bucketedTokens += sessionBucketedTokens;
+      for (const key of Object.keys(modelUsage.buckets)) modelUsage.buckets[key] += sessionBuckets[key];
+      map.set(model, modelUsage);
+    }
     totalTokens += sessionTokens;
     sessionCount += 1;
   }
 
-  const selectedName = options.projectName || '';
   const selectedRows = [...dayMap.values()].map((day) => ({
     date: day.date,
     tokens: day.projects[selectedName] || 0,
@@ -108,6 +120,7 @@ function aggregateCodexUsage(sessions, options = {}) {
   return {
     byDay: [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
     byProject: [...projectMap.values()].sort((a, b) => b.tokens - a.tokens),
+    byModel: [...modelMap.values()].sort((a, b) => b.tokens - a.tokens),
     totals: { tokens: totalTokens, sessions: sessionCount, buckets: totalBuckets, bucketedTokens },
     selected: {
       project: selectedName,
@@ -115,6 +128,7 @@ function aggregateCodexUsage(sessions, options = {}) {
       sessions: projectMap.get(selectedName)?.sessions || 0,
       buckets: projectMap.get(selectedName)?.buckets || { input: 0, output: 0, cachedInput: 0 },
       bucketedTokens: projectMap.get(selectedName)?.bucketedTokens || 0,
+      byModel: [...selectedModelMap.values()].sort((a, b) => b.tokens - a.tokens),
       byDay: selectedRows.sort((a, b) => a.date.localeCompare(b.date)),
     },
   };
