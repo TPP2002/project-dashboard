@@ -69,6 +69,19 @@ async function startServer(t, { modules, settings } = {}) {
     });
     return { status: response.status, body: await response.json() };
   }
+  // 全开模块会异步读临时仓的 Git 信息。父服务退出不代表 Git 后代已退出；
+  // 等真实采集回执，再进入测试/清理，避免 Windows 删除尚在使用的目录。
+  if ((await json('/api/health')).body.modules.cpu) {
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      const snapshot = await json('/api/sched/ci-jobs');
+      assert.equal(snapshot.status, 200);
+      assert.equal(snapshot.body.error, undefined);
+      if (snapshot.body.updatedAt) break;
+      assert.ok(Date.now() < deadline, '临时项目首轮 CI 信息读取未完成');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
   return { dir, json };
 }
 
