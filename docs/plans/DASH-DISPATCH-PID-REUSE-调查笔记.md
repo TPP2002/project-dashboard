@@ -26,3 +26,5 @@
 3. 为什么不会伤到别处：新探针仅供这两个调用点使用；派单命令只多一个监工忽略的 `--identity` 参数，`supervise` 继续按原 slug 工作。状态文件新增可选字段，旧单按无令牌路径兼容。批量 `status` 只做一次进程表查询，验收/判决/调度代码未变。边界单测覆盖旧单、新单、无关可执行文件、错时刻、探针失败和已完成单。
 
 验收：定向 `node --test test/codexProcessIdentity.test.cjs` 通过，`tests 2 / pass 2 / fail 0`；Codex 相关定向回归 `tests 145 / pass 145 / fail 0`。首次全量票据 `tk-c4e0f607da6667929235` 的 Node 汇总虽为 `tests 992 / pass 992 / fail 0`，外层退出码 1；调度台账本原文是 `"reason":"运行中内容漂移","result":"voided"`。原因是挂号后又补强了参数相邻匹配，修改了 `scripts/codex` 与测试文件，故这次全量结果作废、不计验收。固定文件后须重新挂号。类型检查、构建与 CI 结论待收官时补记。
+
+第二次全量票据 `tk-2fb1ba336a224774577a` 的 Node 汇总是 `tests 992 / pass 991 / fail 1`；失败断言原文开头是 `不允许白名单以外的盘符路径`，定位 `test/codexProcessIdentity.test.cjs:48`。完整输出保存在本工位被忽略的 `.codex/logs/pid-reuse-full-test.log`。这是新增单测夹具的路径文本触发公开仓路径形状闸，非 PID 行为断言失败；已改用不含盘符的合成进程名，再跑定向与全量。尝试对该票据 `cancel` 时客户端回 `单子已不在排队中`，随后只读 `status` 确认状态 `failed`、原因为 `命令退出码:1`，无需另行强杀或撤单。
