@@ -8,12 +8,14 @@ const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const freePort = require('../scripts/free-port.cjs');
 
-async function launch(t, base, registry, home) {
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../server/server.cjs')], {
+async function launch(t, base, registry, home, preload) {
+  const child = spawn(process.execPath, [...(preload ? ['--require', preload] : []), path.resolve(__dirname, '../server/server.cjs')], {
     env: { ...process.env, DASHBOARD_PORT: String(base), DASHBOARD_NO_OPEN: '1',
       DASHBOARD_REGISTRY: registry, DASHBOARD_HOME: home, DASHBOARD_MODULES: '' },
-    windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true, stdio: preload ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
   });
+  const messages = [];
+  child.on('message', message => messages.push(message));
   t.after(async () => { if (child.exitCode === null) { child.kill(); await once(child, 'exit'); } });
   return new Promise((resolve, reject) => {
     let output = '';
@@ -21,7 +23,7 @@ async function launch(t, base, registry, home) {
     const inspect = chunk => {
       output += chunk;
       const match = /本地地址：http:\/\/127\.0\.0\.1:(\d+)/.exec(output);
-      if (match) { clearTimeout(timer); resolve({ child, port: Number(match[1]) }); }
+      if (match) { clearTimeout(timer); resolve({ child, port: Number(match[1]), messages }); }
     };
     child.stdout.on('data', inspect); child.stderr.on('data', inspect);
     child.once('error', error => { clearTimeout(timer); reject(error); });
@@ -61,4 +63,18 @@ test('端口 0 由系统分配，两份同数据自检也各自持有端口并�
     assert.equal(health.port, service.port);
     assert.equal(health.pid, service.child.pid);
   }
+});
+
+test('固定端口启动不向调用方现有 IPC 通道插入自检通知', { timeout: 15000 }, async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-ipc-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const registry = path.join(dir, 'registry.json'), preload = path.join(dir, 'observe.cjs');
+  fs.writeFileSync(registry, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
+  fs.writeFileSync(preload, "process.on('message', value => { if (value === 'probe') process.send({ type: 'probe' }); });");
+  const service = await launch(t, await freePort(), registry, dir, preload);
+  await new Promise(resolve => {
+    service.child.on('message', message => { if (message.type === 'probe') resolve(); });
+    service.child.send('probe');
+  });
+  assert.deepEqual(service.messages, [{ type: 'probe' }], 'IPC 回包必须只含调用方请求的消息');
 });

@@ -1599,7 +1599,7 @@ function tryListen(port, attemptsLeft) {
     console.log('浏览器应已自动打开；未打开请手动访问上面地址。按 Ctrl+C 关闭。\n');
     pollBoards();       // 立即建立 mtime 基线
     startIntervals();   // 启动轮询 + 心跳
-    if (process.connected && typeof process.send === 'function') {
+    if (PORT_BASE === 0 && process.connected && typeof process.send === 'function') {
       process.send({ type: 'dashboard-ready', service: SERVICE, port: state.actualPort, pid: process.pid });
     }
     openBrowser(localUrl);
