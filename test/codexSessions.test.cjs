@@ -104,6 +104,17 @@ test('尾部首行被截断时丢弃半行，并取最后完整事件与累计 t
   assert.equal(snapshot.tokensUsed, 12345);
 });
 
+test('Codex 累计事件保留输入、输出和缓存子集，不用总量冒充可计价分桶', () => {
+  const usage = { input_tokens: 110, output_tokens: 20, cached_input_tokens: 90, total_tokens: 130 };
+  const event = { timestamp: '2026-09-01T14:00:00Z', type: 'event_msg',
+    payload: { type: 'token_count', info: { total_token_usage: usage } } };
+  const snapshot = parseTailSnapshot(JSON.stringify(event) + '\n');
+  assert.deepEqual(snapshot.tokenBuckets, { input: 110, output: 20, cachedInput: 90 });
+  const result = aggregateCodexUsage([{ project: '项目', startedAt: event.timestamp,
+    tokensUsed: 130, tokenBuckets: snapshot.tokenBuckets }], { nowMs: NOW, days: 1, projectName: '项目' });
+  assert.deepEqual(result.selected.buckets, { input: 110, output: 20, cachedInput: 90 });
+});
+
 test('response_item 外层包装会暴露 payload.type', () => {
   const wrapped = unwrapEvent({
     type: 'response_item', ordinal: 2,

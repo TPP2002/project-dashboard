@@ -68,6 +68,7 @@ function readTail(file, size) {
     lastActivityAt: parsed.lastActivityAt,
     lastOrdinal: parsed.lastOrdinal,
     tokensUsed: parsed.tokensUsed,
+    tokenBuckets: parsed.tokenBuckets,
     quotaSample: parsed.quotaSample,
   };
   tailCache.set(file, { size, snapshot });
@@ -120,6 +121,7 @@ function scanSessionFile(file, context) {
       sizeBytes: stat.size,
       lastOrdinal: tail.lastOrdinal,
       tokensUsed: tail.tokensUsed,
+      tokenBuckets: tail.tokenBuckets,
       model: identity.model,
       reasoningEffort: identity.reasoningEffort,
       originator: identity.originator,

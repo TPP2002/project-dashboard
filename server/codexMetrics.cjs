@@ -51,6 +51,8 @@ function aggregateCodexUsage(sessions, options = {}) {
   const projectMap = new Map();
   let totalTokens = 0;
   let sessionCount = 0;
+  const totalBuckets = { input: 0, output: 0, cachedInput: 0 };
+  let bucketedTokens = 0;
 
   for (const session of sessions || []) {
     const project = session.project || '其它';
@@ -68,6 +70,8 @@ function aggregateCodexUsage(sessions, options = {}) {
     if (!dailyEntries.length) continue;
 
     let sessionTokens = 0;
+    const sessionBuckets = { input: 0, output: 0, cachedInput: 0 };
+    let sessionBucketedTokens = 0;
     for (const [date, tokens] of dailyEntries) {
       const day = dayMap.get(date) || { date, tokens: 0, sessions: 0, projects: {} };
       day.tokens += tokens;
@@ -75,10 +79,22 @@ function aggregateCodexUsage(sessions, options = {}) {
       day.projects[project] = (day.projects[project] || 0) + tokens;
       dayMap.set(date, day);
       sessionTokens += tokens;
+      const buckets = session.dailyBuckets?.[date] || (!session.dailyTokens ? session.tokenBuckets : null);
+      if (buckets && ['input', 'output', 'cachedInput'].every((key) => Number.isFinite(buckets[key]) && buckets[key] >= 0)) {
+        for (const key of Object.keys(sessionBuckets)) sessionBuckets[key] += buckets[key];
+        sessionBucketedTokens += tokens;
+      }
     }
-    const projectUsage = projectMap.get(project) || { project, tokens: 0, sessions: 0 };
+    const projectUsage = projectMap.get(project) || { project, tokens: 0, sessions: 0, bucketedTokens: 0,
+      buckets: { input: 0, output: 0, cachedInput: 0 } };
     projectUsage.tokens += sessionTokens;
     projectUsage.sessions += 1;
+    projectUsage.bucketedTokens += sessionBucketedTokens;
+    bucketedTokens += sessionBucketedTokens;
+    for (const key of Object.keys(totalBuckets)) {
+      totalBuckets[key] += sessionBuckets[key];
+      projectUsage.buckets[key] += sessionBuckets[key];
+    }
     projectMap.set(project, projectUsage);
     totalTokens += sessionTokens;
     sessionCount += 1;
@@ -92,11 +108,13 @@ function aggregateCodexUsage(sessions, options = {}) {
   return {
     byDay: [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
     byProject: [...projectMap.values()].sort((a, b) => b.tokens - a.tokens),
-    totals: { tokens: totalTokens, sessions: sessionCount },
+    totals: { tokens: totalTokens, sessions: sessionCount, buckets: totalBuckets, bucketedTokens },
     selected: {
       project: selectedName,
       tokens: projectMap.get(selectedName)?.tokens || 0,
       sessions: projectMap.get(selectedName)?.sessions || 0,
+      buckets: projectMap.get(selectedName)?.buckets || { input: 0, output: 0, cachedInput: 0 },
+      bucketedTokens: projectMap.get(selectedName)?.bucketedTokens || 0,
       byDay: selectedRows.sort((a, b) => a.date.localeCompare(b.date)),
     },
   };

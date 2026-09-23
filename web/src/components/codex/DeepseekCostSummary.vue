@@ -34,7 +34,7 @@ function sampledTime(value: string) {
       <p v-if="balance?.sampledAt" class="fine">查询于 <time :datetime="balance.sampledAt">{{ sampledTime(balance.sampledAt) }}</time></p>
     </div>
     <dl v-if="deepseek" class="metric-list">
-      <div class="metric-row"><dt>近 {{ days }} 天已花 · 人民币</dt><dd>{{ money(deepseek.totals.costRmb) }}</dd></div>
+      <div class="metric-row"><dt>近 {{ days }} 天按价目折算 · 人民币</dt><dd>{{ money(deepseek.totals.costRmb) }}</dd></div>
       <div class="metric-row"><dt>缓存命中率</dt><dd>{{ (deepseek.totals.cacheHitRate * 100).toFixed(1) }}%</dd></div>
       <div class="metric-row"><dt>DeepSeek 消耗 token</dt><dd :title="deepseek.totals.tokens.toLocaleString() + ' token'">{{ fmt(deepseek.totals.tokens) }}</dd></div>
       <div class="metric-row"><dt>工单数</dt><dd>{{ deepseek.totals.jobs }}</dd></div>

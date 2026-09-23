@@ -117,6 +117,21 @@ test('collectJobRows:老工单缺字段与坏日志都容忍——engine 缺省 
   assert.equal(by.get('no-meta').dispatchedAt, null);
 });
 
+test('GLM 工单明细显示首轮加续聊 token、周积分和归因状态', async (t) => {
+  const f = fixture(t);
+  writeJob(f.jobs, 'glm-job', { task: { engine: 'glm', model: 'glm-5.3' }, events: [result()] });
+  fs.writeFileSync(path.join(f.jobs, 'glm-job', 'cost.json'), JSON.stringify({
+    engine: 'glm', usage: { input: 10, output: 20, cacheRead: 30, cacheWrite: 0 },
+    resumeUsage: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4 },
+    glmQuota: { weeklyDelta: 15 }, attribution: { attributable: false },
+  }));
+  const [row] = await collectJobRows(f.jobs);
+  assert.deepEqual([row.input, row.output, row.cacheRead, row.cacheWrite], [11, 22, 33, 4]);
+  assert.equal(row.glmCredits, 15);
+  assert.equal(row.glmCreditsCertain, false);
+  assert.equal(summarizeJobRows([row]).glmCredits, 15);
+});
+
 test('collectJobRows:级联链看同卡单数、slug 合法性把关、按派单时间降序、目录缺失返回空', async (t) => {
   const f = fixture(t);
   writeJob(f.jobs, 'chain-old', { task: { taskId: 'CARD-9' }, meta: { dispatchedAt: OFF } });

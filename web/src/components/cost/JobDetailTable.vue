@@ -4,7 +4,7 @@
  *
  * 【数据从哪来】server 侧读本仓 `.codex/jobs/` 的落盘工单(core/costJobDetail.cjs,
  * jobsRoot 由 server 传入),人民币直接复用 DeepSeek 价目折算;积分没有每单数据源,
- * 不造数——CLI 自报的美元只作展示参考列,不参与任何计价口径。
+ * GLM 积分从工单 cost.json 读，归因不清时标参考；CLI 自报的美元只作参考。
  * 筛选同样是 server 侧调 core 纯函数(GET /api/cost/job-detail),这里只收表单发请求。
  */
 import { onMounted, ref, watch } from 'vue'
@@ -26,6 +26,8 @@ interface JobRow {
   cacheRead: number
   cacheWrite: number
   reportedUsd: number | null
+  glmCredits: number | null
+  glmCreditsCertain: boolean
   peak: boolean | null
   chain: boolean | null
   costRmb: number | null
@@ -33,6 +35,7 @@ interface JobRow {
 interface JobTotals {
   jobs: number; turns: number; input: number; output: number
   cacheRead: number; cacheWrite: number; costRmb: number; costRmbJobs: number
+  glmCredits: number; glmCreditJobs: number
 }
 interface DetailBody {
   ok: boolean; error?: string
@@ -40,14 +43,19 @@ interface DetailBody {
   options: { engines: string[]; models: string[]; cards: string[] }
 }
 
-const props = defineProps<{ projectId: string | null }>()
+const props = defineProps<{ projectId: string | null; days: number }>()
 const store = useBoardStore()
 const rows = ref<JobRow[]>([])
 const totals = ref<JobTotals | null>(null)
 const options = ref<{ engines: string[]; models: string[]; cards: string[] }>({ engines: [], models: [], cards: [] })
 const loading = ref(false)
 const error = ref('')
-const filters = ref({ fromDate: '', toDate: '', engine: '', model: '', card: '' })
+function cutoffDay(days: number): string {
+  const d = new Date(); d.setDate(d.getDate() - (days - 1))
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+const filters = ref({ fromDate: cutoffDay(props.days), toDate: '', engine: '', model: '', card: '' })
 
 /** 请求序号:只认最后一次发出的结果(照 CostMonitor 的守卫)。 */
 let reqSeq = 0
@@ -79,6 +87,7 @@ async function load() {
 
 onMounted(load)
 watch(() => props.projectId, () => { void load() })
+watch(() => props.days, (value) => { filters.value.fromDate = cutoffDay(value) })
 watch(() => [filters.value.fromDate, filters.value.toDate], () => { void load() })
 
 function fmt(n: number): string {
@@ -109,7 +118,7 @@ function chainText(chain: boolean | null): string {
 
 <template>
   <section class="job-detail">
-    <h3>工单明细 <span class="sub">每张派出的工单一行;人民币只对判得出价目的单显示</span></h3>
+    <h3>工单明细 <span class="sub">人民币与套餐积分分列；缺数据用「—」</span></h3>
     <form class="filters" @submit.prevent="load">
       <label>从<input v-model="filters.fromDate" type="date"></label>
       <label>到<input v-model="filters.toDate" type="date"></label>
@@ -138,7 +147,7 @@ function chainText(chain: boolean | null): string {
             <th>工单</th><th>卡</th><th>引擎</th><th>实际模型</th><th>指定档</th>
             <th>派单时间</th><th class="r">时长</th><th class="r">轮次</th>
             <th class="r">输入</th><th class="r">输出</th><th class="r">缓存读</th><th class="r">缓存写</th>
-            <th class="r">人民币</th><th class="r">CLI 自报美元</th><th>级联链</th>
+            <th class="r">人民币折算</th><th class="r">GLM 积分</th><th class="r">CLI 参考美元</th><th>级联链</th>
           </tr>
         </thead>
         <tbody>
@@ -163,6 +172,7 @@ function chainText(chain: boolean | null): string {
             <td class="r" :title="row.peak === null ? '' : row.peak ? '按高峰价折算' : '按空闲价折算'">
               {{ row.costRmb === null ? '—' : '¥' + rmb2(row.costRmb) }}
             </td>
+            <td class="r" :title="row.glmCreditsCertain ? '可归单' : '并行或归因状态未知，仅供参考'">{{ row.glmCredits === null ? '—' : fmt(row.glmCredits) + (row.glmCreditsCertain ? '' : ' ≈') }}</td>
             <td class="r">{{ row.reportedUsd === null ? '—' : '$' + row.reportedUsd.toFixed(2) }}</td>
             <td>{{ chainText(row.chain) }}</td>
           </tr>
@@ -176,6 +186,7 @@ function chainText(chain: boolean | null): string {
             <td class="r">{{ fmt(totals.cacheRead) }}</td>
             <td class="r">{{ fmt(totals.cacheWrite) }}</td>
             <td class="r">¥{{ rmb2(totals.costRmb) }}</td>
+            <td class="r">{{ totals.glmCreditJobs ? fmt(totals.glmCredits) + ' ≈' : '—' }}</td>
             <td class="r">—</td>
             <td>—</td>
           </tr>

@@ -130,10 +130,18 @@ async function collectJobRows(jobsRoot) {
     const task = readJsonOptional(path.join(dir, 'task.json')) || {};
     const meta = readJsonOptional(path.join(dir, 'meta.json')) || {};
     const state = readJsonOptional(path.join(dir, 'state.json')) || {};
+    const cost = readJsonOptional(path.join(dir, 'cost.json'));
     const dispatchedAt = isoOrNull(meta.dispatchedAt);
     const startedAt = isoOrNull(state.startedAt);
     const finishedAt = isoOrNull(state.finishedAt);
     const exec = await readExecSummary(path.join(dir, 'exec.jsonl'));
+    const glmBucket = (key) => {
+      const initial = cost?.usage?.[key], resume = cost?.resumeUsage?.[key];
+      if (task.engine === 'glm' && Number.isSafeInteger(initial) && initial >= 0) {
+        return initial + (Number.isSafeInteger(resume) && resume >= 0 ? resume : 0);
+      }
+      return exec && exec.usage ? exec.usage[key] : 0;
+    };
     const card = typeof task.taskId === 'string' && task.taskId ? task.taskId : null;
     rows.push({
       slug,
@@ -146,11 +154,14 @@ async function collectJobRows(jobsRoot) {
       running: finishedAt === null,
       durationMs: startedAt && finishedAt ? Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)) : null,
       turns: exec ? exec.turns : 0,
-      input: exec && exec.usage ? exec.usage.input : 0,
-      output: exec && exec.usage ? exec.usage.output : 0,
-      cacheRead: exec && exec.usage ? exec.usage.cacheRead : 0,
-      cacheWrite: exec && exec.usage ? exec.usage.cacheWrite : 0,
+      input: glmBucket('input'),
+      output: glmBucket('output'),
+      cacheRead: glmBucket('cacheRead'),
+      cacheWrite: glmBucket('cacheWrite'),
       reportedUsd: exec ? exec.reportedUsd : null,
+      glmCredits: task.engine === 'glm' && Number.isSafeInteger(cost?.glmQuota?.weeklyDelta)
+        && cost.glmQuota.weeklyDelta >= 0 ? cost.glmQuota.weeklyDelta : null,
+      glmCreditsCertain: task.engine === 'glm' && cost?.attribution?.attributable === true,
       peak: dispatchedAt !== null ? isPeakBeijing(dispatchedAt) : null,
       chain: null, // 下面按同卡单数回填
     });
@@ -203,7 +214,8 @@ function filterJobRows(rows, filters = {}) {
 
 /** 筛后合计:jobs/轮次/四类 token/人民币(只累加有值的单,并给出有值的单数)。 */
 function summarizeJobRows(rows) {
-  const sum = { jobs: 0, turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costRmb: 0, costRmbJobs: 0 };
+  const sum = { jobs: 0, turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
+    costRmb: 0, costRmbJobs: 0, glmCredits: 0, glmCreditJobs: 0 };
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row) continue;
     sum.jobs++;
@@ -212,6 +224,10 @@ function summarizeJobRows(rows) {
     sum.output += row.output || 0;
     sum.cacheRead += row.cacheRead || 0;
     sum.cacheWrite += row.cacheWrite || 0;
+    if (Number.isSafeInteger(row.glmCredits) && row.glmCredits >= 0) {
+      sum.glmCredits += row.glmCredits;
+      sum.glmCreditJobs++;
+    }
     const rmb = jobCostRmb(row);
     if (rmb !== null) {
       sum.costRmb += rmb;

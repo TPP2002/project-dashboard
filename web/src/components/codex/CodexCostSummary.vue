@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import Icon from '@/components/Icon.vue'
 import { computed } from 'vue'
-import type { CodexUsage, CombinedUsage, QuotaSnapshot } from '@/types/codex'
+import type { CodexUsage, QuotaSnapshot } from '@/types/codex'
 
 const props = defineProps<{
   codex: CodexUsage
-  combined: CombinedUsage
   quota: QuotaSnapshot
   days: number
 }>()
@@ -14,10 +13,6 @@ function fmt(value: number) {
   if (value >= 1e8) return (value / 1e8).toFixed(2) + ' 亿'
   if (value >= 1e4) return (value / 1e4).toFixed(1) + ' 万'
   return value.toLocaleString()
-}
-
-function money(value: number | null) {
-  return value == null ? '数据不足' : '$' + value.toFixed(2)
 }
 
 const OTHER = '其它'
@@ -52,15 +47,15 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
   <section class="card cost-summary">
     <div class="section-head">
       <h2>Codex · 消耗按项目</h2>
-      <span class="badge n">token 口径</span>
+      <span class="badge n">订阅用量 · 非实付金额</span>
     </div>
-    <p class="fine">近 {{ days }} 天的用量摘要与项目分布。</p>
+    <p class="fine">上方四项是当前项目近 {{ days }} 天的用量；下方项目分布列全机可识别的 Codex 会话。</p>
 
     <div class="summary-cards">
-      <div class="card"><div class="v">{{ fmt(combined.claudeTokens) }}</div><div class="l">Claude 消耗</div></div>
-      <div class="card"><div class="v">{{ fmt(combined.codexTokens) }}</div><div class="l">Codex 消耗</div></div>
-      <div class="card"><div class="v">{{ fmt(combined.totalTokens) }}</div><div class="l">两者合计</div></div>
-      <div class="card rough"><div class="v">{{ money(combined.savingsEstimateUsd) }}</div><div class="l">用 Codex 省下的 Claude 额度（粗估）</div></div>
+      <div class="card"><div class="v">{{ codex.selected.bucketedTokens ? fmt(codex.selected.buckets?.input ?? 0) : '—' }}</div><div class="l">输入 token · 含缓存</div></div>
+      <div class="card"><div class="v">{{ codex.selected.bucketedTokens ? fmt(codex.selected.buckets?.cachedInput ?? 0) : '—' }}</div><div class="l">其中缓存读取</div></div>
+      <div class="card"><div class="v">{{ codex.selected.bucketedTokens ? fmt(codex.selected.buckets?.output ?? 0) : '—' }}</div><div class="l">输出 token</div></div>
+      <div class="card"><div class="v">{{ fmt(codex.selected.tokens) }}</div><div class="l">总 token · 仅供核对</div></div>
     </div>
 
     <div class="wide-pair">
@@ -103,9 +98,8 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
       </section>
     </div>
 
-    <p class="fine">
-      “省下”不是真实测量：同一件活若交给 Claude 会花多少并未发生，无法得知。粗估口径 = Codex token 数 × Claude 同期平均 API 等价单价；Claude 同期没有有效成本数据时不显示数字。
-    </p>
+    <p class="fine">输入包含缓存读取；两者是包含关系，不能再相加。订阅套餐没有按单实付金额，此处不把总 token 乘别家均价冒充账单。</p>
+    <p v-if="(codex.selected.bucketedTokens ?? 0) < codex.selected.tokens" class="fine">部分旧会话只有总 token，没有输入/输出分桶；上方分桶是已识别部分，不能当完整账。</p>
     <p class="fine">Codex 按 session_meta 的 cwd 归项目；同日会话取尾部累计 token，跨日会话流式读取 token_count 并按累计值增量拆到各自然日，扫描时不会把整份 JSONL 装进内存。</p>
 
   </section>

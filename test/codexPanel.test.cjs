@@ -411,6 +411,12 @@ test('会话、详情、额度与成本 API 返回同一份有界扫描结果', 
   assert.deepEqual(cost.combined, {
     claudeTokens: 0, codexTokens: 321, totalTokens: 321, savingsEstimateUsd: null,
   });
+  const allResponse = await fetch(fixture.base + '/api/cost?project=all&days=7');
+  assert.equal(allResponse.status, 200);
+  const portfolio = await allResponse.json();
+  assert.equal(portfolio.scope, 'all');
+  assert.equal(portfolio.rows.find((row) => row.id === 'rogue').codexTokens, 321);
+  assert.equal(portfolio.totals.codexTokens, 321, '全部项目的 Codex 总量只聚一次');
 });
 
 // ── 失联工单的复派闸(CODEX-STALLED-JOB-REDISPATCH,2026-09-02 拍板"只对两条铁证放开")──
