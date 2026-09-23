@@ -28,3 +28,5 @@
 验收：定向 `node --test test/codexProcessIdentity.test.cjs` 通过，`tests 2 / pass 2 / fail 0`；Codex 相关定向回归 `tests 145 / pass 145 / fail 0`。首次全量票据 `tk-c4e0f607da6667929235` 的 Node 汇总虽为 `tests 992 / pass 992 / fail 0`，外层退出码 1；调度台账本原文是 `"reason":"运行中内容漂移","result":"voided"`。原因是挂号后又补强了参数相邻匹配，修改了 `scripts/codex` 与测试文件，故这次全量结果作废、不计验收。固定文件后须重新挂号。类型检查、构建与 CI 结论待收官时补记。
 
 第二次全量票据 `tk-2fb1ba336a224774577a` 的 Node 汇总是 `tests 992 / pass 991 / fail 1`；失败断言原文开头是 `不允许白名单以外的盘符路径`，定位 `test/codexProcessIdentity.test.cjs:48`。完整输出保存在本工位被忽略的 `.codex/logs/pid-reuse-full-test.log`。这是新增单测夹具的路径文本触发公开仓路径形状闸，非 PID 行为断言失败；已改用不含盘符的合成进程名，再跑定向与全量。尝试对该票据 `cancel` 时客户端回 `单子已不在排队中`，随后只读 `status` 确认状态 `failed`、原因为 `命令退出码:1`，无需另行强杀或撤单。
+
+最终验收（固定代码后的提交 `0e63e7e`）：`npm test` 通过，原始结尾 `tests 992 / pass 992 / fail 0 / skipped 0`，调度单 `tk-754e75e60ec47f3bb99f` 状态 `passed`；`npm run typecheck` 退出码 0，调度单 `tk-b2c5f7adee9a0fbf9d17` 为 `passed`；`npm run build` 退出码 0，原始结尾 `built in 7.32s`，调度单 `tk-468496dae7454a260dc3` 为 `passed`。新增脚本另用本仓已安装的 TypeScript 直接执行 `tsc --noEmit`，退出码 0。构建、类型检查和最终全量日志中没有 warning/error/FAILED 行；前两次未通过票据的原因已分别记录，未计入最终验收。
