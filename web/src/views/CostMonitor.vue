@@ -123,6 +123,12 @@ function usd0(n: number): string {
 function shortModel(m: string): string {
   return m.replace(/^claude-/, '').replace(/-\d{8}$/, '')
 }
+function exclusiveCacheRate(value: { input: number; cacheRead: number; cacheWrite: number }): string {
+  const denominator = value.input + value.cacheRead + value.cacheWrite
+  return [value.input, value.cacheRead, value.cacheWrite].every((bucket) => Number.isFinite(bucket) && bucket >= 0)
+    && denominator > 0
+    ? `${(value.cacheRead / denominator * 100).toFixed(1)}%` : '无法计算'
+}
 
 const dailyRows = computed(() => {
   const claudeByDate = new Map((usage.value?.byDay ?? []).map((row) => [row.date, row]))
@@ -194,9 +200,11 @@ const emptyReason = computed(() => {
 
 const modelRows = computed(() =>
   Object.entries(usage.value?.models ?? {})
-    .filter(([, value]) => value.output > 0 || value.input > 0 || value.cacheRead > 0)
+    .filter(([, value]) => value.output > 0 || value.input > 0 || value.cacheRead > 0 || value.cacheWrite > 0)
     .sort((a, b) => b[1].output - a[1].output),
 )
+const glmModelRows = computed(() => Object.entries(glm.value?.byModel ?? {})
+  .sort((a, b) => b[1].tokens - a[1].tokens))
 /** 有成本登记的卡(当前项目) */
 const costTasks = computed<Task[]>(() =>
   store.currentTasks.filter((task) => (task.cost?.entries?.length ?? 0) > 0),
@@ -262,7 +270,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
       </section>
       <section class="card portfolio-section">
         <h2>按项目对账</h2>
-        <p class="fine">点项目名切入它的逐日、会话和工单明细。共用代码仓的工单成本只归第一项，避免合计重复。</p>
+        <p class="fine">点项目名查看逐日、会话、工单及各模型缓存命中率。共用代码仓的工单成本只归第一项，避免合计重复。</p>
         <div class="table-scroll portfolio-scroll">
           <table class="portfolio-table">
             <thead><tr><th>项目</th><th>Claude API 等价</th><th>DeepSeek 人民币</th><th>GLM 积分</th><th>Codex token</th><th>口径提示</th></tr></thead>
@@ -355,6 +363,19 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
               <div><strong>{{ fmt(glm.totals.output) }}</strong><span>输出</span></div>
               <div><strong>{{ fmt(glm.totals.cacheRead) }}</strong><span>缓存读取</span></div>
             </div>
+            <div v-if="glmModelRows.length" class="table-scroll">
+              <table class="glm-model-table">
+                <thead><tr><th>GLM 模型</th><th>输入与缓存写入</th><th>缓存读取</th><th>缓存命中率</th></tr></thead>
+                <tbody>
+                  <tr v-for="[model, row] in glmModelRows" :key="model">
+                    <td class="mono">{{ model }}</td>
+                    <td class="num">{{ fmt(row.input + row.cacheWrite) }}</td>
+                    <td class="num">{{ fmt(row.cacheRead) }}</td>
+                    <td class="num">{{ exclusiveCacheRate(row) }}<span v-if="row.missingUsageJobs" class="muted"> · 部分记录</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <p v-if="glm?.totals.uncertainCredits" class="fine">其中 {{ fmt(glm.totals.uncertainCredits) }} 积分无法精确归单，不能据此比较单卡效率。</p>
             <p v-if="glm?.totals.missingUsageJobs" class="fine">{{ glm.totals.missingUsageJobs }} 个首轮或续聊缺用量，token 小计不完整。</p>
           </section>
@@ -430,13 +451,14 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
                 </div>
                 <div v-else class="table-scroll">
                   <table class="model-table">
-                    <thead><tr><th>模型</th><th>输出</th><th>输入(新)</th><th>缓存读</th><th>消息数</th></tr></thead>
+                    <thead><tr><th>模型</th><th>输出</th><th>输入(新)</th><th>缓存读</th><th>缓存命中率</th><th>消息数</th></tr></thead>
                     <tbody>
                       <tr v-for="[model, value] in modelRows" :key="model">
                         <td class="mono">{{ shortModel(model) }}</td>
                         <td class="num">{{ fmt(value.output) }}</td>
                         <td class="num">{{ fmt(value.input + value.cacheWrite) }}</td>
                         <td class="num">{{ fmt(value.cacheRead) }}</td>
+                        <td class="num">{{ exclusiveCacheRate(value) }}</td>
                         <td class="num">{{ value.msgs.toLocaleString() }}</td>
                       </tr>
                     </tbody>
@@ -514,6 +536,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .glm-grid > div { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
 .glm-grid strong { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
 .glm-grid span { color: var(--text-2); font-size: var(--fs-sm); }
+.glm-model-table { min-width: 650px; }
 .claude-spend { display: grid; gap: var(--s3); background: var(--surface); }
 .spend-note b { color: var(--text); font-weight: 600; }
 .spend-table th:last-child { text-align: right; }
