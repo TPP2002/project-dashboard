@@ -17,7 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, closeSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { CodexTask } from './codex-contract'
 import { resolveAcceptanceArgv } from './codex-contract'
 import { jobPaths, worktreeFor, CODEX_WORKTREES_ROOT, REPO_ROOT } from './codex-paths'
@@ -122,6 +122,8 @@ export interface JobMeta {
 export interface JobState {
   pid: number | null
   startedAt: string
+  /** 监工命令行中的一次性标记；老工单没有，身份探针仍校验脚本、slug 与创建时刻。 */
+  identityToken?: string
   finishedAt: string | null
   exitCode: number | null
   timedOut: boolean
@@ -255,9 +257,10 @@ export const dispatch = (task: CodexTask): { dir: string; pid: number | null; cw
   // 用 node --import tsx 直接拉起,**不要走 npx.cmd**:Node 20 起(CVE-2024-27980 加固)
   // 不带 shell 直接 spawn .cmd 会当场 EINVAL —— 报错长得像"参数写错了",
   // 实际是平台策略,查半天查不到自己头上。
+  const identityToken = randomUUID()
   const supervisor = spawn(
     process.execPath,
-    ['--import', 'tsx', join(REPO_ROOT, 'scripts', 'codex', 'codex-dispatch.ts'), '_supervise', task.slug],
+    ['--import', 'tsx', join(REPO_ROOT, 'scripts', 'codex', 'codex-dispatch.ts'), '_supervise', task.slug, '--identity', identityToken],
     { cwd: REPO_ROOT, detached: true, stdio: 'ignore', windowsHide: true },
   )
   supervisor.unref()
@@ -265,6 +268,7 @@ export const dispatch = (task: CodexTask): { dir: string; pid: number | null; cw
   const state: JobState = {
     pid: supervisor.pid ?? null,
     startedAt: new Date().toISOString(),
+    identityToken,
     finishedAt: null,
     exitCode: null,
     timedOut: false,
@@ -335,17 +339,6 @@ export const supervise = async (slug: string): Promise<void> => {
     timedOut,
     threadId: extractThreadId(paths.execLog),
   } satisfies JobState)
-}
-
-/** 进程还活着吗。信号 0 只探活不真发信号。 */
-export const isAlive = (pid: number | null): boolean => {
-  if (!pid) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
 }
 
 /** 完工标记有没有在事件流里出现过。 */

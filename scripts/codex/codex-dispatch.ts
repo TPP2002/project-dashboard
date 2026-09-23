@@ -46,7 +46,6 @@ import { parseTask, acceptanceKindMenu, type CodexTask } from './codex-contract'
 import { jobPaths, worktreeFor, legacyWorktreePathFor, JOBS_ROOT, REPO_ROOT } from './codex-paths'
 import {
   dispatch as runDispatch,
-  isAlive,
   markerPrinted,
   changedSince,
   runAcceptance,
@@ -57,6 +56,7 @@ import {
   type JobMeta,
   type JobState,
 } from './codex-runner'
+import { inspectProcesses, supervisorLiveness, type ProcessIdentity } from './codex-process'
 import { judge, parseSelfReport, type Judgement, type MachineAcceptance } from './codex-verdict'
 import { openWatchPane, probeHerdr } from './codex-herdr'
 import { parseSayArgs, readSayMessage, sayToJob } from './codex-say'
@@ -139,18 +139,23 @@ const listSlugs = (): string[] => {
 }
 
 /** 一行状态:够看出死活,不够就去 collect。 */
-const oneLineStatus = (slug: string): string => {
+const oneLineStatus = (slug: string, observed: Map<number, ProcessIdentity> | null): string => {
   const paths = jobPaths(slug)
   const meta = readJson<JobMeta>(paths.meta)
   const state = readJson<JobState>(paths.state)
   const verdict = readJson<Judgement>(paths.verdict)
   if (!meta) return slug.padEnd(28) + ' (工单目录不完整)'
 
-  const alive = isAlive(state?.pid ?? null)
+  const identity = observed === null ? undefined : observed.get(state?.pid ?? 0) ?? null
+  const alive = supervisorLiveness(state, slug, identity)
   const phase = verdict
     ? '已判读:' + verdict.finalStatus
-    : alive
+    : alive === 'running'
       ? '跑着呢(pid ' + String(state?.pid) + ')'
+      : alive === 'reused'
+        ? '旧 PID 已被其他进程占用,待 collect'
+        : alive === 'unknown'
+          ? '无法确认监工身份,稍后再查'
       : markerPrinted(paths.execLog, meta.marker)
         ? '跑完了,待 collect'
         : '进程已退出,待 collect'
@@ -164,7 +169,13 @@ const collect = (slug: string, rerun: boolean): number => {
   if (!meta) return die('[codex-dispatch] 没有这个工单:' + slug) as never
   const state = readJson<JobState>(paths.state)
 
-  if (isAlive(state?.pid ?? null)) {
+  const observed = state?.finishedAt || !state?.pid ? new Map<number, ProcessIdentity>() : inspectProcesses([state.pid])
+  const alive = supervisorLiveness(state, slug, observed === null ? undefined : observed.get(state?.pid ?? 0) ?? null)
+  if (alive === 'unknown') {
+    process.stdout.write('无法确认监工进程身份，暂不收单；请检查本机进程探针后重试。\n')
+    return 3
+  }
+  if (alive === 'running') {
     process.stdout.write('还在跑(pid ' + String(state?.pid) + ')。等它退出再 collect,或先看 logs。\n')
     return 3
   }
@@ -321,7 +332,13 @@ switch (command) {
       process.stdout.write('没有工单。\n')
       break
     }
-    process.stdout.write(slugs.map(oneLineStatus).join('\n') + '\n')
+    const pids = slugs.flatMap(slug => {
+      const paths = jobPaths(slug)
+      const state = readJson<JobState>(paths.state)
+      return state?.pid && !state.finishedAt && !existsSync(paths.verdict) ? [state.pid] : []
+    })
+    const observed = inspectProcesses(pids)
+    process.stdout.write(slugs.map(slug => oneLineStatus(slug, observed)).join('\n') + '\n')
     break
   }
 
