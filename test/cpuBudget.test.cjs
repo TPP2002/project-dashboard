@@ -2,60 +2,31 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { startServer, heartbeat, write } = require('./fixtures/sched/support.cjs');
 
-const ROOT = path.resolve(__dirname, '..');
-
-function temporaryHome(t) {
-  const base = fs.realpathSync(os.tmpdir());
-  const dir = fs.mkdtempSync(path.join(base, 'cpu-budget-'));
-  t.after(() => {
-    assert.equal(path.dirname(dir), base, '只清理本测试直接创建的 TEMP 子目录');
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-  return dir;
-}
-
-/** 独立进程隔离模块缓存与本机配置；固定硬件输入，只调用真实模块的只读接口。 */
-function readBudget(dataRoot, overrides = {}, hostname = 'worker-b') {
-  const configKeys = ['DASHBOARD_HOME', 'CPU_LEASE_DIR', 'CPU_DEDICATED_HOSTS', 'CPU_QUOTA_PCT'];
-  const env = Object.fromEntries(Object.entries(process.env)
-    .filter(([key]) => !configKeys.includes(key.toUpperCase())));
-  const source = `
-    const os = require('node:os');
-    os.hostname = () => ${JSON.stringify(hostname)};
-    os.availableParallelism = () => 20;
-    const budget = require('./core/cpuBudget.cjs');
-    console.log(JSON.stringify({ leaseDir: budget.LEASE_DIR, quota: budget.cpuStatus().quota }));
-  `;
-  const result = spawnSync(process.execPath, ['-e', source], {
-    cwd: ROOT,
-    env: { ...env, DASHBOARD_HOME: dataRoot, ...overrides },
-    encoding: 'utf8',
-    windowsHide: true,
-  });
-  assert.ifError(result.error);
-  assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout);
-}
-
-test('CPU_LEASE_DIR: 环境变量优先，未设或空值时使用数据根的通用默认目录', (t) => {
-  const dataRoot = temporaryHome(t);
-  const custom = path.join(dataRoot, 'custom-leases');
-  assert.equal(readBudget(dataRoot, { CPU_LEASE_DIR: custom }).leaseDir, custom);
-  assert.equal(readBudget(dataRoot).leaseDir, path.join(dataRoot, '.cpu-leases'));
-  assert.equal(readBudget(dataRoot, { CPU_LEASE_DIR: '' }).leaseDir, path.join(dataRoot, '.cpu-leases'));
+test('退休账本接口明确下线，不再报零占用或写入已无消费者的预留', async t => {
+  const srv = await startServer(t);
+  const sentinel = path.join(srv.legacy, 'reserve-owner.json');
+  fs.writeFileSync(sentinel, 'retired-ledger-sentinel');
+  for (const [endpoint, body] of [['/api/cpu'], ['/api/cpu', { cores: 10 }], ['/api/sched/legacy-reserve', { requestedCores: 5 }]]) {
+    const result = await srv.json(endpoint, body);
+    assert.equal(result.status, 410);
+    assert.equal(result.body.ok, false);
+    assert.match(result.body.error, /已下线.*调度/);
+    assert.equal(result.body.cpu, undefined);
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'retired-ledger-sentinel');
+  }
+  assert.deepEqual(fs.readdirSync(srv.paths.commands).filter(name => name.endsWith('.json')), []);
 });
 
-test('CPU_DEDICATED_HOSTS: 默认空集，分号或逗号分隔且主机名比对忽略大小写和空白', (t) => {
-  const dataRoot = temporaryHome(t);
-  assert.equal(readBudget(dataRoot).quota, 17);
-  assert.equal(readBudget(dataRoot, { CPU_DEDICATED_HOSTS: '' }).quota, 17);
-  assert.equal(readBudget(dataRoot, { CPU_DEDICATED_HOSTS: ' ; , ' }).quota, 17);
-  assert.equal(readBudget(dataRoot, { CPU_DEDICATED_HOSTS: 'worker-other' }).quota, 17);
-  for (const hosts of [' worker-a ; WoRkEr-B ', ' worker-a , WoRkEr-B ', ' ; worker-a, WoRkEr-B ;, ']) {
-    assert.equal(readBudget(dataRoot, { CPU_DEDICATED_HOSTS: hosts }, ' wOrKeR-b ').quota, 20);
-  }
+test('机器占用、预留与 CI 余量全由心跳提供，账本为空也不能推断机器空闲', async t => {
+  const srv = await startServer(t), hb = heartbeat(new Date().toISOString());
+  Object.assign(hb.machines[0], { ci: 'active', ciRunners: ['runner-a'], ciReserveCores: 8 });
+  write(srv.paths.heartbeat, hb);
+  const result = await srv.json('/api/sched/snapshot');
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.machines, hb.machines);
+  assert.equal(Object.hasOwn(result.body, 'legacyReserve'), false);
+  assert.deepEqual(fs.readdirSync(srv.legacy), []);
 });

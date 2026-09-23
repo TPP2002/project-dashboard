@@ -8,7 +8,7 @@ const { startServer, heartbeat, ticket, openStream, write, AT } = require('./fix
 const saveTicket = (srv, value) => write(path.join(srv.paths.tickets, `${value.ticketId}.json`), value);
 const commandFiles = srv => fs.readdirSync(srv.paths.commands).filter(name => name.endsWith('.json'));
 
-test('真服务快照：原样决策、四种在跑状态、零核施工单、最新 20 条回执与旧预留', async t => {
+test('真服务快照：原样决策、四种在跑状态、零核施工单、最新 20 条回执', async t => {
   const srv = await startServer(t);
   const hb = heartbeat(new Date(Date.now() - 65000).toISOString());
   const queued = ticket(1, { state: 'queued', machine: null }); saveTicket(srv, queued);
@@ -27,7 +27,7 @@ test('真服务快照：原样决策、四种在跑状态、零核施工单、�
   assert.equal(result.body.running.length, 5); assert.deepEqual(result.body.registerOnly.map(item => item.ticketId), [build.ticketId]);
   assert.equal(result.body.recentReceipts.length, 20); assert.equal(result.body.recentReceipts[0].commandId, 'receipt-24');
   assert.equal(result.body.recentReceipts[19].commandId, 'receipt-5');
-  assert.deepEqual(result.body.legacyReserve, { reservedCores: 0, reserveExpiresAt: null });
+  assert.equal(Object.hasOwn(result.body, 'legacyReserve'), false);
 });
 
 test('真服务台账：项目/机器/派单方/结果/日期筛选、稳定游标、四段时长和详情全文', async t => {
@@ -90,44 +90,36 @@ test('七种指令原子写入：主机名由配置补齐、时间十分钟、�
   assert.deepEqual(commandFiles(srv), before);
 });
 
-test('预留双写：四档、两种到期时间与手动期限，0 核清除且不动普通租约', async t => {
+test('预留只交统一调度：四档、两种到期时间与手动期限均保真，旧账本不再改动', async t => {
   const srv = await startServer(t), reserveFile = path.join(srv.legacy, 'reserve-owner.json');
-  const cpu = (await srv.json('/api/cpu')).body.cpu;
+  fs.writeFileSync(reserveFile, 'retired-reserve-sentinel');
   const ordinary = path.join(srv.legacy, 'worker.json'); fs.writeFileSync(ordinary, 'ordinary-lease-sentinel');
   for (const cores of [5, 10, 15]) for (const duration of [undefined, 60, 180]) {
     const data = { requestedCores: cores, ...(duration ? { durationMinutes: duration } : {}) };
     const result = await srv.json('/api/sched/command', { kind: 'reserve', data });
-    assert.equal(result.status, 200); assert.deepEqual(result.body.legacy, { ok: true });
+    assert.equal(result.status, 200); assert.equal(Object.hasOwn(result.body, 'legacy'), false);
     const command = c.readJson(path.join(srv.paths.commands, result.body.commandId + '.json'));
-    const reserve = c.readJson(reserveFile);
-    assert.equal(reserve.cores, Math.min(cores, cpu.quota), '旧账本保留它自己的导出函数配额规则');
-    if (duration) assert.equal(reserve.expiresAt, new Date(Date.parse(command.createdAt) + duration * 60000).toISOString());
-    else assert.equal(reserve.expiresAt, undefined);
+    assert.deepEqual(command.data, { ...data, machine: 'fixture-host' });
+    assert.equal(fs.readFileSync(reserveFile, 'utf8'), 'retired-reserve-sentinel');
   }
   const result = await srv.json('/api/sched/command', { kind: 'reserve', data: { requestedCores: 0 } });
-  assert.deepEqual(result.body.legacy, { ok: true }); assert.equal(fs.existsSync(reserveFile), false);
+  assert.equal(result.body.ok, true); assert.equal(Object.hasOwn(result.body, 'legacy'), false);
+  assert.deepEqual(c.readJson(path.join(srv.paths.commands, result.body.commandId + '.json')).data, { requestedCores: 0, machine: 'fixture-host' });
+  assert.equal(fs.readFileSync(reserveFile, 'utf8'), 'retired-reserve-sentinel');
   assert.equal(fs.readFileSync(ordinary, 'utf8'), 'ordinary-lease-sentinel');
-  assert.deepEqual((await srv.json('/api/sched/snapshot')).body.legacyReserve, { reservedCores: 0, reserveExpiresAt: null });
 });
 
-test('旧账本写失败仍保留已提交指令并回报；重试只同步旧账本，输入仍严格校验', async t => {
+test('旧账本不可写不影响调度预留；退休重试入口不再接收任何写请求', async t => {
   const srv = await startServer(t), reserveFile = path.join(srv.legacy, 'reserve-owner.json');
   fs.mkdirSync(reserveFile);
   const result = await srv.json('/api/sched/command', { kind: 'reserve', data: { requestedCores: 5, durationMinutes: 60 } });
-  assert.equal(result.status, 200); assert.equal(result.body.ok, true); assert.equal(result.body.legacy.ok, false); assert.ok(result.body.legacy.error);
+  assert.equal(result.status, 200); assert.equal(result.body.ok, true); assert.equal(Object.hasOwn(result.body, 'legacy'), false);
   assert.ok(fs.existsSync(path.join(srv.paths.commands, result.body.commandId + '.json')));
   const before = commandFiles(srv);
-  assert.equal((await srv.json('/api/sched/legacy-reserve', { requestedCores: 5 })).body.legacy.ok, false);
-  fs.rmdirSync(reserveFile);
-  const start = Date.now();
-  const retried = await srv.json('/api/sched/legacy-reserve', { requestedCores: 5, durationMinutes: 60 });
-  assert.deepEqual(retried.body, { ok: true, legacy: { ok: true } });
-  const expires = Date.parse(c.readJson(reserveFile).expiresAt);
-  assert.ok(expires >= start + 3600000 && expires <= Date.now() + 3600000);
-  assert.deepEqual(commandFiles(srv), before);
-  for (const body of [{ requestedCores: 5, machine: 'attacker' }, { requestedCores: 0, durationMinutes: 180 }, { requestedCores: 5, durationMinutes: null }]) {
-    assert.equal((await srv.json('/api/sched/legacy-reserve', body)).status, 400);
+  for (const body of [{ requestedCores: 5 }, { requestedCores: 5, durationMinutes: 60 }, { requestedCores: 5, machine: 'attacker' }]) {
+    assert.equal((await srv.json('/api/sched/legacy-reserve', body)).status, 410);
   }
+  assert.deepEqual(commandFiles(srv), before); assert.equal(fs.statSync(reserveFile).isDirectory(), true);
 });
 
 test('共享盘任何一处缺失或损坏都报不可读，不返回空队列；不存在的单子与盘不可读分开', async t => {

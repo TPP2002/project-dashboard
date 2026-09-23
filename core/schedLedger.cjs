@@ -51,17 +51,22 @@ function requestsByTicket(tickets, events) {
   return requests;
 }
 
-/** 以执行号配对，跨日/重跑不串单；未开跑就撤单的 finished 不算执行样本。单位毫秒。 */
-function durationSamples(tickets, events, nowMs) {
+/** 以执行号及该次许可分桶，跨日/重跑不串单；未开跑就撤单不算样本。单位毫秒。 */
+function durationSamples(tickets, events, nowMs, { ciAware = false } = {}) {
   const requests = requestsByTicket(tickets, events), starts = new Map(), groups = new Map();
+  const permits = new Map(tickets.flatMap(ticket => ticket.attempts.map(attempt =>
+    [JSON.stringify([ticket.ticketId, attempt.attemptId]), attempt.permit?.ciAware === true])));
   const ordered = [...events].filter(event => Date.parse(event.at) <= nowMs).sort((a, b) => a.seq - b.seq);
   for (const event of ordered) {
     if (!event.ticketId || !event.attemptId) continue;
     const key = JSON.stringify([event.ticketId, event.attemptId]);
+    // 归档票据可能已没有快照，仍可从授予事件恢复当次许可；不按当前机器 CI 状态猜。
+    if (event.type === 'granted') permits.set(key, event.data.permit?.ciAware === true);
     if (event.type === 'started' && !starts.has(key)) starts.set(key, Date.parse(event.at));
     if (event.type !== 'finished' || !starts.has(key)) continue;
     const elapsed = Date.parse(event.at) - starts.get(key);
     starts.delete(key);
+    if ((permits.get(key) === true) !== ciAware) continue;
     const request = requests.get(event.ticketId);
     if (!request || elapsed < 0 || !Number.isFinite(elapsed)) continue;
     const group = sampleKey(request), samples = groups.get(group) || [];

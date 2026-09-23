@@ -70,7 +70,7 @@ test('ciAware 在跑按中位耗时的 1.5 倍估完成，排队等待沿用同�
   const running = job(1, 'running', 4000), waiting = job(2), samples = history([8000, 10000, 12000]);
   running.attempts[0].permit.ciAware = true;
   const input = snapshot([running, waiting], [machine({ ci: 'active', quotaCores: 12, ciReserveCores: 8 })]);
-  const completion = { kind: 'completion', sampleCount: 3, medianMs: 10000, slowdown: 1.5,
+  const completion = { kind: 'completion', sampleCount: 3, medianMs: 10000, slowdown: 1.5, slowdownEstimated: true,
     finishAt: iso(NOW + 11000), remainingMs: 11000, overdue: false, ciHeadroom: 8 };
   const wait = { kind: 'wait', sampleCount: 3, medianMs: 10000, ciHeadroom: 8, machine: 'fixture-worker', startAt: iso(NOW + 11000), waitMs: 11000 };
   for (const state of ['running', 'slow']) for (const pauseReasons of [[], ['ci']]) {
@@ -84,6 +84,67 @@ test('ciAware 在跑按中位耗时的 1.5 倍估完成，排队等待沿用同�
   input.machines[0].ci = 'idle';
   assert.deepEqual(estimateTickets(input, samples)[running.ticketId], completion);
   for (const ciAwareSlowdown of [0, 0.5, NaN, Infinity, '1.5']) assert.throws(() => estimateTickets(input, samples, { ciAwareSlowdown }), RangeError);
+});
+
+function ciHistory(normal, ciAware) {
+  const data = history([...normal, ...ciAware]), events = [];
+  let index = -1;
+  for (const event of data.events) {
+    events.push(event);
+    if (event.type === 'submitted') {
+      index++;
+      events.push({ ...event, type: 'granted', data: { permit: index >= normal.length ? { ciAware: true } : {} } });
+    }
+  }
+  return { ...data, events: events.map((event, index) => ({ ...event, seq: index + 1 })) };
+}
+
+test('ciAware 样本四条仍估、五条按同类两桶中位数比校准；普通估值不能混入低优先级耗时', () => {
+  const running = job(1, 'running', 4000), waiting = job(2);
+  running.attempts[0].permit.ciAware = true;
+  const input = freeze(snapshot([running, waiting]));
+  for (const count of [4, 5]) {
+    const samples = freeze(ciHistory([8000, 10000, 12000], [18000, 20000, 24000, 26000, 500000].slice(0, count)));
+    const before = JSON.stringify([input, samples]);
+    const result = estimateTickets(input, samples), completion = result[running.ticketId];
+    assert.equal(completion.medianMs, 10000); assert.equal(completion.sampleCount, 3);
+    assert.equal(completion.slowdown, count === 5 ? 2.4 : 1.5);
+    assert.equal(completion.slowdownEstimated, count !== 5);
+    assert.equal(completion.remainingMs, count === 5 ? 20000 : 11000);
+    assert.equal(result[waiting.ticketId].waitMs, completion.remainingMs);
+    assert.equal(JSON.stringify([input, samples]), before);
+  }
+});
+
+test('校准只用同 category/work-type 的有效基线，零基线回退、缺基线不虚构耗时', () => {
+  const running = job(1, 'running'); running.attempts[0].permit.ciAware = true;
+  const input = snapshot([running]);
+  const samples = ciHistory([10000], Array(5).fill(20000));
+  for (const event of samples.events) if (event.type === 'submitted' && event.ticketId !== samples.events[0].ticketId) event.data.request.work.type = 'another-work';
+  const result = estimateTickets(input, samples)[running.ticketId];
+  assert.equal(result.slowdown, 1.5); assert.equal(result.slowdownEstimated, true);
+  const zero = estimateTickets(input, ciHistory([0], Array(5).fill(10000)))[running.ticketId];
+  assert.equal(zero.slowdown, 1.5); assert.equal(zero.slowdownEstimated, true);
+  assert.equal(estimateTickets(input, ciHistory([], Array(5).fill(10000)))[running.ticketId].code, 'history');
+  const quicker = estimateTickets(input, ciHistory([10000], Array(5).fill(8000)))[running.ticketId];
+  assert.equal(quicker.slowdown, 0.8, '忠实使用真实比值，不把小于 1 的实测结果强行改写');
+  assert.equal(quicker.slowdownEstimated, false);
+});
+
+test('耗时按每次 attempt 的许可分桶，归档单仍用 granted 台账，最近二十条在各桶独立截取', () => {
+  const samples = ciHistory([10000], Array.from({ length: 22 }, (_, index) => (index + 1) * 1000));
+  const key = sampleKey(job(1).request);
+  assert.deepEqual(durationSamples([], samples.events, NOW).get(key), { sampleCount: 1, medianMs: 10000 });
+  assert.deepEqual(durationSamples([], samples.events, NOW, { ciAware: true }).get(key), { sampleCount: 20, medianMs: 12500 });
+  const old = job(1000, 'passed'); old.currentAttemptId = 'a2';
+  old.attempts.push({ ...old.attempts[0], attemptId: 'a2', permit: { ...old.attempts[0].permit, ciAware: true } });
+  const noGrant = history([1000]);
+  assert.deepEqual(durationSamples([old], noGrant.events, NOW).get(key), { sampleCount: 1, medianMs: 1000 });
+  old.attempts[0].permit.ciAware = true;
+  assert.equal(durationSamples([old], noGrant.events, NOW).has(key), false);
+  assert.deepEqual(durationSamples([old], noGrant.events, NOW, { ciAware: true }).get(key), { sampleCount: 1, medianMs: 1000 });
+  // 授予台账是此次许可的正本，即使快照不同也以对应 attempt 的授予事件为准。
+  assert.deepEqual(durationSamples([old], samples.events, NOW).get(key), { sampleCount: 1, medianMs: 10000 });
 });
 
 test('被 CI 冻住且没有 ciAware 真值的执行算不出，并把原因传给等待释放的单子', () => {

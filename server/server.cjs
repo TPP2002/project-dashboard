@@ -51,7 +51,6 @@ const { resolveInsideRoot } = require('../core/safePath.cjs');
 const { VOID_STATUSES } = require('../core/boardSchema.cjs');
 const { isUnlanded } = require('../core/decisionLanding.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
-const cpuBudget = require('../core/cpuBudget.cjs');
 const costUsage = require('../core/costUsage.cjs');
 const costSessionDetail = require('../core/costSessionDetail.cjs');
 const costJobDetail = require('../core/costJobDetail.cjs');
@@ -524,6 +523,8 @@ function handleHealth(req, res) {
     // 启动器据此判断要不要换新，体检据此提醒"合了主干还没生效"。
     mode: MODE,
     codeRoot: DASH_ROOT,
+    registryPath: REGISTRY,
+    dataRoot: DASHBOARD_HOME,
     releaseCommit: RELEASE_COMMIT,
     releaseBehind: releaseBehindOf(RELEASE_COMMIT, latestReleaseCommit, MODE),
     latestReleaseCommit,
@@ -726,7 +727,7 @@ const auditionApi = createAuditionApi({
   registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards: () => pollBoards(),
 });
 
-const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, cpuBudget, resolveShare: resolveSchedShare });
+const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, resolveShare: resolveSchedShare });
 
 /** board 位于项目的 .dashboard 目录；仅异步读取 origin，绝不改 Git 或执行 shell。 */
 function readCiRepository(boardPath, runFile = execFile) {
@@ -767,13 +768,9 @@ async function readCiRunnerMachines() {
 const ciJobs = createCiJobsMonitor({ now: Date.now, readBoards: readCiBoards, readRunnerMachines: readCiRunnerMachines,
   runnerOverrides: process.env.DASHBOARD_CI_RUNNER_MAP || '{}', repositoryOverrides: process.env.DASHBOARD_CI_REPOSITORIES });
 
-/**
- * 本机算力账本快照(GET /api/cpu)。
- * 只读账本文件,不动任何进程;看板据此显示"当前谁占了多少核、还剩多少"。
- */
-function handleCpuStatus(req, res) {
-  try { return sendJson(res, 200, { ok: true, cpu: cpuBudget.cpuStatus() }); }
-  catch (e) { return sendJson(res, 500, { ok: false, error: '读算力账本失败：' + (e && e.message) }); }
+/** 旧租约已无生产者，不能把空目录解释为机器空闲，也不再接受失效预留。 */
+function handleRetiredCpu(req, res) {
+  return sendJson(res, 410, { ok: false, error: '旧算力账本已下线，请使用调度台 /api/sched/snapshot 与 /api/sched/command' });
 }
 
 /**
@@ -913,31 +910,6 @@ async function handleCostJobDetail(req, res, query) {
   } catch (e) {
     sendJson(res, 500, { ok: false, error: '工单明细读取失败：' + (e && e.message) });
   }
-}
-
-/**
- * 设置/释放负责人预留(POST /api/cpu,body: { cores, minutes? })。
- *
- * 写的就是账本里一条普通占用记录,所有跑测试的进程下次启动读到它就自动让路——
- * 不需要通知谁、也不会打断正在跑的活(不抢已发出去的活,只影响之后启动的)。
- * cores<=0 = 释放;minutes 给了就设到期时间,防"设了忘了释放"长期空占。
- */
-function handleCpuReserve(req, res) {
-  readBody(req, BODY_MAX, (err, raw) => {
-    if (err) return sendJson(res, 413, { ok: false, error: err.message });
-    let body;
-    try { body = raw ? JSON.parse(raw) : {}; }
-    catch (_) { return sendJson(res, 400, { ok: false, error: '请求体不是合法 JSON' }); }
-
-    const cores = Number(body.cores);
-    if (!Number.isFinite(cores)) return sendJson(res, 400, { ok: false, error: '缺 cores（要预留的核数，0=释放）' });
-    const minutes = Number(body.minutes);
-    const opts = Number.isFinite(minutes) && minutes > 0
-      ? { expiresAtMs: Date.now() + minutes * 60 * 1000 }
-      : {};
-    try { return sendJson(res, 200, { ok: true, cpu: cpuBudget.setReserve(cores, opts) }); }
-    catch (e) { return sendJson(res, 500, { ok: false, error: '写算力账本失败：' + (e && e.message) }); }
-  });
 }
 
 const TASK_ACTIONS = ['note', 'park', 'unpark', 'cancel', 'reopen', 'request-info'];
@@ -1477,8 +1449,7 @@ const server = http.createServer((req, res) => {
         return handleTaskAction(req, res, segs[2], segs[3], segs[4]);
       }
       if (sub === 'mark-landed' && req.method === 'POST') return handleMarkLanded(req, res, segs[2], segs[3]);
-      if (sub === 'cpu' && req.method === 'GET') return handleCpuStatus(req, res);
-      if (sub === 'cpu' && req.method === 'POST') return handleCpuReserve(req, res);
+      if (sub === 'cpu' && ['GET', 'POST'].includes(req.method)) return handleRetiredCpu(req, res);
       // 明细两条路由要排在通用 /api/cost 之前,否则被它截走(COST-UI-SESSION-DETAIL)
       if (sub === 'cost' && segs[2] === 'session-detail' && req.method === 'GET') return handleCostSessionDetail(req, res, parsed.query || {});
       if (sub === 'cost' && segs[2] === 'job-detail' && req.method === 'GET') return handleCostJobDetail(req, res, parsed.query || {});
@@ -1522,9 +1493,11 @@ function probeHealth(port) {
 
 /** 在端口区间里找已在跑的"我们的"实例，返回 {port, health}；没有则 null */
 async function findExistingInstance() {
+  // 显式端口 0 用于隔离自检，由系统分配并持有端口，不扫描或接管其它实例。
+  if (PORT_BASE === 0) return null;
   for (let p = PORT_BASE; p <= PORT_BASE + PORT_RANGE; p++) {
     const h = await probeHealth(p);
-    if (h && h.service === SERVICE) return { port: p, health: h };
+    if (h && h.service === SERVICE && sameDataScope(h)) return { port: p, health: h };
   }
   return null;
 }
@@ -1540,6 +1513,18 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 function isSameRuntime(h) {
   if (!h || h.codeRoot === undefined) return false;
   return path.resolve(h.codeRoot) === path.resolve(DASH_ROOT) && (h.releaseCommit || null) === RELEASE_COMMIT;
+}
+
+/** 端口相邻不代表同一实例。旧版无归属信息时只允许默认生产实例升级接管。 */
+function sameDataScope(h) {
+  if (!h.registryPath || !h.dataRoot) {
+    return !process.env.DASHBOARD_REGISTRY && !process.env.DASHBOARD_HOME && !process.env.DASHBOARD_PORT;
+  }
+  const identity = value => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return identity(h.registryPath) === identity(REGISTRY) && identity(h.dataRoot) === identity(DASHBOARD_HOME);
 }
 
 /**
@@ -1596,10 +1581,12 @@ function startIntervals() {
 
 function tryListen(port, attemptsLeft) {
   server.removeAllListeners('error');
+  // 上次端口占用留下的回调不能在下一次成功时重复宣布旧地址、启动重复轮询。
+  server.removeAllListeners('listening');
   server.listen(port, '127.0.0.1');
   server.once('listening', () => {
-    state.actualPort = port;
-    const localUrl = `http://127.0.0.1:${port}/`;
+    state.actualPort = server.address().port;
+    const localUrl = `http://127.0.0.1:${state.actualPort}/`;
     console.log('\n================================================');
     console.log('项目管理看板 · 已启动');
     console.log(`  本地地址：${localUrl}`);
@@ -1612,6 +1599,9 @@ function tryListen(port, attemptsLeft) {
     console.log('浏览器应已自动打开；未打开请手动访问上面地址。按 Ctrl+C 关闭。\n');
     pollBoards();       // 立即建立 mtime 基线
     startIntervals();   // 启动轮询 + 心跳
+    if (PORT_BASE === 0 && process.connected && typeof process.send === 'function') {
+      process.send({ type: 'dashboard-ready', service: SERVICE, port: state.actualPort, pid: process.pid });
+    }
     openBrowser(localUrl);
   });
   server.once('error', (err) => {

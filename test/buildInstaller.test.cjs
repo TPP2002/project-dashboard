@@ -15,7 +15,7 @@
  *      故意删掉一个模块后,自检必须报错(否则它就是个摆设)。
  *
  * 全程只写临时目录:staging 落 tmp、registry 用 staging 自带的空 registry、
- * 随机高位端口 + DASHBOARD_NO_OPEN=1,绝不碰真实 registry、真实 6060 实例、packaging/staging。
+ * 系统分配端口 + DASHBOARD_NO_OPEN=1,绝不碰真实 registry、真实 6060 实例、packaging/staging。
  * web/dist 是 gitignored(CI 上不存在),故用临时假 dist 喂给 stageRoot,不依赖前端构建产物。
  */
 const { test } = require('node:test');

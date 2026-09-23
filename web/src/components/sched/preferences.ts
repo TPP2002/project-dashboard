@@ -1,10 +1,10 @@
-import type { CommandInput, LegacySync, Receipt, TicketFilters } from '@/api/sched'
+import type { CommandInput, Receipt, TicketFilters } from '@/api/sched'
 
 export type Period = 'today' | 'd7' | 'd90' | 'all' | 'custom'
 export interface LedgerPrefs extends TicketFilters { period: Period }
 export interface SubmittedCommand {
   commandId: string; input: CommandInput; createdAt: string; expiresAt: string; share: string
-  legacy?: LegacySync; receipt?: Receipt
+  receipt?: Receipt
 }
 export const DEFAULT_FILTERS: LedgerPrefs = { project: '', machine: '', submitter: '', engine: '', result: '', from: '', to: '', period: 'd7' }
 const FILTER_KEY = 'dashboard.sched.filters.v1'
@@ -60,9 +60,6 @@ export function loadCommands(): SubmittedCommand[] {
     const input = commandInput(value.input)
     if (!input) continue
     const item: SubmittedCommand = { commandId: value.commandId, createdAt: value.createdAt, expiresAt: value.expiresAt, share: value.share, input }
-    if (object(value.legacy) && typeof value.legacy.ok === 'boolean') {
-      item.legacy = { ok: value.legacy.ok, ...(boundedText(value.legacy.error) ? { error: value.legacy.error } : {}) }
-    }
     const receipt = value.receipt
     if (object(receipt) && receipt.commandId === item.commandId && iso(receipt.at)
       && (receipt.status === 'executed' || ((receipt.status === 'rejected' || receipt.status === 'expired') && boundedText(receipt.reason)))) {

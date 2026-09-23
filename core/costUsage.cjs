@@ -10,7 +10,7 @@
  * 含 worktree 的目录按边界前缀匹配，归最长登记前缀；同址并列时显式标记共享。
  *
  * 【增量缓存】jsonl 只追加不改写,按 (size, mtimeMs) 判断文件是否变过:没变直接用上次的
- * 按天聚合结果,变了只重扫这一个文件。缓存落 data/costUsageCache.json(原子写)。
+ * 按天聚合结果,变了只重扫这一个文件。缓存落数据根 costUsageCache.json(原子写)，发布换代不丢失。
  * 全项目首扫几十 MB 需数秒,之后每次刷新只扫活跃会话的增量。
  *
  * 零依赖(core 纪律),仅 node 内置模块。
@@ -22,9 +22,10 @@ const os = require('node:os');
 const readline = require('node:readline');
 const { atomicWriteJsonSync } = require('./atomicWrite.cjs');
 const { cardForSession } = require('./costSessionDetail.cjs');
+const { DASHBOARD_HOME } = require('./resolveProject.cjs');
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects');
-const CACHE_PATH = path.join(__dirname, '..', 'data', 'costUsageCache.json');
+const CACHE_PATH = path.join(DASHBOARD_HOME, 'costUsageCache.json');
 // v3: 字段 version 改名 schemaVersion(COST-UI-SESSION-DETAIL),且缓存里存的东西结构变了
 // (流水按 message.id 去重、新增按会话·按天的明细桶)——读缓存严格 === 比对,对不上整份丢掉重扫。
 // 前科:结构改了没升号,旧缓存被照单全收,新字段全空、老字段全对、一个错都不报。
@@ -363,7 +364,7 @@ function buildSessionRows(sessionAcc, cutoffStr, cardIds) {
  *   scanned:number, cachedFiles:number, sessions:number,
  *   sessionRows:Array, context:{turns,avgContext,load,heavyTurns,heavyRatio}}>}
  */
-async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH, cardIds = [] }) {
+async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH, cardIds = [], warn = console.warn }) {
   prefixes = prefixes.filter(Boolean);
   if (!prefixes.length) throw new Error('缺 prefix(由 mainRepo 映射)');
   let allDirNames = [];
@@ -404,7 +405,12 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
   }
 
   if (scanned > 0) {
-    try { atomicWriteJsonSync(cachePath, cache); } catch (_) { /* 缓存写失败不影响本次结果 */ }
+    try {
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      atomicWriteJsonSync(cachePath, cache);
+    } catch (error) {
+      warn(`[costUsage] 成本缓存写入失败：${cachePath}；${error.message}`);
+    }
   }
 
   // 最近 N 天窗口(含今天),按日期升序

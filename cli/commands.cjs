@@ -719,7 +719,7 @@ function done(flags) {
     t.dates = t.dates || {};
     // 收官 ≠ 完工。给「收官」也写完工日期 + 100%，等于让一张还在收尾的卡在统计和每日成果里
     // 冒充成果，完工日那栏也从此对不上账（审计 §4-A7）。进度照旧由 progress 报。
-    if (!collect) { t.dates.done = today(); t.percent = 100; }
+    if (!collect) { t.dates.done = today(); t.percent = 100; delete t.nextMilestone; }
     if (prs.length) t.prNumbers = unionBy([...(t.prNumbers || []), ...prs], String);
     if (commits.length) t.commitShas = unionShas([...(t.commitShas || []), ...commits]);
     // 卡都完工了，本卡那些「已拍板却没人标落地」的决策，落地的就是这次施工。逐条标是纪律活、

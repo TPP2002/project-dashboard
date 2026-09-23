@@ -134,15 +134,13 @@ function countFiles(dir) {
  *   web/vite.config.ts 会 `require('../core/boardSchema.cjs')`(状态枚举单一真相源),缺了它构建直接失败。
  * 为什么依赖用软链而不是拷:
  *   node_modules 上万个文件,拷一次比构建还慢;借来源检出已装好的那份即可(只读消费,不写它)。
- * 为什么不走 `npm run build`:
- *   Windows 上要过 npm.cmd + shell,引号与退出码都不可靠;直接用本进程的 node 跑 vite 的入口最稳。
- *   代价是"构建脚本"这件事被钉死在这里 —— 所以下面加了一道机器闸:web/package.json 的 build 脚本
- *   一旦不再是 `vite build`,发布当场失败并指路,不许它悄悄漂。
+ * 构建通过同一排队入口取得许可，临时树仍绑定发布 SHA；云 CI 可直接执行。
+ * build 脚本只接受旧 vite 入口或本仓调度入口，避免构建契约静默漂移。
  *
  * @param {{source:string, sha:string, outRoot:string}} args outRoot=副本的 .new 目录
  * @returns {{files:number, ms:number, dist:string}}
  */
-function buildWebDist({ source, sha, outRoot }) {
+function buildWebDist({ source, sha, outRoot }, { runBuild = queuedWebBuild } = {}) {
   const started = Date.now();
   const wanted = [...WEB_BUILD_DEPS_PATHS, ...WEB_SOURCE_PATHS];
   const files = git(source, ['ls-tree', '-r', '--name-only', sha, '--', ...wanted]).split('\n').filter(Boolean);
@@ -157,8 +155,8 @@ function buildWebDist({ source, sha, outRoot }) {
 
     const pkg = JSON.parse(fs.readFileSync(path.join(webRoot, 'package.json'), 'utf8'));
     const buildScript = (pkg.scripts || {}).build;
-    if (buildScript !== 'vite build') {
-      throw new Error(`web/package.json 的 build 脚本变成了 ${JSON.stringify(buildScript)},不再是 "vite build"。\n  发布命令是直接用 node 跑 vite 入口的(见 buildWebDist 头注),脚本改了这里必须跟着改,不许悄悄发一份用旧办法建出来的界面。`);
+    if (!['vite build', 'node ../cli/scheduledWork.cjs build'].includes(buildScript)) {
+      throw new Error(`web/package.json 的 build 脚本变成了 ${JSON.stringify(buildScript)},不属于已支持的 vite 或调度入口。\n  发布命令通过调度许可运行 Vite(见 buildWebDist 头注)，脚本改了这里必须跟着改，不许悄悄发一份用旧办法建出来的界面。`);
     }
     // 依赖借来源检出的(只读)。它没装 → 明确指路,不擅自 npm ci(装依赖是几分钟的事,不该藏在发布里)。
     const deps = path.join(source, 'web', 'node_modules');
@@ -169,10 +167,7 @@ function buildWebDist({ source, sha, outRoot }) {
     fs.symlinkSync(deps, link, process.platform === 'win32' ? 'junction' : 'dir');
 
     try {
-      execFileSync(process.execPath, [viteBin, 'build'], {
-        cwd: webRoot, encoding: 'utf8', windowsHide: true, timeout: 10 * 60 * 1000,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      runBuild({ root: tmp, webRoot, viteBin });
     } catch (e) {
       const detail = String((e && (e.stderr || e.stdout || e.message)) || e).trim().split('\n').slice(-8).join('\n');
       throw new Error(`前端构建失败,整单不发(副本保持原样):\n${detail}`);
@@ -189,6 +184,12 @@ function buildWebDist({ source, sha, outRoot }) {
     try { fs.unlinkSync(link); } catch { /* 没建出来 / 已摘 */ }
     try { rmrf(tmp); } catch { /* 删不掉就留给系统清临时目录 */ }
   }
+}
+
+function queuedWebBuild({ root }) {
+  execFileSync(process.execPath, [path.join(__dirname, 'scheduledWork.cjs'), '--root', root, 'build'], {
+    cwd: os.tmpdir(), encoding: 'utf8', windowsHide: true, stdio: 'inherit',
+  });
 }
 
 /**

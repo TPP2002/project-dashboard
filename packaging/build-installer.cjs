@@ -269,17 +269,17 @@ async function selfCheckStagedRoot(root, opts = {}) {
   const log = opts.log ?? console.log;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('自检 timeoutMs 必须是正数。');
   root = path.resolve(root);
-  // 随机只用于避开日常服务端口，不参与业务数据；仍须核对 pid，防止单实例复用造成假绿。
-  const port = 40000 + Math.floor(Math.random() * 20001);
-  log(`  自检：用内嵌 node 启动服务（端口 ${port}）...`);
+  // 子进程 listen(0) 原子取得可用端口，避免 Windows 保留段和先探空闲再绑定的竞争。
+  let port = null;
+  log('  自检：用内嵌 node 启动服务（由系统分配端口）...');
   let child;
   try {
     child = cp.spawn(path.join(root, 'node-runtime', 'node.exe'), [path.join(root, 'server', 'server.cjs')], {
       cwd: root,
       env: { ...process.env, DASHBOARD_HOME: root, DASHBOARD_REGISTRY: path.join(root, 'registry.json'),
-        DASHBOARD_NO_OPEN: '1', DASHBOARD_PORT: String(port) },
+        DASHBOARD_NO_OPEN: '1', DASHBOARD_PORT: '0' },
       windowsHide: true,
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
     });
   } catch (err) {
     throw new Error('自检启动失败：' + err.message + '\n子进程 stderr：（尚未启动，无输出）');
@@ -333,7 +333,16 @@ async function selfCheckStagedRoot(root, opts = {}) {
         // 启动阶段的连接拒绝属于尚未就绪；总超时统一兜底，不无限重试。
         request.once('error', () => { if (!settled) pollTimer = setTimeout(poll, 100); });
       }
-      poll();
+      child.on('message', message => {
+        if (settled || port !== null || message?.type !== 'dashboard-ready') return;
+        if (message.service !== 'claude-dashboard' || message.pid !== child.pid ||
+            !Number.isInteger(message.port) || message.port < 1 || message.port > 65535) {
+          fail(new Error('子进程就绪消息的身份或端口不合法。'));
+          return;
+        }
+        port = message.port;
+        poll();
+      });
     });
   } catch (err) {
     failure = err;

@@ -6,7 +6,6 @@ export type CommandInput =
   | { kind: 'jump-queue' | 'cancel' | 'pause-one' | 'resume-one'; data: { ticketId: string } }
   | { kind: 'owner-hold' | 'owner-release'; data: Record<string, never> }
   | { kind: 'reserve'; data: ReserveData }
-export interface LegacySync { ok: boolean; error?: string }
 export interface Receipt { commandId: string; status: 'executed' | 'rejected' | 'expired'; at: string; reason?: string }
 export interface Timing { queuedMs: number; runningMs: number; pausedMs: number; slowMs: number }
 export interface Reservation { requestedCores: ReserveCores; fulfilledCores: number; untilAt: string | null }
@@ -24,7 +23,7 @@ export interface QueueEntry {
 export type TicketEstimate =
   | { kind: 'unavailable'; code: string; reason: string }
   | { kind: 'wait'; startAt: string; waitMs: number; machine: string; medianMs: number; sampleCount: number }
-  | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number }
+  | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number; slowdown?: number; slowdownEstimated?: boolean }
 export interface TicketRelations {
   readable: boolean; reason: string | null
   children: { ticketId: string; title: string; state: TicketState }[] | null
@@ -62,7 +61,6 @@ export interface SchedSnapshot {
   machines: MachineSnapshot[]; queue: QueueEntry[]; locks: { machine: string; byTicketId: string }[]
   running: TicketSummary[]; registerOnly: TicketSummary[]; recentReceipts: Receipt[]
   registerOnlyGroups?: EngineGroup[]
-  legacyReserve: { reservedCores: number; reserveExpiresAt: string | null }
   estimates: Record<string, TicketEstimate>; estimatesAt: string; historyError: string | null
   connectedProjects: { readable: boolean; names: string[]; reason: string | null }
 }
@@ -77,7 +75,7 @@ async function request<T>(endpoint: string, body?: unknown, signal?: AbortSignal
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }) })
   const value = await response.json()
-  if (!response.ok || value.ok === false) throw new Error([value.error || '调度请求失败', value.reason || value.legacy?.error].filter(Boolean).join('：'))
+  if (!response.ok || value.ok === false) throw new Error([value.error || '调度请求失败', value.reason].filter(Boolean).join('：'))
   return value as T
 }
 export const fetchSnapshot = (signal?: AbortSignal) => request<SchedSnapshot>('snapshot', undefined, signal)
@@ -88,8 +86,7 @@ export function fetchTickets(filters: Partial<TicketFilters>, cursor = '', limit
   for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value)
   return request<TicketPage>(`tickets?${query}`, undefined, signal)
 }
-export const postCommand = (body: CommandInput) => request<{ ok: boolean; commandId: string; legacy?: LegacySync }>('command', body)
-export const retryLegacyReserve = (data: ReserveData) => request<{ ok: boolean; legacy: LegacySync }>('legacy-reserve', data)
+export const postCommand = (body: CommandInput) => request<{ ok: boolean; commandId: string }>('command', body)
 
 /** 下载服务端生成的文件；沿用已应用的日期边界，不随下载时刻重新计算筛选。 */
 export async function exportTickets(filters: TicketFilters, signal?: AbortSignal): Promise<Blob> {
