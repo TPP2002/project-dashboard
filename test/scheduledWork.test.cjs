@@ -56,12 +56,33 @@ test('被包装任务失败的退出码原样返回；没有有效授予核数�
   for (const value of [undefined, '0', '-1', '2.5', 'oops']) assert.throws(() => checkedCores(value), /核数/);
 });
 
+test('外部已撤单的终态回执不重复撤单，也不尝试开跑', async () => {
+  const { calls, opts } = fixture({ waitFor: async () => ({ exitCode: 5, ticket: { state: 'cancelled' } }) });
+  assert.equal(await runScheduled(opts), 5);
+  assert.deepEqual(calls.map(c => c[0]), ['submit']);
+});
+
+test('撤单与外部完成同时发生时回查终态；仍在跑或读不到状态必须报警', async () => {
+  for (const state of ['cancelled', 'passed', 'running', null]) {
+    const warnings = [];
+    const { opts } = fixture({
+      waitFor: async () => ({ exitCode: 4 }),
+      cancel: async () => ({ exitCode: 2, reason: '单子已不在排队中' }),
+      status: () => { if (state === null) throw new Error('共享盘不可读'); return { state }; },
+    });
+    opts.log = line => warnings.push(line);
+    assert.equal(await runScheduled(opts), 4);
+    assert.equal(warnings.some(line => line.includes('撤单未确认')), state === 'running' || state === null);
+  }
+});
+
 test('全量测试显式列出本仓文件，拒绝覆盖授予并发；构建和类型检查固定单核', () => {
   const root = path.resolve(__dirname, '..');
   const job = scheduledJob('test', root);
   assert.equal(job.args(2)[1], '--test-concurrency=2');
   assert.ok(job.args(2).length > 30);
   assert.ok(job.args(2).slice(2).every(file => /^test\/[^/]+\.test\.cjs$/.test(file)));
+  assert.ok(job.targets.includes('packaging'), '打包自检也属于全量测试的受测内容');
   assert.throws(() => scheduledJob('test', root, ['--test-concurrency=20']), /不接受/);
   assert.equal(scheduledJob('typecheck', root).cores, 1);
   assert.equal(scheduledJob('build', root).cores, 1);

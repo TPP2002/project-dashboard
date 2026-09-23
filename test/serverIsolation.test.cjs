@@ -46,3 +46,19 @@ for (const sameRegistry of [false, true]) test(`重叠端口段、${sameRegistry
   assert.equal(right.registryPath, b);
   assert.equal(first.child.exitCode, null);
 });
+
+test('端口 0 由系统分配，两份同数据自检也各自持有端口并报告真实地址', { timeout: 15000 }, async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-ephemeral-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const registry = path.join(dir, 'registry.json');
+  fs.writeFileSync(registry, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
+  const first = await launch(t, 0, registry, dir);
+  const second = await launch(t, 0, registry, dir);
+  assert.ok(first.port > 0 && second.port > 0, '不能把申请值 0 当成实际监听地址');
+  assert.notEqual(first.port, second.port);
+  for (const service of [first, second]) {
+    const health = await (await fetch(`http://127.0.0.1:${service.port}/api/health`)).json();
+    assert.equal(health.port, service.port);
+    assert.equal(health.pid, service.child.pid);
+  }
+});

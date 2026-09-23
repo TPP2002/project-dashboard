@@ -22,7 +22,7 @@ function scheduledJob(name, root, extra = []) {
   // 不把 node_modules、dist、日志和其他工位纳入内容指纹。
   const inputs = ['core', 'cli', 'web/src', 'web/mock', 'web/scripts', 'web/public', 'web/tests', 'web/index.html', 'web/env.d.ts', 'web/package.json', 'web/package-lock.json',
     'web/vite.config.ts', 'web/tsconfig.json', 'web/tsconfig.node.json'];
-  if (name === 'test') inputs.push('server', 'scripts', 'test', 'package.json', 'package-lock.json');
+  if (name === 'test') inputs.push('server', 'scripts', 'packaging', 'test', 'package.json', 'package-lock.json');
   return { ...job, targets: inputs.filter(file => fs.existsSync(path.join(root, file))) };
 }
 module.exports = { scheduledJob };

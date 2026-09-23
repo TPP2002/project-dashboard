@@ -1493,6 +1493,8 @@ function probeHealth(port) {
 
 /** 在端口区间里找已在跑的"我们的"实例，返回 {port, health}；没有则 null */
 async function findExistingInstance() {
+  // 显式端口 0 用于隔离自检，由系统分配并持有端口，不扫描或接管其它实例。
+  if (PORT_BASE === 0) return null;
   for (let p = PORT_BASE; p <= PORT_BASE + PORT_RANGE; p++) {
     const h = await probeHealth(p);
     if (h && h.service === SERVICE && sameDataScope(h)) return { port: p, health: h };
@@ -1583,8 +1585,8 @@ function tryListen(port, attemptsLeft) {
   server.removeAllListeners('listening');
   server.listen(port, '127.0.0.1');
   server.once('listening', () => {
-    state.actualPort = port;
-    const localUrl = `http://127.0.0.1:${port}/`;
+    state.actualPort = server.address().port;
+    const localUrl = `http://127.0.0.1:${state.actualPort}/`;
     console.log('\n================================================');
     console.log('项目管理看板 · 已启动');
     console.log(`  本地地址：${localUrl}`);
@@ -1597,6 +1599,9 @@ function tryListen(port, attemptsLeft) {
     console.log('浏览器应已自动打开；未打开请手动访问上面地址。按 Ctrl+C 关闭。\n');
     pollBoards();       // 立即建立 mtime 基线
     startIntervals();   // 启动轮询 + 心跳
+    if (process.connected && typeof process.send === 'function') {
+      process.send({ type: 'dashboard-ready', service: SERVICE, port: state.actualPort, pid: process.pid });
+    }
     openBrowser(localUrl);
   });
   server.once('error', (err) => {

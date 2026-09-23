@@ -1,5 +1,7 @@
 'use strict';
 
+const isTerminal = state => ['passed', 'failed', 'cancelled', 'voided'].includes(state);
+
 function checkedCores(raw) {
   if (!/^\d+$/.test(String(raw)) || !Number.isSafeInteger(Number(raw)) || Number(raw) < 1) {
     throw new Error('调度授予核数无效，拒绝开跑');
@@ -15,7 +17,13 @@ async function runScheduled({ client, share, root, key, job, command, args,
   const cancel = () => cancellation ??= client.cancel(id, { share, reason: '看板任务中断或未能开跑' })
     .then(result => {
       if (result.exitCode) throw new Error(result.reason || `撤单退出码 ${result.exitCode}`);
-    }).catch(error => {
+    }).catch(async error => {
+      // 外部撤单或完成可先于本次 cancel 回执；只有读到真实终态才免除误报警。
+      try {
+        if (isTerminal((await client.status(id, { share })).state)) return;
+      } catch (readError) {
+        error = new Error(`${error.message}；终态核对失败：${readError.message}`);
+      }
       log(`撤单未确认：${error.message}；请执行 sched.cjs cancel ${id} --share ${share}`);
     });
   const onSignal = () => { interrupted = true; if (submitted) void cancel(); };
@@ -29,7 +37,9 @@ async function runScheduled({ client, share, root, key, job, command, args,
     if (receipt.exitCode) return receipt.exitCode;
     if (interrupted) return 130;
     const granted = await client.waitFor(id, { share, until: 'granted' });
+    if (isTerminal(granted.ticket?.state)) completed = true;
     if (interrupted) return 130;
+    if (completed) return granted.exitCode;
     if (granted.exitCode) return granted.exitCode;
     const result = await client.run(id, { share, root, command, args });
     completed = true;
