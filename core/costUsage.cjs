@@ -21,15 +21,16 @@ const path = require('node:path');
 const os = require('node:os');
 const readline = require('node:readline');
 const { atomicWriteJsonSync } = require('./atomicWrite.cjs');
-const { cardForSession } = require('./costSessionDetail.cjs');
+const { signalTextsOfRow, extractCommandSignals, attributeSession } = require('./sessionAttribution.cjs');
 const { DASHBOARD_HOME } = require('./resolveProject.cjs');
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects');
 const CACHE_PATH = path.join(DASHBOARD_HOME, 'costUsageCache.json');
+// v4: 会话桶新增分支和命令信号；旧缓存必须整份作废。
 // v3: 字段 version 改名 schemaVersion(COST-UI-SESSION-DETAIL),且缓存里存的东西结构变了
 // (流水按 message.id 去重、新增按会话·按天的明细桶)——读缓存严格 === 比对,对不上整份丢掉重扫。
 // 前科:结构改了没升号,旧缓存被照单全收,新字段全空、老字段全对、一个错都不报。
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 /**
  * Claude API 标准牌价(USD / 百万 token,2026-09-23 核官方表)：
@@ -200,7 +201,9 @@ function scanFile(file) {
       // 便宜的预筛,坏行交给 try/catch;为压缩标记行放宽,但绝不整条删掉(删了扫描明显变慢)。
       if (line.indexOf('"assistant"') === -1
         && line.indexOf('"summary"') === -1
-        && line.indexOf('"isCompactSummary"') === -1) return;
+        && line.indexOf('"isCompactSummary"') === -1
+        && line.indexOf('claim') === -1
+        && line.indexOf('--branch') === -1) return;
       let obj;
       try { obj = JSON.parse(line); } catch (_) { return; }
       if (!obj) return;
@@ -208,8 +211,14 @@ function scanFile(file) {
       const isMarker = obj.type === 'summary' || obj.isCompactSummary === true;
       const sid = hasSid ? obj.sessionId : (isMarker && lastSid ? lastSid : fallbackSid);
       if (hasSid) lastSid = obj.sessionId;
-      const session = (sessionDays[sid] = sessionDays[sid] || { cwd: null, compactions: 0, days: {} });
+      const session = (sessionDays[sid] = sessionDays[sid] || {
+        cwd: null, compactions: 0, branches: [], claimIds: [], branchFlags: [], days: {},
+      });
       if (session.cwd === null && typeof obj.cwd === 'string' && obj.cwd) session.cwd = obj.cwd;
+      if (typeof obj.gitBranch === 'string' && obj.gitBranch) session.branches.push(obj.gitBranch);
+      const signals = extractCommandSignals(signalTextsOfRow(obj));
+      session.claimIds.push(...signals.claimIds);
+      session.branchFlags.push(...signals.branchFlags);
       if (isMarker) { session.compactions += 1; return; }
       if (obj.type !== 'assistant' || !obj.message || !obj.message.usage) return;
       const date = localDate(obj.timestamp);
@@ -253,7 +262,12 @@ function scanFile(file) {
         if (bucket.lastTs === null || obj.timestamp > bucket.lastTs) bucket.lastTs = obj.timestamp;
       }
     });
-    rl.on('close', () => resolve({ days, sessions: hadAssistant ? 1 : 0, sessionDays }));
+    rl.on('close', () => {
+      for (const session of Object.values(sessionDays)) {
+        for (const key of ['branches', 'claimIds', 'branchFlags']) session[key] = [...new Set(session[key])].sort();
+      }
+      resolve({ days, sessions: hadAssistant ? 1 : 0, sessionDays });
+    });
     rl.on('error', () => resolve({ days, sessions: 0, sessionDays }));
   });
 }
@@ -302,10 +316,13 @@ function mergeSessionDay(entry, date, bucket) {
 /** 把一个文件(实扫或缓存命中)的会话明细并进总账(跨文件同会话 id 时逐桶合并)。 */
 function mergeSessionFiles(acc, sessionDays) {
   for (const [sid, file] of Object.entries(sessionDays || {})) {
-    if (!acc.has(sid)) acc.set(sid, { cwd: null, compactions: 0, days: {} });
+    if (!acc.has(sid)) acc.set(sid, { cwd: null, compactions: 0, branches: [], claimIds: [], branchFlags: [], days: {} });
     const entry = acc.get(sid);
     if (entry.cwd === null && file && file.cwd) entry.cwd = file.cwd;
     entry.compactions += (file && file.compactions) || 0;
+    for (const key of ['branches', 'claimIds', 'branchFlags']) {
+      entry[key] = [...new Set([...entry[key], ...((file && file[key]) || [])])].sort();
+    }
     for (const [date, bucket] of Object.entries((file && file.days) || {})) {
       mergeSessionDay(entry, date, bucket);
     }
@@ -317,11 +334,15 @@ function mergeSessionFiles(acc, sessionDays) {
  * 「所有明细行四类 token 相加 === 顶层合计」这条对账断言因此恒成立(漏进桶/重复进桶/旧缓存
  * 没作废三类病都会被它当场抓住)。压缩次数不窗口化(标记行常无时间戳,见 scanFile)。
  */
-function buildSessionRows(sessionAcc, cutoffStr, cardIds) {
+function buildSessionRows(sessionAcc, cutoffStr, cards, bindings) {
   const rows = [];
   for (const [sessionId, entry] of sessionAcc) {
+    const attribution = attributeSession({ sessionId, branches: entry.branches,
+      claimIds: entry.claimIds, branchFlags: entry.branchFlags }, cards, bindings);
     const row = {
-      sessionId, cwd: entry.cwd, card: cardForSession(entry.cwd, cardIds),
+      sessionId, cwd: entry.cwd,
+      card: attribution.status === 'attributed' ? attribution.cardIds[0] : null,
+      attribution,
       models: [], startedAt: null, endedAt: null,
       turns: 0, peakContext: 0, avgContext: 0, heavyTurns: 0,
       input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
@@ -368,12 +389,12 @@ function buildSessionRows(sessionAcc, cutoffStr, cardIds) {
 /**
  * 聚合一个项目(按目录前缀清单)最近 days 天的 token 消耗。
  * prefixes 未给时兼容旧 prefix；无有效本项目前缀仍抛错。sharedDirs 暴露最长前缀并列的目录。
- * cardIds(可选)是看板卡 id 清单,供会话明细判「所属卡」;判不出一律 null,不许猜。
+ * cards 与 bindings 供会话明细按开工绑定、分支和命令文字逐级判卡。
  * @returns {Promise<{byDay:Array, totals:Object, models:Object, dirs:string[], sharedDirs:string[],
  *   scanned:number, cachedFiles:number, sessions:number,
  *   sessionRows:Array, context:{turns,avgContext,load,heavyTurns,heavyRatio}}>}
  */
-async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH, cardIds = [], warn = console.warn }) {
+async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days = 30, projectsRoot = PROJECTS_ROOT, cachePath = CACHE_PATH, cards = [], bindings = null, warn = console.warn }) {
   prefixes = prefixes.filter(Boolean);
   if (!prefixes.length) throw new Error('缺 prefix(由 mainRepo 映射)');
   let allDirNames = [];
@@ -384,7 +405,7 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
 
   const cache = readCache(cachePath);
   const totalDays = {};
-  const sessionAcc = new Map(); // sessionId → { cwd, compactions, days }
+  const sessionAcc = new Map(); // sessionId → { cwd, compactions, branches, claimIds, branchFlags, days }
   let scanned = 0, cachedFiles = 0, sessions = 0;
 
   for (const dir of dirNames) {
@@ -476,7 +497,7 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
   // 会话明细行(与合计同一时间窗口)与两项新指标:
   // 「轮次 × 平均上下文」量这个区间一共驮了多少上下文过河(load = Σ 轮次×该会话平均上下文);
   // 「上下文 > 40 万的轮次占比」量有多少轮是在超大上下文里烧的(heavyRatio)。
-  const sessionRows = buildSessionRows(sessionAcc, cutoffStr, Array.isArray(cardIds) ? cardIds : []);
+  const sessionRows = buildSessionRows(sessionAcc, cutoffStr, Array.isArray(cards) ? cards : [], bindings);
   const ctx = { turns: 0, ctxSum: 0, heavyTurns: 0 };
   for (const row of sessionRows) {
     ctx.turns += row.turns;

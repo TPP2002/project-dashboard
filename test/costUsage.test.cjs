@@ -326,7 +326,7 @@ test('getUsage:缓存版本字段 schemaVersion 对不上,整份丢掉重扫', a
   const opts = { prefix: 'V--p', days: 30, projectsRoot: root, cachePath };
   assert.equal((await getUsage(opts)).scanned, 1, '首跑实扫');
   const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-  assert.equal(cached.schemaVersion, 3, '新缓存写 schemaVersion 字段');
+  assert.equal(cached.schemaVersion, 4, '新缓存写 schemaVersion 字段');
   // 旧世界:字段还叫 version、号还是 2 —— 必须整份作废,而不是照单全收旧结构的桶
   fs.writeFileSync(cachePath, JSON.stringify({ version: 2, files: cached.files }));
   const r2 = await getUsage(opts);

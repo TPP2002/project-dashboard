@@ -8,15 +8,15 @@ const path = require('node:path');
 const os = require('node:os');
 const { getUsage, HEAVY_CONTEXT_TOKENS } = require('../core/costUsage.cjs');
 const {
-  cardForSession, filterSessions, sessionFilterOptions, summarizeSessionRows,
+  filterSessions, sessionFilterOptions, summarizeSessionRows,
 } = require('../core/costSessionDetail.cjs');
 
 const clean = (dir) => fs.rmSync(dir, { recursive: true, force: true });
 
 /** 带会话字段的流水行(id 缺省 = 不带 message.id)。 */
-function line({ ts, sid, cwd, id, model = 'claude-fable-5', input = 0, output = 0, cacheRead = 0, cacheWrite = 0 }) {
+function line({ ts, sid, cwd, id, gitBranch, model = 'claude-fable-5', input = 0, output = 0, cacheRead = 0, cacheWrite = 0 }) {
   return JSON.stringify({
-    type: 'assistant', isSidechain: false, timestamp: ts, sessionId: sid, cwd,
+    type: 'assistant', isSidechain: false, timestamp: ts, sessionId: sid, cwd, gitBranch,
     message: id === undefined ? { model, usage: {
       input_tokens: input, output_tokens: output,
       cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheWrite,
@@ -146,41 +146,85 @@ test('getUsage:明细日期筛选与按天图同一本机时区口径——UTC 1
   clean(dir);
 });
 
-test('getUsage:会话行 cwd 与所属卡——命中卡 id 段才填,判不出给 null', async () => {
+test('getUsage:主干不猜卡，user claim、分支、绑定与歧义各走各的判据', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'card-'));
-  const root = path.join(dir, 'projects');
-  fs.mkdirSync(path.join(root, 'K--p'), { recursive: true });
-  const worktreeCwd = path.join(dir, 'fake-repo', '.codex-worktrees', 'cost-ui-session-detail');
-  const plainCwd = path.join(dir, 'fake-repo');
-  fs.writeFileSync(path.join(root, 'K--p', 'a.jsonl'), [
-    line({ ts: isoDaysAgo(0), sid: 'sess-card-0001', cwd: worktreeCwd, id: 'msg_k1', output: 1 }),
-    line({ ts: isoDaysAgo(0), sid: 'sess-card-0002', cwd: plainCwd, id: 'msg_k2', output: 2 }),
-    line({ ts: isoDaysAgo(0), sid: 'sess-card-0003', cwd: undefined, id: 'msg_k3', output: 3 }),
-  ].join('\n'));
-  const r = await getUsage({
-    prefix: 'K--p', days: 30, projectsRoot: root, cachePath: path.join(dir, 'c.json'),
-    cardIds: ['COST-UI-SESSION-DETAIL'],
-  });
-  const bySid = new Map(r.sessionRows.map((row) => [row.sessionId, row]));
-  assert.equal(bySid.get('sess-card-0001').card, 'COST-UI-SESSION-DETAIL', 'worktree 目录名对上卡号');
-  assert.equal(bySid.get('sess-card-0002').card, null, '主仓目录判不出 → null 不猜');
-  assert.equal(bySid.get('sess-card-0003').card, null, '没有 cwd → null');
-  clean(dir);
+  try {
+    const root = path.join(dir, 'projects');
+    const project = path.join(root, '-F--fake-repo');
+    fs.mkdirSync(project, { recursive: true });
+    const ts = isoDaysAgo(0);
+    const sidMain = '00000000-0000-4000-8000-00000000000a';
+    const sidCommand = '00000000-0000-4000-8000-00000000000b';
+    const sidBranch = '00000000-0000-4000-8000-00000000000c';
+    const sidBound = '00000000-0000-4000-8000-00000000000d';
+    const sidAmbiguous = '00000000-0000-4000-8000-00000000000e';
+    const user = (sid, content) => JSON.stringify({ type: 'user', sessionId: sid, timestamp: ts, message: { content } });
+    fs.writeFileSync(path.join(project, 'a.jsonl'), [
+      line({ ts, sid: sidMain, gitBranch: 'main', cwd: path.join(dir, 'fake-repo'), output: 1 }),
+      user(sidCommand, 'claim CARD-A --project demo'),
+      line({ ts, sid: sidCommand, gitBranch: 'main', output: 2 }),
+      line({ ts, sid: sidBranch, gitBranch: 'feat/a', output: 3 }),
+      line({ ts, sid: sidBound, gitBranch: 'main', output: 4 }),
+      line({ ts, sid: sidAmbiguous, gitBranch: 'feat/x', output: 5 }),
+    ].join('\n'));
+    const cards = [
+      { id: 'CARD-A', gitBranch: ['main', 'feat/a'] },
+      { id: 'CARD-B', gitBranch: ['main', 'feat/b', 'feat/x'] },
+      { id: 'CARD-C', gitBranch: ['feat/x'] },
+    ];
+    const opts = { prefix: '-F--fake-repo', days: 7, projectsRoot: root,
+      cachePath: path.join(dir, 'cache.json'), cards,
+      bindings: { [sidBound]: ['CARD-A', 'CARD-B'] } };
+    const fresh = await getUsage(opts);
+    const bySid = new Map(fresh.sessionRows.map((row) => [row.sessionId, row]));
+    assert.equal(bySid.get(sidMain).attribution.status, 'unattributed');
+    assert.equal(bySid.get(sidMain).card, null);
+    assert.equal(bySid.get(sidCommand).card, 'CARD-A');
+    assert.equal(bySid.get(sidCommand).attribution.level, 'command');
+    assert.equal(bySid.get(sidBranch).attribution.level, 'branch');
+    assert.equal(bySid.get(sidBound).attribution.status, 'multi');
+    assert.deepEqual(bySid.get(sidBound).attribution.cardIds, ['CARD-A', 'CARD-B']);
+    assert.equal(bySid.get(sidAmbiguous).attribution.status, 'ambiguous');
+    assert.deepEqual(filterSessions(fresh.sessionRows, { card: 'CARD-B' }).map((r) => r.sessionId), [sidBound]);
+    assert.deepEqual(summarizeSessionRows(fresh.sessionRows).attribution,
+      { attributed: 2, multi: 1, ambiguous: 1, unattributed: 1 });
+    assert.deepEqual(sessionFilterOptions(fresh.sessionRows).cards, ['CARD-A', 'CARD-B']);
+    reconcile(fresh);
+    const cached = await getUsage(opts);
+    assert.equal(cached.scanned, 0);
+    reconcile(cached);
+    const cache = JSON.parse(fs.readFileSync(opts.cachePath, 'utf8'));
+    cache.schemaVersion = 3;
+    fs.writeFileSync(opts.cachePath, JSON.stringify(cache));
+    const rescanned = await getUsage(opts);
+    assert.equal(rescanned.scanned, 1, 'v3 旧缓存整份丢弃');
+    assert.deepEqual(rescanned.sessionRows, fresh.sessionRows, '旧缓存重扫与无缓存同结果');
+    reconcile(rescanned);
+  } finally { clean(dir); }
 });
 
-// ---------- 纯函数:cardForSession / filterSessions / summarize / options ----------
-
-test('cardForSession:不分大小写、取最深命中段,无 cwd/无卡单给 null', () => {
-  assert.equal(cardForSession('/repo/.codex-worktrees/cost-ui-session-detail', ['COST-UI-SESSION-DETAIL']),
-    'COST-UI-SESSION-DETAIL');
-  assert.equal(cardForSession('F:\\code-repo\\.codex-worktrees\\some-card', ['SOME-CARD']), 'SOME-CARD');
-  assert.equal(cardForSession('/w/t-1/t-2/deep', ['T-1', 'T-2']), 'T-2', '多段命中取最深');
-  for (const [cwd, ids] of [
-    [null, ['T-1']], [undefined, ['T-1']], ['', ['T-1']],
-    ['/repo/main', ['T-1']], ['/repo/t-1-extra', ['T-1']], // 子串不算,整段相等才算
-    ['/repo/t-1', []], ['/repo/t-1', null],
-  ]) assert.equal(cardForSession(cwd, ids), null, String(cwd));
+test('getUsage:同一会话跨文件的分支信号取并集', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'card-merge-'));
+  try {
+    const root = path.join(dir, 'projects');
+    const project = path.join(root, '-F--fake-repo');
+    fs.mkdirSync(project, { recursive: true });
+    const sid = '00000000-0000-4000-8000-00000000000a';
+    const ts = isoDaysAgo(0);
+    fs.writeFileSync(path.join(project, 'a.jsonl'), line({ ts, sid, gitBranch: 'feat/a', output: 1 }));
+    fs.writeFileSync(path.join(project, 'b.jsonl'), line({ ts, sid, gitBranch: 'feat/b', output: 2 }));
+    const r = await getUsage({ prefix: '-F--fake-repo', days: 7, projectsRoot: root,
+      cachePath: path.join(dir, 'cache.json'), cards: [
+        { id: 'CARD-A', gitBranch: ['feat/a'] }, { id: 'CARD-B', gitBranch: ['feat/b'] },
+      ] });
+    assert.equal(r.sessionRows.length, 1);
+    assert.equal(r.sessionRows[0].attribution.status, 'multi');
+    assert.deepEqual(r.sessionRows[0].attribution.cardIds, ['CARD-A', 'CARD-B']);
+    reconcile(r);
+  } finally { clean(dir); }
 });
+
+// ---------- 纯函数:filterSessions / summarize / options ----------
 
 const ROWS = [
   { sessionId: 'sess-a', models: ['claude-fable-5'], card: 'T-1',
@@ -229,6 +273,7 @@ test('summarizeSessionRows:筛后合计——四类 token、轮次、压缩、�
   assert.ok(Math.abs(sum.usd - 1.1) < 1e-12, `usd=${sum.usd}`); // 浮点相加不恰好等于小数
   assert.equal(sum.contextSum, 2 * 100 + 1 * 10 + 3 * 50 + 1 * 5);
   assert.equal(sum.avgContext, 365 / 7, 'Σ上下文 ÷ Σ轮次,不平均各行的平均数');
+  assert.deepEqual(sum.attribution, { attributed: 2, multi: 0, ambiguous: 0, unattributed: 2 });
   assert.equal(summarizeSessionRows([]).turns, 0);
   assert.equal(summarizeSessionRows([]).avgContext, 0);
 });
@@ -239,4 +284,18 @@ test('sessionFilterOptions:模型归一去重排序(null 卡不进候选)——�
     cards: ['T-1', 'T-2'],
   });
   assert.deepEqual(sessionFilterOptions([]), { models: [], cards: [] });
+});
+
+test('带归因字段时多卡能筛中，歧义候选不能筛中，四类计数和选项只取归属', () => {
+  const rows = [
+    { card: 'CARD-A', attribution: { status: 'attributed', cardIds: ['CARD-A'] } },
+    { card: null, attribution: { status: 'multi', cardIds: ['CARD-A', 'CARD-B'] } },
+    { card: null, attribution: { status: 'ambiguous', cardIds: [], candidates: ['CARD-C'] } },
+    { card: null, attribution: { status: 'unattributed', cardIds: [] } },
+  ];
+  assert.equal(filterSessions(rows, { card: 'CARD-B' }).length, 1);
+  assert.equal(filterSessions(rows, { card: 'CARD-C' }).length, 0);
+  assert.deepEqual(summarizeSessionRows(rows).attribution,
+    { attributed: 1, multi: 1, ambiguous: 1, unattributed: 1 });
+  assert.deepEqual(sessionFilterOptions(rows).cards, ['CARD-A', 'CARD-B']);
 });
