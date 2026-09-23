@@ -13,8 +13,8 @@ function scanTokenTotalsByDay(file) {
   const cached = costCache.get(file);
   if (cached && cached.size === size) return Promise.resolve(cached.result);
   return new Promise((resolve) => {
-    const dailyTokens = {};
-    let previousTotal = 0;
+    const dailyTokens = {}, dailyBuckets = {};
+    let previousTotal = 0, previousBuckets = { input: 0, output: 0, cachedInput: 0 };
     const input = fs.createReadStream(file, { encoding: 'utf8' });
     const lines = readline.createInterface({ input, crlfDelay: Infinity });
     lines.on('line', (line) => {
@@ -28,11 +28,25 @@ function scanTokenTotalsByDay(file) {
       if (!Number.isFinite(total) || total < 0 || !date) return;
       const delta = total >= previousTotal ? total - previousTotal : total;
       dailyTokens[date] = (dailyTokens[date] || 0) + delta;
+      const usage = inner.payload.info?.total_token_usage;
+      if (usage && ['input_tokens', 'output_tokens', 'cached_input_tokens']
+        .every((key) => Number.isFinite(usage[key]) && usage[key] >= 0)) {
+        const current = { input: usage.input_tokens, output: usage.output_tokens,
+          cachedInput: usage.cached_input_tokens };
+        const bucket = (dailyBuckets[date] ||= { input: 0, output: 0, cachedInput: 0 });
+        for (const key of Object.keys(current)) {
+          bucket[key] += current[key] >= previousBuckets[key]
+            ? current[key] - previousBuckets[key] : current[key];
+        }
+        previousBuckets = current;
+      }
       previousTotal = total;
     });
     const finish = () => {
       const tokensUsed = Object.values(dailyTokens).reduce((sum, value) => sum + value, 0);
-      const result = { dailyTokens, tokensUsed };
+      const result = Object.keys(dailyBuckets).length
+        ? { dailyTokens, dailyBuckets, tokensUsed }
+        : { dailyTokens, tokensUsed };
       costCache.set(file, { size, result });
       resolve(result);
     };

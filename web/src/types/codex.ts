@@ -114,10 +114,12 @@ export interface CodexReport {
 
 export interface CodexUsage {
   byDay: Array<{ date: string; tokens: number; sessions: number; projects: Record<string, number> }>
-  byProject: Array<{ project: string; tokens: number; sessions: number }>
-  totals: { tokens: number; sessions: number }
-  selected: { project: string; tokens: number; sessions: number; byDay: Array<{ date: string; tokens: number }> }
+  byProject: Array<{ project: string; tokens: number; sessions: number; buckets?: CodexTokenBuckets; bucketedTokens?: number }>
+  totals: { tokens: number; sessions: number; buckets?: CodexTokenBuckets; bucketedTokens?: number }
+  selected: { project: string; tokens: number; sessions: number; buckets?: CodexTokenBuckets; bucketedTokens?: number; byDay: Array<{ date: string; tokens: number }> }
 }
+
+export interface CodexTokenBuckets { input: number; output: number; cachedInput: number }
 
 export interface CombinedUsage {
   claudeTokens: number

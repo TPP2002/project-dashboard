@@ -17,7 +17,7 @@ import CodexCostSummary from '@/components/codex/CodexCostSummary.vue'
 import DeepseekCostSummary from '@/components/codex/DeepseekCostSummary.vue'
 import SessionDetailTable from '@/components/cost/SessionDetailTable.vue'
 import JobDetailTable from '@/components/cost/JobDetailTable.vue'
-import type { CodexUsage, CombinedUsage, DeepseekBalance, DeepseekUsage, QuotaSnapshot } from '@/types/codex'
+import type { CodexUsage, DeepseekBalance, DeepseekUsage, QuotaSnapshot } from '@/types/codex'
 
 interface Tally { input: number; output: number; cacheRead: number; cacheWrite: number; msgs: number }
 interface UsdRow { actual: number; noCache: number; saved: number }
@@ -26,6 +26,9 @@ interface ContextStats { turns: number; avgContext: number; load: number; heavyT
 interface Usage {
   byDay: DayRow[]
   totals: Tally & { sideOutput: number; mainOutput: number; cacheHitRate: number }
+  claudeTotals: Tally
+  glmTotals: Tally
+  unpricedModels: string[]
   models: Record<string, Tally>
   usd: UsdRow & { byModel: Record<string, UsdRow> }
   context: ContextStats
@@ -34,14 +37,20 @@ interface Usage {
   cachedFiles: number
   sessions: number
 }
+interface GlmTally { jobs: number; tokens: number; input: number; output: number; cacheRead: number; cacheWrite: number; credits: number; creditJobs: number; uncertainCredits: number; missingUsageJobs: number }
+interface GlmUsage { totals: GlmTally; byModel: Record<string, GlmTally>; byDay: Array<GlmTally & { date: string }> }
+interface PortfolioRow { id: string; name: string; claudeTokens: number; claudeUsd: number; claudeOutput: number; unpricedModels: string[]; sharedDirs: string[]; codexTokens: number; deepseekRmb: number; glm: GlmTally | null; sharedCodeRepo: boolean; duplicateName: boolean }
+interface Portfolio { rows: PortfolioRow[]; unassignedCodexTokens: number; totals: { claudeTokens: number; claudeUsd: number; claudeOutput: number; unpricedModels: string[]; codexTokens: number; codexBuckets: { input: number; output: number; cachedInput: number }; codexBucketedTokens: number; deepseekRmb: number; glmCredits: number; glmCreditJobs: number; glmUncertainCredits: number; glmTokens: number } }
 
 const store = useBoardStore()
 const usage = ref<Usage | null>(null)
 const codex = ref<CodexUsage | null>(null)
 const deepseek = ref<DeepseekUsage | null>(null)
 const deepseekBalance = ref<DeepseekBalance | null>(null)
+const glm = ref<GlmUsage | null>(null)
+const portfolio = ref<Portfolio | null>(null)
+const scope = ref<'all' | 'project'>('all')
 const quota = ref<QuotaSnapshot | null>(null)
-const combined = ref<CombinedUsage | null>(null)
 const days = ref(30)
 const loading = ref(false)
 const error = ref('')
@@ -57,31 +66,39 @@ let reqSeq = 0
 
 async function load() {
   const pid = store.currentProjectId
-  if (!pid) return
+  if (scope.value === 'project' && !pid) return
   const seq = ++reqSeq
   const wantDays = days.value
   loading.value = true
   try {
-    const res = await fetch(`/api/cost?project=${encodeURIComponent(pid)}&days=${wantDays}`)
+    const res = await fetch(`/api/cost?project=${scope.value === 'all' ? 'all' : encodeURIComponent(pid!)}&days=${wantDays}`)
     const body = await res.json()
     if (seq !== reqSeq) return // 已经有更新的请求发出,这份结果作废
     if (!body.ok) throw new Error(body.error || '读取失败')
+    if (scope.value === 'all') {
+      portfolio.value = body as Portfolio
+      usage.value = null
+      error.value = ''
+      return
+    }
+    portfolio.value = null
     usage.value = body.usage
     codex.value = body.codex
     deepseek.value = body.deepseek ?? null
     deepseekBalance.value = body.deepseekBalance ?? null
+    glm.value = body.glm ?? null
     quota.value = body.quota
-    combined.value = body.combined
     error.value = ''
   } catch (e) {
     if (seq !== reqSeq) return
     // 失败时清空旧数据:留着会让人以为看到的是当前区间的数,其实是上一次的
     usage.value = null
+    portfolio.value = null
     codex.value = null
     deepseek.value = null
     deepseekBalance.value = null
+    glm.value = null
     quota.value = null
-    combined.value = null
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     if (seq === reqSeq) loading.value = false
@@ -91,6 +108,7 @@ async function load() {
 onMounted(load)
 watch(() => store.currentProjectId, () => { void load() })
 watch(days, () => { void load() })
+watch(scope, () => { void load() })
 
 /** token 数中文缩写:亿/万,小于一万给千分位 */
 function fmt(n: number): string {
@@ -109,19 +127,24 @@ function shortModel(m: string): string {
 const dailyRows = computed(() => {
   const claudeByDate = new Map((usage.value?.byDay ?? []).map((row) => [row.date, row]))
   const codexByDate = new Map((codex.value?.byDay ?? []).map((row) => [row.date, row]))
-  const dates = new Set([...claudeByDate.keys(), ...codexByDate.keys()])
+  const glmByDate = new Map((glm.value?.byDay ?? []).map((row) => [row.date, row]))
+  const dates = new Set([...claudeByDate.keys(), ...codexByDate.keys(), ...glmByDate.keys()])
   return [...dates].sort().reverse().map((date) => {
     const claude = claudeByDate.get(date)
     const codexRow = codexByDate.get(date)
-    const claudeMain = claude?.main.output ?? 0
-    const claudeSide = claude?.side.output ?? 0
+    const modelEntries = Object.entries(claude?.models ?? {})
+    const claudeOutput = modelEntries.filter(([model]) => model.startsWith('claude-'))
+      .reduce((sum, [, value]) => sum + value.output, 0)
+    const claudeInput = modelEntries.filter(([model]) => model.startsWith('claude-'))
+      .reduce((sum, [, value]) => sum + value.input + value.cacheWrite + value.cacheRead, 0)
+    const glmTokens = glmByDate.get(date)?.tokens ?? 0
     const codexTokens = codexRow?.tokens ?? 0
     return {
       date,
-      claudeMain,
-      claudeSide,
+      claudeInput,
+      claudeOutput,
+      glmTokens,
       codexTokens,
-      total: claudeMain + claudeSide + codexTokens,
       usdActual: claude?.usdActual,
     }
   })
@@ -131,14 +154,15 @@ const deepseekDailyRows = computed(() => [...(deepseek.value?.byDay ?? [])].reve
 
 /** 花销结构:写出来的最贵、重复利用的几乎不花钱。 */
 const spendBreakdown = computed(() => {
-  const t = usage.value?.totals
+  const t = usage.value?.claudeTotals
   const u = usage.value?.usd
   if (!t || !u) return null
   return {
     output: t.output,
     inputNew: t.input + t.cacheWrite,
     reused: t.cacheRead,
-    hitRate: t.cacheHitRate,
+    hitRate: (t.input + t.cacheRead + t.cacheWrite) > 0
+      ? t.cacheRead / (t.input + t.cacheRead + t.cacheWrite) : 0,
     savedUsd: u.saved,
   }
 })
@@ -163,7 +187,8 @@ const emptyReason = computed(() => {
   const hasClaude = (usage.value.byDay?.length ?? 0) > 0
   const hasCodex = (codex.value?.byDay?.length ?? 0) > 0
   const hasDeepseek = (deepseek.value?.totals.jobs ?? 0) > 0
-  if (hasClaude || hasCodex || hasDeepseek) return null
+  const hasGlm = (glm.value?.totals.jobs ?? 0) > 0
+  if (hasClaude || hasCodex || hasDeepseek || hasGlm) return null
   return `这个项目近 ${days.value} 天没有任何对话记录,所以下面都是 0。换更长的区间看看,或者确认最近是不是没在这个项目上干活。`
 })
 
@@ -186,11 +211,13 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
       <div>
         <h1><Icon name="coins" class="head-ic" :size="20" />成本监管</h1>
         <p class="page-subtitle">
-          本机对话流水的真实 token 数；跑在别的机器上的对话不在此账内。
-          DeepSeek 展示真实人民币花费，Codex 展示等价估算。
+          本机流水：Claude 显示 API 直购等价估算，DeepSeek 显示按价目折算的人民币，
+          GLM 显示套餐积分，Codex 显示输入/输出用量。不同单位不相加，异机记录不在本账。
         </p>
       </div>
-      <div class="range-picker" role="group" aria-label="成本统计时间范围">
+      <div class="range-picker" role="group" aria-label="成本范围与时间">
+        <button class="btn btn-sm range-btn" :class="{ active: scope === 'all' }" :aria-pressed="scope === 'all'" @click="scope = 'all'">全部项目</button>
+        <button class="btn btn-sm range-btn" :class="{ active: scope === 'project' }" :aria-pressed="scope === 'project'" @click="scope = 'project'">当前项目</button>
         <button
           v-for="option in DAY_OPTS"
           :key="option"
@@ -208,7 +235,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
       <button class="btn btn-sm" type="button" @click="load">重试</button>
     </div>
 
-    <div v-else-if="loading && !usage" class="card loading-state" aria-label="正在加载成本数据">
+    <div v-else-if="loading && !usage && !portfolio" class="card loading-state" aria-label="正在加载成本数据">
       <div class="skel wide" />
       <div class="summary-skeleton">
         <div v-for="index in 5" :key="index" class="skel block" />
@@ -217,43 +244,75 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
       <div class="skel wide" />
     </div>
 
-    <template v-if="usage">
+    <template v-if="scope === 'all' && portfolio">
       <section class="overview">
-        <h2>合计概览</h2>
+        <h2>全部项目 · 近 {{ days }} 天</h2>
+        <p class="fine">订阅制的 API 等价金额不是实付账单；GLM 积分在多单并行时只作参考。以下各类单位分别列示。</p>
+        <div class="summary-cards portfolio-cards">
+          <div class="card"><div class="v">${{ portfolio.totals.claudeUsd.toFixed(2) }}</div><div class="l">Claude API 等价估算</div></div>
+          <div class="card"><div class="v">¥{{ portfolio.totals.deepseekRmb.toFixed(2) }}</div><div class="l">DeepSeek 按价目折算</div></div>
+          <div class="card"><div class="v">{{ portfolio.totals.glmCreditJobs ? fmt(portfolio.totals.glmCredits) : '—' }}</div><div class="l">GLM 周窗积分差合计 · 参考</div></div>
+          <div class="card"><div class="v">{{ portfolio.totals.codexBucketedTokens ? fmt(portfolio.totals.codexBuckets.output) : '—' }}</div><div class="l">Codex 输出 token</div></div>
+        </div>
+        <p v-if="portfolio.totals.glmUncertainCredits > 0 || portfolio.totals.unpricedModels.length" class="source-note">
+          {{ portfolio.totals.glmUncertainCredits > 0 ? `其中 ${fmt(portfolio.totals.glmUncertainCredits)} GLM 积分无法精确归单；` : '' }}
+          {{ portfolio.totals.unpricedModels.length ? `${portfolio.totals.unpricedModels.length} 个 Claude 模型暂无牌价，未计入美元。` : '' }}
+        </p>
+        <p v-if="portfolio.unassignedCodexTokens" class="source-note">另有 {{ fmt(portfolio.unassignedCodexTokens) }} Codex token 未归属到登记项目，已计入总量但未硬塞给某个项目。</p>
+      </section>
+      <section class="card portfolio-section">
+        <h2>按项目对账</h2>
+        <p class="fine">点项目名切入它的逐日、会话和工单明细。共用代码仓的工单成本只归第一项，避免合计重复。</p>
+        <div class="table-scroll portfolio-scroll">
+          <table class="portfolio-table">
+            <thead><tr><th>项目</th><th>Claude API 等价</th><th>DeepSeek 人民币</th><th>GLM 积分</th><th>Codex token</th><th>口径提示</th></tr></thead>
+            <tbody><tr v-for="row in portfolio.rows" :key="row.id">
+              <td><button class="btn quiet btn-sm" @click="store.selectProject(row.id); scope = 'project'">{{ row.name }}</button></td>
+              <td class="num">${{ row.claudeUsd.toFixed(2) }}</td>
+              <td class="num">¥{{ row.deepseekRmb.toFixed(2) }}</td>
+              <td class="num">{{ row.glm?.creditJobs ? fmt(row.glm.credits) : '—' }}</td>
+              <td class="num">{{ fmt(row.codexTokens) }}</td>
+              <td>{{ row.sharedDirs.length ? '共享对话目录；' : '' }}{{ row.sharedCodeRepo ? '共用代码仓；' : '' }}{{ row.duplicateName ? '项目同名，Codex 无法区分；' : '' }}{{ row.unpricedModels.length ? '有未计价模型' : '' }}</td>
+            </tr></tbody>
+          </table>
+        </div>
+      </section>
+    </template>
+
+    <template v-if="scope === 'project' && usage">
+      <section class="overview">
+        <h2>当前项目 · 近 {{ days }} 天</h2>
         <div class="summary-cards">
           <div class="card">
-            <div class="v">{{ combined ? fmt(combined.totalTokens) : '—' }}</div>
-            <div class="l">Claude + Codex 合计 token</div>
+            <div class="v">${{ usage.usd.actual.toFixed(2) }}</div>
+            <div class="l">Claude API 等价估算</div>
           </div>
           <div class="card">
-            <div class="v">{{ deepseek ? '¥' + deepseek.totals.costRmb.toFixed(2) : '—' }}</div>
-            <div class="l">DeepSeek 近 {{ days }} 天已花</div>
+            <div class="v">{{ glm?.totals.creditJobs ? fmt(glm.totals.credits) : '—' }}</div>
+            <div class="l">GLM 周窗积分差 · 参考</div>
           </div>
           <div class="card">
-            <div v-if="deepseekBalance?.available && deepseekBalance.balance !== null" class="v">¥{{ deepseekBalance.balance.toFixed(2) }}</div>
-            <div v-else class="summary-reason" role="status">{{ deepseekBalance?.reason || '余额暂不可用' }}</div>
-            <div class="l">DeepSeek 实时余额 · 人民币</div>
+            <div class="v">{{ codex?.selected.bucketedTokens ? fmt(codex.selected.buckets?.output ?? 0) : '—' }}</div>
+            <div class="l">Codex 输出 token</div>
           </div>
           <div class="card">
-            <div class="v">{{ deepseek ? (deepseek.totals.cacheHitRate * 100).toFixed(1) + '%' : '—' }}</div>
-            <div class="l">DeepSeek 缓存命中率</div>
-          </div>
-          <!-- COST-UI-SESSION-DETAIL:上下文两项新指标升到概览;省下的钱降级进「花销结构」表 -->
-          <div class="card">
-            <div v-if="usage.context" class="v">{{ fmt(usage.context.load) }}</div>
-            <div v-else class="v">—</div>
-            <div class="l">对话总驮载 · 轮次 × 平均上下文</div>
+            <div class="v">${{ usage.usd.saved.toFixed(2) }}</div>
+            <div class="l">Claude 缓存折价省下 · 估算</div>
           </div>
           <div class="card">
-            <div v-if="usage.context" class="v">{{ (usage.context.heavyRatio * 100).toFixed(1) }}%</div>
-            <div v-else class="v">—</div>
-            <div class="l">超 40 万上下文的轮次占比</div>
+            <div class="v">{{ fmt(usage.claudeTotals.output) }}</div>
+            <div class="l">Claude 输出 token</div>
+          </div>
+          <div class="card">
+            <div class="v">{{ usage.unpricedModels.length }}</div>
+            <div class="l">未计价模型数 · 需留意</div>
           </div>
         </div>
       </section>
 
       <p class="source-note">
         当前项目及其工作副本共 {{ usage.dirs.length }} 个目录、{{ usage.sessions }} 个会话。
+        <span v-if="glm?.totals.uncertainCredits">GLM 有 {{ fmt(glm.totals.uncertainCredits) }} 积分无法精确归单。</span>
         <span v-if="loading" class="badge info">正在刷新</span>
       </p>
 
@@ -283,15 +342,27 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
             </table>
             <p class="fine">
               <Icon name="zap" :size="14" /> 折算口径:你实付的是订阅费——美元是「同样的量若按 API 牌价直购值多少钱」的等价参考
-              (无缓存假想 ${{ usd0(usage.usd.noCache) }} − 折后 ${{ usd0(usage.usd.actual) }} = 净省 ${{ usd0(usage.usd.saved) }};牌价缓存于 2026-06,变价改 core/costUsage.cjs 的 PRICE 表)。
+              (无缓存假想 ${{ usd0(usage.usd.noCache) }} − 折后 ${{ usd0(usage.usd.actual) }} = 净省 ${{ usd0(usage.usd.saved) }};牌价于 2026-09-23 对照官方表,后续变价需更新)。
             </p>
           </section>
 
+          <section class="card glm-spend">
+            <h2>GLM · 编程套餐额度</h2>
+            <p class="fine">GLM 按套餐积分消耗，不把 token 乘 API 牌价冒充实际付款。积分取已落盘工单的周窗差值；并行时差值可能包含别的任务。</p>
+            <div v-if="glm" class="glm-grid">
+              <div><strong>{{ glm.totals.creditJobs ? fmt(glm.totals.credits) : '—' }}</strong><span>积分差 · {{ glm.totals.creditJobs }}/{{ glm.totals.jobs }} 单有读数</span></div>
+              <div><strong>{{ fmt(glm.totals.input + glm.totals.cacheWrite) }}</strong><span>新输入与缓存写入</span></div>
+              <div><strong>{{ fmt(glm.totals.output) }}</strong><span>输出</span></div>
+              <div><strong>{{ fmt(glm.totals.cacheRead) }}</strong><span>缓存读取</span></div>
+            </div>
+            <p v-if="glm?.totals.uncertainCredits" class="fine">其中 {{ fmt(glm.totals.uncertainCredits) }} 积分无法精确归单，不能据此比较单卡效率。</p>
+            <p v-if="glm?.totals.missingUsageJobs" class="fine">{{ glm.totals.missingUsageJobs }} 个首轮或续聊缺用量，token 小计不完整。</p>
+          </section>
+
           <CodexCostSummary
-            v-if="codex && quota && combined"
+            v-if="codex && quota"
             :codex="codex"
             :quota="quota"
-            :combined="combined"
             :days="days"
           />
           <div v-else class="empty card">
@@ -313,7 +384,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
                 <h3>DeepSeek 按天</h3>
                 <div class="table-scroll">
                   <table class="deepseek-daily-table">
-                    <thead><tr><th scope="col">日期</th><th scope="col">消耗 token</th><th scope="col">真实花费 · 人民币</th></tr></thead>
+                    <thead><tr><th scope="col">日期</th><th scope="col">消耗 token</th><th scope="col">按价目折算 · 人民币</th></tr></thead>
                     <tbody>
                       <tr v-for="row in deepseekDailyRows" :key="row.date">
                         <td class="mono">{{ row.date }}</td>
@@ -334,15 +405,15 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
                 <div v-else class="table-scroll">
                   <table class="daily-table">
                     <thead>
-                      <tr><th>日期</th><th>Claude 主对话</th><th>Claude 子 agent</th><th>Codex</th><th>合计</th><th>Claude API 等价</th></tr>
+                      <tr><th>日期</th><th>Claude 输入含缓存</th><th>Claude 输出</th><th>GLM 工单 token</th><th>Codex token</th><th>Claude API 等价</th></tr>
                     </thead>
                     <tbody>
                       <tr v-for="row in dailyRows" :key="row.date">
                         <td class="mono">{{ row.date }}</td>
-                        <td class="num">{{ fmt(row.claudeMain) }}</td>
-                        <td class="num">{{ fmt(row.claudeSide) }}</td>
+                        <td class="num">{{ fmt(row.claudeInput) }}</td>
+                        <td class="num">{{ fmt(row.claudeOutput) }}</td>
+                        <td class="num">{{ fmt(row.glmTokens) }}</td>
                         <td class="num">{{ fmt(row.codexTokens) }}</td>
-                        <td class="num total-cell">{{ fmt(row.total) }}</td>
                         <td class="num">{{ row.usdActual === undefined ? '—' : '$' + usd0(row.usdActual) }}</td>
                       </tr>
                     </tbody>
@@ -351,7 +422,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
               </section>
 
               <section class="detail-section">
-                <h3>Claude 按模型</h3>
+                <h3>本机对话按模型（Claude / GLM / 未识别）</h3>
                 <div v-if="!modelRows.length" class="empty">
                   <span class="ic"><Icon name="bot" :size="36" /></span>
                   期间没有模型用量<br>
@@ -399,7 +470,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 
               <!-- COST-UI-SESSION-DETAIL:两张按行明细,各自拉自己的接口、带筛选与筛后合计 -->
               <SessionDetailTable :project-id="store.currentProjectId" :days="days" />
-              <JobDetailTable :project-id="store.currentProjectId" />
+              <JobDetailTable :project-id="store.currentProjectId" :days="days" />
             </div>
           </section>
         </div>
@@ -427,12 +498,22 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .loading-state { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s5); }
 .overview { display: grid; gap: var(--s2); }
 .summary-cards, .summary-skeleton { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s2); }
+.portfolio-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .summary-cards .card { min-width: 0; padding: var(--s3); }
 .summary-cards .v, .summary-reason { overflow-wrap: anywhere; }
 .summary-reason { color: var(--text-2); font-size: var(--fs-base); }
 .saved-value { color: var(--ok); }
 .cost-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); align-items: start; gap: var(--s4); }
 .cost-left { display: grid; gap: var(--s4); min-width: 0; }
+.portfolio-section { display: grid; gap: var(--s3); }
+.portfolio-scroll { max-height: 460px; }
+.portfolio-table { min-width: 960px; }
+.portfolio-table th:not(:first-child), .portfolio-table td.num { text-align: right; }
+.glm-spend { display: grid; gap: var(--s3); }
+.glm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
+.glm-grid > div { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; }
+.glm-grid strong { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.glm-grid span { color: var(--text-2); font-size: var(--fs-sm); }
 .claude-spend { display: grid; gap: var(--s3); background: var(--surface); }
 .spend-note b { color: var(--text); font-weight: 600; }
 .spend-table th:last-child { text-align: right; }
@@ -458,6 +539,8 @@ code { padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r
 
 
 @media (max-width: 1150px) { .cost-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) { .glm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .summary-cards, .portfolio-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1150px) {
   .page-head, .details-head { flex-direction: column; align-items: stretch; }
   .range-picker { justify-content: flex-start; }

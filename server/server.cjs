@@ -54,6 +54,7 @@ const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt
 const costUsage = require('../core/costUsage.cjs');
 const costSessionDetail = require('../core/costSessionDetail.cjs');
 const costJobDetail = require('../core/costJobDetail.cjs');
+const glmCostUsage = require('../core/glmCostUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
@@ -822,6 +823,7 @@ function costDetailFilters(query) {
  */
 function handleCostUsage(req, res, query) {
   const pid = String(query.project || '');
+  if (pid === 'all') return handleCostPortfolio(res, query);
   const proj = resolveProjectSafe(pid);
   const selected = costPrefixes(pid);
   if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
@@ -830,11 +832,12 @@ function handleCostUsage(req, res, query) {
     costUsage.getUsage({ ...selected, days, cardIds: costCardIds(proj) }),
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
+    Promise.resolve().then(() => glmCostUsage.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY })),
     codexApi.getDeepseekBalance().catch(() => ({
       available: false, reason: '查询异常', balance: null, sampledAt: new Date().toISOString(),
     })),
   ])
-    .then(([usage, codex, deepseek, deepseekBalance]) => {
+    .then(([usage, codex, deepseek, glm, deepseekBalance]) => {
       const quota = codexApi.getQuota();
       const claudeTokens = costUsage.totalClaudeTokens(usage);
       const codexTokens = codex.selected.tokens;
@@ -845,6 +848,7 @@ function handleCostUsage(req, res, query) {
         usage,
         codex,
         deepseek,
+        glm,
         deepseekBalance,
         quota,
         combined: {
@@ -856,6 +860,57 @@ function handleCostUsage(req, res, query) {
       });
     })
     .catch((e) => sendJson(res, 500, { ok: false, error: '聚合成本失败：' + (e && e.message) }));
+}
+
+/** 全部项目只读汇总。总额按独立会话目录 / 代码仓去重，不把共享路径重复相加。 */
+async function handleCostPortfolio(res, query) {
+  const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
+  try {
+    const projects = Object.keys(readRegistrySafe().projects || {}).map((id) => resolveProjectSafe(id)).filter(Boolean);
+    const prefixes = [...new Set(projects.flatMap((p) => p.costRoots.map(costUsage.mapRepoToPrefix)))];
+    const [uniqueUsage, codex] = await Promise.all([
+      prefixes.length ? costUsage.getUsage({ prefixes, days }) : null,
+      codexApi.getCostUsage(days, ''),
+    ]);
+    const glmJobs = glmCostUsage.scanGlmJobs({ registryPath: REGISTRY });
+    const rows = [], seenRepos = new Set(), seenNames = new Set();
+    for (const project of projects) {
+      const id = project.id, selected = costPrefixes(id);
+      const usage = await costUsage.getUsage({ ...selected, days });
+      const sharedCodeRepo = seenRepos.has(project.codeRepo);
+      seenRepos.add(project.codeRepo);
+      const duplicateName = seenNames.has(project.name);
+      seenNames.add(project.name);
+      const deepseek = sharedCodeRepo ? null : await codexApi.getDeepseekUsage(days, id);
+      const glm = sharedCodeRepo ? null : glmCostUsage.summarizeGlmJobs(glmJobs,
+        { projectRepo: project.codeRepo, days });
+      const codexRow = duplicateName ? null : codex.byProject.find((row) => row.project === project.name);
+      rows.push({ id, name: project.name, claudeTokens: costUsage.totalClaudeTokens(usage),
+        claudeUsd: usage.usd.actual, claudeOutput: usage.claudeTotals.output,
+        unpricedModels: usage.unpricedModels, sharedDirs: usage.sharedDirs,
+        codexTokens: codexRow?.tokens || 0, codexBuckets: codexRow?.buckets || null,
+        deepseekRmb: deepseek?.totals.costRmb || 0, deepseekJobs: deepseek?.totals.jobs || 0,
+        glm: glm?.totals || null, sharedCodeRepo, duplicateName });
+    }
+    const totals = {
+      claudeTokens: uniqueUsage ? costUsage.totalClaudeTokens(uniqueUsage) : 0,
+      claudeUsd: uniqueUsage?.usd.actual || 0,
+      claudeOutput: uniqueUsage?.claudeTotals.output || 0,
+      unpricedModels: uniqueUsage?.unpricedModels || [],
+      codexTokens: codex.totals.tokens, codexBuckets: codex.totals.buckets,
+      codexBucketedTokens: codex.totals.bucketedTokens,
+      deepseekRmb: rows.reduce((sum, row) => sum + row.deepseekRmb, 0),
+      glmCredits: rows.reduce((sum, row) => sum + (row.glm?.credits || 0), 0),
+      glmCreditJobs: rows.reduce((sum, row) => sum + (row.glm?.creditJobs || 0), 0),
+      glmUncertainCredits: rows.reduce((sum, row) => sum + (row.glm?.uncertainCredits || 0), 0),
+      glmTokens: rows.reduce((sum, row) => sum + (row.glm?.tokens || 0), 0),
+    };
+    const unassignedCodexTokens = codex.byProject.filter((row) => !seenNames.has(row.project))
+      .reduce((sum, row) => sum + row.tokens, 0);
+    sendJson(res, 200, { ok: true, scope: 'all', days, rows, totals, unassignedCodexTokens });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, error: '汇总全部项目成本失败：' + error.message });
+  }
 }
 
 /**

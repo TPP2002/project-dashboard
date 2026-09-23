@@ -48,6 +48,7 @@ function parseTailSnapshot(text, startsMidLine = false) {
   const events = parseJsonLines(text, startsMidLine);
   const last = events.length ? events[events.length - 1] : null;
   let tokensUsed = null;
+  let tokenBuckets = null;
   let quotaSample = null;
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index];
@@ -55,6 +56,12 @@ function parseTailSnapshot(text, startsMidLine = false) {
     if (inner.type !== 'token_count') continue;
     if (tokensUsed === null) {
       tokensUsed = finiteNumber(inner.payload.info?.total_token_usage?.total_tokens);
+      const usage = inner.payload.info?.total_token_usage;
+      if (usage && Number.isFinite(usage.input_tokens) && Number.isFinite(usage.output_tokens)
+        && Number.isFinite(usage.cached_input_tokens)) {
+        tokenBuckets = { input: usage.input_tokens, output: usage.output_tokens,
+          cachedInput: usage.cached_input_tokens };
+      }
     }
     if (!quotaSample && inner.payload.rate_limits && typeof inner.payload.rate_limits === 'object') {
       quotaSample = { sampledAt: event.timestamp || null, rateLimits: inner.payload.rate_limits };
@@ -66,6 +73,7 @@ function parseTailSnapshot(text, startsMidLine = false) {
     lastActivityAt: typeof last?.timestamp === 'string' ? last.timestamp : null,
     lastOrdinal: Number.isFinite(last?.ordinal) ? last.ordinal : null,
     tokensUsed,
+    tokenBuckets,
     quotaSample,
   };
 }

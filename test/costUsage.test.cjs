@@ -129,6 +129,15 @@ test('usdActualOf:没拿到专门缓存读价的档折算不变——opus 与 so
   assert.ok(Math.abs(usdActualOf(t, priceFor('claude-sonnet-5')) - 0.00142) < 1e-9);
 });
 
+test('Claude API 等价价目按准确版本，不把未知模型按相邻档计价', () => {
+  assert.deepEqual(priceFor('claude-fable-5'), { in: 10, out: 50, cacheRead: 1 });
+  assert.deepEqual(priceFor('claude-fable-5-1'), { in: 10, out: 50, cacheRead: 0.25 });
+  assert.deepEqual(priceFor('claude-opus-5-5-20260901'), { in: 4, out: 20, cacheRead: 0.2 });
+  assert.deepEqual(priceFor('claude-sonnet-4-5'), { in: 3, out: 15 });
+  assert.equal(priceFor('claude-opus-6'), null);
+  assert.equal(priceFor('glm-5.3'), null);
+});
+
 test('mapRepoToPrefix:非字母数字一律变 -(与 Claude Code 目录编码一致)', () => {
   assert.equal(mapRepoToPrefix('F:\\code-repo'), 'F--code-repo');
   assert.equal(mapRepoToPrefix('C:\\Users\\demo\\Documents\\job-repo'), 'C--Users-demo-Documents-job-repo');
@@ -145,14 +154,31 @@ test('getUsage:美元折算(缓存价生效,无TTL细分保守归1h桶)', async 
   const r = await getUsage({ prefix: 'Z--p', days: 30, projectsRoot: root, cachePath: path.join(dir, 'c.json') });
   assert.equal(r.totals.cw1h, 50, '无细分应全归 1h 桶');
   assert.equal(r.totals.cw5m, 0);
-  // fable 缓存读有专门价 0.25(COST-UI-SESSION-DETAIL):
-  // actual = (10×10 + 1000×0.25 + 50×2×10 + 100×50)/1e6 = 0.00635
-  assert.ok(Math.abs(r.usd.actual - 0.00635) < 1e-9, `actual=${r.usd.actual}`);
+  // fable 5 的读价是 $1；$0.25 是 fable 5.1，不能混用版本价格。
+  assert.ok(Math.abs(r.usd.actual - 0.0071) < 1e-9, `actual=${r.usd.actual}`);
   // noCache = ((10+1000+50)×10 + 100×50)/1e6 = 0.0156(全部输入按全价,与缓存读价无关,不跟着动)
   assert.ok(Math.abs(r.usd.noCache - 0.0156) < 1e-9, `noCache=${r.usd.noCache}`);
-  assert.ok(Math.abs(r.usd.saved - 0.00925) < 1e-9, `saved=${r.usd.saved}`);
+  assert.ok(Math.abs(r.usd.saved - 0.0085) < 1e-9, `saved=${r.usd.saved}`);
   assert.ok(r.byDay[0].usdActual > 0, '按天也应带折算');
   clean(dir);
+});
+
+test('同一 Claude Code 日志目录里的 GLM 不混入 Claude 成本', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mixed-usage-'));
+  try {
+    const root = path.join(dir, 'projects', 'Z--p'); fs.mkdirSync(root, { recursive: true });
+    const ts = new Date().toISOString();
+    fs.writeFileSync(path.join(root, 'a.jsonl'), [
+      jsonlLine({ ts, model: 'claude-sonnet-5', input: 10, output: 5 }),
+      jsonlLine({ ts, model: 'glm-5.3', input: 100, output: 50 }),
+    ].join('\n'));
+    const result = await getUsage({ prefix: 'Z--p', days: 1,
+      projectsRoot: path.dirname(root), cachePath: path.join(dir, 'cache.json') });
+    assert.equal(result.totals.output, 55);
+    assert.equal(result.claudeTotals.output, 5);
+    assert.equal(result.glmTotals.output, 50);
+    assert.equal(result.usd.actual, (10 * 2 + 5 * 10) / 1e6);
+  } finally { clean(dir); }
 });
 
 test('selectProjectDirs:独占多个前缀,保留目录原序并去重', () => {

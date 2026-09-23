@@ -32,26 +32,35 @@ const CACHE_PATH = path.join(DASHBOARD_HOME, 'costUsageCache.json');
 const CACHE_VERSION = 3;
 
 /**
- * API 牌价(USD / 百万 token,缓存自 claude-api skill 2026-06 牌价表;官方变价改这张表)。
- * 缓存价规则:读 = 条目给了专门 cacheRead 价就用它(如 fable 官方 0.25),没给退回 0.1×input;
+ * Claude API 标准牌价(USD / 百万 token,2026-09-23 核官方表)：
+ * https://platform.claude.com/docs/en/about-claude/pricing
+ * 已知模型精确匹配；未知模型不借别的型号价格填零或冒充已计价。
  * 写 5 分钟档 = 1.25×input;写 1 小时档 = 2×input。
  * 【口径声明】订阅套餐实付的是订阅费——这里的美元是「同样的量若走 API 直购值多少钱」的等价参考。
  */
 const PRICE = {
-  fable: { in: 10, out: 50, cacheRead: 0.25 },
-  opus: { in: 5, out: 25 },
+  'fable-5-1': { in: 10, out: 50, cacheRead: 0.25 },
+  'fable-5': { in: 10, out: 50, cacheRead: 1 },
+  'mythos-5-1': { in: 10, out: 50, cacheRead: 0.25 },
+  'mythos-5': { in: 10, out: 50, cacheRead: 1 },
+  'opus-5-5': { in: 4, out: 20, cacheRead: 0.20 },
+  'opus-5': { in: 5, out: 25 },
+  'opus-4-8': { in: 5, out: 25 },
+  'opus-4-7': { in: 5, out: 25 },
+  'opus-4-6': { in: 5, out: 25 },
+  'opus-4-5': { in: 5, out: 25 },
+  'opus-4-1': { in: 15, out: 75 },
+  'opus-4': { in: 15, out: 75 },
+  'sonnet-5': { in: 2, out: 10 },
   'sonnet-4-6': { in: 3, out: 15 },
-  sonnet: { in: 2, out: 10 },
-  haiku: { in: 1, out: 5 },
+  'sonnet-4-5': { in: 3, out: 15 },
+  'sonnet-4': { in: 3, out: 15 },
+  'haiku-4-5': { in: 1, out: 5 },
+  'haiku-3-5': { in: 0.8, out: 4 },
 };
 function priceFor(model) {
-  const m = String(model || '');
-  if (m.includes('fable') || m.includes('mythos')) return PRICE.fable;
-  if (m.includes('opus')) return PRICE.opus;
-  if (m.includes('sonnet-4-6')) return PRICE['sonnet-4-6'];
-  if (m.includes('sonnet')) return PRICE.sonnet;
-  if (m.includes('haiku')) return PRICE.haiku;
-  return null; // 未知模型(如 <synthetic>)不计价
+  const m = String(model || '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
+  return Object.hasOwn(PRICE, m) ? PRICE[m] : null;
 }
 /** 折算实际成本(缓存价生效;有专门缓存读价用专门价,没有退回 0.1×input) */
 function usdActualOf(t, p) {
@@ -65,7 +74,7 @@ function usdNoCacheOf(t, p) {
 
 /** Claude 侧所有 token 类别的同期总量，供跨模型平均单价口径复用。 */
 function totalClaudeTokens(claudeUsage) {
-  const totals = claudeUsage && claudeUsage.totals;
+  const totals = claudeUsage && (claudeUsage.claudeTotals || claudeUsage.totals);
   return totals
     ? Number(totals.input || 0) + Number(totals.output || 0)
       + Number(totals.cacheRead || 0) + Number(totals.cacheWrite || 0)
@@ -436,6 +445,18 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
   const denom = totals.cacheRead + totals.cacheWrite + totals.input;
   totals.cacheHitRate = denom > 0 ? totals.cacheRead / denom : 0;
 
+  // Claude Code 的日志目录也会收录通过同一 CLI 运行的 GLM。不能把 GLM 的
+  // token 算进 Claude 的 API 等价费用或“Claude + Codex”合计。
+  const claudeTotals = emptyTally(), glmTotals = emptyTally(), unclassifiedTotals = emptyTally(), unpricedModels = [];
+  for (const [model, value] of Object.entries(models)) {
+    const isGlm = /^glm(?:-|$)/i.test(model);
+    const target = isGlm ? glmTotals : (model.startsWith('claude-') || priceFor(model)
+      ? claudeTotals : unclassifiedTotals);
+    for (const key of TALLY_KEYS) target[key] += value[key] || 0;
+    if (!isGlm && !priceFor(model)
+      && ['input', 'output', 'cacheRead', 'cacheWrite'].some((key) => value[key] > 0)) unpricedModels.push(model);
+  }
+
   // 美元折算(API 牌价等价参考;订阅实付为订阅费):按模型算再汇总,byDay 各给折算实际
   const usd = { actual: 0, noCache: 0, saved: 0, byModel: {} };
   for (const [m, v] of Object.entries(models)) {
@@ -470,7 +491,8 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
     heavyRatio: ctx.turns > 0 ? ctx.heavyTurns / ctx.turns : 0,
   };
 
-  return { byDay, totals, models, usd, dirs: dirNames, sharedDirs, scanned, cachedFiles, sessions, sessionRows, context };
+  return { byDay, totals, claudeTotals, glmTotals, unclassifiedTotals, unpricedModels,
+    models, usd, dirs: dirNames, sharedDirs, scanned, cachedFiles, sessions, sessionRows, context };
 }
 
 module.exports = {
