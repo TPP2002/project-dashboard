@@ -15,6 +15,12 @@ function fmt(value: number) {
   return value.toLocaleString()
 }
 
+function cacheRate(input: number, cachedInput: number) {
+  return Number.isFinite(input) && Number.isFinite(cachedInput)
+    && input > 0 && cachedInput >= 0 && cachedInput <= input
+    ? `${(cachedInput / input * 100).toFixed(1)}%` : '无法计算'
+}
+
 const OTHER = '其它'
 
 /**
@@ -58,6 +64,24 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
       <div class="card"><div class="v">{{ fmt(codex.selected.tokens) }}</div><div class="l">总 token · 仅供核对</div></div>
     </div>
 
+    <section class="model-section">
+      <h3>当前项目 · 按模型缓存命中率</h3>
+      <div v-if="codex.selected.byModel.length" class="project-scroll">
+        <table class="model-table">
+          <thead><tr><th>模型</th><th>输入（含缓存）</th><th>缓存读取</th><th>缓存命中率</th></tr></thead>
+          <tbody>
+            <tr v-for="row in codex.selected.byModel" :key="row.model">
+              <td class="project-name">{{ row.model }}</td>
+              <td class="num">{{ row.bucketedTokens ? fmt(row.buckets.input) : '—' }}</td>
+              <td class="num">{{ row.bucketedTokens ? fmt(row.buckets.cachedInput) : '—' }}</td>
+              <td class="num">{{ cacheRate(row.buckets.input, row.buckets.cachedInput) }}<span v-if="row.bucketedTokens < row.tokens" class="partial"> · 部分记录</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="fine">当前项目近 {{ days }} 天没有 Codex 模型记录。</p>
+    </section>
+
     <div class="wide-pair">
       <div class="card quota-card">
         <div class="quota-head">
@@ -100,6 +124,7 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
 
     <p class="fine">输入包含缓存读取；两者是包含关系，不能再相加。订阅套餐没有按单实付金额，此处不把总 token 乘别家均价冒充账单。</p>
     <p v-if="(codex.selected.bucketedTokens ?? 0) < codex.selected.tokens" class="fine">部分旧会话只有总 token，没有输入/输出分桶；上方分桶是已识别部分，不能当完整账。</p>
+    <p class="fine">按会话中识别到的模型归组；同一会话切换模型时，无法把每段用量精确拆给不同模型。</p>
     <p class="fine">Codex 按 session_meta 的 cwd 归项目；同日会话取尾部累计 token，跨日会话流式读取 token_count 并按累计值增量拆到各自然日，扫描时不会把整份 JSONL 装进内存。</p>
 
   </section>
@@ -122,7 +147,11 @@ const quotaPercent = computed(() => props.quota.usedPercent == null
 /* 额度条与「按项目消耗」并排，每列不窄于 520；窄屏自动落回上下堆叠。 */
 .wide-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); align-items: start; gap: var(--s3); }
 .project-section { min-width: 0; display: flex; flex-direction: column; gap: var(--s3); }
+.model-section { min-width: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.model-section h3 { margin: 0; font-size: var(--fs-md); }
+.partial { color: var(--text-2); white-space: nowrap; }
 .project-scroll { max-width: 100%; max-height: 180px; overflow-x: auto; overflow-y: auto; }
+.model-table { min-width: 540px; }
 .project-table { table-layout: fixed; }
 .project-table th:first-child { width: 65%; }
 .project-table th:last-child { text-align: right; }
