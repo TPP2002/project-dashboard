@@ -31,7 +31,6 @@ const WIN = process.platform === 'win32';
  */
 function stage(t) {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'sfl-')));
-  t.after(() => { try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 3 }); } catch (_) { /* 句柄滞留 */ } });
   const dest = path.join(root, 'copy');
   const outside = path.join(root, 'outside');
   fs.mkdirSync(outside, { recursive: true });
@@ -44,25 +43,58 @@ function stage(t) {
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><p>x</p>', 'utf8');
   // 2MB:保证分成很多 chunk,首个 chunk 到达时后面还没发完,掐得住
   fs.writeFileSync(path.join(dist, 'assets', 'big.js'), 'x'.repeat(2 * 1024 * 1024), 'utf8');
-  return { root, dest, outside };
+  const staged = { root, dest, outside, stop: null };
+  t.after(async () => {
+    await staged.stop?.();
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 3 });
+  });
+  return staged;
 }
 
-function startServer(t, dest, outside, port) {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(dest, 'server', 'server.cjs')], {
+function startServer(staged) {
+  const { dest, outside } = staged;
+  const registry = path.join(outside, 'registry.json');
+  fs.writeFileSync(registry, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--require', path.join(__dirname, 'fixtures', 'staticStreamObserver.cjs'),
+      path.join(dest, 'server', 'server.cjs')], {
       cwd: outside,
-      env: { ...process.env, DASHBOARD_PORT: String(port), DASHBOARD_NO_OPEN: '1', DASHBOARD_NO_RESTART: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, DASHBOARD_PORT: '0', DASHBOARD_NO_OPEN: '1',
+        DASHBOARD_HOME: outside, DASHBOARD_REGISTRY: registry, DASHBOARD_MODULES: '' },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true,
     });
-    t.after(() => { try { child.kill(); } catch (_) { /* 已退出 */ } });
-    let out = '';
-    const done = setTimeout(() => resolve({ child, out, ok: false }), 15000);
-    const onData = (d) => {
-      out += d.toString();
-      if (out.includes(String(port))) { clearTimeout(done); resolve({ child, out, ok: true }); }
+    const stopped = new Promise(done => child.once('close', done));
+    staged.stop = async () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill();
+      await stopped;
     };
+    let out = '';
+    let closed = 0;
+    const onData = d => { out += d.toString(); };
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
+    const timer = setTimeout(() => reject(new Error(`服务启动超时：${out}`)), 15000);
+    child.once('error', error => { clearTimeout(timer); reject(error); });
+    child.once('exit', code => { clearTimeout(timer); reject(new Error(`服务提前退出 ${code}：${out}`)); });
+    child.on('message', message => {
+      if (message.type === 'static-stream-close') closed = message.closed;
+      if (message.type !== 'dashboard-ready') return;
+      clearTimeout(timer);
+      resolve({ child, port: message.port, waitForClosedFiles(count) {
+        if (closed >= count) return Promise.resolve();
+        return new Promise((done, fail) => {
+          const onMessage = () => {
+            if (closed < count) return;
+            clearTimeout(timeout); child.off('message', onMessage); done();
+          };
+          const timeout = setTimeout(() => {
+            child.off('message', onMessage);
+            fail(new Error(`文件句柄未关闭：${closed}/${count}`));
+          }, 5000);
+          child.on('message', onMessage);
+        });
+      } });
+    });
   });
 }
 
@@ -93,30 +125,30 @@ const renameCode = (root, dest) => {
 test('静态文件被中途掐断 20 次之后,发布副本目录仍然换得了名(句柄没泄)', {
   skip: !WIN && '句柄占用导致换名失败是 Windows 语义;别的平台本来就换得了名,测不出这个 bug',
 }, async (t) => {
-  const { root, dest, outside } = stage(t);
-  const started = await startServer(t, dest, outside, 6191);
-  assert.ok(started.ok, '服务没起来,后面的结论都不算数。它说:' + started.out.slice(0, 300));
+  const staged = stage(t), { root, dest } = staged;
+  const started = await startServer(staged), { port } = started;
 
   // 对照组先跑:完整读完不该有任何影响 —— 它同时证明"换名失败"不是环境本来就换不了名
-  for (let i = 0; i < 20; i++) await readFull(6191, '/assets/big.js');
+  for (let i = 0; i < 20; i++) assert.equal(await readFull(port, '/assets/big.js'), 200);
+  await started.waitForClosedFiles(20);
   assert.equal(renameCode(root, dest), 'OK', '完整读完不该影响换名(基线)');
 
   const how = [];
-  for (let i = 0; i < 20; i++) how.push(await abortMidStream(6191, '/assets/big.js'));
+  for (let i = 0; i < 20; i++) how.push(await abortMidStream(port, '/assets/big.js'));
   const aborted = how.filter((h) => h === 'aborted').length;
   // 掐不住就等于这一轮什么都没验:宁可测试报"实验没做成",也不许它假绿
   assert.ok(aborted >= 15, '至少要真掐断 15 次,否则实验没做成。实际:' + JSON.stringify(
     how.reduce((a, k) => ({ ...a, [k]: (a[k] ?? 0) + 1 }), {})));
 
+  await started.waitForClosedFiles(40);
   assert.equal(renameCode(root, dest), 'OK',
     '中途掐断之后换名失败 = 源流没被关掉、句柄泄在副本里,这正是 release 报 EPERM 的病根');
 });
 
 test('掐断之后服务照常服务下一个请求(善后不许把服务本身弄坏)', async (t) => {
-  const { dest, outside } = stage(t);
-  const started = await startServer(t, dest, outside, 6192);
-  assert.ok(started.ok, '服务没起来:' + started.out.slice(0, 300));
-  for (let i = 0; i < 5; i++) await abortMidStream(6192, '/assets/big.js');
-  assert.equal(await readFull(6192, '/assets/big.js'), 200, '掐断过之后还得能正常发完整文件');
-  assert.equal(await readFull(6192, '/'), 200, '首页也得照常');
+  const started = await startServer(stage(t)), { port } = started;
+  for (let i = 0; i < 5; i++) await abortMidStream(port, '/assets/big.js');
+  assert.equal(await readFull(port, '/assets/big.js'), 200, '掐断过之后还得能正常发完整文件');
+  await started.waitForClosedFiles(6);
+  assert.equal(await readFull(port, '/'), 200, '首页也得照常');
 });
