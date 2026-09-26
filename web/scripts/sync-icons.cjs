@@ -62,7 +62,7 @@ export type IconName = keyof typeof ICON_PATHS
 export const ICON_NAMES = Object.keys(ICON_PATHS) as IconName[]
 `
 
-const glyphsFile = `// 状态记号（D 灯条语言）：11 个状态各自的瓦片语义与自创记号。
+const glyphsFile = `// 状态记号（D 灯条语言）：12 个状态各自的瓦片语义与自创记号。
 // 本文件由 web/scripts/sync-icons.cjs 从 docs/mockups/图标体系-mockup-v3-定稿.html 生成，请勿手改。
 // 每个记号都是 24×24 视框内的 SVG 片段；记号里的动效 class（a-*）由 StatusTile.vue 的样式定义。
 
@@ -85,7 +85,7 @@ export interface StatusGlyph {
   readonly mark: string
   /** 这枚瓦片在讲什么；供改稿对照，不参与渲染。 */
   readonly note: string
-  /** 「微」档下是否仍然循环（三档动效里 calm 只留待拍板 / 施工中 / 暂缓）。 */
+  /** 「微」档下是否仍然循环（三档动效里 calm 只留待拍板 / 施工中 / 待收单 / 暂缓）。 */
   readonly calm: boolean
 }
 

@@ -101,6 +101,8 @@
 | 建一张卡 | `add <id> --title "技术说明" --plain-title "一句人话" --model "档位"` |
 | 动代码前认领 | `claim <id> --branch <分支名>` |
 | 有进展了 | `progress <id> --percent 60 --next "下一步干什么"` |
+| 施工方交活了等收单 | `await-collect <id> --job <工单名>`（卡转「待收单」等收单员；派单器监工自动调，没经监工的交活手动调） |
+| 派完工单存收单指令 | `collect-brief <id> --file <文件>`（把完整收单员指令存到卡上，网页卡抽屉一键复制） |
 | 遇到岔路口要人拍板 | `pending <id> --json-file pending.json`（三件套见上面铁律 3） |
 | 拍板的东西写进代码了 | `mark-landed <id> --did dN`，一次标完本卡全部用 `--all` |
 | **我不做了，把卡交回去** | `unclaim <id> --reason "为什么放手"` |

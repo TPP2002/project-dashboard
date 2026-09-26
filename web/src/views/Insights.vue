@@ -98,7 +98,7 @@ const cfdGap = computed(() => {
   let design = 0, started = 0
   for (const b of boards.value) for (const t of b.tasks ?? []) {
     design++
-    if (t.dates?.start || t.status === '施工中' || t.status === '收官' || t.status === '已完工') started++
+    if (t.dates?.start || t.status === '施工中' || t.status === '待收单' || t.status === '收官' || t.status === '已完工') started++
   }
   const done = doneRecords.value.length
   return { backlog: design - started, wip: started - done < 0 ? 0 : started - done }

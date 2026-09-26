@@ -6,7 +6,7 @@ const { detectProjectIds } = require('../core/resolveProject.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 const COMMAND_NAMES = [
-  'brief', 'claim', 'progress', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
+  'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox',
 ];
 
@@ -17,12 +17,19 @@ const READ_ONLY_COMMANDS = ['brief', 'list', 'show', 'inbox'];
 // status 为 null 表示保持原状态；有条件的命令用「条件 → 结果」对象，避免把例外藏在正文里。
 const TRANSITIONS = [
   { command: 'claim', status: '施工中', writes: [
-    '仅允许未开工/待开工/可复工/待拍板/已拍板/施工中；其余拒绝',
+    '仅允许未开工/待开工/可复工/待拍板/已拍板/施工中/待收单；其余拒绝',
     'dates.start（仅首次）、lastProgressAt；按参数合并 gitBranch、fileScope',
   ] },
   { command: 'progress', status: null, writes: [
     '已完工/已作废拒绝；报到 100 也不自动完工',
     '按参数写 percent、nextMilestone、tests、typecheck；总写 lastProgressAt',
+  ] },
+  { command: 'await-collect', status: '待收单', writes: [
+    '仅允许施工中/待收单；其余拒绝（退出码 1，不改任何字段）',
+    '从施工中进入时重置 awaitCollect={since,jobs:[]}；按 --job 合并 awaitCollect.jobs（同名工单覆盖 outcome/finishedAt/engine）；总写 lastProgressAt；进度与分支不动',
+  ] },
+  { command: 'collect-brief', status: null, writes: [
+    '已完工/已作废拒绝;整段覆盖 collectBrief={text,updatedAt,author?};不改状态、进度与 lastProgressAt',
   ] },
   { command: 'pending', status: { '未开工/待开工': '待拍板', '其它状态': null }, writes: [
     '追加 decisions（answer/decidedAt=null）；施工中另写 nextMilestone="等拍板：问题摘要"；其它状态无拒绝闸',
@@ -64,6 +71,8 @@ const TRANSITIONS = [
 const RULES = [
   '开工：brief → claim；没卡先 add，必须带 --model 与 --plain-title；用户口述任务自编 AD-YYYYMMDD-<关键词>（关键词用大写字母/数字）。',
   '施工中：progress --percent <0-100> --next "下一步"，有进展就回写。',
+  '派完工单：把完整收单员指令用 collect-brief <卡号> --file <文件> 存到卡上（网页卡抽屉最上方显示、一键复制），契约对话回复里照旧给同一段代码块。',
+  '施工方交活：派单器监工会自动跑 await-collect 把卡转「待收单」；没经过派单器监工的交活（续聊交活后本对话不收、别的平台）由派单对话手动跑 await-collect <卡号> --job <工单名>；收单员开工第一步 claim（待收单 → 施工中）。',
   '岔路：pending --json-file pending.json；三件套 background（≥60 字）/ optionPros（每项≥20 字）/ recommendReason（≥30 字），缺一或太短拒收，等负责人拍板。',
   '被挡：block --by <上游卡号> --reason "卡在哪"，状态保持。',
   '挂起：park --reason "为什么停"；解除挂起先 unpark --reason "解除依据"，再 claim。',
@@ -119,7 +128,7 @@ function renderMarkdown(card) {
     '写命令共同追加 activity、刷新 project.updatedAt；“按参数”字段仅在传入时写。JSON 的 status=null 表示保持。',
     '| 命令 | 改不改状态、改到哪 | 实际写了什么字段 |',
     '|---|---|---|',
-    // 只读命令那几行全是一模一样的「保持 / 只读，无写入」，在 md 里并成一行 —— 协议卡有 60 行
+    // 只读命令那几行全是一模一样的「保持 / 只读，无写入」，在 md 里并成一行 —— 协议卡有 66 行
     // 硬上限（它存在的意义就是短到能一口气读完），四行同义重复是这里最不值钱的三行。
     // JSON 侧照旧逐条给（它是机器契约，protocol.test.cjs 按 NAMES 逐条对照），只压人看的这一份。
     ...card.transitions.filter(({ command }) => !READ_ONLY_COMMANDS.includes(command))

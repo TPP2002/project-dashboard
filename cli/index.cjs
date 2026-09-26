@@ -37,6 +37,8 @@ const REGISTRY = {
   register: ['./commands.cjs', 'register'], add: ['./commands.cjs', 'add'],
   claim: ['./commands.cjs', 'claim'], unclaim: ['./commands.cjs', 'unclaim'],
   progress: ['./commands.cjs', 'progress'],
+  'await-collect': ['./commands.cjs', 'awaitCollect'],
+  'collect-brief': ['./commands.cjs', 'collectBrief'],
   pending: ['./commands.cjs', 'pending'], decide: ['./commands.cjs', 'decide'],
   undecide: ['./undecide.cjs', 'undecide'],
   park: ['./commands.cjs', 'park'], unpark: ['./commands.cjs', 'unpark'], block: ['./commands.cjs', 'block'],

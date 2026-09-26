@@ -39,7 +39,9 @@ function git(repo, args) {
 }
 
 /**
- * 扫全部已注册项目的板,找"状态=施工中 且 gitBranch 含该分支"的任务。
+ * 扫全部已注册项目的板,找"状态=施工中/待收单 且 gitBranch 含该分支"的任务。
+ * 待收单也命中:施工方已交活、卡上分支还没合,land 往施工分支 commit 时卡可能还挂在待收单
+ * —— 不放行就被 pre-commit 闸拦死,所以这一支照施工中放行。
  * 单个项目出任何问题(未注册路径/板不存在/板损坏)只记进 skipped 跳过,不连坐其它项目的判定。
  * @returns {{hits:Array<{project:string,name:string,taskId:string,percent:number,title:string}>, skipped:Array<{project:string,why:string}>, scanned:string[]}}
  */
@@ -71,7 +73,7 @@ function scanAll(registryPath, branch) {
     try { board = JSON.parse(raw); }
     catch (e) { skipped.push({ project: id, soft: false, why: `板不是合法 JSON:${e.message}` }); continue; }
     for (const t of (board.tasks || [])) {
-      if (t.status === '施工中' && (t.gitBranch || []).map(String).includes(branch)) {
+      if (['施工中', '待收单'].includes(t.status) && (t.gitBranch || []).map(String).includes(branch)) {
         hits.push({ project: id, name: proj.name, taskId: t.id, percent: t.percent || 0, title: t.title });
       }
     }
@@ -95,7 +97,7 @@ function projectOfRepo(registryPath, repo) {
 function blockedMessage(branch, scanned, repoProj, skipped) {
   const pid = repoProj || '<项目id>';
   const L = [
-    `看板 claim 硬闸门:分支 '${branch}' 在【全部 ${scanned.length} 个已注册项目】的板上都没有'施工中'任务`,
+    `看板 claim 硬闸门:分支 '${branch}' 在【全部 ${scanned.length} 个已注册项目】的板上都没有'施工中'或'待收单'任务`,
     '',
     `  已扫描:${scanned.join(', ') || '(registry 是空的)'}`,
     '',
@@ -124,7 +126,7 @@ function blockedMessage(branch, scanned, repoProj, skipped) {
 }
 
 /**
- * claim-check：分支上有没有"施工中"的卡(扫全部项目)。
+ * claim-check：分支上有没有"施工中/待收单"的卡(扫全部项目)。
  * @param {{branch?:string, repo?:string, registry?:string}} flags
  */
 function claimCheck(flags) {
@@ -155,4 +157,4 @@ function claimCheck(flags) {
   };
 }
 
-module.exports = { claimCheck };
+module.exports = { claimCheck, scanAll };

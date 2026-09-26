@@ -21,15 +21,16 @@ const doneCount = computed(() => (board.value?.tasks ?? []).filter((task) => DON
 const columns = computed(() => derive.groupByStatus(board.value)
   .filter((column) => column.tasks.length > 0 && (showDone.value || !DONE_STATUSES.has(column.status)))
   // 完工泳道按完工日倒序（最新完工在最上面），找"最近干完的那张"不用翻全列（体检 U2）。
+  // 待收单泳道同样按最久没动排前——等得最久的排最上，负责人先派人收等了最久的那张。
   .map((column) => DONE_STATUSES.has(column.status)
     ? { ...column, tasks: [...column.tasks].sort((left, right) => (right.dates?.done || '').localeCompare(left.dates?.done || '')) }
-    : column.status === '施工中' ? { ...column, tasks: sortStalestFirst(column.tasks) } : column)
+    : column.status === '施工中' || column.status === '待收单' ? { ...column, tasks: sortStalestFirst(column.tasks) } : column)
   .map(column => ({ ...column, limit: appearance.wipLimits[column.status] || 0 })))
 const progress = computed(() => derive.progress(board.value))
 
 function statusTone(status: string) {
   if (['已完工', '已拍板', '收官'].includes(status)) return 'ok'
-  if (status === '待拍板') return 'warn'
+  if (['待拍板', '待收单'].includes(status)) return 'warn'
   if (['施工中', '可复工', '待开工'].includes(status)) return 'info'
   if (status === '暂缓') return 'bad'
   return 'n'

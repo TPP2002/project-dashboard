@@ -1,7 +1,9 @@
 'use strict';
 /**
  * commands.cjs —— CLI 语义命令（board 唯一写者）。每个命令收 flags，走 store.mutate 改字段。
- * 状态机：claim 只能从 未开工/待开工/可复工/待拍板/已拍板 → 施工中（防倒退）；
+ * 状态机：claim 只能从 未开工/待开工/可复工/待拍板/已拍板/待收单 → 施工中（防倒退）；
+ * await-collect 把 施工中/待收单 的卡转「待收单」（施工方交活，等收单员来收）；
+ * collect-brief 把完整收单员指令整段存到卡上（终态卡拒绝，不改状态/进度/更新时间）；
  * 往回走的三个动作各有各的语义，不许互相顶替：unclaim = 我不做了但活还在（施工中 → 待开工/可复工）、
  * cancel = 这活不做了（任意 → 已作废）、reopen = 结了案又要重来（已完工/已作废 → 待开工）。
  */
@@ -12,6 +14,7 @@ const { resolveProject, readRegistry, detectProjectIds, REGISTRY_PATH, DASHBOARD
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { emptyBoard, STATUS, TASKID, VOID_STATUSES } = require('../core/boardSchema.cjs');
 const { renderList, renderShowCard } = require('./renderTask.cjs');
+const { COLLECT_OUTCOMES, OUTCOME_TEXT, COLLECT_BRIEF_MAX, collectInstructionOf, hasCollectBrief } = require('../core/collectTrigger.cjs');
 const { normalizeReal } = require('../core/safePath.cjs');
 const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
@@ -328,7 +331,7 @@ function claim(flags) {
   const branches = asArray(flags.branch);
   const scopes = asArray(flags.scope);
   const author = flags.author || branches[0] || 'cli';
-  const ALLOWED = ['未开工', '待开工', '可复工', '待拍板', '已拍板', '施工中'];
+  const ALLOWED = ['未开工', '待开工', '可复工', '待拍板', '已拍板', '施工中', '待收单'];
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     if (!ALLOWED.includes(t.status)) {
@@ -352,6 +355,92 @@ function claim(flags) {
     res.text = `✔ claim ${id} → ${res.task.status}\n\n`
       + buildBrief({ pid: proj.id, projName: proj.name, board, task: res.task });
   }
+  return res;
+}
+
+// ---------- await-collect（施工方交活 → 待收单） ----------
+// 外部施工方(GLM/DeepSeek/Codex…)交活之后、收单员收单之前,卡挂「待收单」——负责人扫一眼
+// 「待收单」泳道就知道哪几张是"干完了没人收",不用逐张翻施工中(负责人 2026-09-24 原话)。
+// 派单器监工在交活那一刻自动调;没经监工的交活(续聊交活后本对话不收、别的平台)手动调。
+// 收单员接手走 claim(待收单 → 施工中);文本输出末尾那句收单指令,新开 Sonnet 对话整段贴进去。
+function awaitCollect(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'await-collect <卡号> --project <id> --job <工单名> [--outcome finished|timeout|failed] [--finished-at <ISO时刻>] [--engine <平台名>] [--author <身份>]');
+  const job = String(need(flags.job, '--job <工单名>'));
+  const outcome = flags.outcome === undefined || flags.outcome === true ? 'finished' : String(flags.outcome);
+  if (!COLLECT_OUTCOMES.includes(outcome)) {
+    throw new Error(`--outcome 非法：「${outcome}」，只允许 ${COLLECT_OUTCOMES.join('/')}`);
+  }
+  const finishedAt = flags['finished-at'] === undefined || flags['finished-at'] === true ? nowIso() : String(flags['finished-at']);
+  if (Number.isNaN(Date.parse(finishedAt))) {
+    throw new Error(`--finished-at 不是合法时刻：「${finishedAt}」（要 ISO 时刻，如 2026-09-24T10:00:00Z）`);
+  }
+  const engine = flags.engine === undefined || flags.engine === true ? undefined : String(flags.engine);
+  const { board, changed } = mutateTask(proj, id, (b) => {
+    const t = findTask(b, id);
+    // 只许 施工中/待收单 迁入;其余状态一律拒绝且一个字段都不改(mutation 内 throw,锁内不落盘)。
+    if (t.status !== '施工中' && t.status !== '待收单') {
+      throw new Error(`await-collect 非法迁移：${t.status} → 待收单（只能从 施工中/待收单）`);
+    }
+    if (t.status !== '待收单') t.awaitCollect = { since: nowIso(), jobs: [] };
+    const jobs = t.awaitCollect.jobs;
+    const prev = jobs.find((j) => j.slug === job);
+    if (prev) {
+      // 同一张卡同一张工单交了不止一次(续聊接着干),就地覆盖,不重复追加
+      prev.outcome = outcome;
+      prev.finishedAt = finishedAt;
+      if (engine !== undefined) prev.engine = engine;
+    } else {
+      const entry = { slug: job, outcome, finishedAt };
+      if (engine !== undefined) entry.engine = engine;
+      jobs.push(entry);
+    }
+    t.status = '待收单';
+    t.lastProgressAt = nowIso(); // 进度、nextMilestone、gitBranch 一律不动
+  }, act('await-collect', flags.author, `待收单 ${id}：工单 ${job} ${OUTCOME_TEXT[outcome]}`, id));
+  const res = okTask(board, id, changed);
+  if (hasCollectBrief(res.task)) {
+    res.text = `✔ await-collect ${id} → 待收单\n`
+      + '  派收单员:卡上已存收单指令,在看板卡抽屉点「复制收单指令」贴进新开的 Sonnet 对话';
+  } else {
+    res.text = `✔ await-collect ${id} → 待收单\n`
+      + '  ⚠ 卡上还没存收单指令(collect-brief),派收单员可先用这句兜底:\n'
+      + '  ' + collectInstructionOf({ projectId: proj.id, task: res.task });
+  }
+  return res;
+}
+
+// ---------- collect-brief（把完整收单员指令存到卡上） ----------
+// 收单员指令不再让人去留言里翻:写契约的对话派完工单后,用本命令把完整指令整段存进卡
+// (collectBrief),网页卡抽屉最上方显示、一键复制;CLI 的 await-collect/brief 与网页复制
+// 都经 core/collectInstructionOf 取同一份。整段覆盖、不追加历史 —— 卡上永远只有最新一段。
+function collectBrief(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'collect-brief <卡号> --project <id> (--text <文本> | --file <文件路径>) [--author <身份>]');
+  const hasText = flags.text !== undefined && flags.text !== true;
+  const hasFile = flags.file !== undefined && flags.file !== true;
+  if (hasText === hasFile) {
+    throw new Error('collect-brief 的 --text 与 --file 必须二选一:只给一个(长文本首选 --file,免命令行转义)');
+  }
+  const raw = hasText ? String(flags.text) : fs.readFileSync(path.resolve(String(flags.file)), 'utf8');
+  const text = raw.trim();
+  if (!text) throw new Error('collect-brief 的指令文本去掉首尾空白后不能为空');
+  if (text.length > COLLECT_BRIEF_MAX) {
+    throw new Error(`collect-brief 的指令文本超过 ${COLLECT_BRIEF_MAX} 字上限(当前 ${text.length} 字),先精简再存`);
+  }
+  const author = flags.author === undefined || flags.author === true ? undefined : String(flags.author);
+  const { board, changed } = mutateTask(proj, id, (b) => {
+    const t = findTask(b, id);
+    // 终态卡的一生已结账,不再改收单指令;要动先 reopen。拒绝即抛,一个字段都不改。
+    if (t.status === '已完工' || t.status === '已作废') {
+      throw new Error(`collect-brief 拒绝：${id} 已是「${t.status}」，终态的卡不再改收单指令（要动先 reopen）`);
+    }
+    t.collectBrief = { text, updatedAt: nowIso() };
+    if (author !== undefined) t.collectBrief.author = author;
+    // 不改 status、lastProgressAt、进度 —— 存指令不等于动了工。
+  }, act('collect-brief', flags.author, `收单指令已存 ${id}(${text.length} 字)`, id));
+  const res = okTask(board, id, changed);
+  res.text = `✔ collect-brief ${id}:已存 ${text.length} 字,看板卡抽屉「复制收单指令」一键复制`;
   return res;
 }
 
@@ -1051,7 +1140,7 @@ function cost(flags) {
 }
 
 module.exports = {
-  register, add, addBatch, isBatchAdd, claim, unclaim, progress, syncProgress, pending, decide, markLanded,
+  register, add, addBatch, isBatchAdd, claim, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
   hasCostQuantity, hasCostLedger, costGateRefusal,
 };

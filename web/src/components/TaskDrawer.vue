@@ -8,6 +8,7 @@ import { fmtDateTime, relTime } from '@/utils/format'
 import Icon from './Icon.vue'
 import StatusBadge from './StatusBadge.vue'
 import { humanTitle, specText, missingPlainTitle, plainTitleFixCommand } from '@/utils/taskTitle'
+import { collectInstructionOf, hasCollectBrief, OUTCOME_TEXT } from '@/utils/collectTrigger'
 import { appearance } from '@/utils/appearance'
 import { ageLevel, ageTone } from '@/utils/ageLevel'
 import type { DocRef, Status } from '@/types'
@@ -57,6 +58,37 @@ async function copyPlainTitleFix(t: { id: string }) {
   }
   copiedFix.value = true
   setTimeout(() => { copiedFix.value = false }, 4000)
+}
+
+// ---- 收单指令：collect-brief 存进卡上的完整指令 + 一键复制（没存过就复制兜底句） ----
+const briefCopied = ref(false)
+async function copyCollectInstruction() {
+  const current = task.value
+  if (!current) return
+  const text = collectInstructionOf(pid.value, current)
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+  briefCopied.value = true
+  setTimeout(() => { briefCopied.value = false }, 2000)
+}
+// 超过 12 行默认只显示前 12 行，「展开全文 / 收起」切换
+const briefExpanded = ref(false)
+const briefFull = computed(() => task.value?.collectBrief?.text || '')
+const briefLines = computed(() => briefFull.value.split('\n').length)
+const briefShown = computed(() =>
+  briefExpanded.value || briefLines.value <= 12 ? briefFull.value : briefFull.value.split('\n').slice(0, 12).join('\n'),
+)
+// timeout/failed 的结果文字着警示色，finished 用默认色
+function collectOutcomeClass(outcome: string): string {
+  return outcome === 'timeout' ? 'collect-warn' : outcome === 'failed' ? 'collect-bad' : ''
 }
 
 // ---- 内联拍板 ----
@@ -192,8 +224,8 @@ async function preview(d: DocRef) {
   }
 }
 
-// 切换任务时重置文档预览 + 技术说明展开态
-watch(task, () => { activeDoc.value = null; docText.value = ''; docErr.value = ''; specExpanded.value = false; copiedFix.value = false })
+// 切换任务时重置文档预览 + 技术说明/收单指令的展开态与复制反馈
+watch(task, () => { activeDoc.value = null; docText.value = ''; docErr.value = ''; specExpanded.value = false; copiedFix.value = false; briefCopied.value = false; briefExpanded.value = false })
 // 遮罩抽屉要锁 body 滚动；内嵌模式是页面的一列，不该锁（拖窄窗口回落时也要跟着放开）。
 watch([task, () => props.docked], ([t, docked]) => {
   document.body.style.overflow = t && !docked ? 'hidden' : ''
@@ -237,6 +269,41 @@ onUnmounted(() => {
                 @click="copyPlainTitleFix(task)"
               ><Icon :name="copiedFix ? 'check' : 'pencil'" :size="14" />{{ copiedFix ? '已复制补充命令' : '无人话标题·点击复制补充命令' }}</button>
             </div>
+
+            <!-- 收单指令：collect-brief 存进卡上的完整指令，抽屉最上方显示、一键复制 -->
+            <section v-if="task.collectBrief?.text" class="sec block brief-sec">
+              <div class="sec-t brief-t">收单指令
+                <button type="button" class="btn btn-sm" @click="copyCollectInstruction">
+                  <Icon :name="briefCopied ? 'check' : 'branch'" :size="14" />{{ briefCopied ? '已复制' : '复制收单指令' }}
+                </button>
+              </div>
+              <pre class="brief-body mono">{{ briefShown }}</pre>
+              <button v-if="briefLines > 12" type="button" class="brief-toggle" @click="briefExpanded = !briefExpanded">
+                {{ briefExpanded ? '收起' : '展开全文' }}
+              </button>
+              <div class="brief-meta">更新于 {{ relTime(task.collectBrief.updatedAt) }}</div>
+            </section>
+
+            <!-- 待收单：施工方交活了，等收单员来收 -->
+            <section v-if="task.status === '待收单'" class="sec block">
+              <div class="sec-t">待收单</div>
+              <p v-if="task.awaitCollect?.since" class="collect-line">
+                施工方交活于 {{ relTime(task.awaitCollect.since) }}（{{ fmtDateTime(task.awaitCollect.since) }}）
+              </p>
+              <p v-for="j in task.awaitCollect?.jobs || []" :key="j.slug" class="collect-line">
+                <span class="mono">{{ j.slug }}</span> ·
+                <span :class="collectOutcomeClass(j.outcome)">{{ OUTCOME_TEXT[j.outcome] || j.outcome }}</span> ·
+                <span class="mono">{{ fmtDateTime(j.finishedAt) }}</span>
+              </p>
+              <div v-if="!hasCollectBrief(task)" class="note">
+                这张卡上还没存收单指令：先让写契约的对话跑 collect-brief 补上；急用可点下面按钮复制兜底指令
+              </div>
+              <div v-if="!hasCollectBrief(task)" class="inline-list">
+                <button type="button" class="btn btn-sm" @click="copyCollectInstruction">
+                  <Icon :name="briefCopied ? 'check' : 'branch'" :size="14" />{{ briefCopied ? '已复制' : '复制兜底收单指令' }}
+                </button>
+              </div>
+            </section>
 
             <section class="sec block spec-sec">
               <button type="button" class="sec-t spec-toggle" @click="specExpanded = !specExpanded">
@@ -425,6 +492,15 @@ onUnmounted(() => {
 .d-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
 .d-title { flex: 1; min-width: 0; font-size: var(--fs-lg); line-height: 1.4; }
 .no-plain-title { flex: none; border: 1px solid transparent; cursor: pointer; }
+.collect-line { margin: 0; font-size: var(--fs-base); }
+.collect-warn { color: var(--warn); }
+.collect-bad { color: var(--bad); }
+/* 收单指令块：等宽、保留换行地显示 collect-brief 全文；超 12 行默认截断可展开 */
+.brief-t { display: flex; align-items: center; gap: var(--s2); }
+.brief-body { margin: 0; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.brief-toggle { align-self: flex-start; border: 0; background: none; padding: 0; color: var(--info); cursor: pointer; font-size: var(--fs-sm); }
+.brief-toggle:hover { text-decoration: underline; }
+.brief-meta { color: var(--text-3); font-size: var(--fs-xs); }
 .spec-sec { padding-top: 0; border-top: 0; }
 .spec-toggle { display: inline-flex; align-items: center; gap: var(--s1); border: 0; background: none; padding: 0; color: var(--text-3); cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
 .d-spec { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; }

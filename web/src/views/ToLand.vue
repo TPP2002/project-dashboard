@@ -63,7 +63,7 @@ function changePage(pid: string, list: UnlandedTask[], next: number) {
 }
 function statusTone(status: string) {
   if (['已完工', '已拍板', '收官'].includes(status)) return 'ok'
-  if (status === '待拍板') return 'warn'
+  if (['待拍板', '待收单'].includes(status)) return 'warn'
   if (['施工中', '可复工', '待开工'].includes(status)) return 'info'
   if (status === '暂缓') return 'bad'
   return 'n'

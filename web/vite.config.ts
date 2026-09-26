@@ -20,11 +20,17 @@ function boardSchemaVirtualPlugin(): Plugin {
       if (id !== RESOLVED) return
       const require = createRequire(import.meta.url)
       const schema = require('../core/boardSchema.cjs')
+      // 收单指令模板同源注入(core/collectTrigger.cjs):CLI 打的、网页复制的是同一句话
+      const collect = require('../core/collectTrigger.cjs')
       const { SCHEMA_VERSION, STATUS, STATUS_EMOJI } = schema
+      const { COLLECT_TRIGGER_TEMPLATE, NO_JOBS_TEXT, OUTCOME_TEXT } = collect
       return [
         `export const SCHEMA_VERSION = ${JSON.stringify(SCHEMA_VERSION)}`,
         `export const STATUS = ${JSON.stringify(STATUS)}`,
         `export const STATUS_EMOJI = ${JSON.stringify(STATUS_EMOJI)}`,
+        `export const COLLECT_TRIGGER_TEMPLATE = ${JSON.stringify(COLLECT_TRIGGER_TEMPLATE)}`,
+        `export const NO_JOBS_TEXT = ${JSON.stringify(NO_JOBS_TEXT)}`,
+        `export const OUTCOME_TEXT = ${JSON.stringify(OUTCOME_TEXT)}`,
         `export function emojiFor(s){ return STATUS_EMOJI[s] || '\\u2b1c' }`,
         '',
       ].join('\n')

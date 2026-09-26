@@ -130,6 +130,15 @@ function precheck(flags) {
     } else {
       L.push('  施工中 0 张(无人占用)');
     }
+    // 待收单 = 施工方已交活、等收单员来收。它同样占着分支没人合,别的对话不许接;
+    // 单列一段,负责人扫一眼就知道该派谁去收哪几张。
+    const awaiting = tasks.filter((t) => t.status === '待收单');
+    if (awaiting.length) {
+      L.push(`  待收单 ${awaiting.length} 张(施工方已交活、等收单员,别的对话不许接):`);
+      for (const t of awaiting) {
+        L.push(`    📥 ${t.id} · ${t.plainTitle || t.title}`);
+      }
+    }
     const pend = tasks.filter((t) => (t.decisions || []).some((d) => d.answer == null));
     if (pend.length) L.push(`  ❓ 待拍板 ${pend.length} 张:${pend.map((t) => t.id).join(', ')}`);
   }
