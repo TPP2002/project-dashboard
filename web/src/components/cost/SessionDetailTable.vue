@@ -16,6 +16,11 @@ interface SessionRow {
   sessionId: string
   models: string[]
   card: string | null
+  attribution: {
+    status: 'attributed' | 'multi' | 'ambiguous' | 'unattributed'
+    level: 'binding' | 'branch' | 'command' | 'none'
+    cardIds: string[]; candidates: string[]; unknownCards: string[]; evidence: string
+  }
   startedAt: string | null
   endedAt: string | null
   turns: number
@@ -32,6 +37,7 @@ interface SessionTotals {
   sessions: number; turns: number; input: number; output: number
   cacheRead: number; cacheWrite: number; compactions: number
   usd: number; contextSum: number; avgContext: number
+  attribution: { attributed: number; multi: number; ambiguous: number; unattributed: number }
 }
 interface DetailBody {
   ok: boolean; error?: string
@@ -103,6 +109,11 @@ function when(ts: string | null): string {
 function shortSid(id: string): string {
   return id.length > 12 ? id.slice(0, 12) : id
 }
+function ambiguityTitle(row: SessionRow): string {
+  const ids = row.attribution.candidates
+  const listed = ids.slice(0, 20).join('、') + (ids.length > 20 ? ` 等 ${ids.length} 张` : '')
+  return `${listed}\n${row.attribution.evidence}`
+}
 </script>
 
 <template>
@@ -121,6 +132,9 @@ function shortSid(id: string): string {
       </select></label>
       <button class="btn btn-sm" type="submit" :disabled="loading">{{ loading ? '读取中…' : '刷新' }}</button>
     </form>
+    <p v-if="totals" class="muted attribution-counts">
+      一张卡 {{ totals.attribution.attributed }} · 多卡 {{ totals.attribution.multi }} · 歧义 {{ totals.attribution.ambiguous }} · 未归因 {{ totals.attribution.unattributed }}
+    </p>
     <p v-if="error" class="bad" role="alert">{{ error }}</p>
     <div v-else-if="!rows.length && !loading" class="empty-line">
       没有符合筛选的对话记录;清掉筛选条件或换更长时间段再试。
@@ -139,8 +153,14 @@ function shortSid(id: string): string {
           <tr v-for="row in rows" :key="row.sessionId">
             <td class="mono" :title="row.sessionId">{{ shortSid(row.sessionId) }}</td>
             <td>
-              <button v-if="row.card" class="btn quiet btn-sm mono" type="button" @click="store.openTask(row.card)">{{ row.card }}</button>
-              <span v-else class="muted">未判定</span>
+              <button v-if="row.attribution.status === 'attributed' && row.card" class="btn quiet btn-sm mono" type="button" @click="store.openTask(row.card)">{{ row.card }}</button>
+              <template v-else-if="row.attribution.status === 'multi'">
+                <span class="multi-label">多卡</span>
+                <button v-for="id in row.attribution.cardIds.slice(0, 3)" :key="id" class="btn quiet btn-sm mono" type="button" @click="store.openTask(id)">{{ id }}</button>
+                <span v-if="row.attribution.cardIds.length > 3" :title="row.attribution.cardIds.join('、')" class="muted">+{{ row.attribution.cardIds.length - 3 }}</span>
+              </template>
+              <span v-else-if="row.attribution.status === 'ambiguous'" class="muted" :title="ambiguityTitle(row)">歧义 · {{ row.attribution.candidates.length }} 张候选</span>
+              <span v-else class="muted" :title="row.attribution.evidence">未归因</span>
             </td>
             <td class="models">{{ row.models.map(shortModel).join(' + ') || '—' }}</td>
             <td class="mono">{{ when(row.startedAt) }}</td>
@@ -185,6 +205,8 @@ h3 { font-size: var(--fs-md); }
 .bad { color: var(--bad); }
 .empty-line { color: var(--text-2); font-size: var(--fs-sm); }
 .muted { color: var(--text-3); }
+.attribution-counts { font-size: var(--fs-xs); }
+.multi-label { color: var(--text-3); font-size: var(--fs-xs); margin-right: var(--s1); }
 .models { overflow-wrap: anywhere; }
 .table-scroll { max-width: 100%; max-height: 320px; overflow: auto; }
 .session-table { min-width: 980px; }
