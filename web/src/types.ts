@@ -4,7 +4,7 @@
 // 状态联合 = core STATUS 顺序（运行时值由 @core/boardSchema.cjs 提供，见 api/schema.ts）
 export type Status =
   | '未开工' | '待开工' | '待拍板' | '已拍板' | '施工中'
-  | '可复工' | '收官' | '已完工' | '暂缓' | '压轴' | '已作废'
+  | '可复工' | '待收单' | '收官' | '已完工' | '暂缓' | '压轴' | '已作废'
 
 export type DecisionInfoField = 'background' | 'optionPros' | 'recommendReason'
 
@@ -105,6 +105,13 @@ export interface Task {
   cost?: TaskCost
   /** 建议施工档位(建卡时由梳理对话按路由表标注,如 "sonnet·低" / "fable·max") */
   modelHint?: string
+  /** 交活登记(CLI await-collect 写入):施工方交活了、等收单员。只在「待收单」时展示,离开该状态后保留不删 */
+  awaitCollect?: {
+    since: string
+    jobs: { slug: string; outcome: 'finished' | 'timeout' | 'failed'; finishedAt: string; engine?: string }[]
+  }
+  /** 收单指令全文(CLI collect-brief 写入,整段覆盖):卡抽屉最上方显示、一键复制 */
+  collectBrief?: { text: string; updatedAt: string; author?: string }
 }
 
 export interface Activity {

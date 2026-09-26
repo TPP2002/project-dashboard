@@ -9,7 +9,10 @@
 
 const SCHEMA_VERSION = '1.0';
 
-const STATUS = ['未开工', '待开工', '待拍板', '已拍板', '施工中', '可复工', '收官', '已完工', '暂缓', '压轴', '已作废'];
+// outcome 的合法取值与 collect-brief 的长度上限收在 core/collectTrigger.cjs(收单指令同一份真相源),这里只做形状闸。
+const { COLLECT_OUTCOMES, COLLECT_BRIEF_MAX } = require('./collectTrigger.cjs');
+
+const STATUS = ['未开工', '待开工', '待拍板', '已拍板', '施工中', '可复工', '待收单', '收官', '已完工', '暂缓', '压轴', '已作废'];
 
 // 作废 = 这张卡不做了(方案被否/需求撤了/重复建卡)。它跟'已完工'一样不再需要任何人动手,
 // 但【不算成果】:完成度的分母里必须把它剔掉,否则作废越多、进度看着越低,负责人会以为活越干越回去。
@@ -19,7 +22,7 @@ const VOID_STATUSES = ['已作废'];
 // statusEmoji 由 status 派生（不独立存/校验）
 const STATUS_EMOJI = {
   未开工: '⬜', 待开工: '📋', 待拍板: '❓', 已拍板: '✅', 施工中: '🔨',
-  可复工: '🔄', 收官: '🏁', 已完工: '✅', 暂缓: '🚫', 压轴: '🎬', 已作废: '⛔',
+  可复工: '🔄', 待收单: '📥', 收官: '🏁', 已完工: '✅', 暂缓: '🚫', 压轴: '🎬', 已作废: '⛔',
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -72,6 +75,32 @@ function validateTask(t, p, errs, ids) {
     else for (const k of ['design', 'start', 'done']) {
       const d = t.dates[k];
       if (d !== null && d !== undefined && !DATE.test(d)) errs.push(`${p}.dates.${k}: 日期应为 YYYY-MM-DD，实为「${d}」`);
+    }
+  }
+  // awaitCollect 可缺省;给了就必须是完整的交活登记(since=转待收单的时刻,jobs=交了哪些工单)。
+  if (t.awaitCollect !== undefined) {
+    if (!isType(t.awaitCollect, 'object')) errs.push(`${p}.awaitCollect: 应为对象`);
+    else {
+      if (!isType(t.awaitCollect.since, 'string')) errs.push(`${p}.awaitCollect.since: 应为字符串（转待收单的时刻）`);
+      if (!Array.isArray(t.awaitCollect.jobs)) errs.push(`${p}.awaitCollect.jobs: 应为数组`);
+      else t.awaitCollect.jobs.forEach((j, i) => {
+        const jp = `${p}.awaitCollect.jobs[${i}]`;
+        if (!isType(j, 'object')) { errs.push(`${jp}: 应为对象`); return; }
+        if (!isType(j.slug, 'string') || !j.slug) errs.push(`${jp}.slug: 应为非空字符串（工单名）`);
+        if (!COLLECT_OUTCOMES.includes(j.outcome)) errs.push(`${jp}.outcome: 非法枚举「${j.outcome}」，允许: ${COLLECT_OUTCOMES.join('/')}`);
+        if (!isType(j.finishedAt, 'string')) errs.push(`${jp}.finishedAt: 应为字符串（交活时刻）`);
+        if (j.engine !== undefined && !isType(j.engine, 'string')) errs.push(`${jp}.engine: 应为字符串`);
+      });
+    }
+  }
+  // collectBrief 可缺省;给了就必须是完整的一段收单指令(text 非空且不超 COLLECT_BRIEF_MAX 字,updatedAt 记存/更新的时刻)。
+  if (t.collectBrief !== undefined) {
+    if (!isType(t.collectBrief, 'object')) errs.push(`${p}.collectBrief: 应为对象`);
+    else {
+      if (!isType(t.collectBrief.text, 'string') || !t.collectBrief.text) errs.push(`${p}.collectBrief.text: 应为非空字符串（完整收单员指令）`);
+      else if (t.collectBrief.text.length > COLLECT_BRIEF_MAX) errs.push(`${p}.collectBrief.text: 超过 ${COLLECT_BRIEF_MAX} 字上限`);
+      if (!isType(t.collectBrief.updatedAt, 'string')) errs.push(`${p}.collectBrief.updatedAt: 应为字符串（存指令的时刻）`);
+      if (t.collectBrief.author !== undefined && !isType(t.collectBrief.author, 'string')) errs.push(`${p}.collectBrief.author: 应为字符串`);
     }
   }
   for (const arrKey of ['gitBranch', 'worktree', 'prNumbers', 'commitShas', 'forbiddenZones', 'fileScope', 'docs']) {

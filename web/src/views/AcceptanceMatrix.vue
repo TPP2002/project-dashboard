@@ -30,7 +30,7 @@ const LIGHT: Record<Light, string> = { ok: 'var(--ok)', warn: 'var(--warn)', bad
 
 function statusLight(t: Task): Light {
   if (t.status === '已完工') return 'ok'
-  if (['收官', '施工中', '可复工', '已拍板'].includes(t.status)) return 'warn'
+  if (['收官', '施工中', '可复工', '待收单', '已拍板'].includes(t.status)) return 'warn'
   if (t.status === '暂缓') return 'bad'
   return 'na'
 }

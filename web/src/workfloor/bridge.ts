@@ -7,7 +7,7 @@ import type { SceneEvent, SceneState, SceneTask } from './types'
 type Group = 'queued' | 'active' | 'pending' | 'blocked' | 'done'
 const GROUPS: Record<Exclude<Task['status'], '已作废'>, Group> = {
   未开工: 'queued', 待开工: 'queued', 可复工: 'queued', 压轴: 'queued',
-  施工中: 'active', 已拍板: 'active', 收官: 'active',
+  施工中: 'active', 待收单: 'active', 已拍板: 'active', 收官: 'active',
   待拍板: 'pending', 暂缓: 'blocked', 已完工: 'done',
 }
 

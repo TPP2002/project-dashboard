@@ -1,4 +1,4 @@
-// 状态记号（D 灯条语言）：11 个状态各自的瓦片语义与自创记号。
+// 状态记号（D 灯条语言）：12 个状态各自的瓦片语义与自创记号。
 // 本文件由 web/scripts/sync-icons.cjs 从 docs/mockups/图标体系-mockup-v3-定稿.html 生成，请勿手改。
 // 每个记号都是 24×24 视框内的 SVG 片段；记号里的动效 class（a-*）由 StatusTile.vue 的样式定义。
 
@@ -21,7 +21,7 @@ export interface StatusGlyph {
   readonly mark: string
   /** 这枚瓦片在讲什么；供改稿对照，不参与渲染。 */
   readonly note: string
-  /** 「微」档下是否仍然循环（三档动效里 calm 只留待拍板 / 施工中 / 暂缓）。 */
+  /** 「微」档下是否仍然循环（三档动效里 calm 只留待拍板 / 施工中 / 待收单 / 暂缓）。 */
   readonly calm: boolean
 }
 
@@ -61,6 +61,12 @@ export const STATUS_GLYPHS = {
     fill: false, dim: false, calm: false,
     mark: "<g class=\"a-spin\"><path d=\"M7 12.6a5 5 0 1 0 1.6-3.7\"/><path d=\"M6.4 6.2v3.4h3.4\"/></g>",
     note: "蓝谱反向流 + 回旋箭头转一圈:可以接着做了",
+  },
+  collect: {
+    key: "collect", spec: true, speed: "fast", reverse: false,
+    fill: false, dim: false, calm: true,
+    mark: "<path d=\"M5 12.5v5.5h14v-5.5\"/><path d=\"M5 12.5h3.8l1.4 2h3.6l1.4-2H19\" style=\"opacity:.45\"/><g class=\"a-pulse\"><path d=\"M12 4.8v7M9.2 9 12 11.8 14.8 9\"/></g>",
+    note: "琥珀谱急流 2.4s + 箭头往托盘里点头:施工方交活了,等你派人收",
   },
   wrap: {
     key: "wrap", spec: true, speed: "slow", reverse: false,

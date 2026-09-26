@@ -14,7 +14,7 @@ const { SETTLED_STATUSES } = require('../core/taskSignal.cjs');
  * 依赖关系、施工状态、分支占用、文件范围。纯计算,零额度,而且卡片一变就自动重算。
  *
  * 【判断顺序】硬排除在前(有人做了/被挡住),软分组在后(可能撞车):
- *   1. 状态不是「未开工 / 已拍板」的 → 不在候选里(施工中的已被人占)
+ *   1. 状态不是「未开工 / 已拍板」的 → 不在候选里(施工中/待收单的已被人占;待收单的卡文件还没合)
  *   2. 上游依赖未完工 → 挡住,列出挡它的是谁
  *   3. 文件范围重叠 → 归为一组,组内只推一张,其余标「等这组当前那张」
  *   4. 没填文件范围的 → 退回按卡号前缀分组,并明确标注这是**猜的**
@@ -83,7 +83,8 @@ function buildParallelPlan(tasks) {
 
   for (const task of list) {
     const status = task.status;
-    if (status === '施工中') {
+    // 待收单也进 running:施工方已交活、卡上分支还没合,别人不能按它的文件范围开工
+    if (status === '施工中' || status === '待收单') {
       running.push({
         id: task.id,
         plainTitle: task.plainTitle || null,
@@ -127,10 +128,10 @@ function buildParallelPlan(tasks) {
     });
   }
 
-  // 施工中的卡也参与占位:它正在改的文件,别再派第二张进去
+  // 施工中/待收单的卡也参与占位:它正在改的文件(待收单是还没合),别再派第二张进去
   const runningKeys = [];
   for (const task of list) {
-    if (task.status !== '施工中') continue;
+    if (task.status !== '施工中' && task.status !== '待收单') continue;
     const keys = scopeKeys(task.fileScope);
     if (keys.length) runningKeys.push({ id: task.id, keys });
   }

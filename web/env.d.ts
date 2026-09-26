@@ -100,5 +100,11 @@ declare module 'virtual:board-schema' {
   export const SCHEMA_VERSION: string
   export const STATUS: string[]
   export const STATUS_EMOJI: Record<string, string>
+  /** 收单指令模板(正本 core/collectTrigger.cjs,经虚拟模块内联) */
+  export const COLLECT_TRIGGER_TEMPLATE: string
+  /** 卡上没记工单时 {jobs} 处的兜底文案 */
+  export const NO_JOBS_TEXT: string
+  /** outcome → 人话文案,如 finished → 正常交活 */
+  export const OUTCOME_TEXT: Record<string, string>
   export function emojiFor(status: string): string
 }

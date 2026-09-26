@@ -15,6 +15,7 @@ const path = require('node:path');
 const { readBoard, findTask } = require('./store.cjs');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { humanTitle, specText, missingPlainTitle } = require('../core/taskTitle.cjs');
+const { collectInstructionOf, hasCollectBrief } = require('../core/collectTrigger.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 function need(v, usage) { if (v === undefined || v === true || v === '') throw new Error('缺参数。用法: ' + usage); return v; }
@@ -200,10 +201,19 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
 
   if (includeNextSteps) {
     const working = t.status === '施工中';
+    const awaitingCollect = t.status === '待收单';
     L.push('');
     L.push('## 下一步命令');
     L.push('');
     L.push('```bash');
+    if (awaitingCollect) {
+      if (hasCollectBrief(t)) {
+        L.push('# 施工方已交活,卡上已存收单指令(collect-brief),收单员先 claim 本卡再按它干');
+      } else {
+        L.push('# 施工方已交活,等收单员。收单员先 claim 本卡,再按留言里的「收单员指令」收单');
+        L.push('# 派收单员贴这句:' + collectInstructionOf({ projectId: pid, task: t }));
+      }
+    }
     if (!working) L.push(`${CLI} claim ${t.id}${proj} --branch <你的分支名> --scope "<会改的文件>"`);
     L.push(`${CLI} progress ${t.id}${proj} --percent <n> --next "<下一步>"`);
     L.push(`${CLI} pending ${t.id}${proj} --json-file pending.json   # 中途冒出新的拍板点`);

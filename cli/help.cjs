@@ -27,7 +27,7 @@ const EXIT_CODES = [
 
 /** 全局 help 的分组:先给天天用的,装机维护的沉到后面。 */
 const GROUPS = [
-  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
+  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
   ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
@@ -80,7 +80,7 @@ const COMMANDS = {
       'claim FEAT-12 --project myproj --branch feat/login --scope "src/auth/*" --brief',
     ],
     notes: [
-      '只能从 未开工/待开工/可复工/待拍板/已拍板/施工中 迁到 施工中；已完工/已作废的卡要先 `reopen`。',
+      '只能从 未开工/待开工/可复工/待拍板/已拍板/施工中/待收单 迁到 施工中；已完工/已作废的卡要先 `reopen`。',
       '卡还不在板上就先 add。不 claim 就 commit 会被闸门拒。',
     ],
   },
@@ -95,6 +95,40 @@ const COMMANDS = {
     ],
     examples: ['progress FEAT-12 --project myproj --percent 60 --next "接线到入口，然后补回归测试"'],
     notes: ['装了 TodoWrite 钩子后进度会自动同步，手动 progress 用来补里程碑说明。'],
+  },
+  'await-collect': {
+    summary: '施工方交活，卡转「待收单」等收单员',
+    usage: 'await-collect <卡号> --project <id> --job <工单名> [--outcome finished|timeout|failed] [--finished-at <ISO时刻>] [--engine <平台名>] [--author <身份>]',
+    args: [
+      ['<卡号>', '刚交活的那张卡，此刻应是 施工中（或已在 待收单，补记工单）'],
+      ['--job <工单名>', '这次交的是哪张工单，必填；同名工单再交就覆盖该条记录'],
+      ['--outcome <结果>', 'finished（正常交活，默认）/ timeout（超时被停）/ failed（异常退出）'],
+      ['--finished-at <ISO时刻>', '几点交的活，默认现在；写法如 2026-09-24T10:00:00Z'],
+      ['--engine <平台名>', '哪个平台干的活（如 glm / codex），可选，原样记进卡'],
+    ],
+    examples: ['await-collect MY-CARD --project myproj --job my-job --outcome finished'],
+    notes: [
+      '迁移规则：只允许从 施工中/待收单 迁入；其余状态拒绝（退出码 1，不改任何字段）。',
+      '从施工中进入时重置交活记录并记 since；同一工单重复调用只覆盖该条的 outcome/finishedAt/engine，不重复追加。',
+      '派单器监工在交活那一刻自动调；没经监工的交活（续聊交活后本对话不收、别的平台）由派单对话手动跑。',
+      '收单员开工第一步 claim（待收单 → 施工中）；卡上没存收单指令时，命令输出会附一句兜底开场白。',
+    ],
+  },
+  'collect-brief': {
+    summary: '把完整收单员指令存到卡上，网页卡抽屉一键复制',
+    usage: 'collect-brief <卡号> --project <id> (--text <文本> | --file <文件路径>) [--author <身份>]',
+    args: [
+      ['<卡号>', '要存指令的卡，一般是刚派完工单的那张'],
+      ['--text <文本>', '指令全文，直接写在命令行里'],
+      ['--file <文件路径>', '指令全文放这个文件里，按 utf8 读；长文本首选它，免命令行转义'],
+      ['--author <身份>', '谁存的，可选'],
+    ],
+    examples: ['collect-brief MY-CARD --project myproj --file brief.txt'],
+    notes: [
+      '--text 与 --file 必须二选一；去掉首尾空白后为空或超过 2 万字拒绝。',
+      '整段覆盖卡上的收单指令（不追加历史）；已完工/已作废的卡拒绝，要动先 reopen。',
+      '不改卡状态、进度与更新时间；网页卡抽屉最上方显示，点「复制收单指令」一键复制。',
+    ],
   },
   pending: {
     summary: '登记一个要负责人拍板的问题（必须给全背景/各选项利弊/推荐理由三件套）',
