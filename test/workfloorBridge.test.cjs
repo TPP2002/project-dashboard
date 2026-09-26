@@ -36,27 +36,28 @@ function runTs(code) {
 const board = tasks => ({ schemaVersion: '1', project: { id: 'p', name: '项目' }, tasks })
 const task = (id, status, extra = {}) => ({ id, title: id, status, ...extra })
 
-test('十一种状态全部归组，压轴置底，收官至少九成，作废剔除', () => {
+test('十二种状态全部归组，压轴置底，收官至少九成，作废剔除', () => {
   const input = board([
     task('Q2', '未开工', { wave: 2 }), task('Q1', '待开工', { wave: 1 }),
     task('Q3', '可复工', { wave: 2 }), task('Z', '压轴', { wave: -1 }),
     task('A2', '施工中', { dates: { claimed: '2026-09-08T10:00:00Z' } }),
     task('A1', '已拍板', { dates: { claimed: '2026-09-08T09:00:00Z' } }),
-    task('A3', '收官', { percent: 20 }), task('P', '待拍板'), task('B', '暂缓'),
+    task('A3', '收官', { percent: 20 }), task('A4', '待收单'),
+    task('P', '待拍板'), task('B', '暂缓'),
     task('D', '已完工'), task('V', '已作废'),
   ])
   assert.deepEqual([...new Set(input.tasks.map(t => t.status))].sort(), [...STATUS].sort())
   const out = runTs(`const b=${JSON.stringify(input)}; const before=JSON.stringify(b);
     const state=deriveSceneState(b,'p'); console.log(JSON.stringify({state,progress:progress(b),unchanged:before===JSON.stringify(b)}));`)
   assert.deepEqual(out.state.queued.map(t => t.id), ['Q1', 'Q2', 'Q3', 'Z'])
-  assert.deepEqual(out.state.active.map(t => t.id), ['A1', 'A2', 'A3'])
+  assert.deepEqual(out.state.active.map(t => t.id), ['A1', 'A2', 'A3', 'A4'])
   assert.deepEqual(out.state.pending.map(t => t.id), ['P'])
   assert.deepEqual(out.state.blocked.map(t => t.id), ['B'])
   assert.deepEqual(out.state.done.map(t => t.id), ['D'])
   assert.equal(out.state.active[2].percent, 90)
   assert.deepEqual(out.state.queued.map(t => t.order), [0, 1, 2, 3])
-  assert.equal(out.state.total, 10)
-  assert.equal(out.state.percent, 10)
+  assert.equal(out.state.total, 11)
+  assert.equal(out.state.percent, 9)
   assert.equal(out.state.complete, false)
   assert.equal(out.state.percent, out.progress.percent)
   assert.equal(out.unchanged, true)

@@ -139,7 +139,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
       assert.ok(Object.hasOwn(expected, condition), `${command} 缺条件 ${condition}`);
       expected = expected[condition];
     }
-    const fn = command === 'mark-landed' ? 'markLanded' : command === 'collect-brief' ? 'collectBrief' : command;
+    const fn = command === 'mark-landed' ? 'markLanded' : command === 'collect-brief' ? 'collectBrief' : command === 'await-collect' ? 'awaitCollect' : command;
     cmds[fn]({ ...f.P, _: ['T1'], ...flags });
     const after = get();
     assert.equal(after.status, expected === null ? before.status : expected, `${command} ${condition || ''}`);
