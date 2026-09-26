@@ -52,6 +52,7 @@ const { VOID_STATUSES } = require('../core/boardSchema.cjs');
 const { isUnlanded } = require('../core/decisionLanding.cjs');
 const { buildTaskDispatchPrompt, shortTrigger } = require('../cli/dispatchPrompt.cjs');
 const costUsage = require('../core/costUsage.cjs');
+const sessionBindings = require('../core/sessionBindings.cjs');
 const costSessionDetail = require('../core/costSessionDetail.cjs');
 const costJobDetail = require('../core/costJobDetail.cjs');
 const glmCostUsage = require('../core/glmCostUsage.cjs');
@@ -793,12 +794,22 @@ function costPrefixes(pid) {
   return { prefixes, otherPrefixes: [...otherPrefixes] };
 }
 
-/** 看板卡 id 清单,给会话明细判「所属卡」用;board 读不出就给空表(卡的判定全部落空为 null,不猜)。 */
-function costCardIds(proj) {
+/** 看板卡与分支清单；board 读不出就不给会话归因。 */
+function costCards(proj) {
   try {
     const board = readBoardFile(proj.board);
-    return ((board && board.tasks) || []).map((t) => t.id).filter((id) => typeof id === 'string' && id);
+    return ((board && board.tasks) || []).filter((t) => typeof t.id === 'string' && t.id)
+      .map((t) => ({ id: t.id, gitBranch: Array.isArray(t.gitBranch)
+        ? t.gitBranch.filter((branch) => typeof branch === 'string') : [] }));
   } catch (_) { return []; }
+}
+
+function costBindings(proj) {
+  try { return sessionBindings.readBindings(proj.board); }
+  catch (e) {
+    console.warn('[cost] 会话绑定读不进来,按无绑定处理:' + e.message);
+    return null;
+  }
 }
 
 /** 明细接口的筛选参数:只收认识形状的值,其余当未设(core 侧纯函数再兜一层默认)。 */
@@ -829,7 +840,7 @@ function handleCostUsage(req, res, query) {
   if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   return Promise.all([
-    costUsage.getUsage({ ...selected, days, cardIds: costCardIds(proj) }),
+    costUsage.getUsage({ ...selected, days, cards: costCards(proj), bindings: costBindings(proj) }),
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
     Promise.resolve().then(() => glmCostUsage.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY })),
@@ -925,7 +936,7 @@ async function handleCostSessionDetail(req, res, query) {
   if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   try {
-    const usage = await costUsage.getUsage({ ...selected, days, cardIds: costCardIds(proj) });
+    const usage = await costUsage.getUsage({ ...selected, days, cards: costCards(proj), bindings: costBindings(proj) });
     const filters = costDetailFilters(query);
     const rows = costSessionDetail.filterSessions(usage.sessionRows, filters);
     sendJson(res, 200, {

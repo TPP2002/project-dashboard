@@ -2,37 +2,12 @@
 /**
  * costSessionDetail.cjs —— Claude 对话明细的纯函数层(COST-UI-SESSION-DETAIL)。
  *
- * 【为什么单独一个文件】会话明细要做的「所属卡判定」「按日期/模型/卡筛选」「筛后合计」
+ * 【为什么单独一个文件】会话明细要做的「按日期/模型/卡筛选」「筛后合计」
  * 必须是能被 node --test 直接机验的纯函数,不许只活在 Vue 组件里;
- * costUsage.cjs(扫描聚合)与 server/server.cjs(接口)都从这里取判据,前端只渲染。
+ * server/server.cjs(接口)从这里取筛选和合计,前端只渲染。
  *
  * 零依赖(core 纪律):本文件不 require 任何东西,不做任何 IO。
  */
-
-/**
- * 从会话工作目录判「所属看板卡」。
- *
- * 【判据】把 cwd 按路径分隔符切段,某一段(不区分大小写)恰好等于某张卡的 id 才算命中 ——
- * 派单 worktree 的目录名就是卡 id 的小写。从最深的段往回找,命中即返回卡 id 原样;
- * 对不上一律 null,不许猜:主仓检出目录、普通项目目录都不该被硬安到某张卡头上。
- * @param {string|null} cwd 流水记录里的工作目录(判不出给 null)
- * @param {string[]} cardIds 看板卡 id 清单(由调用方从 board 读出传入)
- * @returns {string|null}
- */
-function cardForSession(cwd, cardIds) {
-  if (typeof cwd !== 'string' || !cwd || !Array.isArray(cardIds) || !cardIds.length) return null;
-  const wanted = new Map();
-  for (const id of cardIds) {
-    if (typeof id === 'string' && id) wanted.set(id.toLowerCase(), id);
-  }
-  if (!wanted.size) return null;
-  const segments = cwd.split(/[\\/]+/).filter(Boolean);
-  for (let i = segments.length - 1; i >= 0; i--) {
-    const hit = wanted.get(segments[i].toLowerCase());
-    if (hit) return hit;
-  }
-  return null;
-}
 
 /**
  * 模型名归一:剥掉 claude- 前缀与 -YYYYMMDD 日期后缀,与前端 shortModel 同款规则。
@@ -62,7 +37,7 @@ function dayOf(ts) {
  * 会话的 [起始日, 结束日] 与 [fromDate, toDate] 有重叠就留下 —— 追查「某天烧的钱」时,
  * 跨天会话的那部分消耗不会被漏掉。fromDate/toDate 为 'YYYY-MM-DD'(本机时区),缺省表示不设那一侧。
  * model 按归一后的名字(剥前缀/日期后缀)命中该会话用过的任一模型,全名与短名都筛得到;
- * card 精确等于所属卡 id(判不出卡的行筛不出来)。
+ * card 命中已归属卡(单卡或多卡),歧义候选不算归属。
  * @param {Array} rows getUsage 产出的 sessionRows
  * @param {{fromDate?:string, toDate?:string, model?:string, card?:string}} [filters]
  */
@@ -73,7 +48,9 @@ function filterSessions(rows, filters = {}) {
   return list.filter((row) => {
     if (!row) return false;
     if (want && !(Array.isArray(row.models) && row.models.some((m) => shortModelName(m) === want))) return false;
-    if (card && row.card !== card) return false;
+    if (card && !(row.attribution
+      ? Array.isArray(row.attribution.cardIds) && row.attribution.cardIds.includes(card)
+      : row.card === card)) return false;
     const from = dayOf(row.startedAt);
     const to = dayOf(row.endedAt);
     if (fromDate && !(to && to >= fromDate)) return false;
@@ -90,10 +67,13 @@ function summarizeSessionRows(rows) {
   const sum = {
     sessions: 0, turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
     compactions: 0, contextSum: 0, usd: 0,
+    attribution: { attributed: 0, multi: 0, ambiguous: 0, unattributed: 0 },
   };
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row) continue;
     sum.sessions++;
+    const status = row.attribution ? row.attribution.status : (row.card ? 'attributed' : 'unattributed');
+    if (Object.hasOwn(sum.attribution, status)) sum.attribution[status]++;
     sum.turns += row.turns || 0;
     sum.input += row.input || 0;
     sum.output += row.output || 0;
@@ -120,13 +100,14 @@ function sessionFilterOptions(rows) {
     for (const m of row.models || []) {
       if (m) models.add(shortModelName(m));
     }
-    if (row.card) cards.add(row.card);
+    if (row.attribution) {
+      for (const id of row.attribution.cardIds || []) cards.add(id);
+    } else if (row.card) cards.add(row.card);
   }
   return { models: [...models].sort(), cards: [...cards].sort() };
 }
 
 module.exports = {
-  cardForSession,
   filterSessions,
   sessionFilterOptions,
   summarizeSessionRows,

@@ -18,6 +18,7 @@ const { COLLECT_OUTCOMES, OUTCOME_TEXT, COLLECT_BRIEF_MAX, collectInstructionOf,
 const { normalizeReal } = require('../core/safePath.cjs');
 const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
+const { recordBinding } = require('../core/sessionBindings.cjs');
 
 // ---------- helpers ----------
 // today = 本地时区日期。旧版用 toISOString()(UTC)——北京凌晨 0:00-7:59 的完工/开工/拍板
@@ -343,6 +344,8 @@ function claim(flags) {
     if (branches.length) t.gitBranch = unionBy([...(t.gitBranch || []), ...branches], String);
     if (scopes.length) t.fileScope = unionBy([...(t.fileScope || []), ...scopes], String);
   }, act('claim', author, `认领 ${id}：分支 ${branches.join(',') || '-'}${scopes.length ? '，文件域 ' + scopes.join(',') : ''}`, id));
+  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'claim' }); }
+  catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   warnGeneratedScopes(scopes);
   const res = okTask(board, id, changed);
   // --brief：认领即打印开工任务书，省掉"claim 完再 brief 一次"这一趟（AUD-CLI-BRIEF-AND-HELP）。
@@ -817,6 +820,8 @@ function done(flags) {
       for (const d of (t.decisions || []).filter(isDecidedNotLanded)) { landDecision(d, commits[0]); landed.push(d.id); }
     }
   }, act('done', flags.author, `${collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
+  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'done' }); }
+  catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   const res = okTask(board, id, changed);
   res.landed = landed;
   if (landed.length) {
