@@ -69,3 +69,14 @@ test('缺字段、无效数字和零配额安全降级，同输入结果可重�
   assert.deepEqual(machineCapacity(machine, false), machineCapacity(machine, false));
   assert.equal(JSON.stringify(machine), before);
 });
+
+test('可用核 3.9000000000000004 显示成 3.9，原值不被改动', async () => {
+  const { machineCapacity, formatCores } = await modulePromise;
+  const machine = Object.freeze(reading({ availableCores: 3.9000000000000004, quotaCores: 17.000000000000004 }));
+  const result = machineCapacity(machine, false);
+  assert.equal(result.label, '空闲 3.9 核可派');
+  assert.match(result.detail, /这 3\.9 核/); assert.match(result.barLabel, /可用 3\.9 核 \/ 配额 17 核/);
+  assert.doesNotMatch(result.label + result.detail + result.barLabel, /3\.9000/);
+  assert.equal(formatCores(2), '2'); assert.equal(formatCores(0.1 + 0.2), '0.3');
+  assert.equal(machine.availableCores, 3.9000000000000004);
+});

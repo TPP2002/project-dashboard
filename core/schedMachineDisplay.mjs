@@ -9,6 +9,13 @@
  * @property {{ requestedCores?: number } | null} [reservation]
  */
 
+/** 核数只用于显示：保留一位小数并去掉多余的 .0；派单用的原值不改。 */
+export function formatCores(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return String(value ?? '');
+  if (value > 0 && value < 0.1) return String(value); // 极小的正数不抹成 0，免得「空闲 0 核可派」自相矛盾
+  return String(Math.round(value * 10) / 10);
+}
+
 function unavailable(kind, label, detail) {
   return { kind, label, detail, tone: 'muted', barPercent: null, barLabel: `${label}；没有有效的可派配额比例` };
 }
@@ -31,7 +38,7 @@ export function machineCapacity(machine, stale = true) {
     return unavailable('unknown', '可用核未知', '缺少有效的可用核数，暂不能判断是否可派；不能用配额减占用来代替。');
   }
   const full = available === 0;
-  const quotaLabel = typeof quota === 'number' && Number.isFinite(quota) && quota >= 0 ? `配额 ${quota} 核` : '配额未知';
+  const quotaLabel = typeof quota === 'number' && Number.isFinite(quota) && quota >= 0 ? `配额 ${formatCores(quota)} 核` : '配额未知';
   const barPercent = full ? 100 : typeof quota === 'number' && Number.isFinite(quota) && quota > 0
     ? Math.max(0, Math.min(100, (1 - available / quota) * 100)) : null;
   const occupants = [];
@@ -42,12 +49,12 @@ export function machineCapacity(machine, stale = true) {
   const idleHint = machine.ci === 'idle' ? 'CI 空闲不代表机器可派。' : '';
   return {
     kind: full ? 'full' : 'available', tone: full ? 'warn' : 'ok',
-    label: full ? '已被占满' : `空闲 ${available} 核可派`,
+    label: full ? '已被占满' : `空闲 ${formatCores(available)} 核可派`,
     detail: full
       ? `配额已用尽；可用核为 0，不能再派。${occupiedBy}配额还要计入预留与波动余量，相减的差额不等于空闲。${idleHint}`
-      : `能否再派看可用核；这 ${available} 核是派单员扣除占用、预留与波动余量后给出的可派空间。`,
+      : `能否再派看可用核；这 ${formatCores(available)} 核是派单员扣除占用、预留与波动余量后给出的可派空间。`,
     barPercent,
     barLabel: barPercent === null ? '配额暂不可读，不能计算条形比例'
-      : `不可再派的配额占比 ${Math.round(barPercent)}%（含占用、预留与波动余量）；可用 ${available} 核 / ${quotaLabel}，不代表实测利用率`,
+      : `不可再派的配额占比 ${Math.round(barPercent)}%（含占用、预留与波动余量）；可用 ${formatCores(available)} 核 / ${quotaLabel}，不代表实测利用率`,
   };
 }
