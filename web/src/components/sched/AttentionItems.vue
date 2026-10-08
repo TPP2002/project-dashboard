@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { SchedSnapshot } from '@/api/sched'
 import { freshness } from './format'
+import { formatCores } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ snapshot: SchedSnapshot; now: number }>()
 const emit = defineEmits<{ open: [id: string] }>()
 const items = computed(() => {
@@ -14,7 +15,7 @@ const items = computed(() => {
     if (machine.ownerHold) result.push({ tone: 'warn', text: '主机已按你的要求全部暂停（在「我要用电脑」里点恢复）' })
     const reserve = machine.reservation
     if (reserve && reserve.fulfilledCores < reserve.requestedCores) result.push({ tone: 'warn',
-      text: `你申请主机留 ${reserve.requestedCores} 核，已兑现 ${reserve.fulfilledCores} 核：在跑的活不打断，跑完一单腾一单` })
+      text: `你申请主机留 ${formatCores(reserve.requestedCores)} 核，已兑现 ${formatCores(reserve.fulfilledCores)} 核：在跑的活不打断，跑完一单腾一单` })
   }
   for (const ticket of props.snapshot.queue) if (ticket.state === 'unsatisfiable') result.push({ tone: 'bad',
     text: `${ticket.ticketId} 无法满足：${ticket.reason}；可以撤单，或让派单方调整申请`, ticketId: ticket.ticketId })

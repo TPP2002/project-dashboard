@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import type { CommandInput, MachineSnapshot, ReserveCores } from '@/api/sched'
 import { clock } from './format'
+import { formatCores } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ host: MachineSnapshot | null; busy: boolean }>()
 const emit = defineEmits<{ command: [input: CommandInput] }>()
 const selected = ref<ReserveCores>(props.host?.reservation?.requestedCores ?? 0)
@@ -40,7 +41,7 @@ function chooseDuration(value: 60 | 180 | null) { minutes.value = value; if (sel
       {{ host?.ownerHold ? '一键恢复主机' : '一键全部暂停' }}
     </button>
     <span class="reserve-status" role="status">
-      <template v-if="host?.reservation">已留 {{ host.reservation.fulfilledCores }} 核<template v-if="host.reservation.fulfilledCores !== host.reservation.requestedCores">（已申请 {{ host.reservation.requestedCores }} 核）</template>
+      <template v-if="host?.reservation">已留 {{ formatCores(host.reservation.fulfilledCores) }} 核<template v-if="host.reservation.fulfilledCores !== host.reservation.requestedCores">（已申请 {{ formatCores(host.reservation.requestedCores) }} 核）</template>
         <template v-if="host.reservation.untilAt"> · {{ clock(host.reservation.untilAt) }} 自动取消</template>
         <template v-else-if="host.reservation.requestedCores"> · 手动取消前一直留</template>
       </template>

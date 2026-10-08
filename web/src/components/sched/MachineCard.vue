@@ -4,7 +4,7 @@ import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched
 import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
 import { age, ciJobLabel, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, tone } from './format'
-import { machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
+import { formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
 const fresh = computed(() => freshness(props.machine, props.now))
@@ -99,11 +99,11 @@ onUnmounted(() => {
       <span :style="{ width: `${capacity.barPercent ?? 0}%` }" />
     </div>
     <div class="machine-metrics">
-      <span>配额 <b>{{ machine.quotaCores }}</b> 核</span>
-      <span>已派任务 <b>{{ machine.grantedCores }}</b> 核</span>
-      <span>未接入调度的占用 <b>{{ machine.externalLoadCores }}</b> 核</span>
-      <span v-if="machine.reservation">预留 已兑现 <b>{{ machine.reservation.fulfilledCores }}</b> / 申请 <b>{{ machine.reservation.requestedCores }}</b></span>
-      <span>可用核（派单依据）<b>{{ machine.availableCores }}</b> 核</span>
+      <span>配额 <b>{{ formatCores(machine.quotaCores) }}</b> 核</span>
+      <span>已派任务 <b>{{ formatCores(machine.grantedCores) }}</b> 核</span>
+      <span>未接入调度的占用 <b>{{ formatCores(machine.externalLoadCores) }}</b> 核</span>
+      <span v-if="machine.reservation">预留 已兑现 <b>{{ formatCores(machine.reservation.fulfilledCores) }}</b> / 申请 <b>{{ formatCores(machine.reservation.requestedCores) }}</b></span>
+      <span>可用核（派单依据）<b>{{ formatCores(machine.availableCores, { floor: true }) }}</b> 核</span>
     </div>
     <p class="sched-note capacity-explanation">{{ capacity.detail }}</p>
     <details v-if="jobs.length" class="machine-details">
@@ -111,7 +111,7 @@ onUnmounted(() => {
       <ul class="machine-jobs">
         <li v-for="ticket in jobs" :key="ticket.ticketId" class="machine-job">
           <div class="job-title"><span class="sched-tag info">{{ ticket.project }}</span>
-            <button class="sched-link" @click="emit('open', ticket.ticketId)">{{ ticket.title }}</button><span class="job-cores">{{ ticket.grantedCores }} 核</span>
+            <button class="sched-link" @click="emit('open', ticket.ticketId)">{{ ticket.title }}</button><span class="job-cores">{{ formatCores(ticket.grantedCores) }} 核</span>
           </div>
           <div class="job-meta"><span>{{ ticket.submitter }}</span><span :class="tone(ticket.state)">{{ ticketLabel(ticket) }}</span></div>
           <div class="job-meta"><EstimateText :estimate="estimates[ticket.ticketId]" /></div>
