@@ -37,7 +37,7 @@ test('空闲结论直接使用可用核，不从其他数字倒算，条形按�
   const changedDetails = machineCapacity(reading({ grantedCores: 0, externalLoadCores: 0 }), false);
   assert.equal(changedDetails.label, result.label); assert.equal(changedDetails.barPercent, result.barPercent);
   const tiny = machineCapacity(reading({ availableCores: 0.001 }), false);
-  assert.equal(tiny.kind, 'available'); assert.equal(tiny.label, '空闲 0.001 核可派');
+  assert.equal(tiny.kind, 'available'); assert.equal(tiny.label, '空闲 <0.1 核可派');
 });
 
 test('离线和过期优先于满闲数字，使用灰色条，不能把旧可用核当作空闲', async () => {
@@ -79,4 +79,7 @@ test('可用核 3.9000000000000004 显示成 3.9，原值不被改动', async ()
   assert.doesNotMatch(result.label + result.detail + result.barLabel, /3\.9000/);
   assert.equal(formatCores(2), '2'); assert.equal(formatCores(0.1 + 0.2), '0.3');
   assert.equal(machine.availableCores, 3.9000000000000004);
+  assert.equal(formatCores(3.96, { floor: true }), '3.9'); assert.equal(formatCores(3.96), '4');
+  assert.equal(machineCapacity(reading({ availableCores: 3.96 }), false).label, '空闲 3.9 核可派');
+  assert.equal(formatCores(0.09999999999999998), '<0.1'); assert.equal(formatCores(3.8999999999999995, { floor: true }), '3.9');
 });

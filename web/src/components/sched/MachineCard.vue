@@ -103,7 +103,7 @@ onUnmounted(() => {
       <span>已派任务 <b>{{ formatCores(machine.grantedCores) }}</b> 核</span>
       <span>未接入调度的占用 <b>{{ formatCores(machine.externalLoadCores) }}</b> 核</span>
       <span v-if="machine.reservation">预留 已兑现 <b>{{ formatCores(machine.reservation.fulfilledCores) }}</b> / 申请 <b>{{ formatCores(machine.reservation.requestedCores) }}</b></span>
-      <span>可用核（派单依据）<b>{{ formatCores(machine.availableCores) }}</b> 核</span>
+      <span>可用核（派单依据）<b>{{ formatCores(machine.availableCores, { floor: true }) }}</b> 核</span>
     </div>
     <p class="sched-note capacity-explanation">{{ capacity.detail }}</p>
     <details v-if="jobs.length" class="machine-details">

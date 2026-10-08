@@ -9,11 +9,16 @@
  * @property {{ requestedCores?: number } | null} [reservation]
  */
 
-/** 核数只用于显示：保留一位小数并去掉多余的 .0；派单用的原值不改。 */
-export function formatCores(value) {
+/**
+ * 核数只用于显示，派单用的原值不改。默认四舍五入到一位小数并去掉多余的 .0；
+ * floor 用于“可派”口径，向下取整到一位，免得 3.96 显示成 4 核而实际接不了 4 核的单。
+ * 大于 0 但不足 0.1 的值统一显示“<0.1”，既不抹成 0，也不露出浮点尾巴。
+ */
+export function formatCores(value, { floor = false } = {}) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return String(value ?? '');
-  if (value > 0 && value < 0.1) return String(value); // 极小的正数不抹成 0，免得「空闲 0 核可派」自相矛盾
-  return String(Math.round(value * 10) / 10);
+  if (value > 0 && value < 0.1) return '<0.1';
+  const tenths = floor ? Math.floor(value * 10 + 1e-9) : Math.round(value * 10);
+  return String(tenths / 10);
 }
 
 function unavailable(kind, label, detail) {
@@ -49,12 +54,12 @@ export function machineCapacity(machine, stale = true) {
   const idleHint = machine.ci === 'idle' ? 'CI 空闲不代表机器可派。' : '';
   return {
     kind: full ? 'full' : 'available', tone: full ? 'warn' : 'ok',
-    label: full ? '已被占满' : `空闲 ${formatCores(available)} 核可派`,
+    label: full ? '已被占满' : `空闲 ${formatCores(available, { floor: true })} 核可派`,
     detail: full
       ? `配额已用尽；可用核为 0，不能再派。${occupiedBy}配额还要计入预留与波动余量，相减的差额不等于空闲。${idleHint}`
-      : `能否再派看可用核；这 ${formatCores(available)} 核是派单员扣除占用、预留与波动余量后给出的可派空间。`,
+      : `能否再派看可用核；这 ${formatCores(available, { floor: true })} 核是派单员扣除占用、预留与波动余量后给出的可派空间。`,
     barPercent,
     barLabel: barPercent === null ? '配额暂不可读，不能计算条形比例'
-      : `不可再派的配额占比 ${Math.round(barPercent)}%（含占用、预留与波动余量）；可用 ${formatCores(available)} 核 / ${quotaLabel}，不代表实测利用率`,
+      : `不可再派的配额占比 ${Math.round(barPercent)}%（含占用、预留与波动余量）；可用 ${formatCores(available, { floor: true })} 核 / ${quotaLabel}，不代表实测利用率`,
   };
 }
