@@ -20,10 +20,11 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import type { CodexTask } from './codex-contract'
 import { resolveAcceptanceArgv } from './codex-contract'
-import { jobPaths, worktreeFor, CODEX_WORKTREES_ROOT, REPO_ROOT } from './codex-paths'
+import { jobPaths, worktreeFor, CODEX_WORKTREES_ROOT, REPO_ROOT, type JobPaths } from './codex-paths'
 import { renderPrompt, completionMarker } from './codex-prompt'
 import { extractThreadId } from './codex-say'
 import { VERDICT_SCHEMA, type MachineAcceptance } from './codex-verdict'
+import { CODEX_WORKER_CONFIG_OVERRIDES, codexWorkerEnv } from './codex-worker-overrides'
 
 const IS_WIN = process.platform === 'win32'
 
@@ -280,6 +281,30 @@ export const dispatch = (task: CodexTask): { dir: string; pid: number | null; cw
 }
 
 /**
+ * 组首轮 codex exec 的完整 argv(纯函数,单测钉死用)。
+ * 除 prompt 之前展开的四对 `-c` 覆盖(见 ./codex-worker-overrides.ts:关掉桌面版注入的
+ * 工具服务与 notify,不然工人开工即停)外,内容与顺序和原来在 supervise 里拼的一字不差;
+ * prompt 永远是最后一个 argv。
+ */
+export const buildCodexExecArgs = (
+  meta: Pick<JobMeta, 'cwd'>,
+  task: Pick<CodexTask, 'sandbox' | 'model'>,
+  paths: Pick<JobPaths, 'dir' | 'lastMessage'>,
+  prompt: string,
+): string[] => [
+  'exec',
+  '--cd', meta.cwd,
+  '--sandbox', task.sandbox,
+  '--skip-git-repo-check',
+  '--json',
+  '--output-schema', join(paths.dir, 'verdict.schema.json'),
+  '-o', paths.lastMessage,
+  ...(task.model ? ['--model', task.model] : []),
+  ...CODEX_WORKER_CONFIG_OVERRIDES,
+  prompt,
+]
+
+/**
  * 监工:同步等 codex exec 收场,把退出码/超时如实落进 state.json。
  * 由 dispatch 以后台进程方式拉起,不该被人直接调用。
  */
@@ -290,17 +315,7 @@ export const supervise = async (slug: string): Promise<void> => {
   if (!meta || !task) throw new Error('[codex-runner] 工单不完整,监工无法接管:' + slug)
 
   const prompt = readFileSync(paths.prompt, 'utf8')
-  const args = [
-    'exec',
-    '--cd', meta.cwd,
-    '--sandbox', task.sandbox,
-    '--skip-git-repo-check',
-    '--json',
-    '--output-schema', join(paths.dir, 'verdict.schema.json'),
-    '-o', paths.lastMessage,
-    ...(task.model ? ['--model', task.model] : []),
-    prompt,
-  ]
+  const args = buildCodexExecArgs(meta, task, paths, prompt)
 
   // 直接把 stdout/stderr 灌进文件:事件流可能上百兆,走内存缓冲会被 maxBuffer 截断。
   const logFd = openSync(paths.execLog, 'w')
@@ -308,6 +323,9 @@ export const supervise = async (slug: string): Promise<void> => {
     cwd: meta.cwd,
     stdio: ['ignore', logFd, logFd],
     windowsHide: true,
+    // 传给 codex 的环境经 codexWorkerEnv 洗过(见 ./codex-worker-overrides.ts):PATH 去掉
+    // WindowsApps,免得不提权沙箱的受限令牌起商店版 pwsh 而拒绝访问。
+    env: codexWorkerEnv(process.env),
   })
 
   let timedOut = false

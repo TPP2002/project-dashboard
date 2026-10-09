@@ -20,6 +20,7 @@ import { isValidSlug } from './codex-contract'
 import { jobPaths, REPO_ROOT } from './codex-paths'
 import { resolveCodexBin } from './codex-runner'
 import { VERDICT_SCHEMA } from './codex-verdict'
+import { CODEX_WORKER_CONFIG_OVERRIDES, codexWorkerEnv } from './codex-worker-overrides'
 
 interface SayResult {
   ok: boolean
@@ -77,6 +78,9 @@ export const buildResumeArgs = (threadId: string, message: string, sandbox: stri
   '--skip-git-repo-check',
   '-c',
   'sandbox_mode="' + sandbox + '"',
+  // 末尾四对 -c 覆盖(见 ./codex-worker-overrides.ts):关掉桌面版注入的工具服务与 notify,
+  // 不然续聊起来的工人开工即停。
+  ...CODEX_WORKER_CONFIG_OVERRIDES,
 ]
 
 export interface SayArgs {
@@ -279,6 +283,9 @@ export const sayToJob = (slug: string, message: string, opts?: { sandbox?: strin
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     windowsHide: true,
+    // 传给 codex 的环境经 codexWorkerEnv 洗过(见 ./codex-worker-overrides.ts):PATH 去掉
+    // WindowsApps,免得不提权沙箱的受限令牌起商店版 pwsh 而拒绝访问。
+    env: codexWorkerEnv(process.env),
   })
   const exitCode = result.status ?? null
   const reply = result.stdout ?? ''
