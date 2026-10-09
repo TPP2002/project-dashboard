@@ -166,6 +166,11 @@ test('buildResumeArgs：逐项保留会话和消息，沙箱只经 -c 覆盖', (
   `)
   assert.deepEqual(out, sandboxes.map(sandbox => [
     'exec', 'resume', '01a-session', message, '--skip-git-repo-check', '-c', 'sandbox_mode="' + sandbox + '"',
+    // 末尾四对 -c 覆盖(codex-worker-overrides.ts):关桌面版注入的工具服务与 notify。
+    '-c', 'mcp_servers.node_repl.enabled=false',
+    '-c', 'mcp_servers.node_repl.command="disabled-by-codex-dispatch"',
+    '-c', 'plugins.unified-computer-use@openai-bundled.enabled=false',
+    '-c', 'notify=[]',
   ]))
 })
 
