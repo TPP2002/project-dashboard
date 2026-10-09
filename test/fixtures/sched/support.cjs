@@ -37,7 +37,7 @@ function initialize(share) {
   write(paths.heartbeat, heartbeat());
   return paths;
 }
-function ticket(index, { state = 'passed', project = 'sample', machine = 'fixture-worker', submitter = 'fixture-dispatcher', registerOnly = false } = {}) {
+function ticket(index, { state = 'passed', project = 'sample', machine = 'fixture-worker', submitter = 'fixture-dispatcher', registerOnly = false, resident = false } = {}) {
   const id = `tk-${index.toString(16).padStart(20, '0')}`;
   const createdAt = new Date(Date.parse(AT) + index * 60000).toISOString();
   const terminal = ['passed', 'failed', 'cancelled', 'voided'].includes(state);
@@ -45,7 +45,7 @@ function ticket(index, { state = 'passed', project = 'sample', machine = 'fixtur
   const timing = { queuedMs: 1000, runningMs: 2000, pausedMs: 3000, slowMs: 4000 };
   const request = { idempotencyKey: `fixture-${index}`, project, submitter, category: registerOnly ? 'codex-build' : 'unit-test', title: `测试任务 ${index}`,
     work: { type: 'test', targetPaths: ['test/sample.test.cjs'] }, requestedCores, allowedMachines: ['fixture-host', 'fixture-worker'],
-    codeRef: { kind: 'commit', value: 'b'.repeat(40) }, resources: { exclusive: [] }, createdAt };
+    codeRef: { kind: 'commit', value: 'b'.repeat(40) }, resources: { exclusive: [] }, createdAt, ...(resident ? { resident: true } : {}) };
   const permit = machine && !registerOnly ? { ticketId: id, attemptId: 'a1', token: 'fixture-token', machine, category: request.category, grantedCores: requestedCores, issuedAt: createdAt } : null;
   const endedAt = terminal ? new Date(Date.parse(createdAt) + 10000).toISOString() : null;
   return { formatVersion: 1, ticketId: id, request, contentHash: c.contentHash(request), state, registerOnly,

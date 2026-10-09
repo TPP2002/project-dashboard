@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched'
 import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
-import { age, ciJobLabel, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, tone } from './format'
+import { age, ciJobLabel, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, ticketTone } from './format'
 import { formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
@@ -113,7 +113,7 @@ onUnmounted(() => {
           <div class="job-title"><span class="sched-tag info">{{ ticket.project }}</span>
             <button class="sched-link" @click="emit('open', ticket.ticketId)">{{ ticket.title }}</button><span class="job-cores">{{ formatCores(ticket.grantedCores) }} 核</span>
           </div>
-          <div class="job-meta"><span>{{ ticket.submitter }}</span><span :class="tone(ticket.state)">{{ ticketLabel(ticket) }}</span></div>
+          <div class="job-meta"><span>{{ ticket.submitter }}</span><span :class="ticketTone(ticket)">{{ ticketLabel(ticket) }}</span></div>
           <div class="job-meta"><EstimateText :estimate="estimates[ticket.ticketId]" /></div>
           <div class="job-meta"><span>执行 {{ duration(ticket.runningMs) }} · 暂停 {{ duration(ticket.pausedMs) }} · 低速 {{ duration(ticket.slowMs) }}</span>
             <span class="job-actions">
