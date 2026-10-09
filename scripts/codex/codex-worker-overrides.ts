@@ -45,11 +45,12 @@ export const CODEX_WORKER_CONFIG_OVERRIDES = [
  * 【为什么去掉 WindowsApps(codexWorkerEnv,2026-10-09 下午实测,续聊第 2 轮)】负责人已在
  * 全局 ~/.codex/config.toml 把沙箱档改成不提权([windows] sandbox = "unelevated";等 OpenAI
  * 修好后再改回提权档,卡 CODEX-SANDBOX-REVERT-ELEVATED-1009),不提权沙箱下 setup refresh
- * 不再报 os error 32。但 codex 的默认 shell 会解析到 `C:\Users\...\AppData\Local\Microsoft\
- * WindowsApps\pwsh.exe` —— 应用商店版 PowerShell 7 的「应用执行别名」;不提权沙箱的受限令牌
- * 起不了它,每条命令都报 `CreateProcessAsUserW failed: 5 (拒绝访问。)`,工人还是零改动。
- * 实测把传给 codex.exe 的 PATH 里指向 WindowsApps 的条目去掉后,codex 退回
- * `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,`echo sandbox-ok` 退出码 0。
+ * 不再报 os error 32。但 codex 的默认 shell 会解析到
+ * `C:\Users\demo\AppData\Local\Microsoft\WindowsApps\pwsh.exe` —— 用户目录下应用商店版
+ * PowerShell 7 的「应用执行别名」;不提权沙箱的受限令牌起不了它,每条命令都报
+ * `CreateProcessAsUserW failed: 5 (拒绝访问。)`,工人还是零改动。实测把传给 codex.exe 的
+ * PATH 里指向 WindowsApps 的条目去掉后,codex 退回 System32 下系统自带的
+ * WindowsPowerShell\v1.0\powershell.exe,`echo sandbox-ok` 退出码 0。
  *
  * 【两条边界】①派单器**不写死** windows.sandbox 档位:沙箱跟全局配置走,将来全局改回提权档
  * 时这里一个字不用动。②去掉 WindowsApps 在提权档下也没有坏处 —— 只是退回系统自带的

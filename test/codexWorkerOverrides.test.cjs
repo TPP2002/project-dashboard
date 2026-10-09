@@ -47,15 +47,17 @@ test('CODEX_WORKER_CONFIG_OVERRIDES:与 stock-rogue 主干那份逐元素相等'
   assert.deepEqual(out, EXPECTED_OVERRIDES)
 })
 
-const WINAPPS_BACKSLASH = 'C:\\Users\\X\\AppData\\Local\\Microsoft\\WindowsApps'
-const WINAPPS_MIXED_CASE = 'd:\\Tools\\Microsoft\\WINDOWSAPPS\\'
-const WINAPPS_SLASH = 'c:/users/x/appdata/local/microsoft/windowsapps/'
-const PLAIN_A = 'C:\\Windows\\System32'
-const PLAIN_B = 'C:\\Program Files\\Git\\cmd'
+// 路径样例全部落在仓库路径形状闸的白名单前缀下(见 test/noLocalIdentifiers.test.cjs),
+// 但三种 WindowsApps 写法(常规大小写反斜杠、混合大小写带末尾反斜杠、全小写正斜杠带末尾斜杠)各保留一例。
+const WINAPPS_BACKSLASH = 'C:\\Users\\demo\\AppData\\Local\\Microsoft\\WindowsApps'
+const WINAPPS_MIXED_CASE = 'd:\\work\\Microsoft\\WINDOWSAPPS\\'
+const WINAPPS_SLASH = 'c:/users/demo/appdata/local/microsoft/windowsapps/'
+const PLAIN_A = 'd:\\work\\bin'
+const PLAIN_B = 'd:\\code\\git\\cmd'
 
 test('codexWorkerEnv:win32 上只动 PATH,WindowsApps 条目(大小写、正反斜杠、末尾斜杠)全去掉', () => {
   const dirtyPath = [WINAPPS_BACKSLASH, PLAIN_A, WINAPPS_SLASH, PLAIN_B, '', WINAPPS_MIXED_CASE].join(';')
-  const envLiteral = JSON.stringify({ Path: dirtyPath, USERPROFILE: 'C:\\Users\\X', SCHED_SHARE: 'F:/calib-share' })
+  const envLiteral = JSON.stringify({ Path: dirtyPath, USERPROFILE: 'C:\\Users\\demo', SCHED_SHARE: 'f:/projects/share' })
   const out = runTs(`
     import { codexWorkerEnv } from './scripts/codex/codex-worker-overrides.ts'
     const env = ${envLiteral}
@@ -73,29 +75,32 @@ test('codexWorkerEnv:win32 上只动 PATH,WindowsApps 条目(大小写、正反�
   // 去掉三种写法的 WindowsApps 条目;普通条目、空条目、其余变量一字不动,顺序不变。
   assert.equal(out.path, [PLAIN_A, PLAIN_B, ''].join(';'))
   assert.ok(!out.path.toLowerCase().includes('windowsapps'))
-  assert.equal(out.profile, 'C:\\Users\\X')
-  assert.equal(out.share, 'F:/calib-share')
+  assert.equal(out.profile, 'C:\\Users\\demo')
+  assert.equal(out.share, 'f:/projects/share')
   assert.deepEqual(out.pathKeys, ['Path'], '保留原键名,不许多出第二个 PATH 键')
   assert.equal(out.inputUntouched, true)
   assert.equal(out.returnsNewObject, true)
 })
 
 test('codexWorkerEnv:PATH 没有 WindowsApps 时内容原样;键名大小写不敏感且保留原键', () => {
+  // 多段 PATH 由常量拼接,不在源码里写「盘符路径;盘符路径」的内联字面量(路径形状闸按整段识别)。
+  const cleanPath = [PLAIN_A, PLAIN_B].join(';')
+  const upperKeyPath = [WINAPPS_BACKSLASH, PLAIN_A].join(';')
   const out = runTs(`
     import { codexWorkerEnv } from './scripts/codex/codex-worker-overrides.ts'
     console.log(JSON.stringify({
-      clean: codexWorkerEnv({ PATH: 'C:\\\\Windows;C:\\\\Tools', FOO: 'bar' }, 'win32'),
-      upperKey: codexWorkerEnv({ PATH: ${JSON.stringify(WINAPPS_BACKSLASH + ';C:\\Tools')} }, 'win32'),
+      clean: codexWorkerEnv(${JSON.stringify({ PATH: cleanPath, FOO: 'bar' })}, 'win32'),
+      upperKey: codexWorkerEnv(${JSON.stringify({ PATH: upperKeyPath })}, 'win32'),
     }))
   `)
-  assert.deepEqual(out.clean, { PATH: 'C:\\Windows;C:\\Tools', FOO: 'bar' })
-  assert.deepEqual(out.upperKey, { PATH: 'C:\\Tools' }, '键名是大写 PATH 也找得到,返回仍叫 PATH')
+  assert.deepEqual(out.clean, { PATH: cleanPath, FOO: 'bar' })
+  assert.deepEqual(out.upperKey, { PATH: PLAIN_A }, '键名是大写 PATH 也找得到,返回仍叫 PATH')
 })
 
 test('codexWorkerEnv:没有 PATH 键、非 win32 平台都原样返回(同一引用,一个字节不动)', () => {
   const out = runTs(`
     import { codexWorkerEnv } from './scripts/codex/codex-worker-overrides.ts'
-    const noPath = { USERPROFILE: 'C:\\\\Users\\\\X', FOO: 'bar' }
+    const noPath = { USERPROFILE: 'C:\\\\Users\\\\demo', FOO: 'bar' }
     const dirty = { Path: ${JSON.stringify(WINAPPS_BACKSLASH + ';' + PLAIN_A)} }
     console.log(JSON.stringify({
       noPathSameRef: codexWorkerEnv(noPath, 'win32') === noPath,
@@ -108,8 +113,8 @@ test('codexWorkerEnv:没有 PATH 键、非 win32 平台都原样返回(同一引
   assert.equal(out.darwinSameRef, true)
 })
 
-const EXEC_META = { cwd: 'F:/somewhere/job-wt' }
-const EXEC_PATHS = { dir: 'F:/jobs/demo-card', lastMessage: 'F:/jobs/demo-card/last-message.json' }
+const EXEC_META = { cwd: 'f:/projects/job-wt' }
+const EXEC_PATHS = { dir: 'd:/code/jobs/demo-card', lastMessage: 'd:/code/jobs/demo-card/last-message.json' }
 const EXEC_PROMPT = '把活干完'
 const expectedExecArgs = (sandbox, model) => [
   'exec',
