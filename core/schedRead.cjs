@@ -79,7 +79,7 @@ function summarize(ticket) {
     category: ticket.request.category, engine: normalizeEngine(ticket.request.engine), machine: attempt?.permit?.machine ?? attempt?.intent?.machine ?? null,
     requestedCores: ticket.request.requestedCores, grantedCores: attempt?.grantedCores ?? 0,
     state: ticket.state, result: ticket.state, resultReason: attempt?.result?.reason ?? null,
-    registerOnly: ticket.registerOnly, pauseReasons: ticket.pauseReasons, cancelRequested: ticket.cancelRequested,
+    registerOnly: ticket.registerOnly, resident: ticket.request.resident === true, pauseReasons: ticket.pauseReasons, cancelRequested: ticket.cancelRequested,
     createdAt: ticket.createdAt, endedAt: ticket.endedAt, ...ticket.timing,
   };
 }

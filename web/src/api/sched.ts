@@ -33,7 +33,7 @@ export interface TicketSummary extends Timing {
   ticketId: string; project: string; title: string; submitter: string; category: string; machine: string | null
   engine?: string | null
   requestedCores: number; grantedCores: number; state: TicketState; result: TicketState; resultReason: string | null
-  registerOnly: boolean; pauseReasons: string[]; cancelRequested: boolean; createdAt: string; endedAt: string | null
+  registerOnly: boolean; resident?: boolean; pauseReasons: string[]; cancelRequested: boolean; createdAt: string; endedAt: string | null
 }
 export interface EngineGroup { engine: string | null; tickets: TicketSummary[] }
 export interface EngineOption { value: string; label: string }
@@ -52,7 +52,7 @@ export interface TicketDetail {
   currentAttemptId: string; pauseReasons: string[]; attempts: Attempt[]; timing: Timing; timeline: TimelineEvent[]
   createdAt: string; updatedAt: string; endedAt: string | null; contentHash: string
   request: { project: string; title: string; submitter: string; category: string; requestedCores: number
-    allowedMachines: string[]; codeRef: CodeRef; work: { type: string; targetPaths: string[] }; parentTicketId?: string; engine?: string }
+    allowedMachines: string[]; codeRef: CodeRef; work: { type: string; targetPaths: string[] }; parentTicketId?: string; engine?: string; resident?: boolean }
 }
 export interface SchedSnapshot {
   ok: true; readable: true; share: string; format: { formatVersion: number; capabilities: string[]; createdAt: string }

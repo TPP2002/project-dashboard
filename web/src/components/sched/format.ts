@@ -4,9 +4,13 @@ import type { CiJob } from '@/api/schedCiJobs'
 export const stateLabels: Record<TicketState, string> = { queued: '排队中', granted: '已授予，等待开跑', running: '运行中',
   paused: '暂停中', slow: '低速继续', unsatisfiable: '无法满足', passed: '通过', failed: '失败', cancelled: '已撤单', voided: '已作废' }
 export const pauseLabels: Record<string, string> = { ci: 'CI 优先', manual: '手动暂停', 'owner-hold': '你在用电脑' }
-export function ticketLabel(ticket: Pick<TicketSummary, 'state' | 'cancelRequested' | 'pauseReasons'>) {
+export function ticketLabel(ticket: Pick<TicketSummary, 'state' | 'cancelRequested' | 'pauseReasons'> & { resident?: boolean }) {
   if (ticket.cancelRequested && !['passed', 'failed', 'cancelled', 'voided'].includes(ticket.state)) return '撤单处理中'
-  return [stateLabels[ticket.state], ...ticket.pauseReasons.map(reason => pauseLabels[reason] || reason)].join(' · ')
+  const stateLabel = ticket.resident === true && ticket.state === 'granted' ? '常驻占用中' : stateLabels[ticket.state]
+  return [stateLabel, ...ticket.pauseReasons.map(reason => pauseLabels[reason] || reason)].join(' · ')
+}
+export function ticketTone(ticket: Pick<TicketSummary, 'state' | 'cancelRequested' | 'pauseReasons'> & { resident?: boolean }): 'bad' | 'warn' | 'ok' | 'info' | 'muted' {
+  return ticket.resident === true && ticket.state === 'granted' ? 'ok' : tone(ticket.state)
 }
 export function tone(state: string): 'bad' | 'warn' | 'ok' | 'info' | 'muted' {
   if (['failed', 'unsatisfiable', 'rejected', 'expired'].includes(state)) return 'bad'

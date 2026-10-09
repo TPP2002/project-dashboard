@@ -166,6 +166,19 @@ test('模块关闭时 sched 所有读写端点均 404；设置文件可提供共
   assert.equal((await configured.json('/api/sched/snapshot')).body.share, configured.share);
 });
 
+test('常驻长期占用单：request.resident === true 的 granted 单摘要带 resident === true，普通 granted 单为 false，两张都出现在 running 里', async t => {
+  const srv = await startServer(t);
+  const resident = ticket(1, { state: 'granted', resident: true });
+  const ordinary = ticket(2, { state: 'granted' });
+  saveTicket(srv, resident); saveTicket(srv, ordinary);
+  const result = await srv.json('/api/sched/snapshot');
+  assert.equal(result.status, 200); assert.equal(result.body.readable, true);
+  assert.deepEqual([...result.body.running.map(item => item.ticketId)].sort(), [resident.ticketId, ordinary.ticketId].sort());
+  const byId = Object.fromEntries(result.body.running.map(item => [item.ticketId, item]));
+  assert.equal(byId[resident.ticketId].resident, true);
+  assert.equal(byId[ordinary.ticketId].resident, false);
+});
+
 test('sched:changed 与 board 通道共存：心跳 cursorSeq 和回执目录 mtime 分别触发', async t => {
   const srv = await startServer(t), stream = await openStream(t, srv.base);
   await stream.wait(event => event.name === 'hello');

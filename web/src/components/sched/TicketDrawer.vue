@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { TicketDetail, TicketRelations } from '@/api/sched'
-import { duration, stamp, stateLabels, ticketLabel, tone } from './format'
+import { duration, stamp, stateLabels, ticketLabel, ticketTone } from './format'
 const props = defineProps<{ ticketId: string; ticket: TicketDetail | null; related: TicketRelations | null; loading: boolean; error: string }>()
 const emit = defineEmits<{ close: []; retry: []; open: [id: string] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -16,6 +16,8 @@ onMounted(() => dialog.value?.showModal())
 onUnmounted(() => dialog.value?.close())
 function backdrop(event: MouseEvent) { if (event.target === dialog.value) emit('close') }
 function openParent() { const id = props.ticket?.request.parentTicketId; if (id) emit('open', id) }
+/** 详情抽屉拿到的是 TicketDetail,常驻字段在 request 里;换算成文案/配色要的口径(非 resident 单该布尔为 false)。 */
+function withResident(ticket: TicketDetail) { return { ...ticket, resident: ticket.request.resident === true } }
 </script>
 
 <template>
@@ -26,7 +28,7 @@ function openParent() { const id = props.ticket?.request.parentTicketId; if (id)
       <p v-if="loading" role="status">正在读取单子快照…</p>
       <p v-else-if="error" class="bad" role="alert">{{ error }} <button class="sched-btn small" @click="emit('retry')">重新读取</button></p>
       <template v-else-if="ticket">
-        <p><span class="sched-tag info">{{ ticket.request.project }}</span> <span class="sched-tag" :class="tone(ticket.state)">{{ ticketLabel(ticket) }}</span></p>
+        <p><span class="sched-tag info">{{ ticket.request.project }}</span> <span class="sched-tag" :class="ticketTone(withResident(ticket))">{{ ticketLabel(withResident(ticket)) }}</span></p>
         <p class="sched-note">这是打开时的快照 · 更新于 {{ stamp(ticket.updatedAt) }}</p>
         <p v-if="ticket.request.parentTicketId">子单（属于 <button class="sched-link" @click="openParent">{{ ticket.request.parentTicketId }}</button>）</p>
         <section><h3>基本信息</h3><dl class="detail-kv">
