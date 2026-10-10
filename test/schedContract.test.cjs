@@ -107,3 +107,16 @@ test('派单员心跳可带 CI 车道字段(ciRunners/ciReserveCores),缺省仍�
   unknown.machines[0] = { ...unknown.machines[0], somethingElse: 1 };
   assert.throws(() => c.validateHeartbeat(unknown), { message: '[sched] 未知字段:somethingElse' });
 });
+
+test('派单员心跳可带实测退回字段 actualUsageCreditCores(退回 >0 才写),缺省仍合法;负数与非数字照拒(1010 看板读不到共享盘的病根)', () => {
+  const { heartbeat } = require('./fixtures/sched/support.cjs');
+  const credited = heartbeat();
+  credited.machines[0] = { ...credited.machines[0], actualUsageCreditCores: 4 };
+  credited.machines[1] = { ...credited.machines[1], actualUsageCreditCores: 0.5 };
+  assert.doesNotThrow(() => c.validateHeartbeat(credited));
+  for (const bad of [-1, '4', null, Number.NaN]) {
+    const broken = heartbeat();
+    broken.machines[0] = { ...broken.machines[0], actualUsageCreditCores: bad };
+    assert.throws(() => c.validateHeartbeat(broken), `actualUsageCreditCores=${String(bad)} 应被拒`);
+  }
+});
