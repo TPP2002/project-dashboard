@@ -1,7 +1,7 @@
 // 派单器拉起的每个 Codex 进程统一关掉桌面版注入的工具服务与 notify,并把传给 codex 的 PATH
-// 洗掉 WindowsApps(DASH-CODEX-WORKER-MCP-OVERRIDES-1009,移植 stock-rogue PR #1132)。
+// 洗掉 WindowsApps(DASH-CODEX-WORKER-MCP-OVERRIDES-1009,移植派单器正本仓的 PR #1132)。
 // 常量与纯函数经 node --import tsx 子进程跑;两处接线(spawn/spawnSync 的 env)用源码文本断言。
-// 不真起 Codex、不碰真工单目录、不跨仓读 stock-rogue 的文件 —— 四对字面量写死在本文件里比。
+// 不真起 Codex、不碰真工单目录、不跨仓读正本仓的文件 ——四对字面量写死在本文件里比。
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { spawnSync } = require('node:child_process')
@@ -22,7 +22,7 @@ function runTs(code) {
   return JSON.parse(lines[0])
 }
 
-/** stock-rogue 主干 5771c8be9(PR #1132)的四对 -c 覆盖,逐元素写死比,不跨仓读文件。 */
+/** 派单器正本仓主干 5771c8be9(PR #1132)的四对 -c 覆盖,逐元素写死比,不跨仓读文件。 */
 const EXPECTED_OVERRIDES = [
   '-c', 'mcp_servers.node_repl.enabled=false',
   '-c', 'mcp_servers.node_repl.command="disabled-by-codex-dispatch"',
@@ -39,7 +39,7 @@ function segmentCount(args) {
   return count
 }
 
-test('CODEX_WORKER_CONFIG_OVERRIDES:与 stock-rogue 主干那份逐元素相等', () => {
+test('CODEX_WORKER_CONFIG_OVERRIDES:与派单器正本仓主干那份逐元素相等', () => {
   const out = runTs(`
     import { CODEX_WORKER_CONFIG_OVERRIDES } from './scripts/codex/codex-worker-overrides.ts'
     console.log(JSON.stringify([...CODEX_WORKER_CONFIG_OVERRIDES]))
