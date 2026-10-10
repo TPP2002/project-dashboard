@@ -29,6 +29,10 @@ function jsonFiles(directory) {
     return entry.name;
   });
 }
+function validateUsage(value) {
+  const cores = name => v => { if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error(`[sched] usage.${name} 必须是非负数`); };
+  c.fields(value, { peakCores: cores('peakCores'), p90Cores: cores('p90Cores'), samples: v => c.integer(v, 1) });
+}
 function validateTiming(value) { c.fields(value, Object.fromEntries(TIMING_KEYS.map(key => [key, v => c.integer(v)]))); }
 
 /** 快照全文保留；校验展示所消费的字段，不凭缺字段推断为零或成功。 */
@@ -57,8 +61,10 @@ function validateTicket(value, id) {
     if (attempt.intent !== null) { c.requireRecord(attempt.intent, '派发意图'); c.segment(attempt.intent.machine); }
     // 派单员正本(rogue scripts/sched/sched-contract.ts)的 result 可带 exitCode(安全整数)与 logFile(共享盘相对路径),
     // 集群作业(T3)与验收单会写进来;看板只展示、不拒读(0914 曾因「未知字段:exitCode」整页读不到调度共享盘)。
+    // usage(rogue 卡 SCHED-CORES-HISTORY-AUTOCORRECT-1010 起):执行结束时派单员折算的用量(峰值核数/P90 核数/读数个数),
+    // 没有任何读数的执行不带。同样只展示、不拒读(1010 又因「未知字段:usage」整页读不到调度共享盘),内部口径与正本一致。
     if (attempt.result !== null) c.fields(attempt.result, { outcome: c.oneOf(['passed', 'failed', 'voided', 'cancelled', 'handoff-interrupted']), reason: c.text },
-      { exitCode: v => { if (!Number.isSafeInteger(v)) throw new Error('[sched] 退出码必须是安全整数'); }, logFile: c.text });
+      { exitCode: v => { if (!Number.isSafeInteger(v)) throw new Error('[sched] 退出码必须是安全整数'); }, logFile: c.text, usage: validateUsage });
   })(value.attempts);
   c.list(event => {
     c.requireRecord(event, '时间线'); c.isoTime(event.at); c.text(event.type); c.requireRecord(event.data, '事件 data');

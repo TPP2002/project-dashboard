@@ -179,6 +179,25 @@ test('常驻长期占用单：request.resident === true 的 granted 单摘要带
   assert.equal(byId[ordinary.ticketId].resident, false);
 });
 
+test('派单员 1010 起新写的字段不能让看板整页读不到共享盘：心跳机器条目的 actualUsageCreditCores 与结束单 result.usage 照常可读，坏的 usage 仍整份拒读', async t => {
+  const srv = await startServer(t);
+  const beat = heartbeat();
+  beat.machines[0] = { ...beat.machines[0], actualUsageCreditCores: 4 };
+  write(srv.paths.heartbeat, beat);
+  const done = ticket(1, { state: 'passed' });
+  done.attempts[0].result = { outcome: 'passed', reason: 'fixture result', exitCode: 0, usage: { peakCores: 3.5, p90Cores: 2.75, samples: 12 } };
+  saveTicket(srv, done);
+  const ok = await srv.json('/api/sched/snapshot');
+  assert.equal(ok.status, 200, ok.body.reason); assert.equal(ok.body.readable, true);
+  assert.equal(ok.body.machines[0].actualUsageCreditCores, 4);
+  for (const usage of [{ peakCores: -1, p90Cores: 1, samples: 1 }, { peakCores: 1, p90Cores: 1, samples: 0 }, { peakCores: 1, p90Cores: 1, samples: 1, extra: 1 }, { peakCores: 1, p90Cores: 1 }]) {
+    done.attempts[0].result = { outcome: 'passed', reason: 'fixture result', usage };
+    saveTicket(srv, done);
+    const bad = await srv.json('/api/sched/snapshot');
+    assert.equal(bad.status, 503, `usage=${JSON.stringify(usage)} 应整份拒读`); assert.equal(bad.body.readable, false);
+  }
+});
+
 test('sched:changed 与 board 通道共存：心跳 cursorSeq 和回执目录 mtime 分别触发', async t => {
   const srv = await startServer(t), stream = await openStream(t, srv.base);
   await stream.wait(event => event.name === 'hello');
