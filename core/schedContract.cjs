@@ -169,6 +169,10 @@ function validateHeartbeat(value) {
       // 两项都是可选展示字段、不升版:旧派单员的心跳没有它们仍合法,新派单员的心跳带了也不能整份拒读
       // (0914 看板因此「读不到调度共享盘:未知字段 ciReserveCores」)。
       ciRunners: nullable(list(segment, 0, true)), ciReserveCores: count,
+      // 派单员 2026-10-10 起(rogue 卡 SCHED-ACTUAL-USAGE-ADMISSION-1010,PR #1147)在实测退回开关开、本拍确有退回时,
+      // 给该机器条目多写 actualUsageCreditCores(退回核数,>0 才写;availableCores 已含这份退回)。可选展示字段、不升版:
+      // 不写它仍合法,写了也不能整份拒读(1010 看板因此再次「读不到调度共享盘:未知字段 actualUsageCreditCores」,与 0914 同类)。
+      actualUsageCreditCores: nonNegative,
     })),
     queue: list(v => fields(v, { ticketId, position: positive, band: oneOf([0, 1]), requestedCores: positive,
       allowedMachines: list(segment, 1, true), queuedAt: isoTime, state: oneOf(['queued', 'unsatisfiable']), reason: nullable(text) })),
