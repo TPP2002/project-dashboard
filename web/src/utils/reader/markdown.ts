@@ -3,6 +3,21 @@ import { marked } from 'marked'
 
 marked.setOptions({ gfm: true, breaks: false })
 
+// 只认成对的双波浪号为删除线。marked 内置规则连单个波浪号也认,中文里「1~5 与 6~9」这类区间写法
+// 同段出现两次就被配成一对、中间的字整段划掉(READER-SINGLE-TILDE-STRIKETHROUGH-1012)。
+// 正则是内置规则把开头的 ~~? 收紧成 ~~,其余不动。
+const DEL_DOUBLE = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/
+marked.use({
+  tokenizer: {
+    del(src) {
+      const cap = DEL_DOUBLE.exec(src)
+      // 没匹配必须返回 undefined:返回 false 会回落到内置规则,单波浪号又被认回去
+      if (!cap) return undefined
+      return { type: 'del', raw: cap[0], text: cap[2], tokens: this.lexer.inlineTokens(cap[2]) }
+    },
+  },
+})
+
 /**
  * 退化表格 → 提示块。
  *

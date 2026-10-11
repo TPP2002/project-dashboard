@@ -49,6 +49,8 @@ export async function htmlToMd(html: string, options: HtmlToMdOptions = {}): Pro
   const { TurndownService, gfm } = await loadLibs()
   const service = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
   if (gfm) service.use(gfm)
+  // gfm 插件把删除线写成单波浪号(~字~),而审阅台正文只认双波浪号;这里改写成 ~~字~~,导入件里的删除线才显示得出来
+  service.addRule('strikethrough', { filter: ['del', 's', 'strike'], replacement: (content: string): string => '~~' + content + '~~' })
   if (stripChrome) {
     service.remove(['script', 'style', 'noscript', 'iframe', 'nav', 'header', 'footer', 'aside', 'head'])
   }
