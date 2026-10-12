@@ -109,11 +109,22 @@ test('详情原始快照不变，交接节点按执行号对应，父单列出�
     { type: 'dispatched', at: dispatchedAt, ticketId: parent.ticketId, attemptId: 'a1', data: { submissionId: 'fixture-first' } },
     { type: 'dispatch-intent', at: new Date(NOW).toISOString(), ticketId: parent.ticketId, attemptId: 'a2', data: { intent: { machine: 'fixture-worker', submissionId: 'fixture-second' } } }]);
   const result = await api.json(`ticket/${parent.ticketId}`);
-  assert.deepEqual(result.body.ticket, parent); assert.deepEqual(result.body.related.children, [{ ticketId: child.ticketId, title: child.request.title, state: child.state }]);
+  assert.deepEqual(result.body.ticket, parent); assert.deepEqual(result.body.related.children, [{ ticketId: child.ticketId, title: child.request.title, state: child.state, category: child.request.category }]);
   assert.deepEqual(result.body.related.handoffs, [{ attemptId: 'a1', intentAt, dispatchedAt, machine: 'fixture-worker', submissionId: 'fixture-first' },
     { attemptId: 'a2', intentAt: new Date(NOW).toISOString(), dispatchedAt: null, machine: 'fixture-worker', submissionId: 'fixture-second' }]);
   assert.equal((await api.json(`ticket/${child.ticketId}`)).body.ticket.request.parentTicketId, parent.ticketId);
   assert.equal(Object.hasOwn((await api.json(`ticket/${parent.ticketId}?related=0`)).body, 'related'), false);
+});
+
+test('父单子单预览保留各自类别，续聊施工单和普通验收单不能混用通过文案', async t => {
+  const api = await apiFixture(t), parent = ticket(1), say = ticket(2, { registerOnly: true }), check = ticket(3);
+  for (const child of [say, check]) child.request.parentTicketId = parent.ticketId;
+  say.request.work.type = 'build';
+  [parent, say, check].forEach(api.save);
+  const result = await api.json(`ticket/${parent.ticketId}`);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.related.children.map(child => [child.ticketId, child.category, child.state]),
+    [[say.ticketId, 'codex-build', say.state], [check.ticketId, 'unit-test', check.state]]);
 });
 
 test('台账缺失或坏行只降级新信息，共享盘失联时快照、导出和详情都明确报不可读', async t => {

@@ -19,7 +19,7 @@ function ticketRelations(ticket, tickets, history) {
   }
   const children = tickets.filter(child => child.request.parentTicketId === ticket.ticketId)
     .sort((a, b) => a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.ticketId < b.ticketId ? -1 : 1)
-    .map(child => ({ ticketId: child.ticketId, title: child.request.title, state: child.state }));
+    .map(child => ({ ticketId: child.ticketId, title: child.request.title, state: child.state, category: child.request.category }));
   return { readable: history.readable, reason: history.reason, children, handoffs: [...handoffs.values()] };
 }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { TicketDetail, TicketRelations } from '@/api/sched'
-import { duration, stamp, stateLabels, stateLabel, ticketLabel, ticketTone } from './format'
+import { duration, stamp, stateLabel, ticketLabel, ticketTone } from './format'
 const props = defineProps<{ ticketId: string; ticket: TicketDetail | null; related: TicketRelations | null; loading: boolean; error: string }>()
 const emit = defineEmits<{ close: []; retry: []; open: [id: string] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -50,7 +50,7 @@ function withResident(ticket: TicketDetail) { return { ...ticket, resident: tick
         <section><h3>子单</h3>
           <p v-if="!related?.children" class="sched-note">子单关系暂不可读</p>
           <ul v-else-if="related.children.length" class="child-tickets"><li v-for="child in related.children" :key="child.ticketId">
-            <button class="sched-link" @click="emit('open', child.ticketId)">{{ child.title }}</button> · {{ stateLabels[child.state] }}<div class="sched-id">{{ child.ticketId }}</div>
+            <button class="sched-link" @click="emit('open', child.ticketId)">{{ child.title }}</button> · {{ stateLabel(child.state, child.category) }}<div class="sched-id">{{ child.ticketId }}</div>
           </li></ul><p v-else class="sched-empty">没有子单</p>
         </section>
         <section><h3>时长（四段互不重叠）</h3><dl class="detail-kv">
