@@ -3,6 +3,7 @@
 // 前端断言正文在 web/tests/schedTicketLabel.check.mts(node --import tsx --test 直跑,写法对齐
 // package.json 里 test:reader-import 两个脚本);这里按本仓 node:test 包装 TS 的既有形式
 // (spawnSync + tsx,同 codexContract.test.cjs 等)把那份断言真正接进全量单测。
+// 内层定向跑显式 --test-concurrency=1,遵守本仓定向检查的并发规矩。
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -17,9 +18,10 @@ test('调度台状态文案前端断言(常驻占用 + 施工单工人终态)在
   // 内层才是一次真正独立、输出可断言的全绿判定。
   const env = { ...process.env, NODE_NO_WARNINGS: '1' };
   delete env.NODE_TEST_CONTEXT;
-  const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', '--test-reporter=tap', CHECK], {
-    cwd: REPO_ROOT, encoding: 'utf8', windowsHide: true, timeout: 120_000, env,
-  });
+  const result = spawnSync(process.execPath,
+    ['--import', 'tsx', '--test', '--test-concurrency=1', '--test-reporter=tap', CHECK], {
+      cwd: REPO_ROOT, encoding: 'utf8', windowsHide: true, timeout: 120_000, env,
+    });
   const output = (result.stdout || '') + (result.stderr || '');
   assert.equal(result.status, 0,
     'web/tests/schedTicketLabel.check.mts 未全绿:\n' + (result.error?.message || '') + '\n' + output);
