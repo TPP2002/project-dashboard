@@ -26,7 +26,7 @@ export type TicketEstimate =
   | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number; slowdown?: number; slowdownEstimated?: boolean }
 export interface TicketRelations {
   readable: boolean; reason: string | null
-  children: { ticketId: string; title: string; state: TicketState }[] | null
+  children: { ticketId: string; title: string; state: TicketState; category: string }[] | null
   handoffs: { attemptId: string; intentAt: string | null; dispatchedAt: string | null; machine: string | null; submissionId: string | null }[]
 }
 export interface TicketSummary extends Timing {
