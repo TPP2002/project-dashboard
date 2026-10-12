@@ -5,13 +5,16 @@
  * 【数据源】Claude Code 把每个对话的完整流水存在 ~/.claude/projects/<项目目录>/<sessionId>.jsonl,
  * 其中每条 assistant 消息自带 message.usage(输入/输出/缓存 token)+ message.model + isSidechain
  * (true = 子 agent 的消息)。订阅用户看不到美元,但 token 流水是全的——这里聚合的就是它。
+ * 子代理的流水在同目录 <sessionId>/subagents/ 下递归存放(workflows 开的更深一层也在里面):
+ * 扫描以「父会话组」为单位 = 顶层父流水 + 同名目录下全部子代理 .jsonl(父文件先,稳定排序)。
  *
  * 【项目目录映射】costRoots 路径按「非字母数字一律变 '-'」编码成目录名(F:\code-repo → F--code-repo);
  * 含 worktree 的目录按边界前缀匹配，归最长登记前缀；同址并列时显式标记共享。
  *
  * 【增量缓存】jsonl 只追加不改写,按 (size, mtimeMs) 判断文件是否变过:没变直接用上次的
- * 按天聚合结果,变了只重扫这一个文件。缓存落数据根 costUsageCache.json(原子写)，发布换代不丢失。
- * 全项目首扫几十 MB 需数秒,之后每次刷新只扫活跃会话的增量。
+ * 按天聚合结果。缓存以父会话组为复用单位,条目存父流水+全部子文件的路径/大小/改动时间指纹——
+ * 新增、追加或删除子文件都使该组重建,没变的组照旧命中。缓存落数据根 costUsageCache.json(原子写)，
+ * 发布换代不丢失。全项目首扫几十 MB 需数秒,之后每次刷新只扫活跃会话的增量。
  *
  * 零依赖(core 纪律),仅 node 内置模块。
  */
@@ -26,11 +29,13 @@ const { DASHBOARD_HOME } = require('./resolveProject.cjs');
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects');
 const CACHE_PATH = path.join(DASHBOARD_HOME, 'costUsageCache.json');
+// v5: 扫描与缓存单位从「单文件」改为「父会话组」(顶层父流水 + 同名 <会话>/subagents/ 递归全部
+// 子代理流水),缓存条目改存整组文件指纹——按单个文件存的 v4 旧缓存整份作废。
 // v4: 会话桶新增分支和命令信号；旧缓存必须整份作废。
 // v3: 字段 version 改名 schemaVersion(COST-UI-SESSION-DETAIL),且缓存里存的东西结构变了
 // (流水按 message.id 去重、新增按会话·按天的明细桶)——读缓存严格 === 比对,对不上整份丢掉重扫。
 // 前科:结构改了没升号,旧缓存被照单全收,新字段全空、老字段全对、一个错都不报。
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 
 /**
  * Claude API 标准牌价(USD / 百万 token,2026-09-23 核官方表)：
@@ -180,6 +185,11 @@ function emptySessionDay() {
  * 【去重】同一条 message.id 因流式输出会出现多条记录:只有 id 存在且是非空字符串的记录才参与
  * 去重,同 id 只记第一次;没有 id / id 为空 / id 不是字符串的一律各算各的、全部计入 ——
  * 若把 undefined 当成可去重的键,现有夹具里不带 message.id 的行会被塌缩成一条。
+ * seenIds 可传入跨文件共享的集合(父会话组里父/子文件共用一个,流式重发跨文件也只记一次);
+ * 不传时文件内自去重。
+ * 【子代理文件】subOf 给出目录指示的父会话 id:该文件全部行(含压缩标记)的账都归到这个会话,
+ * 不按行内 sessionId 另立会话;cwd/branches/claimIds/branchFlags 这些归属证据一概不记——
+ * 父会话的判卡证据以父流水为准,子代理自己的命令文字与分支不得混入。
  * 【压缩次数】压缩标记行(type=summary 或带 isCompactSummary)通常不含 "assistant",
  * 预筛为此放宽(只放宽,不删:它挡住绝大多数行不做 JSON.parse);压缩标记行常无可靠时间戳,
  * 所以压缩次数按整份流水计数,不做按天窗口。summary 行常常没有 sessionId(只有 leafUuid),
@@ -187,11 +197,10 @@ function emptySessionDay() {
  * 「最近出现过的那个会话」(摘要在真实流水里就写在它所属对话的中间,这是落盘顺序事实,
  * 不是猜);文件一开头就出现标记行的极端情况才退回文件名。
  */
-function scanFile(file) {
+function scanFile(file, { seenIds = new Set(), subOf = null } = {}) {
   return new Promise((resolve) => {
     const days = {};
     const sessionDays = {};
-    const seenIds = new Set();
     const fallbackSid = path.basename(file).replace(/\.jsonl$/, '');
     let hadAssistant = false;
     let lastSid = null; // 文件内最近一次出现过的真实 sessionId(压缩标记行的归属用)
@@ -207,18 +216,21 @@ function scanFile(file) {
       let obj;
       try { obj = JSON.parse(line); } catch (_) { return; }
       if (!obj) return;
-      const hasSid = typeof obj.sessionId === 'string' && obj.sessionId;
       const isMarker = obj.type === 'summary' || obj.isCompactSummary === true;
-      const sid = hasSid ? obj.sessionId : (isMarker && lastSid ? lastSid : fallbackSid);
+      const hasSid = subOf === null && typeof obj.sessionId === 'string' && obj.sessionId;
+      const sid = subOf !== null ? subOf : (hasSid ? obj.sessionId : (isMarker && lastSid ? lastSid : fallbackSid));
       if (hasSid) lastSid = obj.sessionId;
       const session = (sessionDays[sid] = sessionDays[sid] || {
         cwd: null, compactions: 0, branches: [], claimIds: [], branchFlags: [], days: {},
       });
-      if (session.cwd === null && typeof obj.cwd === 'string' && obj.cwd) session.cwd = obj.cwd;
-      if (typeof obj.gitBranch === 'string' && obj.gitBranch) session.branches.push(obj.gitBranch);
-      const signals = extractCommandSignals(signalTextsOfRow(obj));
-      session.claimIds.push(...signals.claimIds);
-      session.branchFlags.push(...signals.branchFlags);
+      if (subOf === null) {
+        // 归属证据只从父流水收;子代理文件的 cwd/分支/claim/--branch 一概不入父会话的账。
+        if (session.cwd === null && typeof obj.cwd === 'string' && obj.cwd) session.cwd = obj.cwd;
+        if (typeof obj.gitBranch === 'string' && obj.gitBranch) session.branches.push(obj.gitBranch);
+        const signals = extractCommandSignals(signalTextsOfRow(obj));
+        session.claimIds.push(...signals.claimIds);
+        session.branchFlags.push(...signals.branchFlags);
+      }
       if (isMarker) { session.compactions += 1; return; }
       if (obj.type !== 'assistant' || !obj.message || !obj.message.usage) return;
       const date = localDate(obj.timestamp);
@@ -330,6 +342,67 @@ function mergeSessionFiles(acc, sessionDays) {
 }
 
 /**
+ * <会话>/subagents/ 下递归枚举全部 .jsonl——直挂的子代理与 workflows/<工作流>/ 更深一层的都算。
+ * 只认这个真实结构,不递归项目目录本身;按路径排序,保证扫描组顺序稳定。
+ */
+function subagentFilesOf(dirAbs) {
+  const out = [];
+  let items;
+  try { items = fs.readdirSync(dirAbs, { withFileTypes: true }); } catch (_) { return out; }
+  for (const it of items) {
+    const abs = path.join(dirAbs, it.name);
+    if (it.isDirectory()) out.push(...subagentFilesOf(abs));
+    else if (it.isFile() && it.name.endsWith('.jsonl')) out.push(abs);
+  }
+  return out.sort();
+}
+
+/**
+ * 父会话扫描组的物理清单(也是缓存指纹):顶层父流水在前,同名 <会话>/subagents/ 递归枚举出的
+ * 子代理流水按路径稳定排序在后,每项带 path/size/mtimeMs。父流水 stat 失败返回 null(整组跳过);
+ * 个别子文件 stat 失败当它刚被删,按少一个文件重建。
+ */
+function groupStatEntries(parentAbs) {
+  let st;
+  try { st = fs.statSync(parentAbs); } catch (_) { return null; }
+  const parentSid = path.basename(parentAbs).replace(/\.jsonl$/, '');
+  const entries = [{ path: parentAbs, size: st.size, mtimeMs: st.mtimeMs }];
+  for (const sub of subagentFilesOf(path.join(path.dirname(parentAbs), parentSid, 'subagents'))) {
+    try {
+      const s = fs.statSync(sub);
+      entries.push({ path: sub, size: s.size, mtimeMs: s.mtimeMs });
+    } catch (_) { /* 子文件刚被删:本轮按少一个文件重扫 */ }
+  }
+  return entries;
+}
+
+/** 组指纹比对:整组文件逐项比路径与 size/mtimeMs——新增、追加、删除任何一项都算没命中。 */
+function sameGroupFiles(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length
+    && a.every((f, i) => !!f && !!b[i] && f.path === b[i].path && f.size === b[i].size && f.mtimeMs === b[i].mtimeMs);
+}
+
+/**
+ * 扫一个「父会话组」(groupStatEntries 给出的清单):父流水先扫,子代理文件随后,全组共享一个
+ * message.id 去重集合——流式重发跨父/子文件也只记第一次;子文件的账全部归到目录指示的父会话,
+ * 不另立会话行。会话数不因子文件数量膨胀:组里有 assistant 记录就记 1,没有记 0。
+ */
+async function scanGroup(entries) {
+  const parentSid = path.basename(entries[0].path).replace(/\.jsonl$/, '');
+  const seenIds = new Set();
+  const days = {};
+  const acc = new Map(); // mergeSessionFiles 收 Map;出组时转回普通对象,与缓存/getUsage 的接口一致
+  let hadAssistant = false;
+  for (const [i, entry] of entries.entries()) {
+    const r = await scanFile(entry.path, i === 0 ? { seenIds } : { seenIds, subOf: parentSid });
+    mergeDays(days, r.days);
+    mergeSessionFiles(acc, r.sessionDays);
+    hadAssistant = hadAssistant || r.sessions > 0;
+  }
+  return { days, sessions: hadAssistant ? 1 : 0, sessionDays: Object.fromEntries(acc) };
+}
+
+/**
  * 由会话账出明细行。只收窗口内(cutoffStr 之后)日期的桶 —— 明细行与顶层合计同一窗口口径,
  * 「所有明细行四类 token 相加 === 顶层合计」这条对账断言因此恒成立(漏进桶/重复进桶/旧缓存
  * 没作废三类病都会被它当场抓住)。压缩次数不窗口化(标记行常无时间戳,见 scanFile)。
@@ -411,23 +484,22 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
   for (const dir of dirNames) {
     const dirAbs = path.join(projectsRoot, dir);
     let files = [];
-    try { files = fs.readdirSync(dirAbs).filter((f) => f.endsWith('.jsonl')); } catch (_) { continue; }
+    try { files = fs.readdirSync(dirAbs).filter((f) => f.endsWith('.jsonl')).sort(); } catch (_) { continue; }
     for (const f of files) {
-      const abs = path.join(dirAbs, f);
-      let st;
-      try { st = fs.statSync(abs); } catch (_) { continue; }
-      const key = abs;
-      const hit = cache.files[key];
-      if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) {
-        cachedFiles++;
+      const parentAbs = path.join(dirAbs, f);
+      const group = groupStatEntries(parentAbs);
+      if (!group) continue;
+      const hit = cache.files[parentAbs];
+      if (hit && sameGroupFiles(hit.files, group)) {
+        cachedFiles += group.length;
         mergeDays(totalDays, hit.days);
         sessions += hit.sessions || 0;
         mergeSessionFiles(sessionAcc, hit.sessionDays);
         continue;
       }
-      const r = await scanFile(abs);
-      scanned++;
-      cache.files[key] = { size: st.size, mtimeMs: st.mtimeMs, days: r.days, sessions: r.sessions, sessionDays: r.sessionDays };
+      const r = await scanGroup(group);
+      scanned += group.length;
+      cache.files[parentAbs] = { files: group, days: r.days, sessions: r.sessions, sessionDays: r.sessionDays };
       mergeDays(totalDays, r.days);
       sessions += r.sessions;
       mergeSessionFiles(sessionAcc, r.sessionDays);
