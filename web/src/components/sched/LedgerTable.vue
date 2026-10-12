@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { TicketPage } from '@/api/sched'
 import type { LedgerPrefs, Period } from './preferences'
-import { duration, stamp, stateLabels, tone } from './format'
+import { duration, stamp, stateLabels, stateLabel, tone } from './format'
 const props = defineProps<{ value: LedgerPrefs; data: TicketPage | null; page: number; loading: boolean; error: string; exporting: boolean; exportError: string }>()
 const emit = defineEmits<{ filter: [value: LedgerPrefs]; page: [direction: -1 | 1]; open: [id: string]; refresh: []; export: [] }>()
 const draft = ref({ ...props.value })
@@ -56,7 +56,7 @@ function period(value: Period) { draft.value.period = value; emit('filter', { ..
           <td class="sched-id">{{ ticket.ticketId }}</td><td>{{ ticket.project }}</td><td>{{ ticket.title }}</td><td>{{ ticket.engine || '未标注' }}</td><td class="sched-muted">{{ ticket.submitter }}</td>
           <td>{{ ticket.machine || '尚未派机' }}</td><td class="r" title="申请核数">{{ ticket.requestedCores }}</td><td class="r">{{ duration(ticket.queuedMs) }}</td><td class="r">{{ duration(ticket.runningMs) }}</td>
           <td class="r">{{ duration(ticket.pausedMs) }}</td><td class="r">{{ duration(ticket.slowMs) }}</td>
-          <td :class="tone(ticket.result)">{{ stateLabels[ticket.result] }}<div v-if="ticket.resultReason" class="sched-note">{{ ticket.resultReason }}</div></td><td>{{ stamp(ticket.endedAt) }}</td>
+          <td :class="tone(ticket.result)">{{ stateLabel(ticket.result, ticket.category) }}<div v-if="ticket.resultReason" class="sched-note">{{ ticket.resultReason }}</div></td><td>{{ stamp(ticket.endedAt) }}</td>
         </tr><tr v-if="!data.items.length"><td colspan="13" class="sched-empty">没有符合筛选的记录</td></tr></tbody>
       </table>
     </div>

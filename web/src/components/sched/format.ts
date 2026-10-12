@@ -3,11 +3,17 @@ import type { CiJob } from '@/api/schedCiJobs'
 
 export const stateLabels: Record<TicketState, string> = { queued: '排队中', granted: '已授予，等待开跑', running: '运行中',
   paused: '暂停中', slow: '低速继续', unsatisfiable: '无法满足', passed: '通过', failed: '失败', cancelled: '已撤单', voided: '已作废' }
+/** 施工单(category=codex-build)的终态只说明工人怎么结束的,不冒充验收结论;其余类别与状态不在此列。 */
+const buildOutcomeLabels: Partial<Record<TicketState, string>> = { passed: '工人跑完', failed: '工人异常退出' }
+/** 单个状态/执行结果(state 或 outcome)的文案:按类别挑选,台账结果列、详情状态与执行记录共用这一个口径。 */
+export function stateLabel(state: string, category?: string | null): string {
+  return (category === 'codex-build' ? buildOutcomeLabels[state as TicketState] : undefined) || stateLabels[state as TicketState] || state
+}
 export const pauseLabels: Record<string, string> = { ci: 'CI 优先', manual: '手动暂停', 'owner-hold': '你在用电脑' }
-export function ticketLabel(ticket: Pick<TicketSummary, 'state' | 'cancelRequested' | 'pauseReasons'> & { resident?: boolean }) {
+export function ticketLabel(ticket: Pick<TicketSummary, 'state' | 'cancelRequested' | 'pauseReasons'> & { resident?: boolean; category?: string }) {
   if (ticket.cancelRequested && !['passed', 'failed', 'cancelled', 'voided'].includes(ticket.state)) return '撤单处理中'
-  const stateLabel = ticket.resident === true && ticket.state === 'granted' ? '常驻占用中' : stateLabels[ticket.state]
-  return [stateLabel, ...ticket.pauseReasons.map(reason => pauseLabels[reason] || reason)].join(' · ')
+  const stateText = ticket.resident === true && ticket.state === 'granted' ? '常驻占用中' : stateLabel(ticket.state, ticket.category)
+  return [stateText, ...ticket.pauseReasons.map(reason => pauseLabels[reason] || reason)].join(' · ')
 }
 export function ticketTone(ticket: Pick<TicketSummary, 'state' | 'cancelRequested' | 'pauseReasons'> & { resident?: boolean }): 'bad' | 'warn' | 'ok' | 'info' | 'muted' {
   return ticket.resident === true && ticket.state === 'granted' ? 'ok' : tone(ticket.state)

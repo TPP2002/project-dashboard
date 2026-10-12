@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { TicketDetail, TicketRelations } from '@/api/sched'
-import { duration, stamp, stateLabels, ticketLabel, ticketTone } from './format'
+import { duration, stamp, stateLabels, stateLabel, ticketLabel, ticketTone } from './format'
 const props = defineProps<{ ticketId: string; ticket: TicketDetail | null; related: TicketRelations | null; loading: boolean; error: string }>()
 const emit = defineEmits<{ close: []; retry: []; open: [id: string] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -16,8 +16,8 @@ onMounted(() => dialog.value?.showModal())
 onUnmounted(() => dialog.value?.close())
 function backdrop(event: MouseEvent) { if (event.target === dialog.value) emit('close') }
 function openParent() { const id = props.ticket?.request.parentTicketId; if (id) emit('open', id) }
-/** 详情抽屉拿到的是 TicketDetail,常驻字段在 request 里;换算成文案/配色要的口径(非 resident 单该布尔为 false)。 */
-function withResident(ticket: TicketDetail) { return { ...ticket, resident: ticket.request.resident === true } }
+/** 详情抽屉拿到的是 TicketDetail,常驻字段与类别都在 request 里;换算成文案/配色要的口径(非 resident 单该布尔为 false)。 */
+function withResident(ticket: TicketDetail) { return { ...ticket, resident: ticket.request.resident === true, category: ticket.request.category } }
 </script>
 
 <template>
@@ -66,7 +66,7 @@ function withResident(ticket: TicketDetail) { return { ...ticket, resident: tick
         <section><h3>执行记录</h3>
           <div v-if="ticket.attempts.length" class="sched-table-wrap"><table class="sched-table"><thead><tr><th>执行号</th><th>机器</th><th>开始</th><th>结束</th><th>结果</th></tr></thead>
             <tbody><tr v-for="item in ticket.attempts" :key="item.attemptId"><td>{{ item.attemptId }}</td><td>{{ item.permit?.machine || item.intent?.machine || '尚未派机' }}</td>
-              <td>{{ stamp(item.startedAt) }}</td><td>{{ stamp(item.endedAt) }}</td><td>{{ item.result ? (stateLabels[item.result.outcome as keyof typeof stateLabels] || item.result.outcome) : '未结束' }}<p>{{ item.result?.reason }}</p></td></tr></tbody>
+              <td>{{ stamp(item.startedAt) }}</td><td>{{ stamp(item.endedAt) }}</td><td>{{ item.result ? stateLabel(item.result.outcome, ticket.request.category) : '未结束' }}<p>{{ item.result?.reason }}</p></td></tr></tbody>
           </table>
             <details v-for="item in ticket.attempts" :key="item.attemptId" class="sched-note"><summary>{{ item.attemptId }} 的许可与四段时长</summary><pre>{{ JSON.stringify({ permit: item.permit, timing: item.timing }, null, 2) }}</pre></details>
           </div><p v-else class="sched-empty">暂无</p>
