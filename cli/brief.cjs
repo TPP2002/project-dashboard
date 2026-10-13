@@ -99,7 +99,8 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
     L.push('');
   }
   L.push(`**项目**：${projName || pid}（\`${pid}\`）　**状态**：${t.status || '未知'} ${t.percent || 0}%`
-    + `　**建议档位**：${t.modelHint || '没登记'}　**波次**：${t.wave === undefined ? '-' : t.wave}`);
+    + `　**建议档位**：${t.modelHint || '没登记'}　**波次**：${t.wave === undefined ? '-' : t.wave}`
+    + `　**施工方式**：${t.builder || '未标'}`);
   L.push(`**分支**：${(t.gitBranch || []).join('、') || '还没人建'}`
     + `　**开工日**：${(t.dates && t.dates.start) || '-'}`
     + (t.nextMilestone ? `　**上一次报的下一步**：${t.nextMilestone}` : ''));
@@ -131,7 +132,7 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
     L.push('（只动这些；要动别的先说一声——看板靠这份范围算"哪几张卡能同时派"。）');
   } else {
     L.push('- 没登记。看板据此判并行，空着等于放任撞车。');
-    L.push(`  认领时顺手补：\`${CLI} claim ${t.id}${proj} --branch <分支> --scope "<glob>"\`（可重复）`);
+    L.push(`  认领时顺手补：\`${CLI} claim ${t.id}${proj} --branch <分支> --builder <施工方式> --scope "<glob>"\`（可重复）`);
   }
 
   L.push('');
@@ -214,7 +215,7 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
         L.push('# 派收单员贴这句:' + collectInstructionOf({ projectId: pid, task: t }));
       }
     }
-    if (!working) L.push(`${CLI} claim ${t.id}${proj} --branch <你的分支名> --scope "<会改的文件>"`);
+    if (!working) L.push(`${CLI} claim ${t.id}${proj} --branch <你的分支名> --builder <施工方式> --scope "<会改的文件>"`);
     L.push(`${CLI} progress ${t.id}${proj} --percent <n> --next "<下一步>"`);
     L.push(`${CLI} pending ${t.id}${proj} --json-file pending.json   # 中途冒出新的拍板点`);
     L.push(`${CLI} done ${t.id}${proj} --pr <PR号> --commit <sha>`);

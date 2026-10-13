@@ -31,7 +31,7 @@ test('端到端 import → 认领改状态 → render-index（人工段保留）
     '', '## 二、别的',
   ].join('\n'));
   assert.equal(importCmd({ ...P, from: idx }).count, 2);
-  cmds.claim({ _: ['P02'], branch: 'br', ...P });
+  cmds.claim({ _: ['P02'], branch: 'br', builder: '派单器', ...P });
   const outIdx = path.join(dir, 'OUT.md');
   fs.writeFileSync(outIdx, '# T\n\n<!--dashboard:status:begin -->\nold\n<!--dashboard:status:end-->\n\n## 人工\nKEEP_ME\n');
   renderIndex({ ...P, index: outIdx });

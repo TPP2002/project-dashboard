@@ -128,13 +128,13 @@ test('brief 卡不存在时报错(不静默给一份空任务书)', (t) => {
 test('claim --brief 认领的同时打印同一份任务书', (t) => {
   const { P } = setup(t);
   cmds.add({ _: ['FEAT-12'], title: SPEC, 'plain-title': PLAIN, ...P });
-  const res = cmds.claim({ _: ['FEAT-12'], branch: 'feat/lock', brief: true, ...P });
+  const res = cmds.claim({ _: ['FEAT-12'], branch: 'feat/lock', builder: '派单器', brief: true, ...P });
   assert.equal(res.task.status, '施工中');
   assert.ok(res.text.includes('claim'), '先报认领结果');
   assert.ok(res.text.includes(PLAIN) && res.text.includes(SPEC), '再接一份完整任务书');
   // 不加 --brief 时不打任务书（省得每次认领都刷屏）
   cmds.add({ _: ['FEAT-13'], title: SPEC, 'plain-title': PLAIN, ...P });
-  const plain = cmds.claim({ _: ['FEAT-13'], branch: 'feat/x', ...P });
+  const plain = cmds.claim({ _: ['FEAT-13'], branch: 'feat/x', builder: '派单器', ...P });
   assert.ok(!plain.text, '默认认领只回一行确认');
 });
 

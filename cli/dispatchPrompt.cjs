@@ -65,7 +65,8 @@ function buildTaskDispatchPrompt(pid, projName, task, decisions, board) {
   lines.push('# 先核对新鲜度 + 建分支');
   lines.push('git fetch');
   lines.push('# 认领本任务(整个任务只 claim 一次,不 claim git commit 会被 pre-commit 硬闸门拦)');
-  lines.push(`${CLI} claim ${task.id} --project ${pid} --branch <你的分支名>`);
+  // 派出的活由收单员施工,施工方式明写「派单器」(claim 必填 --builder 机器闸,判据在 core/taskBuilder.cjs)。
+  lines.push(`${CLI} claim ${task.id} --project ${pid} --branch <你的分支名> --builder 派单器`);
   lines.push('');
   lines.push('# 按上面每条决策的答案落地实现...(阶段①②③自己做;阶段④按项目派单须知决定谁写代码)');
   lines.push('');

@@ -165,8 +165,8 @@ test('C4：跨板合并同号卡与月度归档，坏板、缺失板和坏归档
   cmds.register({ id: 'moved', name: 'moved', root: movedRoot, board: movedBoard, registry: t.reg });
   const moved = { project: 'moved', registry: t.reg };
   for (const P of [t.P, moved]) cmds.add({ _: ['SHARED'], title: '搬家同号卡', ...P });
-  cmds.claim({ _: ['SHARED'], branch: ['old-topic', 'shared-topic'], ...t.P });
-  cmds.claim({ _: ['SHARED'], branch: 'new-topic', ...moved });
+  cmds.claim({ _: ['SHARED'], branch: ['old-topic', 'shared-topic'], builder: '派单器', ...t.P });
+  cmds.claim({ _: ['SHARED'], branch: 'new-topic', builder: '派单器', ...moved });
   const archive = path.join(movedRoot, 'activity-202608.json');
   fs.writeFileSync(archive, JSON.stringify([claim('SHARED', 'archived-topic,shared-topic')]));
   const badArchive = path.join(movedRoot, 'activity-202607.json'); fs.writeFileSync(badArchive, '{');
@@ -190,7 +190,7 @@ test('C5：先摘别卡认领误记，再摘三卡广播，保留单卡未知；
   const t = setup(context, true);
   for (const id of ['OLD01', 'OLD02', 'OLD03', 'OWNER']) cmds.add({ _: [id], title: id, ...t.P });
   for (const branch of ['claimed-topic', 'wide-topic', 'solo-topic']) git(t.repo, ['branch', branch]);
-  cmds.claim({ _: ['OWNER'], branch: 'claimed-topic', ...t.P });
+  cmds.claim({ _: ['OWNER'], branch: 'claimed-topic', builder: '派单器', ...t.P });
   cmds.set({ _: ['OLD01'], field: 'gitBranch', value: JSON.stringify(['claimed-topic', 'wide-topic', 'solo-topic']), ...t.P });
   for (const id of ['OLD02', 'OLD03']) cmds.set({ _: [id], field: 'gitBranch', value: JSON.stringify(['wide-topic']), ...t.P });
   const before = fs.readFileSync(t.board, 'utf8');

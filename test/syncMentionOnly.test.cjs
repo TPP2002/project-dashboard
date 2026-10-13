@@ -93,7 +93,7 @@ test('M2：同条提交只把约定位置的 X 记入，正文 Y 保持空白', 
 test('M3：正文只给当前分支已认领卡补本次提交，缺参数或换分支均不补', (t) => {
   const f = setup(t);
   add(f, 'Z');
-  cmds.claim({ ...f.P, _: ['Z'], branch: f.branch });
+  cmds.claim({ ...f.P, _: ['Z'], branch: f.branch, builder: '派单器' });
   const claimed = task(f, 'Z');
   const sha = commit(f.repo, 'm3.txt', 'docs(bot): 继续记录 Z 的施工 (#88)');
   for (const flags of [{ branch: f.branch }, { commit: sha }, { branch: 'HEAD', commit: sha }]) {

@@ -285,7 +285,7 @@ test('端到端：git commit 后 board 被 hook 自动更新、doctor 不再报�
   git(t.repo, ['commit', '-q', '--allow-empty', '-m', 'init']);
   hooksInstall({ ...t.P });
   git(t.repo, ['checkout', '-q', '-b', 'feat-e2e']);
-  cmds.claim({ _: ['P01'], branch: 'feat-e2e', ...t.P });
+  cmds.claim({ _: ['P01'], branch: 'feat-e2e', builder: '派单器', ...t.P });
 
   fs.writeFileSync(path.join(t.repo, 'x.txt'), 'hi');
   git(t.repo, ['add', 'x.txt']);

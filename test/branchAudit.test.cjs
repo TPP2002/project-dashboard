@@ -109,7 +109,7 @@ test('端到端：0903 现象——老卡被灌了新工位的分支，doctor --
 
     // 模拟修复前的广播污染：OLD01 被扣上 feat-new；NEW02 是真分支
     cmds.set({ _: ['OLD01'], field: 'gitBranch', value: JSON.stringify(['feat-new']), ...t.P });
-    cmds.claim({ _: ['NEW02'], branch: 'feat-new', ...t.P });
+    cmds.claim({ _: ['NEW02'], branch: 'feat-new', builder: '派单器', ...t.P });
     const before = fs.readFileSync(t.board, 'utf8');
 
     const plain = doctor({ ...t.P });
@@ -136,7 +136,7 @@ test('端到端：分支合并后已删除，凭主干里的 merge 提交仍能�
     git(t.repo, ['checkout', '-q', 'master']);
     git(t.repo, ['merge', '-q', '--no-ff', '--no-edit', 'br-x']); // 默认信息 "Merge branch 'br-x'"
     git(t.repo, ['branch', '-q', '-D', 'br-x']);
-    cmds.claim({ _: ['P01'], branch: 'br-x', ...t.P });
+    cmds.claim({ _: ['P01'], branch: 'br-x', builder: '派单器', ...t.P });
     cmds.set({ _: ['P02'], field: 'gitBranch', value: JSON.stringify(['br-x']), ...t.P });
 
     const r = doctor({ ...t.P, branches: true });
