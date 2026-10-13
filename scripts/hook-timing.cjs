@@ -76,7 +76,8 @@ function main() {
     const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
     const { board } = cmds.register({ id: project, name: '临时计时板', root: repo, registry });
     cmds.add({ ...P, _: ['TIMING-1'], title: '临时钩子耗时测量' });
-    cmds.claim({ ...P, _: ['TIMING-1'], branch });
+    // 本脚本内建临时认领是脚本辅助(自干例外③小型诊断辅助);claim 必填 --builder 机器闸照收(判据在 core/taskBuilder.cjs)。
+    cmds.claim({ ...P, _: ['TIMING-1'], branch, builder: '自干:例外③' });
     hooksInstall(P);
 
     const commands = [
