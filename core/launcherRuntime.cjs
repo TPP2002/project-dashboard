@@ -22,6 +22,7 @@ const path = require('node:path');
 const os = require('node:os');
 const cp = require('node:child_process');
 const { atomicWriteJsonSync } = require('./atomicWrite.cjs');
+const { withLock } = require('./lock.cjs');
 const { DASHBOARD_HOME } = require('./resolveProject.cjs');
 
 /** 归属登记的 schema 版本；字段或判据变了就升版本，旧记录一律按"登记失效"处理（宁拒接不冒充）。 */
@@ -71,7 +72,11 @@ function readRecord(file = recordPath()) {
   } catch { return null; }
 }
 
-/** 原子写归属登记（全项目写盘统一走 atomicWrite）。 */
+/**
+ * 原子写归属登记 —— 【裸原语】：只保证不写坏 JSON，不保证不丢逻辑更新。
+ * 生产写一律走下面带锁的协议入口（writeRecordLocked / updateOwnRecordLocked），
+ * 绝不在裸原语与带锁入口之间嵌套同一把锁。
+ */
 function writeRecord(file, record) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   atomicWriteJsonSync(file, record);
@@ -79,14 +84,79 @@ function writeRecord(file, record) {
 }
 
 /**
- * 读-改-写归属登记（看护进程spawn出服务后补记 serverPid、退出后补记 serverExitedAt）。
- * fn 返回【同一个对象引用】= 判定"这拍不写"（比如登记已换主，看护不许把自己的 pid 拼进别人的生命周期）。
+ * 读-改-写归属登记 —— 【裸原语】，读与写之间没有跨进程临界区（TOCTOU）。
+ * 只留给测试/工具直用；生产的读改写走 updateOwnRecordLocked（锁内重读+核 key）。
+ * fn 返回【同一个对象引用】= 判定"这拍不写"。
  */
 function updateRecord(file, fn) {
   const before = readRecord(file);
   const after = fn(before);
   if (after === before) return before;
   return writeRecord(file, after);
+}
+
+/**
+ * 登记写锁：与登记同目录同名 + `.write.lock`（R9 实证 tk-37706b11 后引入）。
+ * 复用 core/lock.cjs 的 withLock，不改锁库；与启动编排锁（`<登记>.lock`）是两把锁，
+ * 绝不共用也绝不嵌套 —— 编排锁盖"探活→发布→挂号起服务"，写锁只盖登记的读改写这一瞬。
+ */
+function recordWriteLockPath(file) {
+  return `${file}.write.lock`;
+}
+
+/**
+ * 新生命周期落盘（启动器接主登记）：同一把写锁的短临界区。不核 key —— 启动编排锁在手，
+ * 本次生命周期就是要接主登记；锁保证它与旧看护的在途回写一个完成了再轮到另一个，
+ * 谁后写谁生效，绝无"旧读整篇盖掉新生命周期"的交错。
+ */
+function writeRecordLocked(file, record) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });   // 锁文件与登记同目录，先保证在
+  return withLock(recordWriteLockPath(file), () => writeRecord(file, record));
+}
+
+/**
+ * 归属登记的读-核 key-改-写【一个短跨进程临界区】（R9 实证 tk-37706b11：旧看护的退出回写
+ * 拿进锁前读到的旧生命周期整篇，把刚接主的新生命周期盖了回去 —— 原子改名只防写坏 JSON，
+ * 防不了丢逻辑更新）。协议：withLock 进临界区 → 【锁内重读】→ key 与 expectedKey 不符
+ * =【真正零写入】（连写盘的机会都不给，别人刚补的字段一个不丢）→ 改 → 原子写。
+ * 所有写者（启动器接主、看护补记/回写）同走此协议；绝不嵌套同一把锁。
+ */
+function updateOwnRecordLocked(file, expectedKey, fn, { err = () => {} } = {}) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });   // 锁文件与登记同目录，先保证在
+  return withLock(recordWriteLockPath(file), () => {
+    const before = readRecord(file);
+    if (expectedKey && before && before.key && before.key !== expectedKey) {
+      err(`[launcher-record] 归属登记已属于另一个生命周期（登记 key ${before.key} ≠ 本次 ${expectedKey}），不拼改、不覆盖、零写入。`);
+      return before;
+    }
+    const after = fn(before);
+    if (after === before) return before;
+    return writeRecord(file, after);
+  });
+}
+
+/**
+ * 起服前的归属确认（R9）：在登记写锁的短临界区内重读并核对 key/票号/包装进程。
+ * 登记不存在、已换主、票号或包装进程对不上 = 不是本次生命周期的登记 ——
+ * 看护绝不为它起服务（M1 实证的"先 spawn 无登记服务、再拒写登记"就是这条缝）。
+ * 只读不写：真正落 serverPid 在 spawn 之后由 updateOwnRecordLocked 补。
+ */
+function confirmOwnRecordLocked(file, { key, ticketId = null, wrapperPid } = {}) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });   // 锁文件与登记同目录，先保证在
+  return withLock(recordWriteLockPath(file), () => {
+    const r = readRecord(file);
+    if (!r) return { ok: false, reason: '归属登记不存在 —— 本生命周期还没有可核验的登记' };
+    if (!key || r.key !== key) {
+      return { ok: false, reason: `归属登记已属于另一个生命周期（登记 key ${r.key ?? '无'} ≠ 本看护 ${key ?? '无'}）` };
+    }
+    if (ticketId && r.ticketId !== ticketId) {
+      return { ok: false, reason: `归属登记的票号与本单不符（登记 ${r.ticketId ?? '无'} ≠ 本单 ${ticketId}）` };
+    }
+    if (r.wrapperPid !== wrapperPid) {
+      return { ok: false, reason: `归属登记的包装进程与本看护不符（登记 ${r.wrapperPid ?? '无'} ≠ ${wrapperPid}）` };
+    }
+    return { ok: true, record: r };
+  });
 }
 
 /**
@@ -521,13 +591,16 @@ function watchDecision({ ticketId, wrapperAlive, shareFailMs = 0, shareFailBudge
 }
 
 /**
- * 看护进程主循环：先验授予（严格模式）→ spawn 自己的 server → 补记 serverPid → 周期判定
- * → 停也只停自己 spawn 的子树，且【确认退了】才收场。
+ * 看护进程主循环：先验授予（严格模式）→ 起服前在登记写锁内确认登记属于本次生命周期（R9）
+ * → spawn 自己的 server → 带锁补记 serverPid → 周期判定 → 停也只停自己 spawn 的子树，
+ * 且【确认退了】才收场。
  * 退出码透传：server 自行退出 = server 的退出码；外部终态/父链断开 = 0；共享盘持续不可读 = 3
- * （先停自有进程、再尽力退单）；严格模式许可核验不过 = 2（不起服务、不伪造许可）；停止失败 = 1
- * （不冒充已停止）；收到中断信号 = 130。独立模式（无 --ticket）不验许可，只看包装进程死活。
- * 对归属登记的每次读改写都先核对 --key：登记已换主（另一个生命周期）就【真正零写入】——
- * 根本不进读改写，绝不把自己的 pid/退出时刻拼进别人的生命周期，旧看护也覆盖不了新实例。
+ * （先停自有进程、再尽力退单）；严格模式许可核验不过或登记不属于本次生命周期 = 2（不起服务、
+ * 不伪造许可）；停止失败 = 1（不冒充已停止）；收到中断信号 = 130。独立模式（无 --ticket）
+ * 不验许可，只看包装进程死活，但起服前的登记归属确认照做。
+ * 对归属登记的每次读改写都是一个 record.write.lock 短临界区，锁内重读并核对 --key：
+ * 登记已换主（另一个生命周期）就【真正零写入】—— 绝不把自己的 pid/退出时刻拼进别人的
+ * 生命周期，旧看护也覆盖不了新实例（R9 实证 tk-37706b11 的丢更新缝隙）。
  * 停树失败时看护【不退出】：有界重试，仍不成就在原地看住现场（hold/账不撤、绝不伪成功、
  * 也绝不另起新单），直到自有进程真退出才收场（退出码 1）—— 看护先退、hold 随后注销而
  * server 还活着的"账/进程脱节"就是这么堵上的。
@@ -549,7 +622,8 @@ async function runWatchServer(opts, deps = {}) {
     spawn: cp.spawn.bind(cp),
     stopTree,
     readRecord,
-    updateRecord,
+    confirmOwn: confirmOwnRecordLocked,
+    updateOwn: updateOwnRecordLocked,
     log: console.log,
     err: console.error,
     kill: (pid, signal) => process.kill(pid, signal),
@@ -573,17 +647,11 @@ async function runWatchServer(opts, deps = {}) {
       return { ok: false, error: e.message, missing: e.exitCode === 2 };
     }
   };
-  // 归属登记只许动【本次自己】的生命周期。key 不符 = 【真正零写入】：在进读改写【之前】就短路，
-  // 连写盘的机会都不给 —— 不是"返回旧对象再交给写盘方"，否则别的生命周期刚补进登记的新字段
-  // （退出时刻等）仍可能被这次旧读的回写抹掉。
-  const updateOwnRecord = (fn) => {
-    const current = d.readRecord(opts.record);
-    if (opts.key && current && current.key && current.key !== opts.key) {
-      d.err(`[launcher-watch] 归属登记已属于另一个生命周期（登记 key ${current.key} ≠ 本看护 ${opts.key}），不拼改、不覆盖、零写入。`);
-      return current;
-    }
-    return d.updateRecord(opts.record, fn);
-  };
+  // 归属登记只许动【本次自己】的生命周期。每次读改写都是一个 record.write.lock 短临界区
+  // （R9）：锁内【重读】并核对本次 key —— 不符 = 【真正零写入】，连写盘的机会都不给。
+  // 旧实现"进锁前读一次再交给无锁读改写"是 TOCTOU：旧看护的回写拿旧读整篇把刚接主的
+  // 新生命周期盖了回去（R9 实证 tk-37706b11）。
+  const updateOwnRecord = (fn) => d.updateOwn(opts.record, opts.key, fn, { err: d.err });
 
   // ① 严格模式起服务前核验 hold 注入的真实授予（verifyResidentGrant，R7 对齐真实客户端语义）：
   //    常驻单的真实授予态是 granted（不迁移 running），核验按共享盘事实逐条核对：票据在、非终态、
@@ -612,6 +680,16 @@ async function runWatchServer(opts, deps = {}) {
       d.err(`[launcher-watch] 严格模式没有拿到有效授予，不起服务（不伪造许可、不裸跑）：${why}`);
       return 2;
     }
+  }
+
+  // ② 起服前在登记写锁的短临界区内确认登记确实属于本次生命周期（R9 实证 tk-37706b11）：
+  //    拿到了真授予也一样 —— 登记不存在/已被别的生命周期占着（旧看护回写未落地、登记已换主、
+  //    票号或包装进程对不上）就绝不起无登记服务：M1 里"先 spawn 无登记服务、随后才拒写登记"，
+  //    新服务就以无可核验登记的裸奔状态留在了机器上。拒绝 = 退出码 2，不起、不写。
+  const own = d.confirmOwn(opts.record, { key: opts.key, ticketId: opts.ticketId, wrapperPid: opts.wrapperPid });
+  if (!own || own.ok !== true) {
+    d.err(`[launcher-watch] 归属登记不是本次生命周期，不起无登记服务（不冒充、不裸跑）：${(own && own.reason) || '未知原因'}`);
+    return 2;
   }
 
   const child = d.spawn(process.execPath, [opts.server, ...(opts.serverArgs || [])], {
@@ -768,6 +846,7 @@ module.exports = {
   DEFAULT_WATCH_INTERVAL_MS, DEFAULT_SHARE_FAIL_BUDGET_MS,
   ENV_WATCH_INTERVAL, ENV_SHARE_FAIL_BUDGET,
   recordPath, readRecord, writeRecord, updateRecord, validRecord,
+  recordWriteLockPath, writeRecordLocked, updateOwnRecordLocked, confirmOwnRecordLocked,
   newLifecycleKey, residentTitle, classifyInstance, retireOwnInstance,
   stopTree, pidAlive, acquireLaunchMutex, permitTicketId,
   watcherArgv, parseWatchArgs, loadWatchClient,

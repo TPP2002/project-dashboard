@@ -78,7 +78,7 @@ function deps(env, over = {}) {
     stopTree: () => { throw new Error('不该停任何进程'); },
     retireOwn: lr.retireOwnInstance,
     readRecord: lr.readRecord,
-    writeRecord: lr.writeRecord,
+    writeRecord: lr.writeRecordLocked,   // 接主登记走 record.write.lock 临界区（R9）
     log: () => {},
     err: () => {},
     ...over,
@@ -659,7 +659,8 @@ test('启动锁只护编排：第一张 hold 没退，锁也已放行 —— 常
     cancel: async () => ({ exitCode: 0 }),
     deriveTicketId: (p, k) => 'tk-' + k.slice(-6),
   };
-  // 第一次启动：hold 起了就【不退】（常驻在跑）；看护把 serverPid 补进登记 → 启动锁必须放行
+  // 第一次启动：hold 起了就【不退】（常驻在跑）；看护把 serverPid 补进登记 → 启动锁必须放行。
+  // serverPid 用真实活着的 pid（R9 起稳判定还要求 pid 活着，假 pid 不算起稳）。
   const holds1 = [];
   const d1 = deps(e, {
     loadClient: () => fake,
@@ -667,13 +668,13 @@ test('启动锁只护编排：第一张 hold 没退，锁也已放行 —— 常
     runRelease: () => 0,
     startUnderHold: async (c, o) => {
       holds1.push(o);
-      lr.writeRecord(e.recordFile, { ...lr.readRecord(e.recordFile), watcherPid: 8, serverPid: 4321, serverStartedAt: '2026-10-14T00:00:00Z' });
+      lr.writeRecord(e.recordFile, { ...lr.readRecord(e.recordFile), watcherPid: 8, serverPid: process.pid, serverStartedAt: '2026-10-14T00:00:00Z' });
       return new Promise(() => {});   // hold 挂着不回：常驻寿命不归启动锁管
     },
   });
   const first = launcher.main([], d1);   // 故意不 await 整个寿命
   assert.ok(await waitFor(() => !fs.existsSync(lockFile)), '服务起稳后启动锁必须放行 —— 锁绝不停留在常驻寿命上');
-  assert.equal(lr.readRecord(e.recordFile).serverPid, 4321, '起稳判定来自登记里的 serverPid');
+  assert.equal(lr.readRecord(e.recordFile).serverPid, process.pid, '起稳判定来自登记里的 serverPid');
   assert.equal(holds1.length, 1);
   assert.ok(first instanceof Promise, '第一次启动还在等常驻退出');
   // 第二次双击（常驻仍在跑、锁已放行）：主干更新 → 这次发布把 stamp 换新 → 重新判定为退旧起新，
@@ -686,14 +687,61 @@ test('启动锁只护编排：第一张 hold 没退，锁也已放行 —— 常
     codeRoot: checkout,
     runRelease: () => 0,
     readStamp: () => ({ commit: 'b'.repeat(40) }),   // 发布副本已换新
-    probeHealth: () => ({ running: true, health: { ...e.health, pid: 4321, releaseCommit: SHAM }, text: '旧版在跑' }),
+    probeHealth: () => ({ running: true, health: { ...e.health, pid: process.pid, releaseCommit: SHAM }, text: '旧版在跑' }),
     stopTree: async (pid) => { stopped2.push(pid); return { ok: true }; },
     startUnderHold: async (c, o) => { holds2.push(o); return { exitCode: 0 }; },
   });
   assert.equal(await launcher.main([], d2), 0);
-  assert.deepEqual(stopped2, [4321], '退掉在跑的旧实例进程树');
+  assert.deepEqual(stopped2, [process.pid], '退掉在跑的旧实例进程树');
   assert.equal(holds2.length, 1, '起新单');
   assert.notEqual(holds2[0].key, holds1[0].key, '换新拿全新生命周期键');
+  clean(e.dir);
+});
+
+test('起稳只认本次生命周期（R9 实证 tk-37706b11）：旧生命周期的登记（旧 key/旧票/活着的旧 PID）绝不放行启动锁', { timeout: 30000 }, async () => {
+  const e = makeEnv();
+  const checkout = path.join(e.dir, 'checkout');
+  fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(checkout, 'web', 'node_modules'), { recursive: true });
+  const lockFile = e.recordFile + '.lock';
+  const deadChild = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
+  await once(deadChild, 'exit');   // 一个【确定已死】的 pid：连"活着"这一半都不许冒充起稳
+  const fake = {
+    status: (id) => ({ ticketId: id, state: 'running', title: lr.residentTitle('testhost') }),
+    cancel: async () => ({ exitCode: 0 }),
+    deriveTicketId: (p, k) => 'tk-' + k.slice(-6),
+  };
+  let releaseHold = null;
+  let ownLife = null;
+  const d = deps(e, {
+    loadClient: () => fake,
+    codeRoot: checkout,
+    runRelease: () => 0,
+    startUnderHold: async (c, o) => {
+      ownLife = lr.readRecord(e.recordFile);   // 启动器刚接主的【本次生命周期】登记
+      // M1 现场重现：旧看护的回写把旧生命周期整篇盖回登记 —— 旧 key/旧票/旧包装进程，
+      // serverPid 还是个【活着】的旧 pid（真实 M1 里"已起稳"甚至打印在真授予之前）。
+      lr.writeRecord(e.recordFile, {
+        schema: 1, hostname: 'testhost', mode: 'strict',
+        key: 'serve-OLD-1', ticketId: 'tk-' + '0'.repeat(20), title: '旧生命周期',
+        wrapperPid: 9, watcherPid: 8, serverPid: process.pid, serverStartedAt: '2026-10-14T00:00:00Z',
+      });
+      return new Promise((res) => { releaseHold = res; });
+    },
+  });
+  const p = launcher.main([], d);
+  await new Promise((r) => setTimeout(r, 800));   // 轮询间隔 200ms，足够误判的旧码放锁好几拍
+  assert.ok(fs.existsSync(lockFile), '旧生命周期的登记（serverPid 再活也不是本次的）绝不能放行启动锁 —— 旧 PID 不许冒充起稳');
+  assert.equal(typeof releaseHold, 'function', 'hold 正在等起稳确认');
+  // key/票号/包装进程都是本次的、但 serverPid 已死：也不许放行 —— 起稳只认仍活着的 pid
+  lr.writeRecord(e.recordFile, { ...ownLife, serverPid: deadChild.pid });
+  await new Promise((r) => setTimeout(r, 500));
+  assert.ok(fs.existsSync(lockFile), 'serverPid 已死的登记同样不许放行 —— 起稳只认仍活着的 pid');
+  // 本次生命周期的登记 + 活着的 pid：这才是起稳，放行启动锁
+  lr.writeRecord(e.recordFile, { ...ownLife, serverPid: process.pid });
+  assert.ok(await waitFor(() => !fs.existsSync(lockFile)), '本次生命周期的活 pid 才放行启动锁');
+  releaseHold({ exitCode: 0 });
+  await p;
   clean(e.dir);
 });
 
@@ -891,11 +939,6 @@ function spawnWatcher(env, { ticketId, wrapperPid, interval = 250, budget = 1500
   const dummy = path.join(env.dir, 'dummy-server.cjs');
   const pidFile = path.join(env.dir, 'dummy.pid');
   fs.writeFileSync(dummy, `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 250);\n`);
-  fs.writeFileSync(env.recordFile, JSON.stringify({
-    schema: 1, hostname: os.hostname(), mode: 'strict',
-    key, ticketId, title: '看板常驻服务 @t',
-    wrapperPid: process.pid, serverPid: null,
-  }));
   if (ticketId && granted !== false) {
     grantResident(env.share, { ticketId, leasePid: wrapperPid, token, withLease: !viaWrapper });
   }
@@ -915,6 +958,14 @@ function spawnWatcher(env, { ticketId, wrapperPid, interval = 250, budget = 1500
     childEnv.SCHED_PERMIT = permit === undefined ? `${ticketId}:a1:TOK` : permit;
     childEnv.SCHED_GRANTED_CORES = '1';   // 真实客户端授予时注入的核数环境
   }
+  // 登记的 wrapperPid 必须 = 看护拿到的 --wrapper（R9 起服前归属确认核对它）：
+  // 直起 = 本测试进程；经中间 wrapper = 那个 wrapper 的 pid（spawn 返回即知，
+  // wrapper 此刻还在等 GO，先落登记再放行，与真实 hold"先落事实再拉起"同序）。
+  const writeRecordWith = (wpid) => fs.writeFileSync(env.recordFile, JSON.stringify({
+    schema: 1, hostname: os.hostname(), mode: 'strict',
+    key, ticketId, title: '看板常驻服务 @t',
+    wrapperPid: wpid, watcherPid: null, serverPid: null,
+  }));
   let child;
   let goFile = null;
   if (viaWrapper) {
@@ -926,7 +977,9 @@ function spawnWatcher(env, { ticketId, wrapperPid, interval = 250, budget = 1500
       env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    writeRecordWith(child.pid);
   } else {
+    writeRecordWith(wrapperPid ?? process.pid);
     child = spawn(process.execPath, args, {
       cwd: env.dir,
       env: childEnv,
@@ -1185,7 +1238,9 @@ function watchDeps(env, over = {}) {
     shareFailBudgetMs: 1000,
     spawn: () => child,
     stopTree: async () => ({ ok: true }),
-    updateRecord: lr.updateRecord,
+    // R9：起服前归属确认 + 登记读改写都走 record.write.lock 临界区的真实现。
+    confirmOwn: lr.confirmOwnRecordLocked,
+    updateOwn: lr.updateOwnRecordLocked,
     log: () => {},
     err: () => {},
     kill: () => { const e = new Error('ESRCH'); e.code = 'ESRCH'; throw e; },   // 包装进程默认已死
@@ -1214,22 +1269,22 @@ test('看护只动本次自己的登记：key 不符 = 真正零写入（连读�
   lr.writeRecord(e.recordFile, foreign);
   let writes = 0;
   const { d } = watchDeps(e, {
-    updateRecord: (file, fn) => { writes += 1; return lr.updateRecord(file, fn); },
+    updateOwn: (file, key, fn, o) => { writes += 1; return lr.updateOwnRecordLocked(file, key, fn, o); },
   });
   await lr.runWatchServer({
     ticketId: null, wrapperPid: 1, record: e.recordFile, server: 'server.cjs', key: 'mine',
   }, d);
-  assert.equal(writes, 0, '别人的登记：零写入（连 updateRecord 都不进）');
+  assert.equal(writes, 0, '别人的登记：零写入（连读改写临界区都不进 —— R9 起服前归属确认就拒了）');
   const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
   assert.deepEqual(rec, foreign, '登记逐字节原样保留（key/serverPid/退出时刻等新字段一个不少）');
   clean(e.dir);
 
   // ② 自己的 key：正常两笔（spawn 补记 serverPid + 收场补记 serverExitedAt），守卫没挡掉该写的那支笔
   const e2 = makeEnv();
-  lr.writeRecord(e2.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'mine', ticketId: 'tk-x', serverPid: null });
+  lr.writeRecord(e2.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'mine', ticketId: 'tk-x', wrapperPid: 1, serverPid: null });
   let writes2 = 0;
   const { d: d2 } = watchDeps(e2, {
-    updateRecord: (file, fn) => { writes2 += 1; return lr.updateRecord(file, fn); },
+    updateOwn: (file, key, fn, o) => { writes2 += 1; return lr.updateOwnRecordLocked(file, key, fn, o); },
   });
   await lr.runWatchServer({ ticketId: null, wrapperPid: 1, record: e2.recordFile, server: 'server.cjs', key: 'mine' }, d2);
   assert.equal(writes2, 2, '自己的生命周期：spawn 补记 + 收场补记，两笔都照常');
@@ -1239,9 +1294,112 @@ test('看护只动本次自己的登记：key 不符 = 真正零写入（连读�
   clean(e2.dir);
 });
 
+test('看护拿到真授予也不能起无登记服务（R9 实证 tk-37706b11）：登记属于别的生命周期 → 起服前就拒（退出码 2）', async () => {
+  const e = makeEnv();
+  // M1 末态：登记被旧生命周期占着（旧 key/旧票/旧包装进程），新看护的 key 对不上
+  const stale = {
+    schema: 1, hostname: 'testhost', mode: 'strict',
+    key: 'serve-OLD-life', ticketId: 'tk-' + '0'.repeat(20), title: '旧生命周期',
+    wrapperPid: 999, watcherPid: 8, serverPid: 555, serverExitedAt: '2026-10-14T00:00:01Z',
+  };
+  lr.writeRecord(e.recordFile, stale);
+  const spawnCalls = [];
+  const errs = [];
+  const { d } = watchDeps(e, {
+    spawn: () => { spawnCalls.push(1); return { pid: 4321, once() { return this; } }; },
+    err: (m) => errs.push(m),
+  });
+  const code = await lr.runWatchServer(
+    { ticketId: null, wrapperPid: 1, record: e.recordFile, server: 'server.cjs', key: 'serve-MINE' }, d);
+  assert.equal(code, 2, '登记不是本次生命周期：起服前就明确拒绝');
+  assert.equal(spawnCalls.length, 0, '绝不起无登记服务 —— M1 的"先 spawn 无登记服务、再拒写登记"不许再有');
+  assert.deepEqual(JSON.parse(fs.readFileSync(e.recordFile, 'utf8')), stale, '登记逐字节原样保留');
+  assert.match(errs.join('\n'), /不起无登记服务/);
+  clean(e.dir);
+});
+
+test('起服前的归属确认（R9）：key/票号/包装进程三方对上才放行；缺登记/换主/不符都拒', () => {
+  const e = makeEnv();
+  lr.writeRecord(e.recordFile, {
+    schema: 1, hostname: 'testhost', mode: 'strict',
+    key: 'k', ticketId: 'tk-' + '0'.repeat(20), wrapperPid: 42, serverPid: null,
+  });
+  const q = { key: 'k', ticketId: 'tk-' + '0'.repeat(20), wrapperPid: 42 };
+  assert.equal(lr.confirmOwnRecordLocked(e.recordFile, q).ok, true, 'key/票号/包装进程三方一致 → 放行');
+  assert.equal(lr.confirmOwnRecordLocked(e.recordFile, { ...q, ticketId: null }).ok, true,
+    '独立模式（无票号）只核 key 与包装进程');
+  assert.match(lr.confirmOwnRecordLocked(e.recordFile, { ...q, key: 'serve-OTHER' }).reason, /另一个生命周期/,
+    '登记已换主 = 不是本次生命周期');
+  assert.match(lr.confirmOwnRecordLocked(e.recordFile, { ...q, ticketId: 'tk-' + '1'.repeat(20) }).reason, /票号与本单不符/,
+    '登记的票号不是本单 = 不许照着它起服务');
+  assert.match(lr.confirmOwnRecordLocked(e.recordFile, { ...q, wrapperPid: 4242 }).reason, /包装进程与本看护不符/,
+    '登记的包装进程对不上 = 不许照着它起服务');
+  assert.match(lr.confirmOwnRecordLocked(e.recordFile, {}).reason, /另一个生命周期/,
+    '没有生命周期键 = 无从确认归属，宁可拒也不裸奔');
+  fs.unlinkSync(e.recordFile);
+  assert.match(lr.confirmOwnRecordLocked(e.recordFile, q).reason, /不存在/,
+    '登记不存在（启动器没接上主）= 绝不起无登记服务');
+  clean(e.dir);
+});
+
+test('旧看护的回写绝不能把刚接主的新生命周期盖回去（R9 实证 tk-37706b11）：登记读改写整体进 record.write.lock，锁内重读', async () => {
+  const e = makeEnv();
+  const mine = {
+    schema: 1, hostname: 'testhost', mode: 'strict', key: 'serve-old-life',
+    ticketId: 'tk-' + '0'.repeat(20), title: '旧生命周期', wrapperPid: 1,
+    serverPid: 100, startedAt: '2026-10-14T00:00:00Z',
+  };
+  lr.writeRecord(e.recordFile, mine);
+  const newcomer = {
+    schema: 1, hostname: 'testhost', mode: 'strict', key: 'serve-NEW-life',
+    ticketId: 'tk-' + '1'.repeat(20), title: '新生命周期', wrapperPid: 2,
+    serverPid: 200, startedAt: '2026-10-14T00:00:01Z',
+  };
+  let confirmed = 0;   // 新代码起服前会经 confirmOwn 确认归属
+  let hostile = 0;     // 旧代码的无锁读改写入口 —— 新代码绝不进
+  const { d, child } = watchDeps(e, {
+    confirmOwn: (file, q) => { confirmed += 1; return lr.confirmOwnRecordLocked(file, q); },
+    // 起服后"启动器"把新生命周期落盘（M1：新旧两笔在同一秒内交错）
+    spawn: () => { if (confirmed) lr.writeRecord(e.recordFile, newcomer); return child; },
+    // 旧代码的裸读改写：读出来之后、写回去之前新生命周期接主 —— 旧代码会把旧读整篇写回去盖掉它。
+    updateRecord: (file, fn) => {
+      hostile += 1;
+      const before = lr.readRecord(file);
+      lr.writeRecord(file, newcomer);
+      return lr.writeRecord(file, fn(before));
+    },
+  });
+  await lr.runWatchServer(
+    { ticketId: null, wrapperPid: 1, record: e.recordFile, server: 'server.cjs', key: 'serve-old-life' }, d);
+  assert.equal(confirmed, 1, '起服前先在锁内确认登记归属（R9）');
+  assert.equal(hostile, 0, '看护的登记读改写必须走 record.write.lock 临界区 —— 无锁读改写入口不再被生产使用');
+  assert.deepEqual(JSON.parse(fs.readFileSync(e.recordFile, 'utf8')), newcomer,
+    '新生命周期的登记原样保留：旧回写在锁内重读发现已换主，零写入');
+  clean(e.dir);
+});
+
+test('record.write.lock 是真临界区：读改写发生在锁内，锁放行即释放；后一笔锁内重读叠加，不丢前一笔', () => {
+  const e = makeEnv();
+  lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: null, wrapperPid: 1, serverPid: null });
+  const lockFile = lr.recordWriteLockPath(e.recordFile);
+  let lockSeenDuringWrite = false;
+  lr.updateOwnRecordLocked(e.recordFile, 'k', (r) => {
+    lockSeenDuringWrite = fs.existsSync(lockFile);
+    return { ...r, serverPid: 4321 };
+  });
+  assert.ok(lockSeenDuringWrite, '读改写发生在 record.write.lock 临界区内');
+  assert.ok(!fs.existsSync(lockFile), '临界区结束锁必须释放');
+  // 第二笔带锁写基于第一笔写完的登记改（锁内重读）—— 不丢逻辑更新，正是 M1 丢的那条性质
+  lr.updateOwnRecordLocked(e.recordFile, 'k', (r) => ({ ...r, serverExitedAt: '2026-10-14T00:00:01Z' }));
+  const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
+  assert.equal(rec.serverPid, 4321, '前一笔保留');
+  assert.equal(rec.serverExitedAt, '2026-10-14T00:00:01Z', '后一笔叠加');
+  clean(e.dir);
+});
+
 test('看护停止失败不冒充：有界重试；停不成看护【不退出】（hold 不撤、账/进程一致），自有进程真退了才收场（码 1）', async () => {
   const e = makeEnv();
-  lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: null, serverPid: null });
+  lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: null, wrapperPid: 1, serverPid: null });
   const stopCalls = [];
   let exitCode = null;
   const { d, child } = watchDeps(e, {
@@ -1274,7 +1432,7 @@ test('父链断开停服成功 → 看护【优先正式退自己的单】；票
   const e = makeEnv();
   e.share = path.join(e.dir, 'share');
   grantResident(e.share, { ticketId: T1, leasePid: 1 });   // 真实授予事实：租约 pid = 本看护的包装进程
-  lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T1, serverPid: null });
+  lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T1, wrapperPid: 1, serverPid: null });
   const cancels = [];
   const { d } = watchDeps(e, {
     env: { SCHED_PERMIT: `${T1}:a1:TOK` },
@@ -1298,7 +1456,7 @@ test('父链断开停服成功 → 看护【优先正式退自己的单】；票
   const e2 = makeEnv();
   e2.share = path.join(e2.dir, 'share');
   grantResident(e2.share, { ticketId: T2, leasePid: 999999 });
-  lr.writeRecord(e2.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T2, serverPid: null });
+  lr.writeRecord(e2.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T2, wrapperPid: 999999, serverPid: null });
   const cancels2 = [];
   let statusCalls = 0;
   const { d: d2 } = watchDeps(e2, {
@@ -1328,7 +1486,7 @@ test('停树重试：第一次不成、第二次成了 → 只在这之后退单
   const e = makeEnv();
   e.share = path.join(e.dir, 'share');
   grantResident(e.share, { ticketId: T3, leasePid: 1 });
-  lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T3, serverPid: null });
+  lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T3, wrapperPid: 1, serverPid: null });
   const stopCalls = [];
   const cancels = [];
   const { d } = watchDeps(e, {

@@ -204,7 +204,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     retireOwn: lr.retireOwnInstance,
     startConfirmMs: START_CONFIRM_MS,
     readRecord: lr.readRecord,
-    writeRecord: lr.writeRecord,
+    writeRecord: lr.writeRecordLocked,   // 接主登记走 record.write.lock 短临界区（R9）
     kill: (pid, signal) => process.kill(pid, signal),
     acquireMutex: (file) => lr.acquireLaunchMutex(file, { kill: d.kill }),
     log: console.log,
@@ -372,9 +372,19 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     // 不盖常驻寿命；起稳后的双击能重新拿锁、重新发布、重新判复用/换新。没等到起稳就退
     // （挂号被拒/许可不过等）也立刻放锁，退出码照常透传。
     const runAndRelease = async (runPromise) => {
+      // 起稳只认【本次生命周期】（R9 实证 tk-37706b11）：旧看护的回写会把旧生命周期整篇盖回
+      // 登记 —— 旧 key/旧票/旧包装进程、serverPid 还是旧 pid。只看 serverPid>0 就会把旧登记
+      // 当成"已起稳"提前放行启动锁（真实 M1 里"已起稳"甚至打印在真授予之前），新服务反而
+      // 没有可核验登记。所以 key/票号/包装进程都要是本次的，serverPid 还必须【仍活着】；
+      // 600000ms 上限一字不动 —— 缩的是误判，不是等待。
       const waiter = pollUntil(() => {
         const r = d.readRecord(recordFile);
-        return !!(r && Number.isInteger(r.serverPid) && r.serverPid > 0);
+        return !!(r
+          && r.key === lifecycle.key
+          && r.ticketId === lifecycle.ticketId
+          && r.wrapperPid === process.pid
+          && Number.isInteger(r.serverPid) && r.serverPid > 0
+          && lr.pidAlive(r.serverPid, d.kill));
       }, d.startConfirmMs);
       const outcome = await Promise.race([
         waiter.promise.then((up) => (up ? 'started' : 'timeout')),
