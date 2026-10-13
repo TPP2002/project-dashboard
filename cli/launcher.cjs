@@ -90,7 +90,9 @@ function loadSchedClient(share) {
   let client;
   try { client = require(file); }
   catch (e) { throw new Error(`排队客户端不可用，启动已拒绝（严格模式不降级、不裸跑）：${file}；${e.message}`); }
-  const need = ['status', 'hold', 'exec', 'cancel', 'deriveTicketId', 'validatePermit'];
+  // 必需 API 与真实调用同步（R8）：常驻授予核验用 residentLeaseFile（客户端正式导出的租约判据），
+  // 不再用 validatePermit 代表客户端可用 —— 看护的核验不调它（它只认 running，是普通派发活的闸）。
+  const need = ['status', 'hold', 'exec', 'cancel', 'deriveTicketId', 'residentLeaseFile'];
   const missing = need.filter((k) => typeof client[k] !== 'function');
   if (missing.length) throw new Error(`排队客户端缺少真实 API（${missing.join('/')}），启动已拒绝：${file}`);
   return client;
@@ -291,12 +293,18 @@ async function main(argv = process.argv.slice(2), deps = {}) {
 
     // —— ③ 发布（旧副本回落语义与旧启动器逐字一致；绝不先停旧服务再安装/构建） ——
     log('[2/3] 正在检查并发布最新版本（主干没更新一两秒就过；有更新要现场构建界面）……');
-    const relCli = path.join(d.relHome, 'cli', 'index.cjs');
+    // 发布入口按模式选（R8 实机反证 tk-ba08a92baad4ad4815c0）：缺省严格模式照旧【优先发布副本自己的
+    // CLI】（同 SHA 现场构建、工作检出不直接提供 server，一字不改）。显式独立模式必须改用【本检出的】
+    // 源码 CLI：旧副本的发布工具根本不认识 --standalone，自举时把这个旗标丢掉、退回排队构建 ——
+    // 没有调度台就发布失败，启动器随后"回落上一份副本"起了旧版（8656702），升级悄悄失效。
+    // --standalone 语义只存在于当前源码 CLI，它是这一个新模式的入口（可逆的调用细节）；
+    // 不做版本兼容层、不猜旗标、不伪造调度许可；不带独立参数时路由一字不动。
+    const relCli = standalone ? path.join(d.codeRoot, 'cli', 'index.cjs') : path.join(d.relHome, 'cli', 'index.cjs');
     const releaseArgs = [fs.existsSync(relCli) ? relCli : path.join(d.codeRoot, 'cli', 'index.cjs'),
       'release', '--source', d.codeRoot];
     if (standalone) {
-      // 只有【明确的独立选择】才把 --standalone 传进发布命令：release 会因此直连本次 SHA 导出树的 vite。
-      // 旧副本的发布工具若不认识这个旗标会退回排队构建 —— 没有调度台就会如实失败，绝不悄悄伪造许可。
+      // 只有【明确的独立选择】才把 --standalone 传进发布命令：release 会因此直连本次 SHA 导出树的 vite，
+      // 旧版升级同样得到本次新 SHA。旧工具不认识这个旗标会退回排队构建 —— 那条路只属于旧版严格模式。
       releaseArgs.push('--standalone');
     }
     const relCode = d.runRelease({ command: process.execPath, args: releaseArgs });

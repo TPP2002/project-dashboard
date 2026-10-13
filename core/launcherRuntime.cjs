@@ -337,7 +337,7 @@ function acquireLaunchMutex(file, { kill = (p, s) => process.kill(p, s), attempt
   return null;
 }
 
-/** SCHED_PERMIT 的票号段（格式口径与共享盘客户端逐字一致）：只取出来和登记票号比对，语义校验全交给 validatePermit。 */
+/** SCHED_PERMIT 的票号段（格式口径与共享盘客户端逐字一致）：只取出来和登记票号比对，语义核验在 verifyResidentGrant。 */
 function permitTicketId(encoded) {
   if (typeof encoded !== 'string') return null;
   const m = /^(tk-[0-9a-f]{20}):(a[1-9]\d*):/.exec(encoded);
@@ -400,6 +400,94 @@ function loadWatchClient(share) {
   catch (e) { const err = new Error(`调度客户端加载失败：${file}；${e.message}`); err.exitCode = 3; throw err; }
 }
 
+/** 只读一个 JSON；读不到/读坏一律返回 null（调用方按"没有事实"处理，绝不把读不明当授予）。 */
+function readJsonIfExists(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+/**
+ * 严格看护的 resident 授予核验（R7 对齐真实客户端 hold 的授予语义；R8 补真实授权边界）。
+ *
+ * 实测（真实 M1，tk-8cf4dab88b014fbc071a）：常驻单由派单员【当拍授予且停留在 granted】——
+ * 客户端 hold 的等待判据就是 ['granted','running']，常驻单没有 running 迁移，等是等不来的；
+ * 而客户端自己的 validatePermit('start') 只认 running（granted 一律"许可当前不在执行状态"，
+ * 那是给普通派发活开的闸，不是给常驻单开的）。所以这里不等待、不伪造 running、不造许可：
+ * 改为按共享盘上的【事实】逐条核对（判据与客户端 readTicket / validatePermit / hold 同口径）：
+ *   1) SCHED_PERMIT 格式合法（票号:attempt:token）且票号 = 本单；
+ *   2) 票据文件（<share>/sched/tickets/<单号>.json，与客户端 readTicket 同一路径与身份判据）
+ *      真实存在、无撤单请求，且状态落在 hold 实际接受的开跑集 ['granted','running'] 里 ——
+ *      只排除终态不够：waiting/paused/slow 等都不是 hold 会按 granted 放行的状态（R8）；
+ *   3) 票面请求确为常驻（request.resident === true）且类别/作业类型与本单一致 ——
+ *      普通派发票据不许拿来起常驻服务；
+ *   4) 当前 attempt 的 permit 与注入的令牌逐字一致，permit.resident === true（本机真实票据
+ *      已核此字段）、machine=本机、类别一致、grantedCores 足额；
+ *   5) SCHED_GRANTED_CORES（真实客户端授予时注入）在 1..grantedCores；
+ *   6) 驻留租约必须经 client.residentLeaseFile（客户端明确导出的同一份判据，不许在别处另拼路径
+ *      或另造字段集）读到：schema/ticketId/machine 一致，**cores 等于真实授予**
+ *      （真实 hold 就是按 permit.grantedCores 写租约，R8），且 lease.pid === wrapperPid；
+ *   7) 父子归属核的是【事实】不是参数（R8）：本看护进程的实际父进程（生产即 process.ppid，
+ *      hold 的直接 spawn 父链，Windows/Git-bash 同此）必须 === wrapperPid —— 调用方把
+ *      --wrapper 填成谁的 pid 都证明不了父子关系，只有 OS 的真实父链算数。
+ * 任何一条不满足都 {ok:false}：不起服务、不写登记、不伪造许可；票据/租约读不到 = 没有事实 = 拒。
+ */
+function verifyResidentGrant(opts) {
+  const {
+    ticketId, share, client, permit, wrapperPid,
+    ppid = process.ppid,
+    hostname = os.hostname(),
+    category = 'other', workType = 'other',
+    cores = RESIDENT_CORES,
+    env = process.env,
+    readJsonFile = readJsonIfExists,
+  } = opts || {};
+  const no = (reason) => ({ ok: false, reason });
+  if (!/^tk-[0-9a-f]{20}$/.test(String(ticketId || ''))) return no('单号格式不合法');
+  const m = typeof permit === 'string' ? /^(tk-[0-9a-f]{20}):(a[1-9]\d*):(.+)$/.exec(permit) : null;
+  if (!m) return no('缺少许可或格式不合法');
+  const [, permitTicket, attemptId, token] = m;
+  if (permitTicket !== ticketId) return no('许可票号与本单不一致');
+  // 票据本体：与客户端 readTicket 同一路径（paths(share).tickets）、同一身份字段的最小集。
+  const ticket = readJsonFile(path.join(String(share || ''), 'sched', 'tickets', `${ticketId}.json`));
+  if (!ticket) return no('共享盘上读不到本单票据 —— 没有授予的事实');
+  if (ticket.formatVersion !== 1 || ticket.ticketId !== ticketId) return no('票据身份不合法');
+  if (TERMINAL_STATES.includes(ticket.state)) return no(`票据已终态（${ticket.state}）—— 终态不是授予`);
+  if (!['granted', 'running'].includes(ticket.state)) {
+    return no(`票据不在开跑状态（当前 ${ticket.state}）—— 只有 hold 实际接受的 granted/running 算授予`);
+  }
+  if (ticket.cancelRequested === true) return no('已请求撤单 —— 撤单请求下不起服务');
+  if (!ticket.request || ticket.request.resident !== true) return no('本单不是长期占用单 —— 普通票据不许起常驻服务');
+  if (ticket.request.category !== category) return no('票据类别与本单申请不符');
+  if (!ticket.request.work || ticket.request.work.type !== workType) return no('票据作业类型与本单申请不符');
+  if (ticket.currentAttemptId !== attemptId) return no('许可不是当前执行');
+  const attempt = Array.isArray(ticket.attempts)
+    ? ticket.attempts.find((a) => a && a.attemptId === ticket.currentAttemptId) : null;
+  const p = attempt && attempt.permit;
+  if (!p) return no('当前执行没有许可');
+  if (p.ticketId !== ticketId || p.attemptId !== attemptId || p.token !== token) return no('伪造许可:令牌不符');
+  if (p.resident !== true) return no('许可不是常驻授予（permit.resident ≠ true）—— 不许凭它起常驻服务');
+  if (p.machine !== hostname) return no('许可机器不符');
+  if (p.category !== category) return no('许可类别不符');
+  if (!Number.isSafeInteger(p.grantedCores) || p.grantedCores < cores) return no('许可核数不够');
+  const g = env ? env.SCHED_GRANTED_CORES : undefined;
+  if (g !== undefined && (!/^\d+$/.test(String(g)) || Number(g) < 1 || Number(g) > p.grantedCores)) {
+    return no('许可核数环境与授予不符');
+  }
+  // 驻留租约：授权方（真实客户端 hold）在拉起本进程【之前】写下的归属事实。
+  if (!client || typeof client.residentLeaseFile !== 'function') return no('调度客户端没有驻留租约判据 —— 无法核验父子归属');
+  const lease = readJsonFile(client.residentLeaseFile(share, ticketId));
+  if (!lease) return no('共享盘上读不到驻留租约 —— 授权方没落下归属事实');
+  if (lease.schema !== 1 || lease.ticketId !== ticketId) return no('驻留租约身份不合法');
+  if (lease.machine !== hostname) return no('驻留租约机器不符');
+  if (lease.pid !== wrapperPid) return no('驻留租约不是本看护的包装进程 —— 父子归属不符');
+  if (!Number.isSafeInteger(lease.cores) || lease.cores < cores) return no('驻留租约核数不符');
+  if (lease.cores !== p.grantedCores) return no('驻留租约核数与真实授予不符 —— 租约不是按本单许可写的');
+  // 实际父链（事实，不是参数）：租约 pid 对上 --wrapper 还不够，看护进程的真实父进程必须就是它。
+  if (ppid !== wrapperPid) {
+    return no(`本看护实际父进程（pid ${ppid}）不是登记的包装进程（pid ${wrapperPid}）—— 父子归属不符`);
+  }
+  return { ok: true, permit: p };
+}
+
 /**
  * 看护一拍的【纯判定】。输入都是现成事实，方便单测逐条钉死：
  *   · 包装进程（启动器）已不在 → 停（wrapperDied: true —— 停成后看护要【优先正式 cancel】自己的票，
@@ -453,6 +541,11 @@ async function runWatchServer(opts, deps = {}) {
     shareFailBudgetMs: envNum(opts.shareFailBudgetMs ?? process.env[ENV_SHARE_FAIL_BUDGET], DEFAULT_SHARE_FAIL_BUDGET_MS),
     stopRetries: 3,
     stopRetryDelayMs: 2000,
+    verifyGrant: verifyResidentGrant,
+    hostname: os.hostname(),
+    // 实际父进程是【事实】：生产用本进程真实 ppid（hold 的直接 spawn 父链）；单测可显式注入，
+    // 但不许拿 CLI 参数冒充（R8）。
+    ppid: process.ppid,
     spawn: cp.spawn.bind(cp),
     stopTree,
     readRecord,
@@ -492,9 +585,11 @@ async function runWatchServer(opts, deps = {}) {
     return d.updateRecord(opts.record, fn);
   };
 
-  // ① 严格模式起服务前核验 hold 注入的真实授予（口径参照 cli/scheduledWork.cjs --granted）：
-  //    票据在、非终态、SCHED_PERMIT 票号与本单一致、客户端 validatePermit（类别/作业类型/1 核）通过。
-  //    终态、missing、读取不明、缺许可、伪造许可一律【不算授予】：不起服务、不写登记，退出码 2。
+  // ① 严格模式起服务前核验 hold 注入的真实授予（verifyResidentGrant，R7 对齐真实客户端语义）：
+  //    常驻单的真实授予态是 granted（不迁移 running），核验按共享盘事实逐条核对：票据在、非终态、
+  //    resident 请求、SCHED_PERMIT 票号/令牌与本单一致、机器/类别/核数一致、驻留租约的 pid =
+  //    本看护的包装进程。终态、missing、读取不明、缺许可、伪造令牌、普通票据、租约不符一律
+  //    【不算授予】：不起服务、不写登记，退出码 2。
   if (opts.ticketId) {
     let granted = false;
     let why = '';
@@ -504,11 +599,15 @@ async function runWatchServer(opts, deps = {}) {
       else if (TERMINAL_STATES.includes(st.state)) why = `调度票据已终态（${st.state}）—— 终态不是授予`;
       else if (permitTicketId(d.env.SCHED_PERMIT) !== opts.ticketId) why = 'hold 没有注入与本单票号一致的 SCHED_PERMIT';
       else {
-        const v = await client.validatePermit({ share: opts.share, category: 'other', workTypes: ['other'], cores: RESIDENT_CORES });
-        if (!v || v.ok !== true) why = `许可核验未通过：${(v && v.reason) || '未知原因'}`;
+        const v = await d.verifyGrant({
+          ticketId: opts.ticketId, share: opts.share, client,
+          permit: d.env.SCHED_PERMIT, wrapperPid: opts.wrapperPid,
+          ppid: d.ppid, hostname: d.hostname, env: d.env,
+        });
+        if (!v || v.ok !== true) why = `授予核验未通过：${(v && v.reason) || '未知原因'}`;
         else granted = true;
       }
-    } catch (e) { why = `许可核验失败：${e.message}`; }
+    } catch (e) { why = `授予核验失败：${e.message}`; }
     if (!granted) {
       d.err(`[launcher-watch] 严格模式没有拿到有效授予，不起服务（不伪造许可、不裸跑）：${why}`);
       return 2;
@@ -672,5 +771,5 @@ module.exports = {
   newLifecycleKey, residentTitle, classifyInstance, retireOwnInstance,
   stopTree, pidAlive, acquireLaunchMutex, permitTicketId,
   watcherArgv, parseWatchArgs, loadWatchClient,
-  watchDecision, runWatchServer, npmInstallCommand,
+  verifyResidentGrant, watchDecision, runWatchServer, npmInstallCommand,
 };

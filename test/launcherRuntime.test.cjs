@@ -11,8 +11,11 @@
  *   · 归属判定矩阵：探活（只认匹配数据域/DASHBOARD_PORT 语义的实例）+ 归属登记 + 票态三重核验；
  *     复用/换新判定用【本次发布之后】的 stamp（主干换了确实退旧起新；没换只复用不另 hold）。
  *   · 退旧必须确认旧树真退了（stopTree 返回 ok）才起新单；停止失败不冒充、不吞错、不丢登记。
- *   · 严格看护起服务前核验 hold 注入的真实授予：票在、非终态、SCHED_PERMIT 票号一致、
- *     validatePermit 通过 —— 缺许可/错票号/终态/读取不明一律不起服务（退出码 2，不伪造许可）。
+ *   · 严格看护起服务前核验 hold 注入的真实授予（verifyResidentGrant）：常驻单真实授予态是
+ *     granted（当拍授予、不迁移 running，等不来 —— M1 实测），按共享盘事实逐条核对 —— 票在、
+ *     非终态、resident 请求、SCHED_PERMIT 票号/令牌一致、机器/类别/核数一致、驻留租约
+ *     pid = 本看护的包装进程；缺许可/错票号/伪造令牌/终态/普通票据/读取不明一律不起服务
+ *     （退出码 2，不伪造许可、不用"总是 ok"的许可桩冒充实机）。
  *   · 看护判定：外部终态/票据消失/父链断开 → 停；共享盘持续不可读超预算（在断租销单窗口之内）→ 停(3) 且先停进程再退单。
  *   · 看护进程真实生命周期（起真子进程的端到端）：上述触发都真的停掉自己 spawn 的 server。
  *   · 归属登记身份守卫：登记写着别的生命周期键就不拼改、不覆盖；自己 key 对上才写。
@@ -35,6 +38,8 @@ const { CODE_ROOT } = require('../core/runtimeRoot.cjs');
 const SHAM = 'a'.repeat(40);
 const tmp = (p) => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
+/** 与真实客户端 residentLeaseFile 同判据的租约路径：<share>/sched/leases/<单号>.json。 */
+const leaseFileOf = (share, id) => path.join(share, 'sched', 'leases', `${id}.json`);
 
 /** 一套隔离的启动器环境：临时数据根 + 临时发布副本（带假 server）。 */
 function makeEnv() {
@@ -128,8 +133,10 @@ test('幂等键：每次实际生命周期唯一、SAFE_SEGMENT 内、主机名�
 });
 
 test('Windows 安装参数：cmd /c npm 显式包装；类 Unix 直接 npm；cwd 都是 web', () => {
-  assert.deepEqual(lr.npmInstallCommand('win32', 'W:\\web'), { command: 'cmd', args: ['/c', 'npm', 'install'], cwd: 'W:\\web' });
+  const webRoot = tmp('web-install-');   // 平台生成的真实路径（占位盘符会被路径形状闸拦下）
+  assert.deepEqual(lr.npmInstallCommand('win32', webRoot), { command: 'cmd', args: ['/c', 'npm', 'install'], cwd: webRoot });
   assert.deepEqual(lr.npmInstallCommand('linux', '/w/web'), { command: 'npm', args: ['install'], cwd: '/w/web' });
+  clean(webRoot);
 });
 
 test('看护 argv：绝对路径 Node 数组 + -- 分隔；parse 往返一致（含 --key）；缺件报错', () => {
@@ -289,7 +296,7 @@ test('启动互斥（真多进程并发）：恰有一个进程持锁贯穿 awai
   clean(dir);
 });
 
-test('SCHED_PERMIT 票号段解析：与本单一致才放行语义交给 validatePermit，这里只对票号', () => {
+test('SCHED_PERMIT 票号段解析：与本单一致才放行，语义核验在 verifyResidentGrant，这里只对票号', () => {
   const tid = 'tk-' + 'ab'.repeat(10);
   assert.equal(lr.permitTicketId(`${tid}:a1:tok`), tid);
   assert.equal(lr.permitTicketId('tk-zzzz:a1:tok'), null, '格式不对就 null（语义校验在客户端）');
@@ -471,16 +478,24 @@ test('严格启动：hold 只申请 1 核、先落归属登记、root=检出、w
   fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });                 // isGitCheckout 只看 .git 存在
   fs.mkdirSync(path.join(checkout, 'web', 'node_modules'), { recursive: true });  // 依赖就绪 → 装依赖这步确定性跳过
   const holds = [];
+  const releaseCalls = [];
   const fake = {
     status: () => ({}),
     deriveTicketId: (p, k) => 'tk-' + k.slice(-6),
   };
+  // 旧发布副本里带着自己的发布 CLI —— 缺省严格模式照旧【优先副本 CLI】（R8 后一字不改）
+  fs.mkdirSync(path.join(e.relHome, 'cli'), { recursive: true });
+  fs.writeFileSync(path.join(e.relHome, 'cli', 'index.cjs'), '// 旧副本的发布 CLI\n');
   const d = deps(e, {
-    loadClient: () => fake, codeRoot: checkout, runRelease: () => 0,
+    loadClient: () => fake, codeRoot: checkout,
+    runRelease: (cmd) => { releaseCalls.push(cmd); return 0; },
     startUnderHold: async (c, o) => { holds.push(o); return { exitCode: 0 }; },
   });
   assert.equal(await launcher.main([], d), 0);
   assert.equal(holds.length, 1);
+  assert.equal(releaseCalls[0].args[0], path.join(e.relHome, 'cli', 'index.cjs'),
+    '缺省严格模式优先用发布副本自己的发布 CLI（同 SHA 现场构建，行为不变）');
+  assert.ok(!releaseCalls[0].args.includes('--standalone'), '缺省严格模式绝不夹带独立旗标');
   const h1 = holds[0];
   assert.equal(h1.cores, 1, '常驻只申请 1 核（实据见 docs/launcher-hold-1014.md）');
   assert.equal(h1.project, 'dashboard');
@@ -700,6 +715,10 @@ test('显式独立模式：不加载调度客户端；安装直跑；发布带 -
   const e = makeEnv();
   const checkout = path.join(e.dir, 'checkout');
   fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });   // isGitCheckout 只看 .git 存在
+  // 旧发布副本里也带着一份【旧】发布 CLI —— 它不认识 --standalone（R8 实机反证 tk-ba08a92baad4ad4815c0：
+  // 自举丢旗标 → 排队构建 → 无调度台发布失败 → 启动器回落旧副本，升级悄悄失效）。
+  fs.mkdirSync(path.join(e.relHome, 'cli'), { recursive: true });
+  fs.writeFileSync(path.join(e.relHome, 'cli', 'index.cjs'), '// 旧副本的发布 CLI（不认识 --standalone）\n');
   const installCalls = [];
   const releaseCalls = [];
   const spawnCalls = [];
@@ -731,6 +750,8 @@ test('显式独立模式：不加载调度客户端；安装直跑；发布带 -
   assert.equal(installCalls[0].cwd, path.join(checkout, 'web'));
   assert.equal(releaseCalls.length, 1);
   assert.deepEqual(releaseCalls[0].args.slice(-1), ['--standalone'], '独立模式必须把选择传进发布命令');
+  assert.equal(releaseCalls[0].args[0], path.join(checkout, 'cli', 'index.cjs'),
+    '旧副本存在时 --standalone 也必须选本检出的发布入口 —— 只有当前源码 CLI 有这个旗标的语义（R8）');
   assert.ok(releaseCalls[0].args.includes('--source'));
   assert.equal(spawnCalls.length, 1);
   assert.equal(spawnCalls[0].command, process.execPath);
@@ -755,13 +776,59 @@ test('独立模式遇到严格模式登记的在跑实例：无法核验票据�
 
 // ——————— 看护进程真实生命周期（起真子进程的端到端） ———————
 
-/** 假共享盘：status/validatePermit 两条真路径，票面状态由状态文件控制（用例里改文件=外部 cancel 等）。 */
+/**
+ * 在假共享盘上写一张【真实形状】的常驻票据 + 驻留租约（字段与统一调度客户端 hold /
+ * readTicket / validatePermit 的判据逐字对齐，permit.resident 为本机真实票据已核字段）：
+ * 票面 granted、当前 attempt 带 permit、租约先于看护存在（真实客户端就是先写租约、
+ * 再拉起本进程）。leasePid 缺省 = 本测试进程；leaseCores 缺省 = grantedCores（真实 hold
+ * 就是按真实授予写租约）。
+ */
+function grantResident(share, {
+  ticketId, state = 'granted', attempt = 'a1', token = 'TOK',
+  machine = os.hostname(), category = 'other', workType = 'other',
+  grantedCores = 1, permitResident = true, cancelRequested = false,
+  resident = true, leasePid = process.pid, leaseCores = grantedCores, withLease = true,
+}) {
+  const ticketsDir = path.join(share, 'sched', 'tickets');
+  fs.mkdirSync(ticketsDir, { recursive: true });
+  const request = {
+    idempotencyKey: 'key-' + ticketId.slice(-6), project: 'dashboard', submitter: machine,
+    category, title: '看板常驻服务 @t', work: { type: workType, targetPaths: ['.'] },
+    requestedCores: grantedCores, allowedMachines: [machine],
+    codeRef: { kind: 'commit', value: SHAM }, createdAt: '2026-10-14T00:00:00Z',
+    ...(resident ? { resident: true } : {}),
+  };
+  fs.writeFileSync(path.join(ticketsDir, `${ticketId}.json`), JSON.stringify({
+    formatVersion: 1, ticketId, idempotencyKey: request.idempotencyKey, contentHash: SHAM,
+    request, state, cancelRequested, currentAttemptId: attempt, lastSeq: 1,
+    attempts: [{ attemptId: attempt, permit: {
+      ticketId, attemptId: attempt, token, machine, category, grantedCores,
+      ...(permitResident ? { resident: true } : {}),
+    } }],
+    timeline: [{ seq: 1, type: 'granted', at: '2026-10-14T00:00:00Z' }],
+    updatedAt: '2026-10-14T00:00:00Z',
+  }));
+  if (withLease) {
+    fs.mkdirSync(path.join(share, 'sched', 'leases'), { recursive: true });
+    fs.writeFileSync(leaseFileOf(share, ticketId), JSON.stringify({
+      schema: 1, ticketId, machine, cores: leaseCores, pid: leasePid, at: '2026-10-14T00:00:00Z',
+    }));
+  }
+}
+
+/**
+ * 假共享盘客户端：票面状态由状态文件控制（用例里改文件=外部 cancel 等）；租约判据与真实
+ * 客户端同构。【没有 validatePermit】——授予核验已经回到启动器侧的 verifyResidentGrant
+ * （读共享盘事实），客户端里再放一个"总是 ok"的许可桩只会冒充实机口径；谁要是把核验改
+ * 回去调 client.validatePermit，这里没有这个导出，会当场炸 —— 故意留的绊线。
+ */
 function makeFakeShare(dir, stateFile) {
   const bin = path.join(dir, 'sched', 'bin');
   fs.mkdirSync(bin, { recursive: true });
   fs.writeFileSync(path.join(bin, 'sched.cjs'), [
     "'use strict';",
     "const fs = require('node:fs');",
+    "const path = require('node:path');",
     `const STATE = ${JSON.stringify(stateFile)};`,
     'module.exports = {',
     '  status(id) {',
@@ -770,19 +837,10 @@ function makeFakeShare(dir, stateFile) {
     "    if (s === 'broken') throw new Error('共享盘 I/O 不可用');",
     "    return { ticketId: id, title: '看板常驻服务 @t', state: s };",
     '  },',
-    '  // 仿真客户端 validatePermit 的【关键口径】：许可必须在、格式合法、票在跑、作业类型/核数对得上。',
-    '  // 终态、missing、读取不明一律 {ok:false} —— 不把任何"读不到"当授予。',
-    '  validatePermit(options) {',
-    '    const p = process.env.SCHED_PERMIT;',
-    "    if (typeof p !== 'string') return { ok: false, reason: '缺少许可' };",
-    "    const m = /^(tk-[0-9a-f]{20}):(a[1-9]\\d*):(.+)$/.exec(p);",
-    "    if (!m) return { ok: false, reason: '伪造许可:格式不合法' };",
-    "    const s = fs.readFileSync(STATE, 'utf8').trim();",
-    "    if (s === 'missing' || s === 'broken') return { ok: false, reason: '读取不明不能当授予' };",
-    "    if (['passed', 'failed', 'cancelled', 'voided'].includes(s)) return { ok: false, reason: '许可过期:执行已结束' };",
-    "    if (!options.workTypes || !options.workTypes.includes('other')) return { ok: false, reason: '许可作业类型不符' };",
-    "    if (options.cores !== 1) return { ok: false, reason: '许可核数不够' };",
-    '    return { ok: true };',
+    "  // 驻留租约路径：与真实客户端 residentLeaseFile 同构（<share>/sched/leases/<单号>.json），",
+    '  // 启动器侧的授予核验（verifyResidentGrant）按它读授权方落下的归属事实。',
+    '  residentLeaseFile(share, id) {',
+    "    return path.join(share, 'sched', 'leases', `${id}.json`);",
     '  },',
     '  hold: async () => ({ exitCode: 0 }),',
     '  exec: async () => ({ exitCode: 0 }),',
@@ -794,11 +852,42 @@ function makeFakeShare(dir, stateFile) {
 }
 
 /**
- * 起一个真看护进程：它 spawn 真 dummy server（写 pid 后 sleep），间隔与预算用测试档。
- * SCHED_PERMIT 一律【显式覆盖】注入（缺省 `${ticketId}:a1:TOK`）—— 自测运行器自己可能带着真许可，
- * 绝不能泄漏进被测看护进程；permit: null = 故意不给（缺许可用例）。
+ * 测试专用的 hold 包装进程替身：等 GO 文件 → 先写驻留租约（pid = 自己，与真实客户端 hold
+ * "先写租约、再拉起"的次序与事实一致）→ 把 --wrapper 换成自己的 pid → 直接 spawn 看护
+ * （它就是看护的实际父进程）→ 退出码转发。授予核验核的【实际父链】由它构成。
  */
-function spawnWatcher(env, { ticketId, wrapperPid, interval = 250, budget = 1500, key = 'k', permit }) {
+const HOLD_WRAPPER_SCRIPT = [
+  "'use strict';",
+  "const fs = require('node:fs');",
+  "const path = require('node:path');",
+  "const os = require('node:os');",
+  "const cp = require('node:child_process');",
+  'const [goFile, leaseFile, ticketId, ...rest] = process.argv.slice(2);',
+  'for (let t0 = Date.now(); !fs.existsSync(goFile) && Date.now() - t0 < 15000; ) {}',
+  'fs.mkdirSync(path.dirname(leaseFile), { recursive: true });',
+  "fs.writeFileSync(leaseFile, JSON.stringify({ schema: 1, ticketId, machine: os.hostname(), cores: 1, pid: process.pid, at: new Date().toISOString() }));",
+  'const watcherArgs = [];',
+  'for (let i = 0; i < rest.length; i++) {',
+  "  if (rest[i] === '--wrapper') { watcherArgs.push('--wrapper', String(process.pid)); i += 1; continue; }",
+  '  watcherArgs.push(rest[i]);',
+  '}',
+  // Windows 默认进程 Job 会随 wrapper 关闭一并终止子树；本用例需让看护存活，验证它主动停服及补记。
+  "const child = cp.spawn(process.execPath, watcherArgs, { stdio: 'inherit', detached: true, windowsHide: true });",
+  "child.once('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));",
+  "child.once('error', () => process.exit(1));",
+  '',
+].join('\n');
+
+/**
+ * 起一个真看护进程：它 spawn 真 dummy server（写 pid 后 sleep），间隔与预算用测试档。
+ * 有票据就先在假共享盘上落【真实授予事实】（票据 + 驻留租约，租约 pid = 传给看护的包装进程，
+ * 对齐真实客户端"先写租约再拉起"的次序）；granted: false = 故意不写（读不到事实的拒绝用例）。
+ * viaWrapper: true 时不直起看护，改起真实中间 wrapper（租约也由它写 —— 测试不知道 pid，不能代写），
+ * 测试拿到 GO 文件路径，先备好事实再放行。SCHED_PERMIT 一律【显式覆盖】注入（缺省
+ * `${ticketId}:a1:TOK`）—— 自测运行器自己可能带着真许可，绝不能泄漏进被测看护进程；
+ * permit: null = 故意不给（缺许可用例）。
+ */
+function spawnWatcher(env, { ticketId, wrapperPid, interval = 250, budget = 1500, key = 'k', permit, granted = true, token = 'TOK', viaWrapper = false }) {
   const dummy = path.join(env.dir, 'dummy-server.cjs');
   const pidFile = path.join(env.dir, 'dummy.pid');
   fs.writeFileSync(dummy, `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 250);\n`);
@@ -807,9 +896,14 @@ function spawnWatcher(env, { ticketId, wrapperPid, interval = 250, budget = 1500
     key, ticketId, title: '看板常驻服务 @t',
     wrapperPid: process.pid, serverPid: null,
   }));
+  if (ticketId && granted !== false) {
+    grantResident(env.share, { ticketId, leasePid: wrapperPid, token, withLease: !viaWrapper });
+  }
   const args = lr.watcherArgv({
     runtimePath: path.resolve(__dirname, '..', 'core', 'launcherRuntime.cjs'),
-    ticketId, share: env.share, wrapperPid, recordFile: env.recordFile, serverPath: dummy, key,
+    // viaWrapper 时 --wrapper 由真实中间 wrapper 进程换成自己的 pid（占位 -1 不会落到看护眼前）
+    ticketId, share: env.share, wrapperPid: viaWrapper ? -1 : wrapperPid,
+    recordFile: env.recordFile, serverPath: dummy, key,
   });
   const childEnv = {
     ...process.env,
@@ -817,15 +911,32 @@ function spawnWatcher(env, { ticketId, wrapperPid, interval = 250, budget = 1500
     DASHBOARD_LAUNCHER_WATCH_SHARE_FAIL_BUDGET_MS: String(budget),
   };
   if (permit === null) delete childEnv.SCHED_PERMIT;
-  else childEnv.SCHED_PERMIT = permit === undefined ? `${ticketId}:a1:TOK` : permit;
-  const child = spawn(process.execPath, args, {
-    cwd: env.dir,
-    env: childEnv,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  child.stdout.resume();
-  child.stderr.resume();
-  return { child, pidFile };
+  else {
+    childEnv.SCHED_PERMIT = permit === undefined ? `${ticketId}:a1:TOK` : permit;
+    childEnv.SCHED_GRANTED_CORES = '1';   // 真实客户端授予时注入的核数环境
+  }
+  let child;
+  let goFile = null;
+  if (viaWrapper) {
+    goFile = path.join(env.dir, 'GO');
+    const wrapperFile = path.join(env.dir, 'hold-wrapper.cjs');
+    fs.writeFileSync(wrapperFile, HOLD_WRAPPER_SCRIPT);
+    child = spawn(process.execPath, [wrapperFile, goFile, leaseFileOf(env.share, ticketId), String(ticketId), ...args], {
+      cwd: env.dir,
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } else {
+    child = spawn(process.execPath, args, {
+      cwd: env.dir,
+      env: childEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  }
+  let output = '';
+  child.stdout.on('data', (b) => { output += b; });
+  child.stderr.on('data', (b) => { output += b; });
+  return { child, pidFile, goFile, output: () => output };
 }
 
 async function waitFor(fn, ms = 15000) {
@@ -865,15 +976,29 @@ test('看护真实生命周期：包装进程死亡（父链断开）→ 真的�
   const stateFile = path.join(e.dir, 'state.txt');
   fs.writeFileSync(stateFile, 'running');
   makeFakeShare(e.share, stateFile);
-  const gone = spawn(process.execPath, ['-e', '']);
-  await once(gone, 'exit');                    // 一个已经退出的 pid = 断掉的父链
-  const { child, pidFile } = spawnWatcher(e, { ticketId: 'tk-' + 'b'.repeat(20), wrapperPid: gone.pid });
+  // 真实中间 wrapper（hold 的直接 spawn 链就是如此）：看护的实际父进程 = 租约 pid = --wrapper 参数，
+  // 授予核验核的【实际父链】由此构成 —— 生产不许拿 CLI 参数冒充事实（R8）。
+  const { child: wrapper, pidFile, goFile, output } = spawnWatcher(e, { ticketId: 'tk-' + 'b'.repeat(20), viaWrapper: true });
   try {
+    fs.writeFileSync(goFile, 'go');   // 票据事实已备好，放行 wrapper 写租约并拉起看护
     assert.ok(await waitFor(() => fs.existsSync(pidFile)), 'dummy server 没被看护拉起');
-    const [code] = await once(child, 'exit');
-    assert.equal(code, 0, '包装进程已不在 → 停自己管理的服务，不留散兵');
+    const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
+    assert.equal(typeof rec.serverPid, 'number', '授予核验（含实际父链）通过后 server 才起');
+    const wrapperExit = once(wrapper, 'exit');
+    assert.ok(wrapper.kill());   // 只杀 wrapper 本身：看护与 server 都还在，逼看护按父链断开自己收场
+    await wrapperExit;
+    assert.equal(lr.pidAlive(wrapper.pid), false, '包装进程退出后应确实不可探活');
+    assert.ok(await waitFor(() => {
+      try { return Boolean(JSON.parse(fs.readFileSync(e.recordFile, 'utf8')).serverExitedAt); }
+      catch { return false; }
+    }), '包装进程一死，看护必须停掉自己管理的服务并如实补记退出时刻：' + output() +
+      JSON.stringify({ watcherAlive: lr.pidAlive(rec.watcherPid), serverAlive: lr.pidAlive(rec.serverPid), rec }));
+    const serverPid = Number(fs.readFileSync(pidFile, 'utf8'));
+    let serverGone = false;
+    try { process.kill(serverPid, 0); } catch { serverGone = true; }
+    assert.ok(serverGone, 'server 进程树真的退了，不留散兵');
   } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill();
+    if (wrapper.exitCode === null && wrapper.signalCode === null) wrapper.kill();
     clean(e.dir);
   }
 });
@@ -937,6 +1062,112 @@ test('看护真实生命周期：SCHED_PERMIT 票号与本单不一致 → 不�
   }
 });
 
+test('看护真实生命周期：真实 resident 授予形态（票面 granted，M1 实测）→ 核验通过并起服务', { timeout: 30000 }, async () => {
+  const e = makeEnv();
+  e.share = path.join(e.dir, 'share');
+  const stateFile = path.join(e.dir, 'state.txt');
+  fs.writeFileSync(stateFile, 'granted');   // 常驻单当拍授予且停留在 granted —— running 等不来（真实 M1 实测的缝隙）
+  makeFakeShare(e.share, stateFile);
+  const T = 'tk-' + 'f'.repeat(20);
+  const { child, pidFile } = spawnWatcher(e, { ticketId: T, wrapperPid: process.pid });
+  try {
+    assert.ok(await waitFor(() => fs.existsSync(pidFile)), 'granted 的常驻单必须被核验为有效授予并起服务');
+    const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
+    assert.equal(typeof rec.serverPid, 'number', 'serverPid 照常补进归属登记');
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    clean(e.dir);
+  }
+});
+
+test('看护真实生命周期：令牌与票面不符（伪造许可）→ 不起服务，退出码 2', { timeout: 30000 }, async () => {
+  const e = makeEnv();
+  e.share = path.join(e.dir, 'share');
+  const stateFile = path.join(e.dir, 'state.txt');
+  fs.writeFileSync(stateFile, 'granted');
+  makeFakeShare(e.share, stateFile);
+  const T = 'tk-' + '9'.repeat(20);
+  const { child, pidFile } = spawnWatcher(e, { ticketId: T, wrapperPid: process.pid, permit: `${T}:a1:EVIL` });
+  try {
+    const [code] = await once(child, 'exit');
+    assert.equal(code, 2, '伪造令牌必须被票面 permit 逐字比对挡下');
+    assert.ok(!fs.existsSync(pidFile), '不许起服务');
+    const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
+    assert.equal(rec.serverPid, null, '登记不动：没有服务起过');
+    assert.ok(!rec.watcherPid, '没有有效授予就连接看护自己的登记也不写');
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    clean(e.dir);
+  }
+});
+
+// ——————— 严格看护的 resident 授予核验（对齐真实客户端 hold 的授予语义） ———————
+
+test('verifyResidentGrant：真实 resident 授予形态（granted）放行；普通票据/伪造/终态/撤单/归属不符逐条拒', () => {
+  const dir = tmp('grant-');
+  const share = path.join(dir, 'share');
+  const T = 'tk-' + '9'.repeat(20);
+  const client = { residentLeaseFile: leaseFileOf };   // 判据与真实客户端导出的同一份
+  const v = (over = {}) => lr.verifyResidentGrant(
+    { ticketId: T, share, client, permit: `${T}:a1:TOK`, wrapperPid: process.pid, ppid: process.pid, env: {}, ...over },
+  );
+  const reset = (o = {}) => { clean(share); grantResident(share, { ticketId: T, ...o }); };
+  reset();
+  const ok = v();
+  assert.equal(ok.ok, true, '真实授予形态（granted 常驻单 + 匹配的许可与租约）必须放行');
+  assert.equal(ok.permit.token, 'TOK', '放行时带回票面 permit');
+
+  // ① 许可串：缺、格式不对、票号不是本单
+  assert.equal(v({ permit: undefined }).ok, false);
+  assert.equal(v({ permit: 'not-a-permit' }).ok, false);
+  assert.match(v({ permit: `${'tk-' + '8'.repeat(20)}:a1:TOK` }).reason, /票号与本单不一致/);
+  // ② 票据：读不到、普通派发票（非 resident）、终态、非开跑状态、已请求撤单
+  clean(share);
+  assert.match(v().reason, /读不到本单票据/);
+  reset({ resident: false });
+  assert.match(v().reason, /不是长期占用单/);
+  reset({ state: 'cancelled' });
+  assert.match(v().reason, /终态/);
+  reset({ state: 'waiting' });
+  assert.match(v().reason, /开跑状态/, 'waiting 不是 hold 会放行的授予态');
+  reset({ state: 'paused' });
+  assert.match(v().reason, /开跑状态/, 'paused/slow 也不是常驻单的开跑态（只认 granted/running）');
+  reset({ cancelRequested: true });
+  assert.match(v().reason, /撤单/);
+  // ③ 票面 permit 与注入许可的逐字比对：令牌/当前执行/resident/机器/类别/核数/核数环境
+  reset();
+  assert.match(v({ permit: `${T}:a1:EVIL` }).reason, /令牌不符/);
+  reset({ attempt: 'a2' });
+  assert.match(v().reason, /不是当前执行/);
+  reset({ permitResident: false });
+  assert.match(v().reason, /不是常驻授予/, 'permit.resident 缺失/非 true 的许可不许起常驻服务（R8）');
+  reset();
+  assert.match(v({ hostname: '别的机器' }).reason, /机器不符/);
+  assert.match(v({ category: 'unit-test' }).reason, /类别/);
+  assert.match(v({ workType: 'unit-test' }).reason, /作业类型/);
+  assert.match(v({ cores: 2 }).reason, /核数不够/);
+  assert.match(v({ env: { SCHED_GRANTED_CORES: '5' } }).reason, /核数环境与授予不符/);
+  assert.match(v({ env: { SCHED_GRANTED_CORES: '0' } }).reason, /核数环境与授予不符/);
+  assert.match(v({ env: { SCHED_GRANTED_CORES: 'x' } }).reason, /核数环境与授予不符/);
+  assert.equal(v({ env: { SCHED_GRANTED_CORES: '1' } }).ok, true, '核数环境落在授予范围内就放行');
+  // ④ 驻留租约：缺、换机器、pid 不是本看护的包装进程、核数≠真实授予、客户端没有租约判据
+  reset({ withLease: false });
+  assert.match(v().reason, /读不到驻留租约/);
+  reset({ leasePid: 4242 });
+  assert.match(v({ wrapperPid: 1, ppid: 1 }).reason, /父子归属不符/);
+  assert.equal(v({ wrapperPid: 4242, ppid: 4242 }).ok, true, '租约 pid = 本看护的包装进程就放行');
+  reset({ grantedCores: 2, leaseCores: 1 });
+  assert.match(v().reason, /真实授予不符/, '租约必须按真实授予写核数（真实 hold 就是 permit.grantedCores，R8）');
+  reset();
+  assert.match(v({ client: {} }).reason, /驻留租约判据/);
+  // ⑤ 实际父链（事实，不是参数）：--wrapper 填得再真，实际父进程不是它就不算父子归属（R8）
+  assert.match(v({ ppid: 777 }).reason, /实际父进程/);
+  assert.match(v({ wrapperPid: 777, ppid: process.pid }).reason, /父子归属不符/,
+    '租约 pid 对不上参数 wrapper 一样要拒（租约、参数、实际父链三方一致才放行）');
+  assert.equal(v({ ppid: process.pid }).ok, true, '租约 pid = wrapper 参数 = 实际父进程，三方一致就放行');
+  clean(dir);
+});
+
 // ——————— 看护进程的归属登记只动本次自己的生命周期（deps 注入版） ———————
 
 /** runWatchServer 的 deps 注入基座：假客户端 + 假 spawn + 假停止，全部当场抓调用。 */
@@ -959,9 +1190,12 @@ function watchDeps(env, over = {}) {
     err: () => {},
     kill: () => { const e = new Error('ESRCH'); e.code = 'ESRCH'; throw e; },   // 包装进程默认已死
     exit: () => {},
+    hostname: os.hostname(),
     client: {
       status: () => ({ state: 'running' }),
-      validatePermit: () => ({ ok: true }),
+      // 与真实客户端同判据的驻留租约路径。【没有 validatePermit】——授予核验走启动器侧
+      // verifyResidentGrant 真实现（按共享盘事实读），不放"总是 ok"的许可桩冒充实机。
+      residentLeaseFile: leaseFileOf,
       cancel: async () => ({ exitCode: 0 }),
     },
     ...over,
@@ -1038,18 +1272,21 @@ test('父链断开停服成功 → 看护【优先正式退自己的单】；票
   const T2 = 'tk-' + '2'.repeat(20);
   // ① wrapper 死 + 停树成功：正式 cancel 自己的票（cancel 不成才留断租兜底）
   const e = makeEnv();
+  e.share = path.join(e.dir, 'share');
+  grantResident(e.share, { ticketId: T1, leasePid: 1 });   // 真实授予事实：租约 pid = 本看护的包装进程
   lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T1, serverPid: null });
   const cancels = [];
   const { d } = watchDeps(e, {
     env: { SCHED_PERMIT: `${T1}:a1:TOK` },
+    ppid: 1,   // 单测显式注入实际父链（生产用真实 process.ppid，不许参数冒充）
     client: {
-      status: () => ({ state: 'running' }),
-      validatePermit: () => ({ ok: true }),
+      status: () => ({ state: 'granted' }),
+      residentLeaseFile: leaseFileOf,
       cancel: async (id, o) => { cancels.push([id, o && o.reason]); return { exitCode: 0 }; },
     },
   });
   const code = await lr.runWatchServer({
-    ticketId: T1, wrapperPid: 1, record: e.recordFile, server: 'server.cjs', key: 'k',
+    ticketId: T1, share: e.share, wrapperPid: 1, record: e.recordFile, server: 'server.cjs', key: 'k',
   }, d);
   assert.equal(code, 0);
   assert.equal(cancels.length, 1, '停成后优先正式退单，不等派单员断租扫');
@@ -1059,23 +1296,27 @@ test('父链断开停服成功 → 看护【优先正式退自己的单】；票
 
   // ② 票据在起服务后被外部 cancel（终态）：账已收，不再重复退单
   const e2 = makeEnv();
+  e2.share = path.join(e2.dir, 'share');
+  grantResident(e2.share, { ticketId: T2, leasePid: 999999 });
   lr.writeRecord(e2.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T2, serverPid: null });
   const cancels2 = [];
-  let state = 'running';
+  let statusCalls = 0;
   const { d: d2 } = watchDeps(e2, {
     env: { SCHED_PERMIT: `${T2}:a1:TOK` },
+    ppid: 999999,   // 单测显式注入实际父链（生产用真实 process.ppid）
     kill: (pid) => {   // 包装进程活着（999999 探活正常），只有票被外部 cancel
       if (pid === 999999) return;
       const err = new Error('ESRCH'); err.code = 'ESRCH'; throw err;
     },
     client: {
-      status: () => ({ state }),
-      validatePermit: () => { state = 'cancelled'; return { ok: true }; },   // 授予核验过了之后票被外部 cancel
+      // 第一次读票是起服务前的授予核验（非终态才放行）；之后的看护拍读到的是外部 cancel 后的终态
+      status: () => ({ state: (statusCalls += 1) <= 1 ? 'running' : 'cancelled' }),
+      residentLeaseFile: leaseFileOf,
       cancel: async (id) => { cancels2.push(id); return { exitCode: 0 }; },
     },
   });
   const code2 = await lr.runWatchServer({
-    ticketId: T2, wrapperPid: 999999, record: e2.recordFile, server: 'server.cjs', key: 'k',
+    ticketId: T2, share: e2.share, wrapperPid: 999999, record: e2.recordFile, server: 'server.cjs', key: 'k',
   }, d2);
   assert.equal(code2, 0);
   assert.equal(cancels2.length, 0, '票据终态是外部 cancel 收的账，看护不重复退');
@@ -1085,24 +1326,27 @@ test('父链断开停服成功 → 看护【优先正式退自己的单】；票
 test('停树重试：第一次不成、第二次成了 → 只在这之后退单/收场，不吞失败也不双跑', async () => {
   const T3 = 'tk-' + '3'.repeat(20);
   const e = makeEnv();
+  e.share = path.join(e.dir, 'share');
+  grantResident(e.share, { ticketId: T3, leasePid: 1 });
   lr.writeRecord(e.recordFile, { schema: 1, hostname: 'testhost', mode: 'strict', key: 'k', ticketId: T3, serverPid: null });
   const stopCalls = [];
   const cancels = [];
   const { d } = watchDeps(e, {
     env: { SCHED_PERMIT: `${T3}:a1:TOK` },
+    ppid: 1,   // 单测显式注入实际父链（生产用真实 process.ppid）
     stopTree: async (pid) => {
       stopCalls.push(pid);
       return stopCalls.length === 1 ? { ok: false, reason: '还在退' } : { ok: true };
     },
     stopRetries: 3, stopRetryDelayMs: 20,
     client: {
-      status: () => ({ state: 'running' }),
-      validatePermit: () => ({ ok: true }),
+      status: () => ({ state: 'granted' }),
+      residentLeaseFile: leaseFileOf,
       cancel: async (id) => { cancels.push(id); return { exitCode: 0 }; },
     },
   });
   const code = await lr.runWatchServer({
-    ticketId: T3, wrapperPid: 1, record: e.recordFile, server: 'server.cjs', key: 'k',
+    ticketId: T3, share: e.share, wrapperPid: 1, record: e.recordFile, server: 'server.cjs', key: 'k',
   }, d);
   assert.equal(code, 0);
   assert.equal(stopCalls.length, 2, '第一拍没停成，第二拍才停成');
