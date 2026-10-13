@@ -13,7 +13,9 @@
  *   · 【自举】改的要是发布工具本身,起头的旧工具不许自己铺副本 —— 要把新版导到暂存目录、由新版一次铺成
  *     (AD-20260907-RELEASE-SELF-BOOTSTRAP:病是"连跑两次才真生效",跑了也可能没生效,比忘了跑更隐蔽);
  *   · 【快路径】副本已经是这一版(同一个提交 + 同一版发布工具)就不重发 —— 启动器每次双击都跑 release,
- *     白重建一次界面实测 5.2s(AD-20260907-LAUNCH-SKIP-REBUILD)。
+ *     白重建一次界面实测 5.2s(AD-20260907-LAUNCH-SKIP-REBUILD);
+ *   · 【现场构建两条路】缺省永远是调度排队入口,只有【显式 --standalone】才直连本次 SHA 导出树的 vite,
+ *     印章记下来路、自举把旗标传到底(DASH-LAUNCHER-NO-SCHED-HOLD-1012,负责人拍板 d1:不自动降级)。
  *
  * 【0906 口径变更】release 默认会现场构建前端(SERVER-RUNS-ON-LIVE-CHECKOUT d1=A)。本文件的临时仓没有前端源码,
  * 关心的也不是界面,所以调用一律显式加 `skip-web`——不是绕过闸门,是这些用例本来就只验后台那半边。
@@ -25,7 +27,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-const { release, releaseStatus, detectTrunk, staleReleaseLogic, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV } = require('../cli/release.cjs');
+const { release, releaseStatus, detectTrunk, staleReleaseLogic, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV, queuedWebBuild, directWebBuild } = require('../cli/release.cjs');
 const REPO_ROOT = path.resolve(__dirname, '..');
 const rt = require('../core/runtimeRoot.cjs');
 
@@ -413,5 +415,83 @@ test('快路径:上一份是 --skip-web 发的(副本里没有界面),这次要�
   assert.ok(!r.upToDate, '副本里没界面还跳过,负责人打开看板只会看到占位页');
   assert.equal(c.n, 1);
   assert.ok(fs.existsSync(path.join(t.dest, 'web', 'dist', 'index.html')));
+  clean(t.dir);
+});
+
+// ——— 现场构建两条路(DASH-LAUNCHER-NO-SCHED-HOLD-1012)———
+// 缺省永远走正式排队入口(queuedWebBuild);只有【显式 --standalone】才换 directWebBuild 直连 vite。
+// 两条路都要钉死:"悄悄绕开调度"和"独立模式接不上"都不许静默发生;印章要记下来路,事后可审计。
+
+test('现场构建:缺省递排队入口、显式 standalone 才换直连 —— 按同一份导出判据比对身份', () => {
+  const t = setup();
+  const seen = [];
+  const spyBuild = ({ outRoot }, opts) => {
+    seen.push(opts && opts.runBuild);
+    write(outRoot, 'web/dist/index.html', '<html>spy</html>');
+    return { files: 1, ms: 1, dist: path.join(outRoot, 'web', 'dist') };
+  };
+  const r1 = release({ source: t.work, dest: t.dest }, { buildWeb: spyBuild });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0], queuedWebBuild, '缺省必须把 queuedWebBuild 递给构建器 —— 不存在第三条悄悄绕开调度的路');
+  assert.equal(r1.stamp.web.via, 'sched-queued', '印章要记下这份界面是排队建的');
+  // 同一个提交不重发的快路径会拦住第二次调用,这里 --force 保证真的再走一遍构建选择
+  const r2 = release({ source: t.work, dest: t.dest, force: true, standalone: true }, { buildWeb: spyBuild });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1], directWebBuild, '只有显式 --standalone 才许直连 vite');
+  assert.notEqual(seen[0], seen[1], '两条路必须是两个不同的入口');
+  assert.equal(r2.stamp.web.via, 'standalone-direct', '印章要记下这份界面是独立直连建的');
+  clean(t.dir);
+});
+
+test('独立模式现场构建:直连 vite 一次成形,不排队、不伪造调度许可', () => {
+  const t = setup();
+  const sha = pushFilesFromElsewhere(t, {
+    'web/package.json': JSON.stringify({ name: 'web', version: '1.0.0', scripts: { build: 'vite build' } }) + '\n',
+  }, 'v2:加前端源码');
+  // 来源检出里放一份假 vite(buildWebDist 只【借】来源检出的 node_modules;单测不装真依赖)。
+  // 它把构建证据(argv/cwd/许可环境)写到 FAKE_VITE_RECORD 指的地方 —— 临时导出树用完就删,证据得留在盘上。
+  const recPath = path.join(t.dir, 'vite-record.json');
+  const fakeVite = [
+    "const fs = require('node:fs'); const path = require('node:path');",
+    "fs.mkdirSync(path.join(process.cwd(), 'dist'), { recursive: true });",
+    "fs.writeFileSync(path.join(process.cwd(), 'dist', 'index.html'), '<html>独立直连假界面</html>');",
+    "const rec = process.env.FAKE_VITE_RECORD;",
+    "if (rec) fs.writeFileSync(rec, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(),",
+    "  schedPermit: process.env.SCHED_PERMIT ?? null, schedTicketId: process.env.SCHED_TICKET_ID ?? null }));",
+  ].join('\n') + '\n';
+  write(t.work, 'web/node_modules/vite/bin/vite.js', fakeVite);
+  const saved = process.env.FAKE_VITE_RECORD;
+  process.env.FAKE_VITE_RECORD = recPath;
+  // 直连不许新造许可:子进程眼里的调度环境必须与父进程一字不差(纯继承)——
+  // 父进程自己恰好带着许可(比如它就在调度单里跑)是合法的,伪造/改写一个才是病。
+  const parentPermit = process.env.SCHED_PERMIT ?? null;
+  const parentTicket = process.env.SCHED_TICKET_ID ?? null;
+  try {
+    const r = release({ source: t.work, dest: t.dest, standalone: true });
+    assert.equal(r.ok, true);
+    assert.equal(r.stamp.web.via, 'standalone-direct');
+    assert.equal(r.stamp.web.builtFrom, sha, '界面必须建自刚导出的那个提交');
+    const rec = JSON.parse(read(recPath));
+    assert.deepEqual(rec.argv, ['build'], '命令形态与调度入口的 build 作业逐字同款(node <vite> build)');
+    assert.ok(rec.cwd.endsWith('web'), 'cwd 必须是本次 SHA 导出树的 web 目录');
+    assert.equal(rec.schedPermit, parentPermit, '独立直连不伪造许可——子进程看到的与父进程一字不差');
+    assert.equal(rec.schedTicketId, parentTicket);
+    assert.ok(fs.existsSync(path.join(t.dest, 'web', 'dist', 'index.html')), '假界面要真落进发布副本');
+  } finally {
+    if (saved === undefined) delete process.env.FAKE_VITE_RECORD; else process.env.FAKE_VITE_RECORD = saved;
+  }
+  clean(t.dir);
+});
+
+test('独立模式自举:--standalone 必须一路传到目标 commit 自带的发布工具;缺省不传', () => {
+  const t = setup();
+  pushFilesFromElsewhere(t, { 'cli/release.cjs': '// 新版发布工具 v2\n', 'cli/index.cjs': FAKE_NEW_CLI }, 'v2:换发布工具');
+  // 缺省:不许把独立许可漏给子进程(假 CLI 返回的印章没有 logic 指纹,两次都会走自举)
+  release({ source: t.work, dest: t.dest, 'skip-web': true });
+  let rec = JSON.parse(read(path.join(t.dest, 'BY-NEW-TOOL.json')));
+  assert.ok(!rec.args.includes('--standalone'), '缺省发布不许给子进程独立许可');
+  release({ source: t.work, dest: t.dest, 'skip-web': true, standalone: true });
+  rec = JSON.parse(read(path.join(t.dest, 'BY-NEW-TOOL.json')));
+  assert.ok(rec.args.includes('--standalone'), '显式独立选择必须在自举这一层传到底,不许悄悄丢掉');
   clean(t.dir);
 });

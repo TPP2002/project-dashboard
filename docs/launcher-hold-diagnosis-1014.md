@@ -1,6 +1,6 @@
 # DASH-LAUNCHER-NO-SCHED-HOLD-1012 · 启动器常驻服务 hold 接入边界诊断（1014 收敛版·方案已定）
 
-**性质：证据与已定方案，不施工。** 真实测量已回填、外部撤单缝隙已实证；模式边界已由**负责人拍板**——选「提供显式独立模式，本机继续强制登记」（d1，已由主控写回看板，见 §5）。已批准的实现将以**同卡阶段 2 正式工单**承载，复用本报告与恢复信息，由主控持续承担收官——不是转交责任。代码引用出自本检出（基点 `bdfd9e2`，工作区除本文件外零改动）；共享盘调度客户端引自 `F:/calib-share/sched/bin/sched.cjs`（读时快照）。本阶段未起停任何服务、未提交未合并、未改任何生产文件。
+**性质：证据与已定方案，不施工。** 真实测量已回填、外部撤单缝隙已实证；模式边界已由**负责人拍板**——选「提供显式独立模式，本机继续强制登记」（d1，已由主控写回看板，见 §5）。已批准的实现将以**同卡阶段 2 正式工单**承载，复用本报告与恢复信息，由主控持续承担收官——不是转交责任。代码引用出自本检出（基点 `bdfd9e2`，工作区除本文件外零改动）；共享盘调度客户端引自 `<共享盘>/sched/bin/sched.cjs`（读时快照）。本阶段未起停任何服务、未提交未合并、未改任何生产文件。
 
 ---
 
@@ -20,7 +20,7 @@
 链路双平台同构（`启动看板.bat` / `dashboard.sh`）：落脚点钉在本检出（bat L17/L20、sh L14，**cwd 进发布副本＝release 换名 EBUSY**，`cli/release.cjs` L355–370 0914 实测；"只监听端口、只 require 过 .cjs"不拦换名）→ 首次 `npm install`（bat L39–55、sh L30–40，**不排队＝漏口②**）→ `release`（现场构建**经调度排队 1 核**：`cli/release.cjs` L189–193 → `cli/scheduledWork.cjs` L30–42；发布失败仍用旧副本起服务：bat L80–94）→ **前台直起发布副本 server（bat L100、sh L80 `exec`，不挂号＝漏口①）**。
 
 - server 与共享盘的现有关系只有**读展示**与**网页写指令**（`server/schedApi.cjs` L16–38、L67–75；轮询受 `cpu` 扩展模块门控、默认关：`server.cjs` L478/732、`core/settings.cjs` L36–49）。**没有任何 hold 调用**（全仓 grep "hold" 仅命中 `owner-hold`＝"我要用电脑"标记、`holdersOf`＝换名持有者反查及 `threshold` 等无关词）。
-- 共享盘地址解析：`DASHBOARD_SCHED_SHARE` 环境变量 → `settings.schedShare` → **缺省 `F:\calib-share`**（`core/settings.cjs` L52–55；`path.win32.join` 硬编码盘符，类 Unix 上按源码推断读不到——**推断，未实测**）。**缺省永远有值 ⇒ "配置了"与"没配置"结构上不可区分**；本机 settings.json 实测无 `schedShare` 键（§5 引）。
+- 共享盘地址解析：`DASHBOARD_SCHED_SHARE` 环境变量 → `settings.schedShare` → **缺省 `F 盘的 calib-share 目录`**（`core/settings.cjs` L52–55；`path.win32.join` 硬编码盘符，类 Unix 上按源码推断读不到——**推断，未实测**）。**缺省永远有值 ⇒ "配置了"与"没配置"结构上不可区分**；本机 settings.json 实测无 `schedShare` 键（§5 引）。
 
 ---
 
@@ -40,7 +40,7 @@
 
 ## 3. 实测与核数推荐（R1）
 
-主控在正式 hold `tk-86594d0e1efd04bb0f24` 下启动自己的 bdfd9e2 发布服务（wrapper 25984 / server 26376，稳定 cwd=F:/project-dashboard），取得两窗口真实样本。方法＝进程 CPU 累计读数之差 ÷ 墙钟秒（测量文件自注"不将未运行记零"）；文件在本仓工单目录：`dash-launcher-cpu-idle-1014.json`、`dash-launcher-cpu-flow-1014.json`。
+主控在正式 hold `tk-86594d0e1efd04bb0f24` 下启动自己的 bdfd9e2 发布服务（wrapper 25984 / server 26376，稳定 cwd=<看板检出>），取得两窗口真实样本。方法＝进程 CPU 累计读数之差 ÷ 墙钟秒（测量文件自注"不将未运行记零"）；文件在本仓工单目录：`dash-launcher-cpu-idle-1014.json`、`dash-launcher-cpu-flow-1014.json`。
 
 | 阶段 | 窗口（UTC，2026-10-13） | 墙钟 | CPU 差 | 均值 | 内容 |
 |---|---|---|---|---|---|
@@ -79,7 +79,7 @@ helper 步骤（原则已定；具体接线为可逆实现细节）：
 
 - **严格模式（默认）**：零豁免不变——**整条启动链**（首次 `npm install`、现场构建、常驻服务）都经调度登记；调度客户端不可用 / 共享盘故障时**拒绝新启动**（与 `cli/scheduledWork.cjs` L34"排队客户端不可用，重活未启动"同口径），不降级。
 - **显式独立模式**：供无调度台公开用户主动选择；**全部启动链路可运行、不经调度**——含装依赖与现场构建，现场构建不得仍卡在 release 的调度构建（§4 步骤 2）；常驻服务直起、无 hold。
-- 判别信号问题就此解决：不再试图从缺省配置推断"是否公开用户"（缺省永远有值），**由显式模式开关本身判别**。本机 settings.json 实测无 `schedShare` 键、落缺省 `F:\calib-share`（实测记录见附录 A）——严格模式下这没有歧义：默认即强制登记。
+- 判别信号问题就此解决：不再试图从缺省配置推断"是否公开用户"（缺省永远有值），**由显式模式开关本身判别**。本机 settings.json 实测无 `schedShare` 键、落缺省 `F 盘的 calib-share 目录`（实测记录见附录 A）——严格模式下这没有歧义：默认即强制登记。
 - 类 Unix 的缺省盘符路径读不到：**源码推断，未实测**；独立模式不依赖共享盘，该缺省不构成障碍（推断层面）。
 
 ---
@@ -88,7 +88,7 @@ helper 步骤（原则已定；具体接线为可逆实现细节）：
 
 **实证记录（本返工）**
 - 拍板记录：负责人选定「提供显式独立模式，本机继续强制登记」（d1，已由主控写回看板）；本报告即该方案的证据与实施蓝本，阶段 2 工单复用。
-- 测量文件（主控提供，内容已在 §3 转录）：`F:/project-dashboard/.codex/jobs/dash-launcher-cpu-idle-1014.json`、`F:/project-dashboard/.codex/jobs/dash-launcher-cpu-flow-1014.json`。
+- 测量文件（主控提供，内容已在 §3 转录）：`<看板检出>/.codex/jobs/dash-launcher-cpu-idle-1014.json`、`<看板检出>/.codex/jobs/dash-launcher-cpu-flow-1014.json`。
 - 撤单实证：hold `tk-86594d0e1efd04bb0f24` 于 17:28:15 UTC 正式 cancel 成功 → 17:29:27 UTC 票据＝cancelled，wrapper 25984 / server 26376 仍活；清理经 `tk-966ce98a03c2a836252c` 按 PID/父链/命令核验后仅清自有样本。
 - 本工单两次只读 `/api/health` 探活：首稿时 6060 在跑（pid 26376，即主控样本 server）；返工时 6060~6068 全部静默（样本已清）。探活零扰动、不构成测量样本。
 - 本机 `~/.claude/dashboard/settings.json`：仅 `modules` 键，无 `schedShare`（§5 引）。
@@ -97,6 +97,6 @@ helper 步骤（原则已定；具体接线为可逆实现细节）：
 - `启动看板.bat` L17/20（cwd 纪律）、L39–55（首次 npm install）、L80–94（发布失败回落旧副本）、L96–100（直起服务）；`dashboard.sh` L14/30–40/80（`exec` 直起）
 - `cli/release.cjs` L189–193（现场构建经调度排队）、L355–370（EBUSY/EPERM 实测语义）、L491–530（serviceStatus 探活）
 - `cli/scheduledWork.cjs` L30–42（零豁免"排队客户端不可用，重活未启动"、submit→granted→run）；`core/scheduledJobs.cjs` L12–18（test 2 核 / typecheck 1 / build 1）
-- `core/scheduledWork.cjs` L3/17–52（终态口径、撤单与信号处理）；`core/settings.cjs` L36–55（模块默认关；共享盘缺省 `F:\calib-share`）；`core/runtimeRoot.cjs` L132–139（runtimeMode: dev/release/installed）
+- `core/scheduledWork.cjs` L3/17–52（终态口径、撤单与信号处理）；`core/settings.cjs` L36–55（模块默认关；共享盘缺省 `F 盘的 calib-share 目录`）；`core/runtimeRoot.cjs` L132–139（runtimeMode: dev/release/installed）
 - `server/server.cjs` L90–94（端口段不重叠）、L1562–1563（`DASHBOARD_PORT=0` 隔离自检）、L1685–1712（复用/接管/杀不掉降级）；`server/schedApi.cjs` L16–38/67–75（写指令 503；共享盘读失败照常广播不可读态）
-- 共享盘客户端 `F:/calib-share/sched/bin/sched.cjs`：L214–221（resident 形状：只本机、≥1 核）、L590–596（allowedMachines 缺省本机；resident 不纠正）、L1301–1418（hold 全实现）、L2373–2398（USAGE：语法、断租 120 秒、退出码）
+- 共享盘客户端 `<共享盘>/sched/bin/sched.cjs`：L214–221（resident 形状：只本机、≥1 核）、L590–596（allowedMachines 缺省本机；resident 不纠正）、L1301–1418（hold 全实现）、L2373–2398（USAGE：语法、断租 120 秒、退出码）

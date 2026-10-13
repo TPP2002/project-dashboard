@@ -45,6 +45,11 @@
  *   source 默认 = 当前运行的这份代码所在的检出;dest 默认 = ~/.claude/dashboard-release。
  *   代码根不是 git 检出(安装版 / 发布副本自己)→ 友好跳过。
  *   --skip-web:只发后台(紧急 CLI/hook 修复用),印章会记下来;那份副本起不出网页界面。
+ *   --standalone:【显式独立模式专用】(DASH-LAUNCHER-NO-SCHED-HOLD-1012,负责人拍板 d1)。
+ *     只有启动器带着明确的 --standalone 选择进来,现场构建才允许不经调度排队、直连本次 SHA
+ *     导出树的 vite(directWebBuild);缺省语义一字不动 —— 永远走 queuedWebBuild 的正式排队入口。
+ *     自举时该旗标原样传给目标 commit 自带的发布工具;旧工具不认识它就会退回排队构建,
+ *     没有调度台就如实失败,绝不悄悄伪造 SCHED 许可。
  *   --print-dest:只打印副本目录路径,什么都不做(启动器拿它当落脚点)。
  */
 const fs = require('node:fs');
@@ -136,6 +141,9 @@ function countFiles(dir) {
  *   node_modules 上万个文件,拷一次比构建还慢;借来源检出已装好的那份即可(只读消费,不写它)。
  * 构建通过同一排队入口取得许可，临时树仍绑定发布 SHA；云 CI 可直接执行。
  * build 脚本只接受旧 vite 入口或本仓调度入口，避免构建契约静默漂移。
+ * 唯一例外是【显式 --standalone】(DASH-LAUNCHER-NO-SCHED-HOLD-1012):启动器明确选了独立模式,
+ * runBuild 换成 directWebBuild —— 命令形态与调度入口的 build 作业逐字同款(node <vite> build),
+ * 只少排队这一层;没有显式选择的调用方永远走 queuedWebBuild,不存在第三条悄悄绕开调度的路。
  *
  * @param {{source:string, sha:string, outRoot:string}} args outRoot=副本的 .new 目录
  * @returns {{files:number, ms:number, dist:string}}
@@ -189,6 +197,18 @@ function buildWebDist({ source, sha, outRoot }, { runBuild = queuedWebBuild } = 
 function queuedWebBuild({ root }) {
   execFileSync(process.execPath, [path.join(__dirname, 'scheduledWork.cjs'), '--root', root, 'build'], {
     cwd: os.tmpdir(), encoding: 'utf8', windowsHide: true, stdio: 'inherit',
+  });
+}
+
+/**
+ * 显式独立模式专用的现场构建(--standalone,见文件头注):不经调度排队,直接用本次 SHA 导出树里
+ * 借来源检出的 vite 构建。cwd=导出树的 web/、argv=[vite, 'build'],与 core/scheduledJobs.cjs 里
+ * build 作业的命令形态逐字同款 —— 独立模式省掉的只是"排队"这一层,构建口径一字不改。
+ * 不读、不写、不伪造任何 SCHED_* 许可环境。
+ */
+function directWebBuild({ webRoot, viteBin }) {
+  execFileSync(process.execPath, [viteBin, 'build'], {
+    cwd: webRoot, encoding: 'utf8', windowsHide: true, stdio: 'inherit',
   });
 }
 
@@ -323,6 +343,9 @@ function bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed }
       '--source', source, '--dest', dest, '--commit', sha, '--ref-label', refLabel, '--no-fetch', '--json',
     ];
     if (flags['skip-web']) args.push('--skip-web');
+    // 显式独立模式要一路传到底:目标 commit 自带的发布工具若是新版就同样直连 vite;
+    // 若是旧版(不认识该旗标)会退回排队构建 —— 没有调度台就如实失败,不悄悄换路(见文件头注)。
+    if (flags.standalone) args.push('--standalone');
     let stdout;
     try {
       stdout = execFileSync(process.execPath, args, {
@@ -600,9 +623,15 @@ function release(flags = {}, deps = {}) {
   if (flags['skip-web']) {
     web = { skipped: true, reason: '--skip-web' };
   } else {
+    // runBuild 二选一:缺省永远是正式排队入口;只有显式 --standalone 才直连 vite(见 directWebBuild 头注)。
+    const runBuild = flags.standalone === true ? directWebBuild : queuedWebBuild;
     try {
-      const built = (deps.buildWeb || buildWebDist)({ source, sha, outRoot: newDir });
-      web = { builtFrom: sha, builtAt: new Date().toISOString(), files: built.files, ms: built.ms };
+      const built = (deps.buildWeb || buildWebDist)({ source, sha, outRoot: newDir }, { runBuild });
+      web = {
+        builtFrom: sha, builtAt: new Date().toISOString(), files: built.files, ms: built.ms,
+        // 印章记下这份界面是哪条路建出来的,事后可审计(排队入口 / 显式独立直连)。
+        via: flags.standalone === true ? 'standalone-direct' : 'sched-queued',
+      };
     } catch (e) {
       rmrf(newDir);
       throw e;
@@ -652,6 +681,8 @@ function release(flags = {}, deps = {}) {
 module.exports = {
   release, releaseStatus, serviceStatus, detectTrunk, buildWebDist, writeCliShims,
   staleReleaseLogic, releaseLogicDigest, RELEASE_LOGIC_PATHS, BOOTSTRAP_ENV,
+  // 现场构建的两条路:缺省排队入口;显式 --standalone 才直连(启动器与用例按同一份判据比对)
+  queuedWebBuild, directWebBuild,
   // 换名诊断:被占时要能自己说清是谁、以及那个错误码什么意思(DASH-RELEASE-BLOCKED-BY-OWN-SERVER)
   renameRetry, holdersOf, RENAME_CODE_MEANING,
 };

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# 项目管理看板 - 一键启动（macOS / Linux）
-# 做三件事：①备好界面依赖 ②把主干最新代码 + 现场构建的界面【发布】出去 ③从发布副本起服务。
+# 项目管理看板 - 一键启动（macOS / Linux）· 薄入口
+# 全部编排都在 cli/launcher.cjs（DASH-LAUNCHER-NO-SCHED-HOLD-1012）：
+# ①备好界面依赖 ②把主干最新代码 + 现场构建的界面【发布】出去 ③起常驻服务。
+#
+# 【两种模式】默认【严格模式】：整条启动链（首次依赖安装、现场构建、常驻服务）一律经调度台登记
+# （常驻服务只申请 1 核的真实长期占用单）；调度台不可用就明确拒绝新启动，不降级、不裸跑。
+# 无调度台的用户显式加参数走独立模式： ./dashboard.sh --standalone （整条链路不经调度台）。
+# 细节与实据见 docs/launcher-hold-1014.md。
 #
 # 【为什么不直接从这个目录起服务】(SERVER-RUNS-ON-LIVE-CHECKOUT，负责人 0906 拍板)
 # 这里是看板仓库的【活的工作检出】——随时有对话在切分支、留未提交改动。从这里起服务，等于
@@ -13,12 +19,6 @@ set -uo pipefail
 
 cd "$(dirname "$0")"
 
-echo
-echo "================================================"
-echo "  项目管理看板 - 一键启动"
-echo "================================================"
-echo
-
 # ---- 检查 Node.js ----
 if ! command -v node >/dev/null 2>&1; then
   echo "[X] 没找到 Node.js，看板运行需要它。"
@@ -26,55 +26,5 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-# ---- 第一次使用：安装界面依赖（发布时要用它把界面构建出来）----
-if [ ! -d web/node_modules ]; then
-  echo "[1/3] 第一次使用，正在安装界面依赖（只需一次，可能要一两分钟）..."
-  if ! ( cd web && npm install ); then
-    echo
-    echo "[X] 依赖安装失败（多半是网络问题）。"
-    echo "    请连上网后，在 web 文件夹里手动运行： npm install"
-    exit 1
-  fi
-else
-  echo "[1/3] 界面依赖已就绪。"
-fi
-
-# ---- 找到发布副本目录（服务从它起）----
-REL="$(node cli/index.cjs release --print-dest)"
-if [ -z "$REL" ]; then
-  echo
-  echo "[X] 取不到发布副本目录，起不了服务。上面 node 的输出里有原因。"
-  exit 1
-fi
-
-# ---- 发布：导出 origin/主干 的代码 + 用同一个提交现场构建界面 ----
-# 用【发布副本自己的】发布命令来发布（它是已发布、没人在改的那份）；副本还不存在时才用本检出的引导一次。
-# 为什么讲究这个：本检出可能落后好几个提交，拿它的旧发布命令去发新代码，会发出一份"代码是新的、
-# 界面却没建出来"的副本（迁移当天真踩过一次）。
-echo "[2/3] 正在检查并发布最新版本（主干没更新的话一两秒就过；有更新要构建界面，可能要几十秒）..."
-REL_OK=1
-if [ -f "$REL/cli/index.cjs" ]; then
-  node "$REL/cli/index.cjs" release --source "$(pwd)" || REL_OK=0
-else
-  node cli/index.cjs release || REL_OK=0
-fi
-
-if [ "$REL_OK" = "0" ]; then
-  if [ -f "$REL/server/server.cjs" ]; then
-    echo
-    echo "[!] 这次发布没成功（上面有原因，多半是没联网，或者界面构建报错）。"
-    echo "    先用上一次发布好的那份启动 —— 它可能不是最新的。"
-    echo
-  else
-    echo
-    echo "[X] 发布失败，而且这台机器上还没有可用的发布副本，起不了服务。"
-    echo "    联网后重试；只想先起后台不看界面，可手动运行： node cli/index.cjs release --skip-web"
-    exit 1
-  fi
-fi
-
-# ---- 启动服务（代码来自发布副本；已在跑的若是旧版本，服务自己会换新）----
-echo "[3/3] 正在启动看板服务（代码来自：$REL），浏览器稍后自动打开..."
-echo "    关闭看板：在本窗口按 Ctrl+C。"
-echo
-exec node "$REL/server/server.cjs"
+# ---- 全部逻辑交给启动器；参数原样转发（--standalone 走显式独立模式）----
+node cli/launcher.cjs "$@"
