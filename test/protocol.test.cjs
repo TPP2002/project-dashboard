@@ -148,7 +148,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   }
   function rejectTerminal() {
     const before = fs.readFileSync(f.board, 'utf8');
-    assert.throws(() => cmds.claim({ ...f.P, _: ['T1'], branch: 'feat/test' }), /非法迁移/);
+    assert.throws(() => cmds.claim({ ...f.P, _: ['T1'], branch: 'feat/test', builder: '派单器' }), /非法迁移/);
     assert.throws(() => cmds.progress({ ...f.P, _: ['T1'], percent: 100 }), /不能再报进度/);
     assert.equal(fs.readFileSync(f.board, 'utf8'), before, '被拒命令不能留下写入');
   }
@@ -158,7 +158,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   apply('decide', { did: 'd1', answer: '分批切换' }, '其它情况');
   apply('decide', { did: 'd2', answer: '分批切换', 'no-promote': true }, '其它情况');
   apply('decide', { did: 'd2', answer: '分批切换' }, '待拍板且全部答完且未传 --no-promote');
-  let task = apply('claim', { branch: 'feat/test', scope: 'cli/protocol.cjs' });
+  let task = apply('claim', { branch: 'feat/test', builder: '派单器', scope: 'cli/protocol.cjs' });
   assert.deepEqual(task.gitBranch, ['feat/test']);
   assert.deepEqual(task.fileScope, ['cli/protocol.cjs']);
   assert.ok(task.dates.start && task.lastProgressAt);
@@ -191,15 +191,15 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   task = apply('unpark', { reason: '条件就绪' });
   assert.ok(!Object.hasOwn(task, 'blockReason') && !Object.hasOwn(task, 'parkedNote'));
   assert.ok(task.unparkReason && task.unparkedAt);
-  apply('claim', { branch: 'feat/test' });
+  apply('claim', { branch: 'feat/test', builder: '派单器' });
   task = apply('unclaim', { branch: 'feat/test', reason: '转手' }, '施工中且有 unparkReason');
   assert.deepEqual(task.gitBranch, []);
   assert.equal(task.percent, 100);
-  apply('claim', { branch: 'feat/test' });
+  apply('claim', { branch: 'feat/test', builder: '派单器' });
   task = apply('park', { reason: '再次挂起' });
   assert.ok(!Object.hasOwn(task, 'unparkReason') && !Object.hasOwn(task, 'unparkedAt'));
   apply('unpark', { reason: '再次就绪' });
-  apply('claim', { branch: 'feat/test' });
+  apply('claim', { branch: 'feat/test', builder: '派单器' });
   apply('progress', { percent: 60 });
   // 施工方交活:卡转「待收单」等收单员,进度与分支不动(收单员 claim 再回到施工中)。
   task = apply('await-collect', { job: 'my-job' });
@@ -233,7 +233,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   assert.deepEqual(task.commitShas, ['a1b2c3d']);
   assert.equal(task.decisions.length, 3);
   assert.ok(!Object.hasOwn(task, 'unparkReason') && !Object.hasOwn(task, 'unclaimReason'));
-  apply('claim', { branch: 'feat/test' });
+  apply('claim', { branch: 'feat/test', builder: '派单器' });
   task = apply('unclaim', { branch: 'other', reason: '交回' }, '施工中且无 unparkReason');
   assert.deepEqual(task.gitBranch, ['feat/test'], '没有摘到分支也不报错');
   apply('block', { by: 'UPSTREAM', reason: '阻塞记录' });

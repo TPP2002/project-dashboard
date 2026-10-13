@@ -49,7 +49,7 @@ const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, ma
 test('跨项目:卡 claim 在 beta 板上,在 alpha 仓库里干活也应放行(本卡核心)', () => {
   const t = setup();
   cmds.add({ _: ['CLUSTER-1'], title: '跨项目的卡', project: 'beta', registry: t.reg });
-  cmds.claim({ _: ['CLUSTER-1'], branch: 'claude/ci-secondary-runner-9c02g1', project: 'beta', registry: t.reg });
+  cmds.claim({ _: ['CLUSTER-1'], branch: 'claude/ci-secondary-runner-9c02g1', builder: '派单器', project: 'beta', registry: t.reg });
 
   const r = claimCheck({ branch: 'claude/ci-secondary-runner-9c02g1', registry: t.reg, repo: t.repos.alpha });
   assert.equal(r.ok, true);
@@ -62,7 +62,7 @@ test('跨项目:卡 claim 在 beta 板上,在 alpha 仓库里干活也应放行(
 test('全部项目都没有该分支的施工中任务 → 拦下,且文案列出全部候选项目', () => {
   const t = setup();
   cmds.add({ _: ['A-1'], title: '别的分支的卡', project: 'alpha', registry: t.reg });
-  cmds.claim({ _: ['A-1'], branch: 'feat-other', project: 'alpha', registry: t.reg });
+  cmds.claim({ _: ['A-1'], branch: 'feat-other', builder: '派单器', project: 'alpha', registry: t.reg });
 
   assert.throws(
     () => claimCheck({ branch: 'feat-none', registry: t.reg, repo: t.repos.alpha }),
@@ -91,7 +91,7 @@ test('主干分支(main/master/HEAD/空)免检', () => {
 test('精确匹配 gitBranch:title 里恰好含分支名不算 claim(旧 grep 会假通过)', () => {
   const t = setup(['alpha']);
   cmds.add({ _: ['A-2'], title: '顺手修一下 feat-ghost 分支留下的问题', project: 'alpha', registry: t.reg });
-  cmds.claim({ _: ['A-2'], branch: 'feat-real', project: 'alpha', registry: t.reg });
+  cmds.claim({ _: ['A-2'], branch: 'feat-real', builder: '派单器', project: 'alpha', registry: t.reg });
 
   assert.throws(() => claimCheck({ branch: 'feat-ghost', registry: t.reg, repo: t.repos.alpha }),
     /feat-ghost/, 'title 里出现分支名不构成认领');
@@ -108,7 +108,7 @@ test('某个项目的板损坏/根本没建,都不连坐其它项目的判定', 
   // gamma 的板文件被删掉(仓库还在)→ 属"软"跳过:记进 skipped 供诊断,但不该每次 commit 刷警告
   fs.rmSync(path.join(t.repos.gamma, '.dashboard', 'board.json'), { force: true });
   cmds.add({ _: ['A-3'], title: '正经卡', project: 'alpha', registry: t.reg });
-  cmds.claim({ _: ['A-3'], branch: 'feat-ok', project: 'alpha', registry: t.reg });
+  cmds.claim({ _: ['A-3'], branch: 'feat-ok', builder: '派单器', project: 'alpha', registry: t.reg });
 
   const r = claimCheck({ branch: 'feat-ok', registry: t.reg, repo: t.repos.alpha });
   assert.equal(r.ok, true, '坏板应被跳过而不是让整个闸门炸掉');
@@ -127,7 +127,7 @@ test('端到端:alpha 仓库 commit,卡却 claim 在 beta 板上 —— pre-comm
   hooksInstall({ project: 'alpha', registry: t.reg });
   git(t.repos.alpha, ['checkout', '-q', '-b', 'feat-cross']);
   cmds.add({ _: ['B-9'], title: '在 beta 项目里的卡', project: 'beta', registry: t.reg });
-  cmds.claim({ _: ['B-9'], branch: 'feat-cross', project: 'beta', registry: t.reg });
+  cmds.claim({ _: ['B-9'], branch: 'feat-cross', builder: '派单器', project: 'beta', registry: t.reg });
 
   fs.writeFileSync(path.join(t.repos.alpha, 'x.txt'), 'hi');
   git(t.repos.alpha, ['add', 'x.txt']);

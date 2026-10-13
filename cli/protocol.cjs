@@ -19,6 +19,7 @@ const TRANSITIONS = [
   { command: 'claim', status: '施工中', writes: [
     '仅允许未开工/待开工/可复工/待拍板/已拍板/施工中/待收单；其余拒绝',
     'dates.start（仅首次）、lastProgressAt；按参数合并 gitBranch、fileScope',
+    '**--builder 必填机器闸**：派单器 / 自干:例外①~④ 五选一（缺省与编号外拒收、一个字段不写）；写进卡的 builder 字段与同一条 claim 流水',
   ] },
   { command: 'progress', status: null, writes: [
     '已完工/已作废拒绝；报到 100 也不自动完工',
@@ -69,7 +70,7 @@ const TRANSITIONS = [
 ];
 
 const RULES = [
-  '开工：brief → claim；没卡先 add，必须带 --model 与 --plain-title；用户口述任务自编 AD-YYYYMMDD-<关键词>（关键词用大写字母/数字）。',
+  '开工：brief → claim；claim 必带 --builder <施工方式>（派单器 或 自干:例外①~④，缺省/编号外拒收）；没卡先 add，必须带 --model 与 --plain-title；用户口述任务自编 AD-YYYYMMDD-<关键词>（关键词用大写字母/数字）。',
   '施工中：progress --percent <0-100> --next "下一步"，有进展就回写。',
   '派完工单：把完整收单员指令用 collect-brief <卡号> --file <文件> 存到卡上（网页卡抽屉最上方显示、一键复制），契约对话回复里照旧给同一段代码块。',
   '施工方交活：派单器监工会自动跑 await-collect 把卡转「待收单」；没经过派单器监工的交活（续聊交活后本对话不收、别的平台）由派单对话手动跑 await-collect <卡号> --job <工单名>；收单员开工第一步 claim（待收单 → 施工中）。',
@@ -77,7 +78,7 @@ const RULES = [
   '被挡：block --by <上游卡号> --reason "卡在哪"，状态保持。',
   '挂起：park --reason "为什么停"；解除挂起先 unpark --reason "解除依据"，再 claim。',
   '登记开销（收官前必做）：cost --agents "<平台>:1" 再带上这一单的量——按量付费给 --rmb <元>，订阅制给 --credits <数> --credit-unit "积分"，都取不到给 --tokens <n>，一个数都算不出给 --unknown "<理由>"。',
-  '收官：done --pr <PR号> --commit <sha>；自动把本卡已拍板未落地的决策标落地；--collect 仅表示收尾中。**没登记开销的卡 done 会被拒收**（不登记不得收官，0914 负责人当面下达）。',
+  '收官：done --pr <PR号> --commit <sha>；自动把本卡已拍板未落地的决策标落地；--collect 仅表示收尾中。**没登记开销的卡 done 会被拒收**（不登记不得收官，0914 负责人当面下达）；自干例外的卡没留过一句理由留言时 done 只提醒不拦。',
   '不干了：unclaim --reason "转手原因"，活还在，进度保留。',
   '作废：cancel --reason "不再做的原因"，不算完工，也不计完成度分母。',
   '重开：reopen --reason "返工原因"，仅已完工/已作废可用。',
@@ -103,7 +104,7 @@ function buildExamples(project) {
   };
   return {
     add: `${cli} add ${task} --project ${pid} --title "统一看板协议入口与锚段" --plain-title "把分散的施工规矩收在一处让每次开工都能直接照着做" --model "opus·中" --scope "cli/protocol.cjs"`,
-    claim: `${cli} claim ${task} --project ${pid} --branch feat/protocol --scope "cli/protocol.cjs"`,
+    claim: `${cli} claim ${task} --project ${pid} --branch feat/protocol --builder 派单器 --scope "cli/protocol.cjs"`,
     pending: `${cli} pending ${task} --project ${pid} --json-file pending.json\n${JSON.stringify(payload)}`,
     cost: `${cli} cost ${task} --project ${pid} --agents "glm:1" --tokens 15271358 --credits 6209 --credit-unit "积分"`,
     done: `${cli} done ${task} --project ${pid} --pr 42 --commit a1b2c3d`,

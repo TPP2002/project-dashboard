@@ -73,7 +73,7 @@ function setup(t, split = false) {
 }
 function workingCard(f, id, P = f.P, branch = f.branch) {
   cmds.add({ ...P, _: [id], title: '临时施工卡' });
-  cmds.claim({ ...P, _: [id], branch });
+  cmds.claim({ ...P, _: [id], branch, builder: '派单器' });
 }
 function cli(f, args) {
   const r = spawnSync(process.execPath, [CLI, ...args, '--registry', f.reg], {
@@ -241,7 +241,7 @@ test('syncProgress 共仓按唯一施工板消歧，多张匹配卡仍是一块�
   assert.equal(result.task.id, 'S03', '选唯一命中的板，不能选登记顺序第一块');
   assert.equal(read(f.board), firstBefore);
   assert.equal(readBoard(other.board).tasks[0].percent, 50);
-  cmds.claim({ ...f.P, _: ['S02'], branch: f.branch });
+  cmds.claim({ ...f.P, _: ['S02'], branch: f.branch, builder: '派单器' });
   const snapshots = [read(f.board), read(other.board)];
   const ambiguous = inRepo(f.repo, () => cmds.syncProgress({ registry: f.reg, percent: 70 }));
   assert.equal(ambiguous.ok, true);

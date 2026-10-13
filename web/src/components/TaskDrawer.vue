@@ -327,6 +327,8 @@ onUnmounted(() => {
             <section class="sec">
               <div class="kv" v-if="task.wave"><span>波次</span><b>W{{ task.wave }}</b></div>
               <div class="kv" v-if="task.modelHint"><span>建议档位</span><b class="with-icon"><Icon name="bot" :size="14" />{{ task.modelHint }}</b></div>
+              <!-- 施工方式:claim --builder 必填写入(派单器/自干:例外①~④);老卡没这字段按契约显「未标」,整行不许消失 -->
+              <div class="kv"><span>施工方式</span><b>{{ task.builder || '未标' }}</b></div>
               <div class="kv" v-if="task.dates?.design"><span>设计</span><b>{{ task.dates.design }}</b></div>
               <div class="kv" v-if="task.dates?.start"><span>开工</span><b>{{ task.dates.start }}</b></div>
               <div class="kv" v-if="task.dates?.done"><span>完工</span><b>{{ task.dates.done }}</b></div>

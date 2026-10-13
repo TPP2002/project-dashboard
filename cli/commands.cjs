@@ -19,6 +19,7 @@ const { normalizeReal } = require('../core/safePath.cjs');
 const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
 const { recordBinding } = require('../core/sessionBindings.cjs');
+const { resolveClaimBuilder, resolveListBuilder, selfRunReasonHint } = require('../core/taskBuilder.cjs');
 
 // ---------- helpers ----------
 // today = 本地时区日期。旧版用 toISOString()(UTC)——北京凌晨 0:00-7:59 的完工/开工/拍板
@@ -325,13 +326,19 @@ function addBatch(flags) {
 }
 
 // ---------- claim（认领 → 施工中） ----------
+// 施工方式机器闸(DASH-CLAIM-BUILDER-GATE-1010):--builder 必填,合法值五选一
+// (派单器 / 自干:例外①~④),缺省与编号外当场拒、一个字段都不写;判据与文案在 core/taskBuilder.cjs。
 function claim(flags) {
   const proj = resolveProj(flags);
-  const id = need(flags._[0], 'claim <taskId> --branch <b> [--scope <glob>...]');
+  const id = need(flags._[0], 'claim <taskId> --branch <b> --builder <施工方式> [--scope <glob>...]');
+  // 先验参再拿锁:拒收时锁都不必抢,更不会留下半张卡。
+  const builder = resolveClaimBuilder(flags.builder);
   const branches = asArray(flags.branch);
   const scopes = asArray(flags.scope);
   const author = flags.author || branches[0] || 'cli';
   const ALLOWED = ['未开工', '待开工', '可复工', '待拍板', '已拍板', '施工中', '待收单'];
+  const claimAct = act('claim', author, `认领 ${id}：分支 ${branches.join(',') || '-'}${scopes.length ? '，文件域 ' + scopes.join(',') : ''}`, id);
+  claimAct.builder = builder; // 同一条认领流水带上施工方式(卡上的 builder 字段与它同源)
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     if (!ALLOWED.includes(t.status)) {
@@ -339,11 +346,12 @@ function claim(flags) {
         `。已完工 / 已作废的卡要接着做，先 reopen ${id} --reason "<为什么重开>"`);
     }
     t.status = '施工中';
+    t.builder = builder; // 施工方式落卡;老卡没这字段照样读,只有新认领才强制写
     t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = today();
     t.lastProgressAt = nowIso(); // 认领即盖戳,施工中卡片一开始就能显示"更新于 X 前"
     if (branches.length) t.gitBranch = unionBy([...(t.gitBranch || []), ...branches], String);
     if (scopes.length) t.fileScope = unionBy([...(t.fileScope || []), ...scopes], String);
-  }, act('claim', author, `认领 ${id}：分支 ${branches.join(',') || '-'}${scopes.length ? '，文件域 ' + scopes.join(',') : ''}`, id));
+  }, claimAct);
   try { recordBinding({ boardPath: proj.board, taskId: id, via: 'claim' }); }
   catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   warnGeneratedScopes(scopes);
@@ -824,10 +832,15 @@ function done(flags) {
   catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   const res = okTask(board, id, changed);
   res.landed = landed;
+  const doneNotes = [];
   if (landed.length) {
-    res.text = `✔ done ${id} → ${res.task.status}
-  ↳ 顺带把 ${landed.length} 条拍板标成已落地：${landed.join(', ')}`;
+    doneNotes.push(`  ↳ 顺带把 ${landed.length} 条拍板标成已落地：${landed.join(', ')}`);
   }
+  // 自干例外缺理由只提示(DASH-CLAIM-BUILDER-GATE-1010):不拦 done、不碰上面的 cost 闸;
+  // --collect(转「收官」)还没到收官那一步,不给提示。判据在 core/taskBuilder.cjs。
+  const builderHint = collect ? null : selfRunReasonHint(res.task, board);
+  if (builderHint) doneNotes.push('  ⚠ ' + builderHint);
+  if (doneNotes.length) res.text = `✔ done ${id} → ${res.task.status}\n` + doneNotes.join('\n');
   return res;
 }
 
@@ -972,7 +985,7 @@ function edit(flags) {
  */
 const FIELD_COMMANDS = {
   status: [
-    { cmd: 'claim', use: 'claim <id> --branch <分支>（→ 施工中，走迁移白名单）' },
+    { cmd: 'claim', use: 'claim <id> --branch <分支> --builder <施工方式>（→ 施工中，走迁移白名单）' },
     { cmd: 'park', use: 'park <id> --reason <理由>（→ 暂缓）' },
     { cmd: 'unpark', use: 'unpark <id> --reason <解除依据>（暂缓 → 可复工）' },
     { cmd: 'block', use: 'block <id> --by <卡号>… --reason <理由>（登记被谁挡）' },
@@ -1009,6 +1022,7 @@ const FIELD_COMMANDS = {
   description: [{ cmd: 'edit', use: 'edit <id> --desc "<一句话>"' }],
   modelHint: [{ cmd: 'edit', use: 'edit <id> --model "<建议档位>"' }],
   wave: [{ cmd: 'edit', use: 'edit <id> --wave <n>' }],
+  builder: [{ cmd: 'claim', use: 'claim <id> --branch <分支> --builder <施工方式>（必填机器闸,五选一;认领时落卡）' }],
 };
 
 /** 这个字段有没有专门命令：先按整条点路径找，再退回第一段（deps.blockedBy → deps）。 */
@@ -1042,6 +1056,8 @@ function set(flags) {
 // 且默认含已完工，AI 每问一次看板就被塞上万 token（AUD-CLI-BRIEF-AND-HELP，审计 §4-A4）。
 function list(flags) {
   const proj = resolveProj(flags);
+  // --builder 给了就必须是合法施工方式(精确筛选在渲染层 filterTasks 按同值匹配);非法当场拒。
+  resolveListBuilder(flags.builder);
   const b = readBoard(proj.board);
   return {
     ok: true,

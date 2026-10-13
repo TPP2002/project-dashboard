@@ -68,19 +68,22 @@ const COMMANDS = {
   },
   claim: {
     summary: '认领一张卡（动代码之前的必做动作，pre-commit 闸门认这个）',
-    usage: 'claim <卡号> --project <id> --branch <分支> [--scope <glob>...] [--brief]',
+    usage: 'claim <卡号> --project <id> --branch <分支> --builder <施工方式> [--scope <glob>...] [--brief]',
     args: [
       ['<卡号>', '要认领的卡'],
       ['--branch <分支>', '本次施工的分支名，可重复'],
+      ['--builder <施工方式>', '必填机器闸，五选一：派单器（活由派单器派出、收单员施工）或 自干:例外①~④（本对话自干，编号对上开工须知/派单简报例外表）。缺省与编号外拒收，报错给可复制模板'],
       ['--scope <glob>', '这张卡会改哪些文件，可重复。看板靠它算"现在能同时派几张"'],
       ['--brief', '认领后顺手打印完整开工任务书（= brief <卡号>）'],
     ],
     examples: [
-      'claim FEAT-12 --project myproj --branch feat/login',
-      'claim FEAT-12 --project myproj --branch feat/login --scope "src/auth/*" --brief',
+      'claim FEAT-12 --project myproj --branch feat/login --builder 派单器',
+      'claim FEAT-12 --project myproj --branch feat/login --builder "自干:例外①" --scope "src/auth/*" --brief',
     ],
     notes: [
       '只能从 未开工/待开工/可复工/待拍板/已拍板/施工中/待收单 迁到 施工中；已完工/已作废的卡要先 `reopen`。',
+      '施工方式会落在卡的 builder 字段和同一条认领流水上；旧卡没这字段照常读。list --builder 按它筛选。',
+      '自干例外的「为什么符合例外」要用 note 在卡上留一句；done 时发现没留只提醒、不拦收官。',
       '卡还不在板上就先 add。不 claim 就 commit 会被闸门拒。',
     ],
   },
@@ -223,17 +226,19 @@ const COMMANDS = {
   // ——— 查询 ———
   list: {
     summary: '列出任务（默认隐藏已完工、只给人话标题）',
-    usage: 'list --project <id> [--all] [--status <状态>] [--wave <n>] [--brief] [--fields a,b,c]',
+    usage: 'list --project <id> [--all] [--status <状态>] [--wave <n>] [--builder <施工方式>] [--brief] [--fields a,b,c]',
     args: [
       ['--all', '连已完工一起列'],
       ['--status <状态>', '只看某个状态。点名了就不再套默认隐藏'],
       ['--wave <n>', '只看某个波次'],
+      ['--builder <施工方式>', '只看某种施工方式，取值同 claim --builder，按值精确匹配；旧卡没标的不在任何取值的结果里'],
       ['--brief', '只给 卡号/状态/进度'],
-      ['--fields a,b', '自选列。支持别名 pct/branch/plain/spec/model/next/pr/scope 与点路径 dates.done'],
+      ['--fields a,b', '自选列。支持别名 pct/branch/plain/spec/model/next/pr/scope 与点路径 dates.done；builder 列对没标的旧卡显示「未标」'],
     ],
     examples: [
       'list --project myproj',
       'list --project myproj --status 施工中',
+      'list --project myproj --builder 派单器',
       'list --project myproj --fields id,status,branch,scope',
     ],
     notes: ['默认视图不含技术说明全文（那是给模型看的详细说明，可达两千字）；要全文用 `show <卡号> --full`。'],

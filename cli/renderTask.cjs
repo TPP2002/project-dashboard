@@ -10,6 +10,7 @@
 const { emojiFor } = require('../core/boardSchema.cjs');
 const { humanTitle, PLAIN_TITLE_TRUNCATE_LEN } = require('../core/taskTitle.cjs');
 const { displayWidth, padRight, padLeft } = require('../core/termText.cjs');
+const { BUILDER_UNMARKED } = require('../core/taskBuilder.cjs');
 
 /** 默认视图里藏起来的终态(显式 --status / --all 时不生效)。 */
 const HIDDEN_BY_DEFAULT = ['已完工'];
@@ -43,6 +44,9 @@ function filterTasks(tasks, opts) {
   let out = tasks || [];
   if (opts.status) out = out.filter((t) => t.status === opts.status);
   if (opts.wave !== undefined) out = out.filter((t) => String(t.wave) === String(opts.wave));
+  // --builder 按合法施工方式精确匹配;旧卡没有 builder 字段,不在任何一个合法值的筛结果里
+  // (要看它们用 --fields builder,缺字段的显示「未标」)。合法性由 commands.list 在入口校验。
+  if (opts.builder !== undefined && opts.builder !== true) out = out.filter((t) => t.builder === opts.builder);
   if (!opts.all && !opts.status) out = out.filter((t) => !HIDDEN_BY_DEFAULT.includes(t.status));
   return out;
 }
@@ -75,11 +79,12 @@ function clip(s, maxWidth) {
   return out + '…';
 }
 
-/** 单元格取值:`human` 是派生列(人话标题,老卡回退截断的技术说明),其余走 readField。 */
+/** 单元格取值:`human` 是派生列(人话标题,老卡回退截断的技术说明),`builder` 缺字段显示「未标」,其余走 readField。 */
 function cell(task, field) {
   const raw = field === 'human' ? (humanTitle(task) || '-')
     : (field === 'percent' || field === 'pct') ? `${task.percent || 0}%`
-      : readField(task, field);
+      : (field === 'builder') ? (task.builder || BUILDER_UNMARKED)
+        : readField(task, field);
   return clip(raw, MAX_COL[field] === undefined ? DEFAULT_MAX_COL : MAX_COL[field]);
 }
 

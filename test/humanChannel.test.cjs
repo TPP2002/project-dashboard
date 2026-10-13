@@ -125,7 +125,7 @@ test('没有负责人留言不输出置顶段；claim --brief 和 inbox --tid �
   setDecision(P, { ...INFO, answer: 'A', decidedAt: '2026-09-08' });
   cmds.note({ ...P, _: ['P01'], from: 'human', text: '开工之前先确认负责人说明' });
   const texts = [brief({ ...P, _: ['P01'] }).text, inbox({ ...P, tid: 'P01' }).text,
-    cmds.claim({ ...P, _: ['P01'], branch: 'test/human-channel', brief: true }).text];
+    cmds.claim({ ...P, _: ['P01'], branch: 'test/human-channel', builder: '派单器', brief: true }).text];
   for (const text of texts) {
     assert.match(text, /# P01[^\n]*\n\n## 负责人留言（最近 3 条，先读）/);
     assert.ok(text.indexOf('开工之前先确认负责人说明') < text.indexOf('## 技术说明'));

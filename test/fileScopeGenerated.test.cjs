@@ -153,11 +153,11 @@ test('add 警告文字点名那个生成物,并说明并行判断会忽略它', 
 test('claim --scope 同样警告;正常路径则一声不吭', () => {
   const { dir, reg } = setup();
   cli(reg, 'add', 'T1', '--project', 't', '--title', 'x', '--plain-title', '人话', '--model', 'sonnet·中');
-  const noisy = cli(reg, 'claim', 'T1', '--project', 't', '--branch', 'b1', '--scope', 'package-lock.json');
+  const noisy = cli(reg, 'claim', 'T1', '--project', 't', '--branch', 'b1', '--builder', '派单器', '--scope', 'package-lock.json');
   assert.equal(noisy.code, 0);
   assert.match(noisy.err, /package-lock\.json/);
 
-  const quiet = cli(reg, 'claim', 'T1', '--project', 't', '--branch', 'b1', '--scope', 'src/engine/**');
+  const quiet = cli(reg, 'claim', 'T1', '--project', 't', '--branch', 'b1', '--builder', '派单器', '--scope', 'src/engine/**');
   assert.equal(quiet.code, 0);
   assert.equal(quiet.err.trim(), '', '正常文件范围不该有任何警告噪音');
   clean(dir);
