@@ -60,17 +60,17 @@ function fieldsAddedBy(run) {
 }
 
 const unclaimFields = () => fieldsAddedBy({
-  before: (P) => { cmds.add({ _: ['P01'], title: 'x', ...P }); return cmds.claim({ _: ['P01'], branch: 'b', ...P }).task; },
+  before: (P) => { cmds.add({ _: ['P01'], title: 'x', ...P }); return cmds.claim({ _: ['P01'], branch: 'b', builder: '派单器', ...P }).task; },
   act: (P) => cmds.unclaim({ _: ['P01'], reason: '对话中断,交回', ...P }).task,
 });
 const cancelFields = () => fieldsAddedBy({
-  before: (P) => { cmds.add({ _: ['P01'], title: 'x', ...P }); return cmds.claim({ _: ['P01'], branch: 'b', ...P }).task; },
+  before: (P) => { cmds.add({ _: ['P01'], title: 'x', ...P }); return cmds.claim({ _: ['P01'], branch: 'b', builder: '派单器', ...P }).task; },
   act: (P) => cmds.cancel({ _: ['P01'], reason: '方案被否', ...P }).task,
 });
 const reopenFields = () => fieldsAddedBy({
   before: (P) => {
     cmds.add({ _: ['P01'], title: 'x', ...P });
-    cmds.claim({ _: ['P01'], branch: 'b', ...P });
+    cmds.claim({ _: ['P01'], branch: 'b', builder: '派单器', ...P });
     return cmds.done({ _: ['P01'], ...P }).task;
   },
   act: (P) => cmds.reopen({ _: ['P01'], reason: '验收没过,返工', ...P }).task,

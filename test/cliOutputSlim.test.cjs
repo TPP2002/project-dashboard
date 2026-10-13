@@ -73,7 +73,7 @@ test('list 显式 --status 已完工 时不被默认过滤吃掉', (t) => {
 test('list 默认行是 id/状态/进度/分支/人话标题(截60),不吐技术说明', (t) => {
   const { P } = setup(t);
   cmds.add({ _: ['P01'], title: SPEC, 'plain-title': PLAIN, ...P });
-  cmds.claim({ _: ['P01'], branch: 'feat/x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat/x', builder: '派单器', ...P });
   const text = cmds.list({ ...P }).text;
   assert.ok(text.includes('P01') && text.includes('施工中') && text.includes('feat/x'));
   assert.ok(text.includes(PLAIN), '人话标题要在');
@@ -91,7 +91,7 @@ test('list 老卡没有人话标题时截技术说明 60 字应急,不整段糊�
 test('list --brief 只给 id/状态/进度', (t) => {
   const { P } = setup(t);
   cmds.add({ _: ['P01'], title: SPEC, 'plain-title': PLAIN, ...P });
-  cmds.claim({ _: ['P01'], branch: 'feat/x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat/x', builder: '派单器', ...P });
   const text = cmds.list({ brief: true, ...P }).text;
   assert.ok(text.includes('P01') && text.includes('施工中'));
   assert.ok(!text.includes(PLAIN), '--brief 连人话标题都不要');
@@ -126,7 +126,7 @@ test('show 默认精简卡:id/人话标题/状态/进度/分支/待拍板/下一
     'pros-不拆': '【好处】不拆的好处描述。【代价】不拆的代价描述。',
     reason: '推荐拆的理由需要写得足够长才能通过校验器所以我多写一些占位内容。', ...P,
   });
-  cmds.claim({ _: ['P01'], branch: 'feat/x', ...P });
+  cmds.claim({ _: ['P01'], branch: 'feat/x', builder: '派单器', ...P });
   cmds.progress({ _: ['P01'], percent: 40, next: '接下来写渲染器', ...P });
   const text = cmds.show({ _: ['P01'], ...P }).text;
   assert.ok(text.includes('P01') && text.includes(PLAIN) && text.includes('施工中'));
@@ -179,7 +179,7 @@ test('单元格封顶:一张卡攒了几千字符的分支,不许把每一行都
   const 长分支 = Array.from({ length: 80 }, (_, i) => `claude/very-long-branch-name-number-${i}`);
   cmds.add({ _: ['P01'], title: SPEC, 'plain-title': PLAIN, ...P });
   cmds.add({ _: ['P02'], title: SPEC, 'plain-title': PLAIN, ...P });
-  cmds.claim({ _: ['P01'], branch: 长分支, ...P });
+  cmds.claim({ _: ['P01'], branch: 长分支, builder: '派单器', ...P });
   const text = cmds.list({ ...P }).text;
   const rows = text.split('\n').filter((l) => l.includes('P0'));
   assert.equal(rows.length, 2);

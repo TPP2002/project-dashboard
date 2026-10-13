@@ -105,6 +105,8 @@ export interface Task {
   cost?: TaskCost
   /** 建议施工档位(建卡时由梳理对话按路由表标注,如 "sonnet·低" / "fable·max") */
   modelHint?: string
+  /** 施工方式(claim --builder 必填写入):派单器 或 自干:例外①~④;老卡没有这字段,界面按未标处理 */
+  builder?: string
   /** 交活登记(CLI await-collect 写入):施工方交活了、等收单员。只在「待收单」时展示,离开该状态后保留不删 */
   awaitCollect?: {
     since: string

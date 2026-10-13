@@ -50,7 +50,7 @@ test('changed[] 反映真实改了哪些字段(不是命令自己声明的)', (t
   const { reg } = setup(t);
   json(['add', 'FEAT-12', '--project', 't', '--title', 'x', '--plain-title', '人话', '--model', 'o'], reg);
 
-  const claimed = json(['claim', 'FEAT-12', '--project', 't', '--branch', 'feat/x'], reg);
+  const claimed = json(['claim', 'FEAT-12', '--project', 't', '--branch', 'feat/x', '--builder', '派单器'], reg);
   assert.equal(claimed.status, '施工中');
   assert.ok(claimed.changed.includes('status'), 'claim 改了状态');
   assert.ok(claimed.changed.includes('gitBranch'), 'claim 登记了分支');
@@ -87,7 +87,7 @@ test('什么都没改时 changed 为空数组(不假装动过)', (t) => {
 test('--json 的体量远小于整卡回吐(旧口径)', (t) => {
   const { reg, dir } = setup(t);
   json(['add', 'FEAT-12', '--project', 't', '--title', SPEC, '--plain-title', '人话', '--model', 'o'], reg);
-  const envelope = run(['claim', 'FEAT-12', '--project', 't', '--branch', 'feat/x', '--registry', reg, '--json']).stdout.trim();
+  const envelope = run(['claim', 'FEAT-12', '--project', 't', '--branch', 'feat/x', '--builder', '派单器', '--registry', reg, '--json']).stdout.trim();
   const board = JSON.parse(fs.readFileSync(path.join(dir, 'repo', '.dashboard', 'board.json'), 'utf8'));
   const legacy = JSON.stringify({ ok: true, task: board.tasks[0] });
   assert.ok(envelope.length / legacy.length <= 0.2,

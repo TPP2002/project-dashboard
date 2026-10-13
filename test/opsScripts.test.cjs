@@ -80,7 +80,7 @@ test('precheck:三段齐全,施工中占用与待拍板可见', () => {
   const P = { project: 'p', registry: reg };
   cmds.register({ id: 'p', name: '测试项目', root: repo, registry: reg });
   cmds.add({ _: ['T1'], title: '干活卡', ...P });
-  cmds.claim({ _: ['T1'], branch: 'feat-1', ...P });
+  cmds.claim({ _: ['T1'], branch: 'feat-1', builder: '派单器', ...P });
   const r = precheck({ ...P, 'no-fetch': true });
   assert.match(r.text, /【① 新鲜度】/);
   assert.match(r.text, /【② 看板占用】/);

@@ -40,9 +40,9 @@ test('claim 记录绑定，重复 claim/done 同卡不追加，另一会话 done
   assert.equal(path.basename(file), BINDINGS_FILE);
   cmds.add({ _: ['CARD-A'], title: 'x', ...P });
   withSession(SID_A, () => {
-    assert.equal(cmds.claim({ _: ['CARD-A'], branch: 'feat/a', ...P }).task.status, '施工中');
+    assert.equal(cmds.claim({ _: ['CARD-A'], branch: 'feat/a', builder: '派单器', ...P }).task.status, '施工中');
     assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
-    cmds.claim({ _: ['CARD-A'], branch: 'feat/a', ...P });
+    cmds.claim({ _: ['CARD-A'], branch: 'feat/a', builder: '派单器', ...P });
     cmds.done({ _: ['CARD-A'], collect: true, ...P });
   });
   assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
@@ -58,9 +58,9 @@ test('claim 记录绑定，重复 claim/done 同卡不追加，另一会话 done
 test('没有或无效会话 ID 时安静跳过且不碰文件', (t) => {
   const { board, P } = setup(t);
   cmds.add({ _: ['CARD-A'], title: 'x', ...P });
-  withSession(undefined, () => cmds.claim({ _: ['CARD-A'], ...P }));
+  withSession(undefined, () => cmds.claim({ _: ['CARD-A'], builder: '派单器', ...P }));
   assert.equal(fs.existsSync(bindingsPathOf(board)), false);
-  withSession('not-a-uuid', () => cmds.claim({ _: ['CARD-A'], ...P }));
+  withSession('not-a-uuid', () => cmds.claim({ _: ['CARD-A'], builder: '派单器', ...P }));
   assert.equal(fs.existsSync(bindingsPathOf(board)), false);
   assert.equal(currentSessionId({ CLAUDE_CODE_SESSION_ID: ` ${SID_A.toUpperCase()} ` }), SID_A.toUpperCase());
   assert.equal(recordBinding({ boardPath: board, taskId: 'CARD-A', via: 'claim', env: {} }).status, 'skipped');
@@ -69,7 +69,7 @@ test('没有或无效会话 ID 时安静跳过且不碰文件', (t) => {
 test('claim 非法迁移抛错，不会记录绑定', (t) => {
   const { board, P } = setup(t);
   cmds.add({ _: ['CARD-A'], title: 'x', status: '已完工', ...P });
-  withSession(SID_A, () => assert.throws(() => cmds.claim({ _: ['CARD-A'], ...P }), /非法迁移/));
+  withSession(SID_A, () => assert.throws(() => cmds.claim({ _: ['CARD-A'], builder: '派单器', ...P }), /非法迁移/));
   assert.equal(fs.existsSync(bindingsPathOf(board)), false);
 });
 
@@ -81,7 +81,7 @@ test('绑定路径被目录占用时只警告，claim 仍成功', (t) => {
   let warning = '';
   try {
     process.stderr.write = (chunk) => { warning += chunk; return true; };
-    withSession(SID_A, () => assert.equal(cmds.claim({ _: ['CARD-A'], ...P }).task.status, '施工中'));
+    withSession(SID_A, () => assert.equal(cmds.claim({ _: ['CARD-A'], builder: '派单器', ...P }).task.status, '施工中'));
   } finally { process.stderr.write = original; }
   assert.match(warning, /会话绑定没记上/);
   assert.equal(JSON.parse(fs.readFileSync(board, 'utf8')).tasks[0].status, '施工中');

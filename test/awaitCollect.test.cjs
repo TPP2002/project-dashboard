@@ -39,7 +39,7 @@ function setup(t) {
 /** 建卡 → 认领 → (可选报进度),站在「施工中」这一格,await-collect 的合法起点。 */
 function startWorking(f, id = 'AC1', branch = 'feat/ac1') {
   cmds.add({ ...f.P, _: [id], title: id });
-  cmds.claim({ ...f.P, _: [id], branch, scope: 'cli/x.cjs' });
+  cmds.claim({ ...f.P, _: [id], branch, builder: '派单器', scope: 'cli/x.cjs' });
   return id;
 }
 
@@ -133,7 +133,7 @@ test('T5 · 收单员 claim 把待收单收回施工中(分支保留);再交活�
   startWorking(f);
   cmds.awaitCollect({ ...f.P, _: ['AC1'], job: 'job-a', outcome: 'finished', 'finished-at': '2026-09-24T08:00:00Z' });
   const since1 = taskOf(f.board, 'AC1').awaitCollect.since;
-  const claimed = cmds.claim({ ...f.P, _: ['AC1'], branch: 'feat/ac1' }).task;
+  const claimed = cmds.claim({ ...f.P, _: ['AC1'], branch: 'feat/ac1', builder: '派单器' }).task;
   assert.equal(claimed.status, '施工中', '收单员开工第一步 claim');
   assert.deepEqual(claimed.gitBranch, ['feat/ac1'], '分支保留不摘');
   assert.ok(claimed.awaitCollect, '上一轮交活登记还在');

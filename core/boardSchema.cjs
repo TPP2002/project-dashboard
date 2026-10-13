@@ -11,6 +11,9 @@ const SCHEMA_VERSION = '1.0';
 
 // outcome 的合法取值与 collect-brief 的长度上限收在 core/collectTrigger.cjs(收单指令同一份真相源),这里只做形状闸。
 const { COLLECT_OUTCOMES, COLLECT_BRIEF_MAX } = require('./collectTrigger.cjs');
+// 施工方式的合法值收在 core/taskBuilder.cjs(同一份真相源)。builder 可选:老卡没有它,不拦;
+// 但一旦写了就必须是合法值,免得 set/backfill 把编号外的字串塞进卡里。
+const { BUILDER_VALUES } = require('./taskBuilder.cjs');
 
 const STATUS = ['未开工', '待开工', '待拍板', '已拍板', '施工中', '可复工', '待收单', '收官', '已完工', '暂缓', '压轴', '已作废'];
 
@@ -119,6 +122,10 @@ function validateTask(t, p, errs, ids) {
   if (t.deps !== undefined && !isType(t.deps, 'object')) errs.push(`${p}.deps: 应为对象`);
   if (t.modelHint !== undefined && (!isType(t.modelHint, 'string') || t.modelHint.length > 40)) {
     errs.push(`${p}.modelHint: 应为 ≤40 字符的字符串(建议施工档位,如 "sonnet·低")`);
+  }
+  // 施工方式:可缺省(老卡),给了就必须是合法枚举(claim 机器闸只放五个值,set/backfill 也不许塞别的)。
+  if (t.builder !== undefined && !(isType(t.builder, 'string') && BUILDER_VALUES.includes(t.builder))) {
+    errs.push(`${p}.builder: 非法施工方式「${t.builder}」，允许: ${BUILDER_VALUES.join('/')}`);
   }
   if (t.cost !== undefined) {
     if (!isType(t.cost, 'object')) errs.push(`${p}.cost: 应为对象`);
