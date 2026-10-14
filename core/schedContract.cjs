@@ -173,6 +173,11 @@ function validateHeartbeat(value) {
       // 给该机器条目多写 actualUsageCreditCores(退回核数,>0 才写;availableCores 已含这份退回)。可选展示字段、不升版:
       // 不写它仍合法,写了也不能整份拒读(1010 看板因此再次「读不到调度共享盘:未知字段 actualUsageCreditCores」,与 0914 同类)。
       actualUsageCreditCores: nonNegative,
+      // 派单员 2026-10-14 起(rogue 卡 SCHED-SLOTS-VISIBLE-ON-DASH-0924)给机器条目带执行端作业槽实测
+      // agentSlots = { capacity, occupied }:capacity 正安全整数、occupied 非负安全整数,超占合法并保留实况;
+      // 缺键或 null 表示未知(新写者对没有 jobSlots 的旧执行心跳写 null,不拿准入回退值假装实测)。
+      // 对象严格只认 capacity/occupied,缺嵌套字段、多字段与非法值整份拒读;可选展示字段、不升版,与 ciRunners 同理。
+      agentSlots: nullable(v => fields(v, { capacity: positive, occupied: count })),
     })),
     queue: list(v => fields(v, { ticketId, position: positive, band: oneOf([0, 1]), requestedCores: positive,
       allowedMachines: list(segment, 1, true), queuedAt: isoTime, state: oneOf(['queued', 'unsatisfiable']), reason: nullable(text) })),

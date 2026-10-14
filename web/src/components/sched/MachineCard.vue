@@ -4,11 +4,13 @@ import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched
 import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
 import { age, ciJobLabel, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, ticketTone } from './format'
-import { formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
+import { agentSlotsDisplay, formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
 const fresh = computed(() => freshness(props.machine, props.now))
 const capacity = computed(() => machineCapacity(props.machine, fresh.value.stale))
+// 作业槽与可用核是两个口径:槽满只说明执行端槽满,不冒充核满;离线或过期时数字注明旧快照。
+const slots = computed(() => agentSlotsDisplay(props.machine.agentSlots, !props.machine.online || fresh.value.stale))
 const jobs = computed(() => props.tickets.filter(ticket => !ticket.registerOnly && ticket.machine === props.machine.name))
 const ciSnapshot = ref<CiJobsSnapshot | null>(null), ciFailed = ref(false)
 const ciData = computed(() => ciSnapshot.value && !('unavailable' in ciSnapshot.value) ? ciSnapshot.value : null)
@@ -104,8 +106,10 @@ onUnmounted(() => {
       <span>未接入调度的占用 <b>{{ formatCores(machine.externalLoadCores) }}</b> 核</span>
       <span v-if="machine.reservation">预留 已兑现 <b>{{ formatCores(machine.reservation.fulfilledCores) }}</b> / 申请 <b>{{ formatCores(machine.reservation.requestedCores) }}</b></span>
       <span>可用核（派单依据）<b>{{ formatCores(machine.availableCores, { floor: true }) }}</b> 核</span>
+      <span>作业槽 <b>{{ slots.numbers }}</b></span>
     </div>
     <p class="sched-note capacity-explanation">{{ capacity.detail }}</p>
+    <p class="sched-note slots-explanation" :class="{ warn: slots.full }" role="status">{{ slots.detail }}</p>
     <details v-if="jobs.length" class="machine-details">
       <summary>调度中的单子（{{ jobs.length }}）</summary>
       <ul class="machine-jobs">
@@ -142,6 +146,7 @@ onUnmounted(() => {
 .freshness.bad { color: var(--bad); }
 .machine-conclusion { margin: var(--s2) 0 0; font-size: var(--fs-md); font-weight: 600; overflow-wrap: anywhere; }
 .capacity-explanation { overflow-wrap: anywhere; }
+.slots-explanation { overflow-wrap: anywhere; }
 .machine-status { margin-top: var(--s2); font-size: var(--fs-sm); }
 .machine-bar { height: 6px; margin-top: var(--s2); border-radius: var(--r-sm); background: var(--surface-3); overflow: hidden; }
 .machine-bar > span { display: block; height: 100%; }

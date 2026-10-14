@@ -14,6 +14,8 @@ export interface MachineSnapshot {
   availableCores: number; overCommitted: boolean; fresh: boolean; online: boolean
   ci: 'active' | 'idle' | 'unknown'; ownerHold: boolean; reservation: Reservation | null
   ciRunners?: string[] | null; ciReserveCores?: number
+  /** 执行端作业槽实测：缺键或 null 表示未知；occupied 允许超过 capacity。 */
+  agentSlots?: { capacity: number; occupied: number } | null
   heartbeatAt: string | null; loadSampledAt: string | null
 }
 export interface QueueEntry {

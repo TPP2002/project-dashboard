@@ -7,6 +7,7 @@
  * @property {number} [externalLoadCores]
  * @property {string} [ci]
  * @property {{ requestedCores?: number } | null} [reservation]
+ * @property {{ capacity: number, occupied: number } | null} [agentSlots]
  */
 
 /**
@@ -61,5 +62,39 @@ export function machineCapacity(machine, stale = true) {
     barPercent,
     barLabel: barPercent === null ? '配额暂不可读，不能计算条形比例'
       : `不可再派的配额占比 ${Math.round(barPercent)}%（含占用、预留与波动余量）；可用 ${formatCores(available, { floor: true })} 核 / ${quotaLabel}，不代表实测利用率`,
+  };
+}
+
+/**
+ * 执行端作业槽读数（派单员转发的实测值）：capacity 正安全整数、occupied 非负安全整数。
+ * @typedef {object} AgentSlotsReading
+ * @property {number} capacity
+ * @property {number} occupied
+ */
+
+/**
+ * 只呈现派单员转发的作业槽实测值：缺键或 null 是未知，不拿准入回退值假装实测，也不把未知说成空闲；
+ * 超占保留实况。作业槽与可用核是两个口径，分别说明；槽满只说明执行端槽满
+ * （等在跑作业让出槽位会自行改善），本机命令不经执行端作业槽，仍可能照常派。
+ * outdated 表示机器离线或读数过期，数字需注明是旧快照。不读系统时间、不修改输入。
+ * @param {AgentSlotsReading | null | undefined} value
+ * @param {boolean} [outdated]
+ */
+export function agentSlotsDisplay(value, outdated = false) {
+  const known = !!value && typeof value === 'object'
+    && Number.isSafeInteger(value.capacity) && value.capacity >= 1
+    && Number.isSafeInteger(value.occupied) && value.occupied >= 0;
+  const snapshot = outdated ? '数字为上次收到的旧快照。' : '';
+  if (!known) {
+    return { known: false, full: false, tone: 'muted', numbers: '未知',
+      detail: `执行端未上报作业槽占用，槽满与否未知；有空闲核也不代表有空闲作业槽。${snapshot}` };
+  }
+  const full = value.occupied >= value.capacity;
+  const scale = `占用 ${value.occupied}、容量 ${value.capacity}${value.occupied > value.capacity ? '（超占）' : ''}`;
+  return {
+    known: true, full, tone: full ? 'warn' : 'ok', numbers: `${value.occupied} / ${value.capacity}`,
+    detail: full
+      ? `执行端作业槽已满：${scale}；等在跑的作业让出槽位后会自行改善，本机命令不经执行端作业槽，仍可能照常派。${snapshot}`
+      : `执行端作业槽${scale}；作业槽与可用核分开看，有空闲核也可能在等作业槽。${snapshot}`,
   };
 }

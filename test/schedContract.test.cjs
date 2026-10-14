@@ -120,3 +120,37 @@ test('派单员心跳可带实测退回字段 actualUsageCreditCores(退回 >0 �
     assert.throws(() => c.validateHeartbeat(broken), `actualUsageCreditCores=${String(bad)} 应被拒`);
   }
 });
+
+test('派单员心跳可带执行端作业槽实测 agentSlots(缺键或 null 表示未知);合法槽位与超占通过,非法值与未知字段严格拒收(0924)', () => {
+  const { heartbeat } = require('./fixtures/sched/support.cjs');
+  // 旧心跳缺键仍合法;显式 null(新写者对没有 jobSlots 的旧执行心跳)也合法,都表示未知。
+  assert.doesNotThrow(() => c.validateHeartbeat(heartbeat()));
+  const nulled = heartbeat();
+  nulled.machines[0] = { ...nulled.machines[0], agentSlots: null };
+  assert.doesNotThrow(() => c.validateHeartbeat(nulled));
+  // 合法:0 占用、满槽、超占(occupied 允许超过 capacity,保留超占实况)。
+  for (const slots of [{ capacity: 4, occupied: 0 }, { capacity: 4, occupied: 4 }, { capacity: 4, occupied: 6 }]) {
+    const ok = heartbeat();
+    ok.machines[0] = { ...ok.machines[0], agentSlots: slots };
+    ok.machines[1] = { ...ok.machines[1], agentSlots: { capacity: 1, occupied: 1 } };
+    assert.doesNotThrow(() => c.validateHeartbeat(ok), `agentSlots=${JSON.stringify(slots)} 应合法`);
+  }
+  // 非法:capacity=0/负数/小数/非数,occupied=负数/小数/非数。
+  for (const bad of [{ capacity: 0, occupied: 0 }, { capacity: -1, occupied: 0 }, { capacity: 1.5, occupied: 0 },
+    { capacity: '4', occupied: 0 }, { capacity: Number.NaN, occupied: 0 },
+    { capacity: 4, occupied: -1 }, { capacity: 4, occupied: 0.5 }, { capacity: 4, occupied: '2' }]) {
+    const broken = heartbeat();
+    broken.machines[0] = { ...broken.machines[0], agentSlots: bad };
+    assert.throws(() => c.validateHeartbeat(broken), `agentSlots=${JSON.stringify(bad)} 应被拒`);
+  }
+  // 缺嵌套字段与多字段都拒收,对象严格只认 capacity/occupied。
+  const missing = heartbeat();
+  missing.machines[0] = { ...missing.machines[0], agentSlots: { capacity: 4 } };
+  assert.throws(() => c.validateHeartbeat(missing));
+  const occupiedOnly = heartbeat();
+  occupiedOnly.machines[0] = { ...occupiedOnly.machines[0], agentSlots: { occupied: 1 } };
+  assert.throws(() => c.validateHeartbeat(occupiedOnly));
+  const extra = heartbeat();
+  extra.machines[0] = { ...extra.machines[0], agentSlots: { capacity: 4, occupied: 1, free: 3 } };
+  assert.throws(() => c.validateHeartbeat(extra), { message: '[sched] 未知字段:free' });
+});
