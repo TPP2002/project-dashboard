@@ -1,6 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const modulePromise = import('../core/schedMachineDisplay.mjs');
 const reading = changes => ({ online: true, availableCores: 11.9, quotaCores: 17, grantedCores: 2,
   externalLoadCores: 1.1, ci: 'idle', reservation: null, ...changes });
@@ -82,4 +83,92 @@ test('可用核 3.9000000000000004 显示成 3.9，原值不被改动', async ()
   assert.equal(formatCores(3.96, { floor: true }), '3.9'); assert.equal(formatCores(3.96), '4');
   assert.equal(machineCapacity(reading({ availableCores: 3.96 }), false).label, '空闲 3.9 核可派');
   assert.equal(formatCores(0.09999999999999998), '<0.1'); assert.equal(formatCores(3.8999999999999995, { floor: true }), '3.9');
+});
+
+test('作业槽只呈现实测读数:正常、空槽、满槽、超占与未知分别说明,未知不冒充空闲,离线过期注明旧快照', async () => {
+  const { agentSlotsDisplay } = await modulePromise;
+  const normal = agentSlotsDisplay({ capacity: 4, occupied: 2 });
+  assert.equal(normal.known, true); assert.equal(normal.full, false); assert.equal(normal.tone, 'ok');
+  assert.equal(normal.numbers, '2 / 4');
+  assert.match(normal.detail, /占用 2、容量 4/); assert.match(normal.detail, /有空闲核也可能在等作业槽/);
+  const empty = agentSlotsDisplay({ capacity: 4, occupied: 0 });
+  assert.equal(empty.known, true); assert.equal(empty.full, false); assert.equal(empty.numbers, '0 / 4');
+  const full = agentSlotsDisplay({ capacity: 4, occupied: 4 });
+  assert.equal(full.full, true); assert.equal(full.tone, 'warn'); assert.equal(full.numbers, '4 / 4');
+  assert.match(full.detail, /执行端作业槽已满/); assert.match(full.detail, /自行改善/);
+  assert.match(full.detail, /本机命令/); assert.match(full.detail, /仍可能照常派/);
+  const over = agentSlotsDisplay({ capacity: 4, occupied: 6 });
+  assert.equal(over.full, true); assert.equal(over.numbers, '6 / 4');
+  assert.match(over.detail, /超占/); assert.match(over.detail, /占用 6、容量 4/);
+  for (const unknown of [undefined, null, {}, { capacity: 4 }, { occupied: 1 }, { capacity: 0, occupied: 0 },
+    { capacity: -1, occupied: 0 }, { capacity: 1.5, occupied: 0 }, { capacity: 4, occupied: -1 },
+    { capacity: 4, occupied: 2.5 }, { capacity: '4', occupied: 2 }]) {
+    const result = agentSlotsDisplay(unknown);
+    assert.equal(result.known, false); assert.equal(result.full, false);
+    assert.equal(result.numbers, '未知'); assert.match(result.detail, /未知/);
+  }
+  assert.match(agentSlotsDisplay({ capacity: 4, occupied: 2 }, true).detail, /旧快照/);
+  assert.match(agentSlotsDisplay(null, true).detail, /旧快照/);
+});
+
+// 内存中编译实际 MachineCard 与依赖,验证卡片真的把作业槽占用/容量显示出来(夹具同 schedCiJobsWeb)。
+async function machineCardHtml(machine) {
+  const fs = require('node:fs');
+  const webRequire = require('node:module').createRequire(path.join(__dirname, '../web/package.json'));
+  const { parse, compileScript, compileTemplate } = webRequire('vue/compiler-sfc');
+  const ts = webRequire('typescript'), { createSSRApp, h } = webRequire('vue');
+  const { renderToString } = webRequire('vue/server-renderer');
+  const directory = path.join(__dirname, '../web/src/components/sched');
+  function evaluate(source, requireFn = webRequire) {
+    const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } });
+    const output = { exports: {} };
+    new Function('require', 'module', 'exports', outputText)(requireFn, output, output.exports);
+    return output.exports;
+  }
+  function compile(name, dependencies) {
+    const filename = path.join(directory, name);
+    const { descriptor, errors } = parse(fs.readFileSync(filename, 'utf8'), { filename });
+    assert.deepEqual(errors, [], `${name} 模板必须能解析`);
+    const script = compileScript(descriptor, { id: name });
+    const template = compileTemplate({ id: name, filename, source: descriptor.template.content,
+      compilerOptions: { bindingMetadata: script.bindings } });
+    assert.deepEqual(template.errors, []);
+    const resolve = id => Object.hasOwn(dependencies, id) ? dependencies[id] : webRequire(id);
+    const component = evaluate(script.content, resolve).default;
+    component.render = evaluate(template.code, resolve).render;
+    return component;
+  }
+  const format = evaluate(fs.readFileSync(path.join(directory, 'format.ts'), 'utf8'));
+  const EstimateText = compile('EstimateText.vue', { './format': format });
+  const display = evaluate(fs.readFileSync(path.join(__dirname, '../core/schedMachineDisplay.mjs'), 'utf8'));
+  const MachineCard = compile('MachineCard.vue', { './format': format, './EstimateText.vue': { default: EstimateText },
+    '@/api/schedCiJobs': evaluate(fs.readFileSync(path.join(__dirname, '../web/src/api/schedCiJobs.ts'), 'utf8')),
+    '../../../../core/schedMachineDisplay.mjs': display });
+  const now = Date.parse('2026-09-14T10:00:00Z');
+  const html = await renderToString(createSSRApp({ render: () => h(MachineCard, {
+    machine: { name: 'machine-a', online: true, fresh: true, ci: 'idle', ciRunners: null,
+      heartbeatAt: new Date(now).toISOString(), loadSampledAt: new Date(now).toISOString(),
+      quotaCores: 4, grantedCores: 0, externalLoadCores: 0, availableCores: 4, ...machine },
+    host: 'machine-a', tickets: [], estimates: {}, now, busy: false }) }));
+  return { html, visible: html.replace(/<[^>]*>/g, '') };
+}
+
+test('机器卡实际显示作业槽占用/容量:核数与槽数分别说明,满槽不冒充核满,未知清晰可见,离线过期注明旧快照', async () => {
+  const normal = await machineCardHtml({ agentSlots: { capacity: 4, occupied: 2 } });
+  assert.match(normal.visible, /作业槽 2 \/ 4/);
+  assert.match(normal.visible, /执行端作业槽占用 2、容量 4/);
+  // 满槽且核够:核数结论保持空闲,槽数单独说明已满。
+  const full = await machineCardHtml({ agentSlots: { capacity: 4, occupied: 4 } });
+  assert.match(full.visible, /作业槽 4 \/ 4/); assert.match(full.visible, /空闲 4 核可派/);
+  assert.match(full.visible, /执行端作业槽已满/); assert.match(full.visible, /仍可能照常派/);
+  const unknown = await machineCardHtml({});
+  assert.match(unknown.visible, /作业槽 未知/);
+  // 离线/过期沿用现行无效态,槽满不把结论改成核满,数字注明旧快照。
+  const offline = await machineCardHtml({ online: false, agentSlots: { capacity: 4, occupied: 4 } });
+  assert.match(offline.visible, /离线/); assert.doesNotMatch(offline.visible, /已被占满/);
+  assert.match(offline.visible, /执行端作业槽已满/); assert.match(offline.visible, /旧快照/);
+  const stale = await machineCardHtml({ fresh: false, heartbeatAt: '2026-09-14T09:59:00Z',
+    loadSampledAt: '2026-09-14T09:59:00Z', agentSlots: { capacity: 4, occupied: 4 } });
+  assert.match(stale.visible, /数据过期/); assert.doesNotMatch(stale.visible, /已被占满/);
+  assert.match(stale.visible, /旧快照/);
 });
