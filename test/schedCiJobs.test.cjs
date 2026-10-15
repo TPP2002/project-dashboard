@@ -11,6 +11,7 @@ const runningPath = `${base}/actions/runs?status=in_progress&per_page=20`;
 const queuedPath = `${base}/actions/runs?status=queued&per_page=20`;
 const historyPath = `${base}/actions/runs?status=completed&per_page=100`;
 const jobsPath = (id, page = 1) => `${base}/actions/runs/${id}/jobs?per_page=100&page=${page}`;
+const attemptPath = (id, attempt = 1, page = 1) => `${base}/actions/runs/${id}/attempts/${attempt}/jobs?per_page=100&page=${page}`;
 const run = (extra = {}) => ({ id: 1, name: 'CI', head_branch: 'feat/window', status: 'in_progress',
   event: 'pull_request', pull_requests: [{ number: 9 }], ...extra });
 const job = (extra = {}) => ({ id: 11, name: 'fast', runner_name: 'runner-1', status: 'in_progress',
@@ -40,6 +41,73 @@ function fixture() {
     } });
   return { monitor, calls, responses, time: value => { now = value; }, fail: value => { failure = value; } };
 }
+
+test('完成态历史明细在十分钟边界复用，实时作业与标题仍照常取', async () => {
+  const h = fixture();
+  h.responses.set(historyPath, { workflow_runs: [run({ id: 2, status: 'completed', run_attempt: 1 })] });
+  h.responses.set(attemptPath(2), { total_count: 1, jobs: [successful()] });
+  await h.monitor.refresh();
+  const first = h.monitor.snapshot();
+  h.time(AT + c.HISTORY_MS); await h.monitor.refresh();
+  h.time(AT + c.HISTORY_MS * 2); await h.monitor.refresh();
+  assert.equal(h.calls.filter(path => path === attemptPath(2) || path === jobsPath(2)).length, 1);
+  assert.equal(h.calls.filter(path => path === jobsPath(1)).length, 3);
+  assert.equal(h.calls.filter(path => path === `${base}/pulls/9`).length, 3);
+  assert.equal(h.monitor.snapshot().machines[0].jobs[0].expectedMs, first.machines[0].jobs[0].expectedMs);
+});
+
+test('最后一条历史失败仍复用此前完整明细，恢复只补缺项；不缓存半页或运行中结果', async () => {
+  for (const incomplete of ['failure', 'page', 'running']) {
+    let now = AT, failing = true;
+    const calls = [];
+    const monitor = c.createCiJobsMonitor({ now: () => now, repositoryOverrides: 'owner/repo', gh: async path => {
+      calls.push(path);
+      if (path === runningPath || path === queuedPath) return { workflow_runs: [] };
+      if (path === historyPath) return { workflow_runs: [run({ id: 2, status: 'completed', run_attempt: 1 }), run({ id: 3, status: 'completed', run_attempt: 1 })] };
+      if (path === attemptPath(2) || path === jobsPath(2)) return { total_count: 1, jobs: [successful()] };
+      if (path === attemptPath(3) || path === jobsPath(3)) {
+        if (failing && incomplete === 'failure') throw new Error('last historical request failed');
+        if (failing && incomplete === 'page') return { total_count: 2, jobs: [successful()] };
+        return { total_count: 1, jobs: [failing && incomplete === 'running' ? job() : successful()] };
+      }
+      if (path === attemptPath(3, 1, 2) || path === jobsPath(3, 2)) throw new Error('partial pagination failed');
+      throw new Error(path);
+    } });
+    await monitor.refresh(); now += c.POLL_MS; await monitor.refresh();
+    // running 结果的整拍成功，因此只在下一历史周期重新取。
+    if (incomplete === 'running') { now += c.HISTORY_MS; await monitor.refresh(); }
+    assert.equal(calls.filter(path => path === attemptPath(2) || path === jobsPath(2)).length, 1, incomplete);
+    assert.equal(calls.filter(path => path === attemptPath(3)).length, 2, incomplete);
+    failing = false; now += c.HISTORY_MS; await monitor.refresh();
+    assert.equal(calls.filter(path => path === attemptPath(2)).length, 1, incomplete);
+    assert.equal(calls.filter(path => path === attemptPath(3)).length, 3, incomplete);
+    assert.equal(monitor.snapshot().staleSince, null);
+    assert.equal(monitor.snapshot().error, undefined);
+  }
+});
+
+test('历史缓存区分仓库/run/attempt，移出100条窗口及删除仓库都会回收', async () => {
+  let now = AT, names = 'owner/repo,other/repo', ids = [1], attempt = 1;
+  const calls = [];
+  const monitor = c.createCiJobsMonitor({ now: () => now,
+    readBoards: async () => names.split(',').filter(Boolean).map(repository => ({ repository })),
+    gh: async path => {
+      calls.push(path);
+      if (path.includes('status=completed')) return { workflow_runs: ids.map(id => run({ id, status: 'completed', run_attempt: attempt })) };
+      if (path.includes('/actions/runs?')) return { workflow_runs: [] };
+      return { total_count: 1, jobs: [successful()] };
+    } });
+  await monitor.refresh(); now += c.HISTORY_MS; await monitor.refresh();
+  assert.equal(calls.filter(path => path.includes('/attempts/1/jobs')).length, 2);
+  attempt = 2; now += c.HISTORY_MS; await monitor.refresh();
+  assert.equal(calls.filter(path => path.includes('/attempts/2/jobs')).length, 2);
+  ids = Array.from({ length: 100 }, (_, index) => index + 2); now += c.HISTORY_MS; await monitor.refresh();
+  ids = [1]; now += c.HISTORY_MS; await monitor.refresh();
+  assert.equal(calls.filter(path => path === attemptPath(1, 2)).length, 2);
+  names = ''; now += c.HISTORY_MS; await monitor.refresh();
+  names = 'owner/repo'; now += c.HISTORY_MS; await monitor.refresh();
+  assert.equal(calls.filter(path => path === attemptPath(1, 2)).length, 3);
+});
 
 test('六个 runner 精确映射；环境 JSON 可覆盖机器、增补 runner 并保留其它项目标识', () => {
   const mapping = c.runnerMapping({}, runnerFixture);
