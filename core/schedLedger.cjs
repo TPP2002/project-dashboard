@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { isUtf8 } = require('node:buffer');
 const c = require('./schedContract.cjs');
+const { createVerifiedBytesCache } = require('./schedVerifiedBytes.cjs');
+const verifiedBytes = createVerifiedBytesCache();
 const SAMPLE_LIMIT = 20;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const sampleKey = request => JSON.stringify([request.category, request.work.type]);
@@ -12,6 +14,7 @@ function readLedger(share) {
   try {
     const directory = path.join(c.schedPaths(share).root, 'ledger');
     const files = fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1);
+    verifiedBytes.begin(directory, files.map(file => file.name));
     const events = [];
     let previousSeq = 0;
     for (const file of files) {
@@ -19,27 +22,33 @@ function readLedger(share) {
       c.isoTime(`${file.name.slice(0, 10)}T00:00:00.000Z`);
       const bytes = fs.readFileSync(path.join(directory, file.name));
       if (!isUtf8(bytes)) throw new Error('台账不是有效 UTF-8');
+      const verified = verifiedBytes.has(file.name, bytes);
       const lines = bytes.toString('utf8').split('\n');
       if (lines.at(-1) === '') lines.pop();
       for (const line of lines) {
         const event = c.requireRecord(JSON.parse(line), '台账事件');
-        c.oneOf([1])(event.v); c.integer(event.seq, 1); c.isoTime(event.at); c.text(event.type); c.requireRecord(event.data);
-        if (event.ticketId !== undefined) { c.ticketId(event.ticketId); c.text(event.attemptId); }
-        if (['started', 'finished', 'dispatch-intent', 'dispatched'].includes(event.type)) { c.ticketId(event.ticketId); c.text(event.attemptId); }
-        if (event.type === 'dispatch-intent') {
-          const intent = c.requireRecord(event.data.intent); c.segment(intent.machine); c.segment(intent.submissionId);
+        if (!verified) {
+          c.oneOf([1])(event.v); c.integer(event.seq, 1); c.isoTime(event.at); c.text(event.type); c.requireRecord(event.data);
+          if (event.ticketId !== undefined) { c.ticketId(event.ticketId); c.text(event.attemptId); }
+          if (['started', 'finished', 'dispatch-intent', 'dispatched'].includes(event.type)) { c.ticketId(event.ticketId); c.text(event.attemptId); }
+          if (event.type === 'dispatch-intent') {
+            const intent = c.requireRecord(event.data.intent); c.segment(intent.machine); c.segment(intent.submissionId);
+          }
+          if (event.type === 'dispatched') c.segment(event.data.submissionId);
+          if (event.type === 'submitted') {
+            c.ticketId(event.ticketId);
+            const request = c.requireRecord(event.data.request);
+            c.text(request.project); c.text(request.category); c.text(c.requireRecord(request.work).type);
+          }
+          const { sha256, ...payload } = event;
+          if (sha256 !== c.contentHash(payload)) throw new Error('台账校验和或事件顺序不合法');
         }
-        if (event.type === 'dispatched') c.segment(event.data.submissionId);
-        if (event.type === 'submitted') {
-          c.ticketId(event.ticketId);
-          const request = c.requireRecord(event.data.request);
-          c.text(request.project); c.text(request.category); c.text(c.requireRecord(request.work).type);
-        }
-        const { sha256, ...payload } = event;
-        if (sha256 !== c.contentHash(payload) || event.seq <= previousSeq) throw new Error('台账校验和或事件顺序不合法');
+        // 即使命中文件内的验证，仍检查本次完整目录里跨文件的顺序。
+        if (event.seq <= previousSeq) throw new Error('台账校验和或事件顺序不合法');
         previousSeq = event.seq;
         events.push(event);
       }
+      if (!verified) verifiedBytes.remember(file.name, bytes);
     }
     return { readable: true, events, reason: null };
   } catch (error) { return { readable: false, events: [], reason: `读不到调度台账：${error.message}` }; }
