@@ -163,15 +163,20 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
   const states = new Map();
   let pending = null, pendingAt = null, boards = [], mapping = new Map(), readAt = null, failedAt = null, unavailable = false;
 
-  async function jobsFor(base, run) {
+  async function jobsFor(base, run, attempt = null) {
     const jobs = [];
+    let total;
+    const path = `${base}/actions/runs/${apiId(run.id)}${attempt === null ? '' : `/attempts/${attempt}`}/jobs`;
     for (let page = 1; ; page++) {
-      const data = await gh(`${base}/actions/runs/${apiId(run.id)}/jobs?per_page=100&page=${page}`);
+      const data = await gh(`${path}?per_page=100&page=${page}`);
       const batch = apiList(data, 'jobs');
       if (data.total_count !== undefined && (!Number.isSafeInteger(data.total_count) || data.total_count < 0)) {
         throw new Error('检查作业分页数据不完整');
       }
+      if (total !== undefined && data.total_count !== total) throw new Error('检查作业分页数据不完整');
+      total = data.total_count;
       jobs.push(...batch);
+      if (total !== undefined && jobs.length > total) throw new Error('检查作业分页数据不完整');
       if (jobs.length >= data.total_count || (data.total_count === undefined && batch.length < 100)) return jobs;
       if (!batch.length) throw new Error('检查作业分页数据不完整');
     }
@@ -206,7 +211,23 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       // 抽样是有限窗口；窗口内没有成功记录的组合保持 null，不借用别组的耗时。
       if (historyAt === null || now() - historyAt >= HISTORY_MS) {
         const completed = apiList(await gh(`${base}/actions/runs?status=completed&per_page=100`), 'workflow_runs');
-        const samples = await mapLimited(completed, async run => ({ repository, run, jobs: await jobsFor(base, run) }));
+        // 每仓只保留最近100条窗口。attempt缺失时照常读取，但不以“默认第1次”冒充身份。
+        const keyOf = run => run.status === 'completed' && Number.isSafeInteger(run.run_attempt) && run.run_attempt > 0
+          ? `${apiId(run.id)}:${run.run_attempt}` : null;
+        const window = new Set(completed.slice(0, 100).map(keyOf).filter(Boolean));
+        for (const key of state.completedJobs.keys()) if (!window.has(key)) state.completedJobs.delete(key);
+        const samples = await mapLimited(completed, async run => {
+          const key = keyOf(run);
+          let jobs = key === null ? undefined : state.completedJobs.get(key);
+          if (jobs === undefined) {
+            jobs = await jobsFor(base, run, key === null ? null : run.run_attempt);
+            // 分页全部完成后才保存；后续别的run失败不丢掉已经完整取回的这条。
+            if (key !== null && window.has(key) && jobs.every(job => job.status === 'completed')) {
+              state.completedJobs.set(key, jobs);
+            }
+          }
+          return { repository, run, jobs };
+        });
         history = historicalMedians(samples);
         historyAt = now();
       }
@@ -232,7 +253,7 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       boards = nextBoards;
       for (const name of states.keys()) if (!names.includes(name)) states.delete(name);
       for (const name of names) if (!states.has(name)) {
-        states.set(name, { entries: [], history: new Map(), historyAt: null, updatedAt: null, staleSince: null, error: null });
+        states.set(name, { entries: [], history: new Map(), completedJobs: new Map(), historyAt: null, updatedAt: null, staleSince: null, error: null });
       }
       readAt = new Date(now()).toISOString(); failedAt = null; unavailable = false;
       // 单仓自己保留失败拍；其它仓继续采集，且完成后立即可从 snapshot 读取。
