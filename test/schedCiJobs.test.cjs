@@ -109,6 +109,21 @@ test('历史缓存区分仓库/run/attempt，移出100条窗口及删除仓库�
   assert.equal(calls.filter(path => path === attemptPath(1, 2)).length, 3);
 });
 
+test('多页完整成功后才复用；缺attempt不猜身份且保持原历史估计', async () => {
+  const h = fixture();
+  h.responses.set(historyPath, { workflow_runs: [run({ id: 2, status: 'completed', run_attempt: 1 })] });
+  h.responses.set(attemptPath(2), { total_count: 101, jobs: Array.from({ length: 100 }, (_, i) => successful({ id: i + 1 })) });
+  h.responses.set(attemptPath(2, 1, 2), { total_count: 101, jobs: [successful({ id: 101 })] });
+  await h.monitor.refresh();
+  h.time(AT + c.HISTORY_MS); await h.monitor.refresh();
+  assert.equal(h.calls.filter(path => path === attemptPath(2, 1, 2)).length, 1);
+  assert.equal(h.monitor.snapshot().machines[0].jobs[0].expectedMs, 900_000);
+  h.responses.set(historyPath, { workflow_runs: [run({ id: 2, status: 'completed' })] });
+  h.time(AT + c.HISTORY_MS * 2); await h.monitor.refresh();
+  h.time(AT + c.HISTORY_MS * 3); await h.monitor.refresh();
+  assert.equal(h.calls.filter(path => path === jobsPath(2)).length, 2);
+});
+
 test('六个 runner 精确映射；环境 JSON 可覆盖机器、增补 runner 并保留其它项目标识', () => {
   const mapping = c.runnerMapping({}, runnerFixture);
   assert.deepEqual([...mapping].map(([runner, value]) => [runner, value.machine]), [...runnerFixture]);
