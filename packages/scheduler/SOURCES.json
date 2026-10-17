@@ -1,0 +1,668 @@
+[
+  {
+    "source": "scripts/bot/cluster-agent-attempt-load.ts",
+    "target": "src/bot/cluster-agent-attempt-load.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "bc5db6fa93352ea5127903f9ea5e1f81c2291bb4"
+  },
+  {
+    "source": "scripts/bot/cluster-agent-ci-gate.ts",
+    "target": "src/bot/cluster-agent-ci-gate.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "14da0239c0554c6d87a339e25b3aee9088d1e2c4"
+  },
+  {
+    "source": "scripts/bot/cluster-agent-ci-observer.ts",
+    "target": "src/bot/cluster-agent-ci-observer.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "2f393af8077e4d69bd0899ac3a42e5fcc3fd03ca"
+  },
+  {
+    "source": "scripts/bot/cluster-agent-contract.ts",
+    "target": "src/bot/cluster-agent-contract.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "40bac4c369bf64102fd4da3f9f8440dac1653e78"
+  },
+  {
+    "source": "scripts/bot/cluster-agent-job-class.ts",
+    "target": "src/bot/cluster-agent-job-class.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f42248901b17c88ec59ffc2d776d6ece5afe3ff8"
+  },
+  {
+    "source": "scripts/bot/cluster-agent-load.ts",
+    "target": "src/bot/cluster-agent-load.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "345990c9613a1cd9ca3abe12d9f0a5f8d593a602"
+  },
+  {
+    "source": "scripts/bot/cluster-job.ts",
+    "target": "src/bot/cluster-job.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "68e89d2c6e6776da16853eb41f6e23c47c85a9c4"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-atomic-file.ts",
+    "target": "src/bot/cluster-lifecycle-atomic-file.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "33e73afc95104fcb97ce583b769fd4cb8a3cc2e6"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-atomic-move.ts",
+    "target": "src/bot/cluster-lifecycle-atomic-move.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "c50566859e1f089c764b326ffd329a3a0a143beb"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-contract.ts",
+    "target": "src/bot/cluster-lifecycle-contract.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "caa054cea1ffe35d842ff6d5c6bff09ed3639d9e"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-control.ts",
+    "target": "src/bot/cluster-lifecycle-control.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "6ad4633e63c504dd1828b4dd74b4cc0219702b05"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-handoff.ts",
+    "target": "src/bot/cluster-lifecycle-handoff.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "101a3c65f9d3cc865e4ac80b0fedb668bec1d87d"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-lease.ts",
+    "target": "src/bot/cluster-lifecycle-lease.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "a09304f7131b75e2d817f455dcf5b4d14413f617"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-legacy.ts",
+    "target": "src/bot/cluster-lifecycle-legacy.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "e91167833cd2d0f129fd3e823bce676b78febccd"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-maintenance.ts",
+    "target": "src/bot/cluster-lifecycle-maintenance.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "5038ee02b498c82afb159e5fe7c75e694b4d3f0e"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-state.ts",
+    "target": "src/bot/cluster-lifecycle-state.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "9f647a552b9ce2e33317756158df085c061d4796"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle-status.ts",
+    "target": "src/bot/cluster-lifecycle-status.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "14efb09c91720e440d2a9bf4199a4cf258787cc6"
+  },
+  {
+    "source": "scripts/bot/cluster-lifecycle.ts",
+    "target": "src/bot/cluster-lifecycle.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "narrow contract/control/state facade; excludes cutover/canary barrel exports",
+    "sourceBlob": "7fe6f03dc144f3fc3de9406a7f1509a4b0720af0"
+  },
+  {
+    "source": "scripts/bot/cluster-owner.ts",
+    "target": "src/bot/cluster-owner.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "51d8db28183f5e9582ac208602fc403941b41d3b"
+  },
+  {
+    "source": "scripts/lib/cpuLease.ts",
+    "target": "src/lib/cpuLease.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "5291018481a9eaf9fa0fadc06403d838e52665d1"
+  },
+  {
+    "source": "scripts/sched/client/sched-hub-switch.cjs",
+    "target": "src/sched/client/sched-hub-switch.cjs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "107d9623dd1cb97976165955fe1136666a77c8b5"
+  },
+  {
+    "source": "scripts/sched/client/sched-hub-switch.d.cts",
+    "target": "src/sched/client/sched-hub-switch.d.cts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "eb0a92d3ba9e2781aacb0872ca1dfbd35ec3cbe0"
+  },
+  {
+    "source": "scripts/sched/client/sched-menu.cjs",
+    "target": "src/sched/client/sched-menu.cjs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "26cbb9f1ecea567ea08445bfdf2e65a14d15ec7c"
+  },
+  {
+    "source": "scripts/sched/client/sched-menu.d.cts",
+    "target": "src/sched/client/sched-menu.d.cts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "8f3803a19639ba50ea5e585aa54bc2b5d049ebba"
+  },
+  {
+    "source": "scripts/sched/client/sched-projects.cjs",
+    "target": "src/sched/client/sched-projects.cjs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "b5ab78a3f51a85f41adc514581caa0f6bbe9a486"
+  },
+  {
+    "source": "scripts/sched/client/sched-projects.d.cts",
+    "target": "src/sched/client/sched-projects.d.cts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "4f161ed25651429fdc456471a5c222508e6da3b7"
+  },
+  {
+    "source": "scripts/sched/client/sched-snapshot.cjs",
+    "target": "src/sched/client/sched-snapshot.cjs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "e0e87c5c009d08cd6e484e4f87be800ce0373070"
+  },
+  {
+    "source": "scripts/sched/client/sched-snapshot.d.cts",
+    "target": "src/sched/client/sched-snapshot.d.cts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f9cadb9956aa80400cf491e077387257c7e5ab99"
+  },
+  {
+    "source": "scripts/sched/client/sched.cjs",
+    "target": "src/sched/client/sched.cjs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "a15af56a9f75f86a6cd073438e26ce8307c52431"
+  },
+  {
+    "source": "scripts/sched/client/sched.d.cts",
+    "target": "src/sched/client/sched.d.cts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "3f5bdef0e8ba0f325297ba111e22e55ff24b3540"
+  },
+  {
+    "source": "scripts/sched/native/进程树控制宿主.ps1",
+    "target": "src/sched/native/进程树控制宿主.ps1",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "09b80a0a4e287077b0ebc2efe38c0b02f21a0b7f"
+  },
+  {
+    "source": "scripts/sched/native/许可归属管道.cs",
+    "target": "src/sched/native/许可归属管道.cs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "fd1df9bd30caf26d5df8f705c36a60e79c84c5a3"
+  },
+  {
+    "source": "scripts/sched/native/许可归属核验.cs",
+    "target": "src/sched/native/许可归属核验.cs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "00f3e95d57bd1b0fe0b9c1f3be2377396db041ba"
+  },
+  {
+    "source": "scripts/sched/native/Windows原生接口.ps1",
+    "target": "src/sched/native/Windows原生接口.ps1",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "a9c0551205443dbfb6bb638eb8adb03adb62569b"
+  },
+  {
+    "source": "scripts/sched/sched-admin.ts",
+    "target": "src/sched/sched-admin.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "196534227f4c71059aa147d96b2403d767506eb5"
+  },
+  {
+    "source": "scripts/sched/sched-auto-handoff.ts",
+    "target": "src/sched/sched-auto-handoff.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "34a8cfd45da9e7a0dcaf001cb2593aa5b84dbcab"
+  },
+  {
+    "source": "scripts/sched/sched-auto-launch.ts",
+    "target": "src/sched/sched-auto-launch.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "74066ef057c9d48f9eb4ccaed2017b1f736a508e"
+  },
+  {
+    "source": "scripts/sched/sched-ci-availability.ts",
+    "target": "src/sched/sched-ci-availability.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "84fffd93f9af4b96eb02238c4dee956777c93e10"
+  },
+  {
+    "source": "scripts/sched/sched-ci-borrow.ts",
+    "target": "src/sched/sched-ci-borrow.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "a99909458a8b5cbccb57a0624c3afab75ea482c3"
+  },
+  {
+    "source": "scripts/sched/sched-ci-labels-cli.ts",
+    "target": "src/sched/sched-ci-labels-cli.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "69568c021d05b8b4bfd696e5f030ab87f1c63976"
+  },
+  {
+    "source": "scripts/sched/sched-ci-labels-github.ts",
+    "target": "src/sched/sched-ci-labels-github.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "afc70643176d45e1b8ebdd61cb4cc94b51d09927"
+  },
+  {
+    "source": "scripts/sched/sched-ci-labels-plan.ts",
+    "target": "src/sched/sched-ci-labels-plan.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "656bd4fe52b421af69b4a465e0175170621e076f"
+  },
+  {
+    "source": "scripts/sched/sched-ci-labels.ts",
+    "target": "src/sched/sched-ci-labels.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f8d799085459963096545077ab248a47e6af0eca"
+  },
+  {
+    "source": "scripts/sched/sched-ci-lanes.ts",
+    "target": "src/sched/sched-ci-lanes.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "89ec2c6b08598ae93d99c2b673db563a43f95521"
+  },
+  {
+    "source": "scripts/sched/sched-ci-policy.ts",
+    "target": "src/sched/sched-ci-policy.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f096aef39bd556f2f932361bc029a3c2570c0c23"
+  },
+  {
+    "source": "scripts/sched/sched-ci-takeover-contract.ts",
+    "target": "src/sched/sched-ci-takeover-contract.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "8e52bb06de59c754898db0e1aa86f20b430f8931"
+  },
+  {
+    "source": "scripts/sched/sched-ci-takeover-github.ts",
+    "target": "src/sched/sched-ci-takeover-github.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "8311c37661ce9c6dee2d5af48d9904e6cfef745b"
+  },
+  {
+    "source": "scripts/sched/sched-ci-takeover-plan.ts",
+    "target": "src/sched/sched-ci-takeover-plan.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "80122b05fc202007b7258200a0723d2e47ebd55e"
+  },
+  {
+    "source": "scripts/sched/sched-ci-takeover-shadow.ts",
+    "target": "src/sched/sched-ci-takeover-shadow.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "2b7347373c30be370485fe83ac00b64a560ce5f0"
+  },
+  {
+    "source": "scripts/sched/sched-client-bundle.cjs",
+    "target": "src/sched/sched-client-bundle.cjs",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "97200ce39295d5c9b3ae574d85d84b38109127ba"
+  },
+  {
+    "source": "scripts/sched/sched-cluster-job.ts",
+    "target": "src/sched/sched-cluster-job.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "a2cf151562fd63ecb6e4192aee259fb6a87ee3d9"
+  },
+  {
+    "source": "scripts/sched/sched-commands.ts",
+    "target": "src/sched/sched-commands.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "4898a1ea3e3dad1ba916b4359ffb15e398f17f49"
+  },
+  {
+    "source": "scripts/sched/sched-contract.ts",
+    "target": "src/sched/sched-contract.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "3dcdc7c93dba6a8a500892993487f8210c216ae3"
+  },
+  {
+    "source": "scripts/sched/sched-control.ts",
+    "target": "src/sched/sched-control.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "c0481379938ae3ed7ff689163773c4392fddeb1d"
+  },
+  {
+    "source": "scripts/sched/sched-daemon.ts",
+    "target": "src/sched/sched-daemon.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "02e0a2cc87fd0b431ea971411b9850d083940762"
+  },
+  {
+    "source": "scripts/sched/sched-decide.ts",
+    "target": "src/sched/sched-decide.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f7d43f826d56491e90f3ee9caa579f344cf9daf0"
+  },
+  {
+    "source": "scripts/sched/sched-elastic.ts",
+    "target": "src/sched/sched-elastic.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "67557d6458082e56f1f850668ce4b417bff43c1d"
+  },
+  {
+    "source": "scripts/sched/sched-eta.ts",
+    "target": "src/sched/sched-eta.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "04a5152ecc6c413a4211895513e162e34e0fa678"
+  },
+  {
+    "source": "scripts/sched/sched-handoff.ts",
+    "target": "src/sched/sched-handoff.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "6a24ff776d286509b2c7f75bb2327d1b768d6366"
+  },
+  {
+    "source": "scripts/sched/sched-hub-switch-reader.ts",
+    "target": "src/sched/sched-hub-switch-reader.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "49a1a941b310f045171e76bd3b174a285a8f2a71"
+  },
+  {
+    "source": "scripts/sched/sched-intake.ts",
+    "target": "src/sched/sched-intake.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "568483c860e4556c76f97ac6beaf9b7614551e45"
+  },
+  {
+    "source": "scripts/sched/sched-ledger.ts",
+    "target": "src/sched/sched-ledger.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "5f22440e4513631a20b6a7433a8f12d97bf2f1b9"
+  },
+  {
+    "source": "scripts/sched/sched-machines.ts",
+    "target": "src/sched/sched-machines.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "0d23413ea5e613ff8ee469c664167cd097972e26"
+  },
+  {
+    "source": "scripts/sched/sched-managed-load.ts",
+    "target": "src/sched/sched-managed-load.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "277881c03ac7976795c488114fd180893708212c"
+  },
+  {
+    "source": "scripts/sched/sched-memory-floor.ts",
+    "target": "src/sched/sched-memory-floor.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "c4a4df03649fca367fc848bdc4d904c183c4f18d"
+  },
+  {
+    "source": "scripts/sched/sched-origin-probe.ts",
+    "target": "src/sched/sched-origin-probe.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "41bc888bf3f97900e7ef907e57bc39a7472190aa"
+  },
+  {
+    "source": "scripts/sched/sched-owner.ts",
+    "target": "src/sched/sched-owner.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "94a142be7b8b97eb484bb811bab5c55245016444"
+  },
+  {
+    "source": "scripts/sched/sched-permit-ancestry.ts",
+    "target": "src/sched/sched-permit-ancestry.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f9beca85f31adffa9ec10ae84369df566b6b1bf0"
+  },
+  {
+    "source": "scripts/sched/sched-permit-authority.ts",
+    "target": "src/sched/sched-permit-authority.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "ce6ad06b40a9b50288d205da01fdb347bf66a97f"
+  },
+  {
+    "source": "scripts/sched/sched-placement.ts",
+    "target": "src/sched/sched-placement.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f03b056c8a7875eb769c8dfe094bf5d0744cf876"
+  },
+  {
+    "source": "scripts/sched/sched-portable.ts",
+    "target": "src/sched/sched-portable.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "cbe92e0f783bbcadd10c73eddb3717ea0034b678"
+  },
+  {
+    "source": "scripts/sched/sched-process-recovery.ts",
+    "target": "src/sched/sched-process-recovery.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "50deaddcbdf5cfb858a6c5aa09854b787f61840e"
+  },
+  {
+    "source": "scripts/sched/sched-project-delta.ts",
+    "target": "src/sched/sched-project-delta.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "6db52d5da6df997e0d729e3a09d92badbdf6a4ab"
+  },
+  {
+    "source": "scripts/sched/sched-project.ts",
+    "target": "src/sched/sched-project.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "856ea194e048b38e8a7c6058b9cf143a45b7a4ad"
+  },
+  {
+    "source": "scripts/sched/sched-publish.ts",
+    "target": "src/sched/sched-publish.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "884317b031f17faa70351975e64efe5a14439ea7"
+  },
+  {
+    "source": "scripts/sched/sched-read-cache.ts",
+    "target": "src/sched/sched-read-cache.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "5e97d1c5ee4f95b6a09a2651526132978857d8ab"
+  },
+  {
+    "source": "scripts/sched/sched-read-progress.ts",
+    "target": "src/sched/sched-read-progress.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "49787cff9bd308c706d34d65ca6b18da58bfaa3e"
+  },
+  {
+    "source": "scripts/sched/sched-reclaim.ts",
+    "target": "src/sched/sched-reclaim.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "eb3b1f3949e4c2c651fbe41a64a8ee06029e310f"
+  },
+  {
+    "source": "scripts/sched/sched-reports.ts",
+    "target": "src/sched/sched-reports.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "06b8682353ad29ad423271e55565ab2d7331ef21"
+  },
+  {
+    "source": "scripts/sched/sched-rerun.ts",
+    "target": "src/sched/sched-rerun.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "3b799d0fa810e7f7064926c2c69e20f8731bb75d"
+  },
+  {
+    "source": "scripts/sched/sched-retention.ts",
+    "target": "src/sched/sched-retention.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "7fc913296f16f517cee77c5caaeaa579e313bac4"
+  },
+  {
+    "source": "scripts/sched/sched-snapshot-gate.ts",
+    "target": "src/sched/sched-snapshot-gate.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "65923c79ff58c9b8dc4f494da37bbcf36ff8d2bb"
+  },
+  {
+    "source": "scripts/sched/sched-snapshot-sweeper.ts",
+    "target": "src/sched/sched-snapshot-sweeper.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "00bdbb82198eeb66e76cd14bf1fa669f1cdccb02"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-accounting.ts",
+    "target": "src/sched/sched-suspend-accounting.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "1c6f13825b260b81ba0ae4d2901e78d00e8d8739"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-execution.ts",
+    "target": "src/sched/sched-suspend-execution.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "4272085386e477574f0b223bbddff17b0125c205"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-native-assets.ts",
+    "target": "dist/sched/sched-suspend-native-assets.js",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "generated": true,
+    "sourceBlob": "245711f2456581cc0d23466c711b26f3e06c8086"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-native.ts",
+    "target": "src/sched/sched-suspend-native.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "30da59db54d5146d31588fc86d508311395e12bd"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-policy.ts",
+    "target": "src/sched/sched-suspend-policy.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "29f36dd7bbd88ec0c56541fcb7b85326ae70a28a"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-reports.ts",
+    "target": "src/sched/sched-suspend-reports.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "4baa7321e9b7284a21a99262bb5e5a048a8df803"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-store.ts",
+    "target": "src/sched/sched-suspend-store.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "f7b32a894f85529e0162e4c6af876e548dfc9497"
+  },
+  {
+    "source": "scripts/sched/sched-suspend-timing.ts",
+    "target": "src/sched/sched-suspend-timing.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "046805537f5a290a57d59886f9dca6936dbf353d"
+  },
+  {
+    "source": "scripts/sched/sched-suspend.ts",
+    "target": "src/sched/sched-suspend.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "d56dc8fabd4e822cc184865d34256e157f9307bc"
+  },
+  {
+    "source": "scripts/sched/sched-tickets.ts",
+    "target": "src/sched/sched-tickets.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "51cc7dc06ba4abc14b2553f5cc0023e3216a2cbd"
+  },
+  {
+    "source": "scripts/sched/sched-usage-history.ts",
+    "target": "src/sched/sched-usage-history.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "c20003930c9f3ef2ced9ebaf1cafa66abc6a7dd6"
+  },
+  {
+    "source": "scripts/sched/sched-waiting.ts",
+    "target": "src/sched/sched-waiting.ts",
+    "revision": "20cea25479bff56cc7d386be2c8d103fd0c446fb",
+    "adaptation": "deployment configuration ports and privacy-only comment redactions where applicable; scheduling algorithms retained",
+    "sourceBlob": "dd542ff405fbc2a9e3b7bcb184cf7595fcc4727e"
+  }
+]

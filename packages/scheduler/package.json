@@ -1,0 +1,20 @@
+{
+  "name": "@cloud-collaboration/scheduler",
+  "version": "0.1.0",
+  "description": "Standalone file-backed scheduler core with owner fencing and explicit deployment catalogs",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": { "node": ">=24" },
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./contract": "./dist/sched/sched-contract.js",
+    "./store": "./dist/store.js",
+    "./client": "./dist/sched/client/sched.cjs",
+    "./config": "./dist/sched/client/deployment-config.cjs"
+  },
+  "bin": { "cloud-scheduler": "dist/cli.cjs", "sched": "dist/sched/client/sched.cjs" },
+  "files": ["dist/", "src/", "fixtures/", "build.cjs", "config.example.json", "SOURCES.json", "README.md", "LICENSE", "package-lock.json"],
+  "scripts": { "build": "node build.cjs" },
+  "devDependencies": { "typescript": "6.0.3" }
+}
