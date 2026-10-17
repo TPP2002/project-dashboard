@@ -443,6 +443,25 @@ test('handoff preserves real notStarted/null exit, refused and complete rerun pl
   throws(() => p.validateEnvelope(wrong, context('handoff.observe')), 'NOT_STARTED_BINDING');
 });
 
+test('handoff discovers authenticated immutable artifact objects before the first bounded read', () => {
+  const object = f.payloads['artifact.read'].object;
+  const names = { state: 'zipped', manifest: `${f.execution.ticketId}--a1.json`,
+    zip: `${f.execution.ticketId}--a1.zip`, zipBytes: object.size };
+  const payload = { ...f.payloads['handoff.observe'], state: 'done', result: { ok: true, exitCode: 0, artifacts: names } };
+  throws(() => p.validateRequest('handoff.observe', payload), 'ARTIFACT_DISCOVERY_REQUIRED');
+  const refs = { state: 'ready', manifest: { ...object, objectId: 'synthetic-manifest' }, zip: object };
+  const observed = f.envelope('handoff.observe', { payload: { ...payload, artifactObjects: refs } });
+  p.validateEnvelope(observed, context('handoff.observe'));
+  const discovered = p.validateResponse(f.envelope('handoff.observe-request'), observed).payload.artifactObjects.zip;
+  const read = f.envelope('artifact.read', { execution: f.granted,
+    payload: { requestId: 'synthetic-discovered-read', object: discovered, offset: 0, length: 4 } });
+  assert.deepEqual(p.validateEnvelope(read, context('artifact.read')).envelope.payload.object, object);
+  throws(() => p.validateRequest('handoff.observe', { ...payload, artifactObjects: { ...refs, zip: { ...object, size: object.size + 1 } } }), 'ARTIFACT_DISCOVERY_BINDING');
+  throws(() => p.validateRequest('handoff.observe', { ...payload, artifactObjects: { state: 'ready', manifest: refs.manifest } }), 'ARTIFACT_DISCOVERY_BINDING');
+  const unavailable = { state: 'unavailable', reason: 'synthetic artifact has not become readable' };
+  assert.deepEqual(p.validateRequest('handoff.observe', { ...payload, artifactObjects: unavailable }).artifactObjects, unavailable);
+});
+
 test('empty queue authority reads need no ticket and preserve one immutable manifest/object version', () => {
   const manifest = f.payloads['projection.manifest'], read = f.payloads['projection.read'];
   const c = { ...f.trust(), now: f.at, maxObjectBytes: 1024 * 1024 };
