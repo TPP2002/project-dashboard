@@ -179,7 +179,7 @@ test('接线:两处起进程都传 env 且来自 codexWorkerEnv(源码文本断�
   )
   assert.match(
     saySource,
-    /buildResumeArgs\(threadId, message, opts\?\.sandbox \?\? 'read-only'\), \{[^}]*env: codexWorkerEnv\(process\.env\)/,
-    'sayToJob 的 spawnSync 选项里要有 env: codexWorkerEnv(process.env)',
+    /argv: buildResumeArgs\(threadId, message, opts\?\.sandbox \?\? 'read-only'\), options: \{[^}]*env: codexWorkerEnv\(process\.env\)/,
+    'sayToJob 的 registeredRun 选项里要有 env: codexWorkerEnv(process.env)',
   )
 })

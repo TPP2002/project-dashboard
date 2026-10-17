@@ -46,7 +46,7 @@ test('real parent/child parser: replay dedup, new/deleted children change group 
 });
 test('sources reject traversal, absolute/UNC and symlink escape; fixed export has content identity',t=>{
   const dir=root(t),repo=path.join(dir,'repo');fs.mkdirSync(repo);fs.writeFileSync(path.join(repo,'safe.md'),'source');
-  for(const rel of ['../secret','a/../safe.md','/absolute','C:/secret','\\\\host\\share','a\\b'])assert.throws(()=>sources.bytes(repo,rel));
+  for(const rel of ['../secret','a/../safe.md','/absolute','C:/path/to/secret','\\\\host\\share','a\\b'])assert.throws(()=>sources.bytes(repo,rel));
   const outside=path.join(dir,'outside');fs.mkdirSync(outside);fs.writeFileSync(path.join(outside,'secret.md'),'private');
   fs.symlinkSync(outside,path.join(repo,'linked'),process.platform==='win32'?'junction':'dir');
   assert.throws(()=>sources.bytes(repo,'linked/secret.md'));

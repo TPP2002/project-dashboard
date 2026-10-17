@@ -18,7 +18,7 @@
 
 `dashboardRemoteConfig` 指向本机已配置的公开看板 CLI 远程权威绑定，节点设置 `DASHBOARD_REMOTE_CONFIG`，启动项目派单前检查 binding。由主控沿现有远程 CLI 安装/登记流程生成该文件，不复制凭据到 owner-node 配置或云数据库。CLI、scheduler、owner-node 三者的子通道各自独立。缺少正式 scheduler 或项目权威绑定会明确失败，不裸跑，不回退本机旧板。
 
-scheduler 配置中 `share` 与 `clientConfig` 恰好填写一个。remote 示例替换为 `clientConfig` 后由 helper 设置公开客户端的 `SCHED_CONFIG`，具体客户端部署归主控；不隐式回退共享盘。
+scheduler 配置中 `share` 与 `clientConfig` 恰好填写一个。remote 示例替换为 `clientConfig` 后由 helper 设置 `SCHED_MODE=remote` 和公开客户端的 `SCHED_REMOTE_CONFIG`；`SCHED_CONFIG` 仍仅用于部署项目目录，不能替代 IPC 配置。具体客户端部署归主控，不隐式回退共享盘。
 
 模板使用 `balance: "windows-key"` 保留现有余额功能，由既有模块在 Windows 本机读取 key；配置、日志及云数据库不得存 key。合成测试可显式用 `disabled`，不可把此测试设置当作迁移完成。
 
@@ -27,8 +27,8 @@ scheduler 配置中 `share` 与 `clientConfig` 恰好填写一个。remote 示�
 ```text
 node packages/owner-node/gateway.cjs /etc/owner-node/cloud.json
 node packages/owner-node/ssh-entry.cjs /etc/owner-node/cloud.json synthetic-node
-node packages/owner-node/node.cjs C:/OwnerNode/config/node.json
-node packages/owner-node/node.cjs C:/OwnerNode/config/node.json --stdio
+node packages/owner-node/node.cjs C:/path/to/owner-node/config/node.json
+node packages/owner-node/node.cjs C:/path/to/owner-node/config/node.json --stdio
 ```
 
 第二行是管理员配置的 SSH forced command，固定 nodeId 及配置路径；不能取自 SSH_ORIGINAL_COMMAND、客户端载荷或成员输入。最后一行是本地 framed stdio 测试入口，stdout 只承载帧，日志走 stderr。不能把它直接接普通文本管道。

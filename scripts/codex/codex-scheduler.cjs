@@ -17,7 +17,9 @@ function config(env = process.env) {
   return c;
 }
 function client(c, run = spawnSync) {
-  const env = { ...process.env, ...(c.clientConfig ? { SCHED_CONFIG:c.clientConfig } : {}) };
+  // SCHED_CONFIG is the deployment catalog, not the authenticated IPC endpoint.
+  const env = { ...process.env, SCHED_MODE: c.clientConfig ? 'remote' : 'local',
+    ...(c.clientConfig ? { SCHED_REMOTE_CONFIG: c.clientConfig } : {}) };
   const call = (args,cwd,timeout=40000) => run(process.execPath,[c.cli,...(c.share ? ['--share',c.share] : []),...args],{cwd,env,encoding:'utf8',windowsHide:true,shell:false,timeout,maxBuffer:1024*1024});
   function json(args,cwd) {
     const r=call(args,cwd);
