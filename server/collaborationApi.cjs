@@ -2,6 +2,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const bodyChannel = require('node:diagnostics_channel').channel('dashboard.owner-body');
+const { publicJson } = require('../core/collaborationPublic.cjs');
 const { createAuth, fail } = require('../core/collaborationAuth.cjs');
 const { readRegistry, resolveProject } = require('../core/resolveProject.cjs');
 const COOKIE = 'dashboard_session';
@@ -24,7 +27,7 @@ function rawCookie(req, name = COOKIE) {
 }
 function json(res, status, data) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, no-store', vary: 'Cookie', 'x-content-type-options': 'nosniff' });
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify(data, publicJson));
 }
 async function body(req) {
   let bytes = 0; const chunks = [];
@@ -82,6 +85,8 @@ function runTask(command, payload, env) {
 function createCollaborationApi({ config, home, registryPath, summarize }) {
   const auth = createAuth({ home, registryPath });
   const streams = new Map();
+  const ownerRequests = new WeakMap();
+  const ownerContext = new AsyncLocalStorage();
   const env = { ...process.env, DASHBOARD_HOME: home, DASHBOARD_REGISTRY: registryPath };
   const canProject = (user, id) => user.role === 'owner' || user.projectIds.includes(id);
   const projects = user => Object.keys(readRegistry(registryPath).projects || {}).filter(id => canProject(user, id));
@@ -104,6 +109,46 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
     rejectForwarding(req);
     if (!exempt && (!session || req.headers['x-dashboard-csrf'] !== session.csrfToken)) fail(403, 'Invalid CSRF token');
   }
+  function withOwnerBody(req, callback) {
+    const context = ownerRequests.get(req);
+    if (!context) fail(401, 'Login required');
+    try {
+      return auth.withSession(context.raw, session => {
+        if (session.user.role !== 'owner') fail(403, 'Forbidden');
+        writeGuard(req, session, false);
+        // Only the synchronous callback is protected. CLI children independently
+        // reacquire auth -> board locks; async completion never retains this lock.
+        return ownerContext.run(context, callback);
+      });
+    } catch (error) {
+      if (!context.res.headersSent && !context.res.destroyed) json(context.res, error.status || 500,
+        { ok: false, error: error.status ? error.message : 'Request failed' });
+    }
+  }
+  function bodyChunk(req, bytes) {
+    if (ownerRequests.has(req) && bodyChannel.hasSubscribers) {
+      // Observability synchronization: no cookie, body, identity or secret.
+      bodyChannel.publish({ path: req.url.split('?')[0], bytes });
+    }
+  }
+  function ownerExecFile(executable, args, options, callback) {
+    const context = ownerContext.getStore();
+    if (!context) fail(401, 'Login required');
+    const child = execFile(process.execPath, [CLI, 'owner-command'], { ...options, env }, (error, stdout, stderr) => {
+      if (error) {
+        let result;
+        try { result = JSON.parse(stdout); } catch {}
+        // Never include serialized input or a credential in errors/logs.
+        error.status = result?.status || 500;
+        error.message = result?.error || 'Owner operation failed';
+        return callback(error, '', error.message);
+      }
+      callback(null, stdout, stderr);
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(JSON.stringify({ sessionToken: context.raw, args: args.slice(1) }));
+    return child;
+  }
   function closeStream(res) { streams.delete(res); res.end(); }
   function liveStream(res, client) {
     try {
@@ -114,7 +159,7 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
   }
   function event(res, name, data) {
     if (res.destroyed || res.writableLength > 65536) return closeStream(res);
-    res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+    res.write(`event: ${name}\ndata: ${JSON.stringify(data, publicJson)}\n\n`);
   }
   function sweep() { for (const [res, client] of streams) liveStream(res, client); }
   function broadcast(name, data) {
@@ -141,8 +186,15 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
       return writeHead.call(res, status, ...args);
     };
     try {
-      if (req.method === 'GET' && pathname === '/api/health') { json(res, 200, { ok: true, mode: 'collaboration' }); return true; }
       const raw = rawCookie(req);
+      if (req.method === 'GET' && pathname === '/api/health') {
+        // The owner UI reads modules from the existing full health response.
+        // Anonymous probes stay independent of auth storage; other credentials
+        // must be current, and a remembered device alone grants no health access.
+        const current = raw ? auth.session(raw) : null;
+        if (current?.user.role === 'owner') { ownerRequests.set(req, { raw, res }); return false; }
+        json(res, 200, { ok: true, mode: 'collaboration' }); return true;
+      }
       const deviceCookie = rawCookie(req, DEVICE_COOKIE);
       let session = auth.session(raw);
       if (req.method === 'GET' && pathname === '/api/auth/session') {
@@ -213,7 +265,7 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
         req.on('close', cleanup); res.on('close', cleanup); res.on('error', cleanup);
         return true;
       }
-      if (session.user.role === 'owner') return false;
+      if (session.user.role === 'owner') { ownerRequests.set(req, { raw, res }); return false; }
       if (req.method === 'GET' && pathname === '/api/projects') {
         const reg = readRegistry(registryPath);
         const list = projects(session.user).map(id => {
@@ -237,6 +289,7 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
       json(res, e.status || 500, { ok: false, error: e.status ? e.message : 'Request failed' }); return true;
     }
   }
-  return { handle, broadcast, sweep, close: () => { for (const res of streams.keys()) closeStream(res); } };
+  return { handle, broadcast, sweep, withOwnerBody, ownerExecFile, bodyChunk,
+    close: () => { for (const res of streams.keys()) closeStream(res); } };
 }
 module.exports = { configuration, createCollaborationApi, boardView, taskView };

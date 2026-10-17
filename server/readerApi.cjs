@@ -46,6 +46,7 @@ function createReaderApi(deps) {
   // dashRoot 是代码根,用于启动 CLI 的工作目录。
   // dataRoot 是 DASHBOARD_HOME 数据根,批注主存不随发布副本替换。
   const { resolveProjectSafe, sendJson, readBody, bodyMax, dashRoot, dataRoot, cliIndex, registry, registryPath, pollBoards, importBodyMax } = deps;
+  const runCli = deps.execFile || execFile;
   const DATA_DIR = path.join(dataRoot, 'data', 'reader');
   // 本机导入的 POST 体上限(30MB 原件 base64 约 40MB,放宽到 45MB);只用于 /api/reader/import,其它动作仍用 bodyMax
   const IMPORT_BODY_MAX = importBodyMax || 45 * 1024 * 1024;
@@ -216,7 +217,7 @@ function createReaderApi(deps) {
     if (!taskId) return cb(false, '报告未绑定看板卡');
     const args = [cliIndex, 'note', '--project', projectId, '--task', taskId, '--text', text, '--author', '负责人·审阅台'];
     if (registry && registryPath && registry !== registryPath) args.push('--registry', registry);
-    execFile(process.execPath, args, { cwd: dashRoot, timeout: NOTE_TIMEOUT_MS, maxBuffer: 1024 * 1024, windowsHide: true }, (e, _out, err) => {
+    runCli(process.execPath, args, { cwd: dashRoot, timeout: NOTE_TIMEOUT_MS, maxBuffer: 1024 * 1024, windowsHide: true }, (e, _out, err) => {
       if (e) return cb(false, String(err || e.message).slice(0, 300));
       try { pollBoards && pollBoards(); } catch (_) {}
       cb(true, null);
