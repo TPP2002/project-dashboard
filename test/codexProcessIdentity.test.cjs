@@ -247,7 +247,7 @@ test('inspectProcesses 查询/解析/形状失败保持 unknown，保留单次�
     import { inspectProcesses, supervisorLiveness } from './scripts/codex/codex-process.ts'
     Object.defineProperty(process, 'platform', { value: 'win32' })
     const state = { pid: 1234, startedAt: '2026-09-23T00:00:00.000Z', finishedAt: null, identityToken: 'fixture-token' }
-    const row = { pid: state.pid, startedAt: state.startedAt, executablePath: 'C:/node.exe',
+    const row = { pid: state.pid, startedAt: state.startedAt, executablePath: process.execPath,
       commandLine: 'node "' + join(REPO_ROOT, 'scripts', 'codex', 'codex-dispatch.ts') + '" _supervise sample-job --identity fixture-token' }
     let response, calls = 0
     const options = []
