@@ -71,9 +71,9 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
   for (const id of ['alpha', 'beta']) {
     const file = path.join(home, id + '.json'); reg.projects[id] = { mainRepo: home, board: file, name: id };
     const board = emptyBoard({ id, name: id, mainRepo: home });
-    board.tasks = [{ id: 'ONE', title: 'Work at C:\\private\\root and /home/secret/file', plainTitle: 'Shared work', wave: 1, status: '待开工',
+    board.tasks = [{ id: 'ONE', title: 'Work at C:\\path\\to\\private-root and /home/secret/file', plainTitle: 'Shared work', wave: 1, status: '待开工',
       collectBrief: { text: 'OWNER COLLECT SECRET', updatedAt: new Date().toISOString() }, cost: { entries: [{ tokens: 987654 }] },
-      worktree: ['C:\\private\\tree'], decisions: [{ id: 'd1', question: 'OWNER QUESTION', options: ['yes'], recommended: 'yes', answer: 'yes' }] },
+      worktree: ['C:\\path\\to\\private-tree'], decisions: [{ id: 'd1', question: 'OWNER QUESTION', options: ['yes'], recommended: 'yes', answer: 'yes' }] },
     { id: 'RACE', title: 'Race', wave: 1, status: '待开工' }];
     board.activity = [{ ts: new Date().toISOString(), taskId: 'ONE', type: 'message', author: 'owner', text: 'OWNER MESSAGE' }];
     fs.writeFileSync(file, JSON.stringify(board));

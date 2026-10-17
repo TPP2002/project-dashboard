@@ -19,7 +19,7 @@ test('explicit collaboration origin, trusted TLS and separate local mode', () =>
 });
 test('member serialization is a positive whitelist including nested free text', () => {
   const view = boardView({ schemaVersion: '1.0', project: { id: 'alpha', name: 'Alpha', mainRepo: 'PRIVATE', cost: 'PRIVATE' },
-    tasks: [{ id: 'ONE', title: 'C:\\private\\root /home/private/path', status: '待开工', percent: 0, cost: 'PRIVATE', collectBrief: 'PRIVATE', decisions: ['PRIVATE'], worktree: ['PRIVATE'] }],
+    tasks: [{ id: 'ONE', title: 'C:\\path\\to\\private-root /home/private/path', status: '待开工', percent: 0, cost: 'PRIVATE', collectBrief: 'PRIVATE', decisions: ['PRIVATE'], worktree: ['PRIVATE'] }],
     activity: [{ type: 'message', text: 'PRIVATE' }, { type: 'collaboration:progress', userId: 'member', taskId: 'ONE', text: 'PRIVATE', note: 'PRIVATE' }] });
   assert.doesNotMatch(JSON.stringify(view), /PRIVATE|C:|\/home\/private/);
   assert.equal(view.tasks[0].percent, 0); assert.equal(view.activity.length, 1);
