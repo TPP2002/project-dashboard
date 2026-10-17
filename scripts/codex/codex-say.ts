@@ -15,12 +15,13 @@
  * 宁可继续用旧自述（现状，人已经知道要怎么读），也不能拿一段散文把结论文件糊掉。
  */
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
-import { spawnSync } from 'node:child_process'
 import { isValidSlug } from './codex-contract'
 import { jobPaths, REPO_ROOT } from './codex-paths'
 import { resolveCodexBin } from './codex-runner'
 import { VERDICT_SCHEMA } from './codex-verdict'
 import { CODEX_WORKER_CONFIG_OVERRIDES, codexWorkerEnv } from './codex-worker-overrides'
+import scheduler from './codex-scheduler.cjs'
+import { join } from 'node:path'
 
 interface SayResult {
   ok: boolean
@@ -278,15 +279,16 @@ export const sayToJob = (slug: string, message: string, opts?: { sandbox?: strin
     return { ...rejected((err as Error).message), threadId }
   }
 
-  const result = spawnSync(codexBin, buildResumeArgs(threadId, message, opts?.sandbox ?? 'read-only'), {
-    cwd: cwdFromMeta(paths.meta) ?? REPO_ROOT,
+  const result = scheduler.registeredRun({ file: join(paths.dir, 'say-operation.json'),
+    cwd: cwdFromMeta(paths.meta) ?? REPO_ROOT, title: '续聊 ' + slug, targets: ['scripts/codex'],
+    executable: codexBin, argv: buildResumeArgs(threadId, message, opts?.sandbox ?? 'read-only'), options: {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     windowsHide: true,
     // 传给 codex 的环境经 codexWorkerEnv 洗过(见 ./codex-worker-overrides.ts):PATH 去掉
     // WindowsApps,免得不提权沙箱的受限令牌起商店版 pwsh 而拒绝访问。
     env: codexWorkerEnv(process.env),
-  })
+  } })
   const exitCode = result.status ?? null
   const reply = result.stdout ?? ''
 
