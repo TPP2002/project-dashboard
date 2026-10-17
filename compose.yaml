@@ -6,6 +6,7 @@ services:
       dockerfile: Dockerfile
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+        VCS_REF: ${DASHBOARD_REVISION:-unknown}
     user: "1000:1000"
     init: true
     environment:

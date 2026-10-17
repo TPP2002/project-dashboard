@@ -2,7 +2,7 @@
 
 本方案只打包看板：一个 Node 服务、一个用户提供的数据目录，不附带示例应用、真实项目、外部认证或收费服务。默认只绑定服务器的 `127.0.0.1:6060`。原有本机模式不变；Compose 显式启用 `collaboration`。
 
-**集成状态：本施工单只做打包和文档，未执行 Docker 构建、启动、重启或恢复。** 本工位尚无 `cli/collaboration.cjs`，现有服务也尚未接入协作模式的监听参数。必须由主控合入后端、前端，再在授权的 Ubuntu + Docker 私有环境完成文末验收。Dockerfile 会拒绝缺少协作初始化命令的源码。文件存在只是初步防错，不等于认证功能已经验收。
+认证后端与协作界面已接入，包含邀请注册、项目授权、成员领取任务，以及负责人主动信任常用浏览器。Dockerfile 会拒绝缺少协作初始化命令的源码。部署者仍须在自己的环境完成文末验收；单元测试和界面构建不代表容器、备份恢复或公网访问已经验证。
 
 ## 1. 环境与目录边界
 
@@ -19,7 +19,8 @@
 ```text
 data/
   registry.json           # 起始内容只有空 projects
-  private/auth/           # 后端维护的用户、邀请、会话和设备认证状态
+  private/collaboration-auth.json      # 用户、邀请、会话和设备认证状态
+  private/collaboration-auth.json.bak  # 上一次有效认证状态；不是完整数据备份
   boards/                 # 后续经正式 CLI 创建的项目账本及其活动流水
   ...                     # 锁、快照、设置和其它持久状态，一并备份
 ```
@@ -40,7 +41,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-编辑 `.env` 的非秘密设置，建议给 `DASHBOARD_IMAGE` 使用每次发布唯一的标签，固定 `NODE_IMAGE` digest。不要把密码、设备令牌、邀请码、私钥放进 `.env`、构建参数、命令行参数值或 Git；不要在含秘密的终端开启 `set -x`、录屏或会话转录。
+编辑 `.env` 的非秘密设置，给 `DASHBOARD_IMAGE` 使用每次发布唯一的标签，`DASHBOARD_REVISION` 填已审核的源码提交号，固定 `NODE_IMAGE` digest。提交号进入镜像的 `org.opencontainers.image.revision` 标签，部署后与源码核对。不要把密码、设备令牌、邀请码、私钥放进 `.env`、构建参数、命令行参数值或 Git；不要在含秘密的终端开启 `set -x`、录屏或会话转录。
 
 以默认 `./data` 为例，下面的 `mkdir` 遇到任何已有目录都会失败；**不要改成 `mkdir -p` 后重跑初始化**。若使用不同路径，同步修改此处 `data_dir` 与 `.env`：
 
@@ -63,7 +64,7 @@ Dockerfile 的构建阶段只对 `web/package-lock.json` 执行 `npm ci`，随�
 
 ### 安全创建负责人
 
-后端契约提供：`node cli/collaboration.cjs init-owner --username <name> --password-file <protected-file>`。该接口尚待主控集成验证，包括仅允许首次创建、拒绝损坏或已有认证状态、退出码和秘密不输出。启动命令不会自动调用它，不会重建认证库。
+初始化命令：`node cli/collaboration.cjs init-owner --username <name> --password-file <protected-file>`。它仅允许首次创建，认证文件或其备份已存在时拒绝再次引导。启动命令不会自动调用它，不会重建认证库。
 
 以下在服务器终端交互输入密码，密码不进入历史或容器环境；临时秘密文件放在 Linux 内存盘，以只读挂载交给 UID 1000。它不在构建上下文内，也不在长期数据备份里。仅在确认新目录且服务未启动时运行；若失败，保留数据排错，不循环引导：
 
@@ -88,7 +89,7 @@ Dockerfile 的构建阶段只对 `web/package-lock.json` 执行 `npm ci`，随�
 )
 ```
 
-不要把占位用户名当密码，也不要用 `echo 明文密码`。不要在失败时删除 `private/auth`。没有验证成功的负责人就不要开放成员入口。
+不要把占位用户名当密码，也不要用 `echo 明文密码`。不要在失败时删除认证文件。没有验证成功的负责人就不要开放成员入口。
 
 ## 3. 启停、日志和私有验证
 
@@ -120,7 +121,7 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:6060:127.0.0.1:6060 user@your-se
 长期远程访问应由部署者设置 HTTPS 反向代理，本单不附带代理服务或证书自动续期。代理在同一宿主机连接 `127.0.0.1:6060`；Compose 的回环映射保持不变。代理应：
 
 1. 使用浏览器信任且名称匹配的有效证书；将 `DASHBOARD_PUBLIC_ORIGIN` 设为浏览器看到的准确 `https://主机名[:端口]`（无路径），变更后重新 `docker compose up -d --no-build dashboard`。
-2. 保留原始 Host/Origin，覆盖而非透传客户端伪造的转发头，传递正确的 HTTPS 协议信息。是否信任代理头按合并后后端的实现核实，不能因来源回环就授予负责人身份。
+2. 保留原始 Host/Origin，删除传给应用的 `Forwarded` 和所有 `X-Forwarded-*` 头，包括代理默认添加的头。应用拒绝带这些头的写请求；Cookie 的 Secure 标志只依据配置的 `DASHBOARD_PUBLIC_ORIGIN`，不依赖代理头，不因来源回环就授予负责人身份。
 3. 支持 SSE 长连接，关闭该流的响应缓冲并配置合适超时；限制请求体和速率。不要在访问日志记录 Cookie、Authorization、请求体或含令牌的邀请 URL；有查询参数的日志应脱敏或省略查询。
 4. 用浏览器确认 HTTPS 会话 Cookie 的 `HttpOnly`、`Secure`、`SameSite` 属性，以及来源/CSRF 拒绝行为；不能为了让登录成功关闭这些检查。回环 HTTP 仅是后端契约允许的本机验证例外。
 
@@ -210,7 +211,7 @@ mkdir -m 700 -- "$restore_dir/data"
 cp -- "$backup_dir/compose.yaml" "$backup_dir/.env" "$restore_dir/"
 sudo tar --numeric-owner --same-owner -xzf "$backup_dir/data.tar.gz" -C "$restore_dir/data"
 sudo test -f "$restore_dir/data/registry.json"
-sudo test -d "$restore_dir/data/private/auth"
+sudo test -f "$restore_dir/data/private/collaboration-auth.json"
 docker image load -i "$backup_dir/image.tar"
 cat "$backup_dir/image-ref.txt"
 printf '恢复演练目录：%s\n' "$restore_dir"
@@ -227,6 +228,9 @@ printf '恢复演练目录：%s\n' "$restore_dir"
 docker compose -p dashboard-restore config --quiet
 # 启动前人工核对下面配置的 /data source 为新恢复目录且端口仅 127.0.0.1:6061。
 docker compose -p dashboard-restore config
+# 仍未启动服务时，撤销历史备份里的登录凭据和邀请。
+docker compose -p dashboard-restore run --rm --no-deps dashboard \
+  node cli/collaboration.cjs revoke-all-credentials --confirm-revoke
 docker compose -p dashboard-restore up -d --no-build --pull never dashboard
 docker compose -p dashboard-restore ps
 curl --fail --silent --output /dev/null http://127.0.0.1:6061/api/health
@@ -235,7 +239,7 @@ docker compose -p dashboard-restore restart dashboard
 
 通过新的 SSH 隧道 `ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:6061:127.0.0.1:6061 user@your-server` 打开回环网页。验证原负责人登录、用户与邀请、项目账本、成员权限、任务归属和进度，以及重启后仍持久化；未登录和越权请求须拒绝。不得以健康状态代替这些验证。
 
-**恢复旧备份可能让备份以后已撤销的邀请、用户权限、设备或会话重新有效。** 恢复实例先保持私有隔离。对照撤销记录复核用户权限、禁用失效用户、撤销旧邀请和设备及其衍生会话；使用后端正式提供的会话撤销能力清除旧会话，重新登录并验证旧凭据被拒绝。契约尚未列出“撤销全部会话”的管理命令，本单不捏造命令，不通过删认证文件代替；主控集成验收必须确认可操作的撤销流程。未能证明撤销完成就不能对外切换。
+**恢复旧备份可能让备份以后已撤销的邀请、用户权限、设备或会话重新有效。** 在恢复目录中、服务尚未启动时，先执行 `docker compose -p dashboard-restore run --rm --no-deps dashboard node cli/collaboration.cjs revoke-all-credentials --confirm-revoke`。这会在当前有效认证库中清除所有会话、撤销全部设备和邀请，保留用户、密码哈希与项目授权；不会用更旧的认证备份替换当前状态。随后保持私有隔离，对照撤销记录重新核对授权、禁用失效用户，必要时通过受保护密码文件重置负责人密码。验证旧凭据被拒绝后才能对外切换，不通过删认证文件代替撤销。
 
 验证通过且最终数据时间点已确认后：停止原服务和外部写入者，保留原数据及最新备份；停止演练服务，将新实例 public origin 改回批准的实际来源并重新创建容器，再将代理上游或回环端口切到新实例。切换端口前确保旧实例已释放该端口。只有一个实例能成为写入主实例，两个实例不能挂载同一数据目录。回退同样先停写、备份切换后的新写入，不用原旧目录覆盖新目录。
 

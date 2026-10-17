@@ -28,7 +28,7 @@
 | GET `/api/auth/session` | `{ok:true,mode:'local'|'collaboration',user:null或User,csrfToken?:string}`；User 为 `{id,username,displayName,role:'owner'|'member',projectIds:string[]}` |
 | POST `/api/auth/login` | `{username,password}` → 同 session 响应并设置 Cookie |
 | POST `/api/auth/register` | `{inviteToken,username,password,displayName?}` → 同 session 响应并设置 Cookie |
-| POST `/api/auth/logout` | 撤销当前会话，清除 Cookie |
+| POST `/api/auth/logout` | 撤销当前会话及本浏览器的受信任设备凭据，清除 Cookie，不能退出后自动重新登录 |
 | GET `/api/auth/admin` | 仅负责人，返回 `{ok:true,users:User[],invites:Invite[],devices:Device[]}`；邀请和设备列表不含明文令牌 |
 | POST `/api/auth/invites` | 仅负责人，`{projectIds,expiresInHours,maxUses}` → `{ok:true,invite:Invite,token:string}`，只在创建时返回令牌 |
 | POST `/api/auth/invites/:id/revoke` | 仅负责人，撤销邀请 |
@@ -36,10 +36,13 @@
 | POST `/api/auth/devices` | 仅负责人，`{label}` → `{ok:true,device:Device,token:string}` |
 | POST `/api/auth/devices/:id/revoke` | 仅负责人，撤销设备及其衍生会话 |
 | POST `/api/auth/device-login` | `{token}` → 同 session 响应并设置 Cookie；不得将令牌放 URL 或日志 |
+| POST `/api/auth/remember-device` | 负责人已登录并通过 CSRF 后，`{label}` → `{ok:true,device:Device}`；用 HttpOnly Cookie 保存本浏览器的设备凭据，不向脚本返回令牌 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/claim` | 登录且项目授权，原子领取空闲任务；已经被其他用户或 AI 认领时拒绝 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/progress` | `{percent,note?}`，仅更新本人任务；到 100% 也不能代负责人验收销卡 |
 
 Invite 公共字段为 `{id,projectIds,expiresAt,maxUses,uses,revoked}`；Device 为 `{id,label,createdAt,revoked}`。前端所有认证写请求带 `Content-Type: application/json` 和 `X-Dashboard-Request: 1`；登录、注册、设备登录以外的协作写请求还带 `/api/auth/session` 返回的 `X-Dashboard-CSRF`。
+
+User 增加明确的 `disabled:boolean`，供负责人管理列表显示真实状态。负责人可主动信任本浏览器 90 天；设备凭据只放 HttpOnly、SameSite=Strict Cookie，HTTPS 时必须 Secure。普通会话过期时，session 接口可凭有效设备 Cookie 恢复负责人会话，但不得延长设备原到期日。撤销设备、重置负责人密码及主动退出都阻止该凭据再次恢复。默认不自动信任设备，不以 IP 或本机地址识别负责人。恢复历史备份后提供显式 CLI 撤销全部会话、设备和邀请的能力，保留用户与账本。
 
 普通成员只可读 `/api/projects`、`/api/board/:id` 和按授权过滤的 `/api/stream`。其余既有 API 默认拒绝，包括文件读取、审批、派单、设置、成本、审阅、试听。成员项目和任务响应使用字段白名单，去掉本机绝对路径、收单指令、成本明细及负责人留言。事件订阅在每次推送时复核会话和项目授权。
 
