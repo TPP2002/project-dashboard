@@ -153,6 +153,21 @@ function validate(board) {
   const errs = [];
   if (!board || typeof board !== 'object') return { ok: false, errors: ['board: 应为对象'] };
   if (!board.schemaVersion) errs.push('schemaVersion: 缺失');
+  if (board.revision !== undefined && (!Number.isSafeInteger(board.revision) || board.revision < 0)) errs.push('revision: 应为非负安全整数');
+  if (board._commandReceipts !== undefined) {
+    const receipts = board._commandReceipts;
+    if (!isType(receipts, 'object')) errs.push('_commandReceipts: 应为对象');
+    else {
+      if (Object.keys(receipts).length > 10000) errs.push('_commandReceipts: 超过原型容量');
+      for (const [key, receipt] of Object.entries(receipts)) {
+        if (!/^[a-f0-9]{64}$/.test(key) || !isType(receipt,'object') || !/^[a-f0-9]{64}$/.test(receipt.inputHash)
+          || !Number.isSafeInteger(receipt.revision) || receipt.revision < 1 || receipt.revision > board.revision
+          || !isType(receipt.result,'object') || Buffer.byteLength(JSON.stringify(receipt.result)) > 128 * 1024) {
+          errs.push('_commandReceipts: 非法稳定回执');
+        }
+      }
+    }
+  }
 
   const proj = board.project;
   if (!isType(proj, 'object')) errs.push('project: 缺失或非对象');

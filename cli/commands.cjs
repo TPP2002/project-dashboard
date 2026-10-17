@@ -78,6 +78,7 @@ function statsLine(s) { return `进度 ${s.progress}%（${s.done}/${s.total} 完
 // ---------- register（写 registry + 建空 board） ----------
 function register(flags) {
   const id = need(flags.id, 'register --id <id> --name <名> --root <主仓路径> [--board <path>]');
+  if (require('./remoteConfig.cjs').binding(id)) throw new Error('已绑定远程项目，禁止本机 register');
   const name = flags.name || id;
   const root = need(flags.root, 'register --root <主仓路径>');
   const mainRepo = normalizeReal(root);
@@ -146,6 +147,7 @@ function add(flags) {
  * 所以判据只写这一份、由入口 require 过去用。
  */
 function isBatchAdd(flags) {
+  if (flags._payload !== undefined) return true;
   if (typeof flags['json-file'] === 'string' && flags['json-file'].trim()) return true;
   return flags.json === true && !((flags._ || []).length);
 }
@@ -157,6 +159,7 @@ function isBatchAdd(flags) {
  * heredoc 之苦（审计 A8），再被 BOM 绊一跤就白加了。
  */
 function readJsonInput(flags, what) {
+  if (flags._payload !== undefined) return flags._payload;
   const strip = (t) => (t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t);
   const file = flags['json-file'];
   if (file === true) throw new Error('--json-file 后面漏写路径了。用法: --json-file <路径>');
@@ -341,6 +344,9 @@ function claim(flags) {
   claimAct.builder = builder; // 同一条认领流水带上施工方式(卡上的 builder 字段与它同源)
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
+    if (t.assigneeUserId) {
+      throw new Error(`claim 拒绝：${id} 已由成员 ${t.assigneeName || t.assigneeUserId}（${t.assigneeUserId}）认领；须先明确 unclaim 释放，不能自动夺卡`);
+    }
     if (!ALLOWED.includes(t.status)) {
       throw new Error(`claim 非法迁移：${t.status} → 施工中（只能从 ${ALLOWED.join('/')}）` +
         `。已完工 / 已作废的卡要接着做，先 reopen ${id} --reason "<为什么重开>"`);
@@ -352,7 +358,7 @@ function claim(flags) {
     if (branches.length) t.gitBranch = unionBy([...(t.gitBranch || []), ...branches], String);
     if (scopes.length) t.fileScope = unionBy([...(t.fileScope || []), ...scopes], String);
   }, claimAct);
-  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'claim' }); }
+  try { if (!require('./store.cjs').inCommandTransaction()) recordBinding({ boardPath: proj.board, taskId: id, via: 'claim' }); }
   catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   warnGeneratedScopes(scopes);
   const res = okTask(board, id, changed);
@@ -465,20 +471,27 @@ function unclaim(flags) {
   const id = need(flags._[0], 'unclaim <taskId> --reason <理由> [--branch <b>...]');
   const reason = String(need(flags.reason, '--reason <理由>'));
   const branches = asArray(flags.branch).filter((x) => x !== true).map(String);
+  const releaseActivity = act('unclaim', flags.author, `放弃认领 ${id}：${reason}`, id);
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     if (t.status !== '施工中') throw new Error(`unclaim 非法迁移：${t.status} → 待开工（只能从 施工中）`);
+    const subjectId = require('./store.cjs').commandSubject();
+    releaseActivity.releasedBy = { kind: subjectId ? 'owner-transport' : 'local-cli', subjectId, author: releaseActivity.author };
+    releaseActivity.releasedAssignee = { userId: t.assigneeUserId ?? null, name: t.assigneeName ?? null };
+    // Ownership, lifecycle/branch changes and the audit entry share the same board write.
+    delete t.assigneeUserId;
+    delete t.assigneeName;
     // 退回哪一档看这张卡「这一轮是不是解冻来的」：解除暂缓留下的 unparkReason 还挂着，就说明是，
     // 回「可复工」；一律退成「待开工」会把它跟从没开工过的卡混为一谈。
     // （park / cancel / reopen 都会抹掉 unparkReason，所以它只在当前这一轮有效，不会串味。）
     t.status = t.unparkReason ? '可复工' : '待开工';
     // 分支给了就摘给的那几条；没给就摘当前 git 分支（在自己工位上跑时最省事）。
     // 一条都没摘也不报错：别人代为释放一张卡时，本来就未必知道对方用的哪个分支。
-    const drop = branches.length ? branches : [currentBranch()].filter(Boolean);
+    const drop = branches.length ? branches : (require('./store.cjs').inCommandTransaction() ? [] : [currentBranch()].filter(Boolean));
     if (drop.length) t.gitBranch = (t.gitBranch || []).filter((x) => !drop.includes(String(x)));
     t.unclaimReason = reason; t.unclaimedAt = today();
     t.lastProgressAt = nowIso();
-  }, act('unclaim', flags.author, `放弃认领 ${id}：${reason}`, id));
+  }, releaseActivity);
   return okTask(board, id, changed);
 }
 
@@ -540,7 +553,8 @@ function syncProgress(flags) {
     if (target <= (cand.percent || 0)) return skip(`进度未前进(当前 ${cand.percent || 0}%)`);
     const { board, changed } = mutateTask(proj, cand.id, (b) => {
       const t = findTask(b, cand.id);
-      t.percent = target;
+      if (t.status !== '施工中' || !(t.gitBranch || []).map(String).includes(branch)) return;
+      t.percent = Math.max(t.percent || 0, Math.min(95, Math.max(0, pct)));
       t.lastProgressAt = nowIso();
     }, act('progress', flags.author || 'todo-hook', `进度(自动) ${cand.id} ${target}%`, cand.id));
     return okTask(board, cand.id, changed);
@@ -593,7 +607,7 @@ function pending(flags) {
   const id = need(flags._[0], 'pending <taskId> --json-file <路径>  或  --json < 文件  或  --q --opt --opt --rec --background --reason --pros-<opt>=<text>');
   // 组装 payload
   let payload;
-  if (flags.json || flags['json-file'] !== undefined) {
+  if (flags._payload !== undefined || flags.json || flags['json-file'] !== undefined) {
     payload = readJsonInput(flags, '待拍板 JSON');
   } else {
     const options = asArray(flags.opt);
@@ -828,7 +842,7 @@ function done(flags) {
       for (const d of (t.decisions || []).filter(isDecidedNotLanded)) { landDecision(d, commits[0]); landed.push(d.id); }
     }
   }, act('done', flags.author, `${collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
-  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'done' }); }
+  try { if (!require('./store.cjs').inCommandTransaction()) recordBinding({ boardPath: proj.board, taskId: id, via: 'done' }); }
   catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   const res = okTask(board, id, changed);
   res.landed = landed;
