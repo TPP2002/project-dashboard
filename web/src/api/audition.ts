@@ -1,3 +1,4 @@
+import { authFetch } from '../collaboration/http'
 import type { AuditionBatchResult, AuditionIndexResult, AuditionMutation, AuditionOperations, AuditionState } from '@/types/audition'
 import { normalizeBatch } from '@/utils/audition/manifest'
 
@@ -9,17 +10,17 @@ async function json<T>(response: Response): Promise<T> {
 }
 export const auditionFileUrl = (project: string, path: string) => `${API}/file?${new URLSearchParams({ project, path })}`
 export async function fetchAuditionIndex(project: string): Promise<AuditionIndexResult> {
-  return json(await fetch(`${API}/index?${new URLSearchParams({ project })}`))
+  return json(await authFetch(`${API}/index?${new URLSearchParams({ project })}`))
 }
 export async function fetchAuditionBatch(project: string, key: string): Promise<AuditionBatchResult> {
-  const result = await json<AuditionBatchResult>(await fetch(`${API}/batch?${new URLSearchParams({ project, key })}`))
+  const result = await json<AuditionBatchResult>(await authFetch(`${API}/batch?${new URLSearchParams({ project, key })}`))
   return { ...result, batch: normalizeBatch(result.batch) }
 }
 export async function fetchAuditionState(project: string, key: string): Promise<AuditionState> {
-  return (await json<{ ok: boolean; state: AuditionState }>(await fetch(`${API}/state?${new URLSearchParams({ project, key })}`))).state
+  return (await json<{ ok: boolean; state: AuditionState }>(await authFetch(`${API}/state?${new URLSearchParams({ project, key })}`))).state
 }
 async function post<T>(action: string, project: string, key: string, body: object): Promise<T> {
-  return json(await fetch(`${API}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, project, key }) }))
+  return json(await authFetch(`${API}/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, project, key }) }))
 }
 export function mutateAudition<K extends keyof AuditionOperations>(action: K, project: string, key: string, body: AuditionOperations[K]): Promise<AuditionMutation> {
   return post(action, project, key, body)

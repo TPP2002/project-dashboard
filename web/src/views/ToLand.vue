@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { authFetch } from '../collaboration/http'
 // 待落地队列（任务级派单）。
 // 治的病:决策从属于任务——P10 的 d1/d2/d3 是同一任务的三个问题,
 // 不该一个决策一个对话(会开三个对话各自 claim 同一 P10 打架)。
@@ -103,7 +104,7 @@ async function dispatchTask(task: UnlandedTask) {
   if (!confirm(`试试自动开【终端】跑 Claude Code 落地 ${task.task.id}?\n\n注意:开的是"终端里的 Claude Code",不是你常用的桌面 App——你要在弹出的终端窗口里看它。\n若没反应,请改用上面的"复制接单指令"在桌面 App 新开对话粘贴。`)) return
   dispatching.value[key] = true
   try {
-    const response = await fetch('/api/dispatch-task', {
+    const response = await authFetch('/api/dispatch-task', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ pid: task.projectId, tid: task.task.id }),
     })
@@ -122,7 +123,7 @@ async function dispatchProject(pid: string, name: string, taskCount: number, dec
   if (!confirm(`确认打包派单【${name}】全部 ${taskCount} 个任务 / ${decisionCount} 条决策给一个对话?\n\n若想分任务各交一个对话,请用每个任务卡片上的"派单本任务"。`)) return
   projDispatching.value[pid] = true
   try {
-    const response = await fetch('/api/dispatch-project', {
+    const response = await authFetch('/api/dispatch-project', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ pid }),
     })
@@ -143,7 +144,7 @@ async function markTaskLanded(task: UnlandedTask) {
   marking.value[key] = true
   try {
     for (const decision of task.decisions) {
-      const response = await fetch(`/api/mark-landed/${task.projectId}/${task.task.id}`, {
+      const response = await authFetch(`/api/mark-landed/${task.projectId}/${task.task.id}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ did: decision.id, author: '看板' }),
       })
@@ -167,7 +168,7 @@ async function confirmPresumedLanded() {
   presumedProgress.value = { done: 0, total }
   try {
     for (const task of targets) {
-      const response = await fetch(`/api/mark-landed/${task.projectId}/${task.task.id}`, {
+      const response = await authFetch(`/api/mark-landed/${task.projectId}/${task.task.id}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ all: true, author: '看板' }),
       })
