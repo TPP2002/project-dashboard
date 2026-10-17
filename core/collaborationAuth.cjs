@@ -28,6 +28,7 @@ function password(value) {
   return value;
 }
 // One expensive hash in flight, at most eight waiting; never block the event loop.
+const HASH_QUEUE_LIMIT = 8;
 let hashing = false;
 const hashQueue = [];
 function drain() {
@@ -41,20 +42,38 @@ function drain() {
   });
 }
 function hashPassword(value, salt) {
-  if (hashQueue.length >= 8) fail(429, 'Authentication busy; retry later');
+  if (hashQueue.length >= HASH_QUEUE_LIMIT) fail(429, 'Authentication busy; retry later');
   return new Promise((resolve, reject) => { hashQueue.push({ value, salt, resolve, reject }); drain(); });
 }
-const attempts = new Map();
-function rateLimit(key) {
-  const now = Date.now();
-  for (const [k, v] of attempts) if (v.until <= now) attempts.delete(k);
-  if (!attempts.has(key)) {
-    if (attempts.size >= 2048) fail(429, 'Retry later');
-    attempts.set(key, { count: 0, until: now + 15 * 60000 });
+function createAttemptLimiter(now = Date.now) {
+  const entries = new Map();
+  function check(key) {
+    const time = now();
+    for (const [k, v] of entries) if (v.until <= time) entries.delete(k);
+    if ((entries.get(key)?.count || 0) >= 10) fail(429, 'Retry later');
   }
-  const entry = attempts.get(key);
-  if (++entry.count > 10) fail(429, 'Retry later');
+  return {
+    check,
+    take(key) {
+      check(key);
+      if (!entries.has(key)) {
+        if (entries.size >= 2048) fail(429, 'Authentication capacity reached; retry later');
+        entries.set(key, { count: 0, until: now() + 15 * 60000 });
+      }
+      entries.get(key).count++;
+    },
+    clear: key => entries.delete(key),
+    get size() { return entries.size; },
+  };
 }
+// Allocate buckets only for existing accounts / validated invitations / devices.
+// Arbitrary anonymous names cannot fill the map. Never key on the proxy address:
+// a shared reverse proxy is not a user identity. Expensive anonymous work is
+// admitted by the process-wide one-active/eight-waiting scrypt capacity above.
+const attempts = createAttemptLimiter();
+// Unknown device guesses have a separate bounded budget, so neither a proxy
+// address nor guessed bearer strings can exhaust legitimate account buckets.
+const invalidDevices = createAttemptLimiter();
 function publicUser(u) { return { id: u.id, username: u.username, displayName: u.displayName, role: u.role, projectIds: [...u.projectIds], disabled: u.disabled }; }
 function publicInvite(i) { return { id: i.id, projectIds: [...i.projectIds], expiresAt: i.expiresAt, maxUses: i.maxUses, uses: i.uses, revoked: i.revoked }; }
 // Pre-remember-device ledgers had no expiresAt. Their fixed deadline is derived
@@ -180,23 +199,30 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     });
   }
   async function login(name, secret, client = 'local', deviceCookie = '') {
-    const clientKey = 'client:' + digest(String(client));
-    rateLimit(clientKey);
-    name = username(name); password(secret);
-    const key = 'user:' + digest(name); rateLimit(key);
+    name = username(name);
     const u = read().users.find(u => u.username === name);
-    const computed = await hashPassword(secret, u ? u.salt : '00000000000000000000000000000000');
-    if (!u || u.disabled || !crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(u.passwordHash, 'hex'))) fail(401, 'Invalid credentials');
-    const result = transaction(db => {
-      const current = db.users.find(c => c.id === u.id && !c.disabled && c.passwordHash === u.passwordHash);
-      if (!current) fail(401, 'Invalid credentials');
-      const device = deviceIn(db, deviceCookie);
-      // An already trusted cookie may accompany password login; never create
-      // trust by default, and never attach another account's device.
-      return issue(db, u.id, device && device.userId === u.id ? device.id : null);
-    });
-    attempts.delete(key); attempts.delete(clientKey);
-    return result;
+    const key = u && 'user:' + u.id;
+    if (key) attempts.check(key);
+    try {
+      password(secret);
+      const computed = await hashPassword(secret, u ? u.salt : '00000000000000000000000000000000');
+      if (!u || u.disabled || !crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(u.passwordHash, 'hex'))) fail(401, 'Invalid credentials');
+      const result = transaction(db => {
+        const current = db.users.find(c => c.id === u.id && !c.disabled && c.passwordHash === u.passwordHash);
+        if (!current) fail(401, 'Invalid credentials');
+        const device = deviceIn(db, deviceCookie);
+        // An already trusted cookie may accompany password login; never create
+        // trust by default, and never attach another account's device.
+        return issue(db, u.id, device && device.userId === u.id ? device.id : null);
+      });
+      if (key) attempts.clear(key);
+      return result;
+    } catch (e) {
+      // Count actual failed credentials, not queued work or capacity rejection.
+      // A burst already admitted is bounded by the global nine-job hash limit.
+      if (key && [400, 401].includes(e.status)) attempts.take(key);
+      throw e;
+    }
   }
   function validInvite(db, raw) {
     const i = typeof raw === 'string' && TOKEN.test(raw) && db.invites.find(i => i.tokenHash === digest(raw));
@@ -205,21 +231,29 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     return i;
   }
   async function register(body, client = 'local') {
-    rateLimit('register:' + digest(String(client)));
-    const name = username(body.username); password(body.password);
-    const displayName = body.displayName === undefined ? name : body.displayName;
-    if (typeof displayName !== 'string' || !displayName.trim() || displayName.length > 128) fail(400, 'Invalid displayName');
-    const pre = read(); validInvite(pre, body.inviteToken);
-    if (pre.users.some(u => u.username === name)) fail(409, 'Username unavailable');
-    const salt = crypto.randomBytes(16).toString('hex');
-    const passwordHash = await hashPassword(body.password, salt);
-    return transaction(db => {
-      const i = validInvite(db, body.inviteToken);
-      if (db.users.some(u => u.username === name)) fail(409, 'Username unavailable');
-      const u = { id: crypto.randomUUID(), username: name, displayName: displayName.trim(), role: 'member', projectIds: [...i.projectIds], disabled: false, salt, passwordHash };
-      db.users.push(u); i.uses++;
-      return issue(db, u.id);
-    });
+    const pre = read(); const invitation = validInvite(pre, body.inviteToken);
+    const key = 'invite:' + invitation.id;
+    attempts.check(key);
+    try {
+      const name = username(body.username); password(body.password);
+      const displayName = body.displayName === undefined ? name : body.displayName;
+      if (typeof displayName !== 'string' || !displayName.trim() || displayName.length > 128) fail(400, 'Invalid displayName');
+      if (pre.users.some(u => u.username === name)) fail(409, 'Username unavailable');
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = await hashPassword(body.password, salt);
+      const result = transaction(db => {
+        const i = validInvite(db, body.inviteToken);
+        if (db.users.some(u => u.username === name)) fail(409, 'Username unavailable');
+        const u = { id: crypto.randomUUID(), username: name, displayName: displayName.trim(), role: 'member', projectIds: [...i.projectIds], disabled: false, salt, passwordHash };
+        db.users.push(u); i.uses++;
+        return issue(db, u.id);
+      });
+      attempts.clear(key);
+      return result;
+    } catch (e) {
+      if ([400, 409].includes(e.status)) attempts.take(key);
+      throw e;
+    }
   }
   function ownerMutation(raw, fn) { return transaction(db => { const s = requireSession(db, raw, true); return fn(db, s.user); }); }
   function createInvite(raw, body) {
@@ -298,14 +332,19 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     });
   }
   function deviceLogin(raw, client = 'local') {
-    const key = 'device:' + digest(String(client));
-    rateLimit(key);
+    const device = deviceIn(read(), raw);
+    if (!device) {
+      invalidDevices.take(digest(typeof raw === 'string' ? raw : ''));
+      fail(401, 'Invalid credentials');
+    }
+    const key = 'device:' + device.id;
+    attempts.take(key);
     const result = transaction(db => {
       const d = deviceIn(db, raw);
       if (!d) fail(401, 'Invalid credentials');
       return issue(db, d.userId, d.id);
     });
-    attempts.delete(key);
+    attempts.clear(key);
     return result;
   }
   async function resetOwner(name, secret) {
@@ -345,4 +384,6 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     }); },
   };
 }
-module.exports = { createAuth, fail, username, publicUser, csrf };
+module.exports = { createAuth, fail, username, publicUser, csrf, createAttemptLimiter,
+  authenticationCapacity: () => ({ active: Number(hashing), queued: hashQueue.length, queueLimit: HASH_QUEUE_LIMIT,
+    attemptEntries: attempts.size, invalidDeviceEntries: invalidDevices.size }) };

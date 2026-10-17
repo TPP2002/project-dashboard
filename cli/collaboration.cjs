@@ -4,6 +4,8 @@ const { createAuth, fail } = require('../core/collaborationAuth.cjs');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { mutate } = require('./store.cjs');
 const { TASKID } = require('../core/boardSchema.cjs');
+const { publicJson } = require('../core/collaborationPublic.cjs');
+const inputChannel = require('node:diagnostics_channel').channel('dashboard.collaboration-input');
 
 const USAGE = `Collaboration local administration (DASHBOARD_HOME selects the data directory):
   node cli/collaboration.cjs init-owner --username <name> --password-file <path>
@@ -29,7 +31,10 @@ preserve Origin and strip Forwarded/X-Forwarded-* on writes (these are never tru
 HTTP routes and response fields implement docs/plans/cloud-collaboration/contract.md;
 no alternate endpoint, open registration, member administration or owner-by-body.
 Internal HTTP task commands: claim / progress; JSON on stdin includes sessionToken,
-actorId, projectId, taskId and (progress only) percent/note. No credential argv flags.`;
+actorId, projectId, taskId and (progress only) percent/note. No credential argv flags.
+Internal owner-command accepts only stdin {sessionToken,args}; args are an allowlisted
+legacy board command. It revalidates the owner under the auth lock before the
+synchronous CLI board transaction. Never pass credentials as command arguments.`;
 
 function readPassword(file) {
   if (typeof file !== 'string') fail(400, 'password-file required');
@@ -37,12 +42,13 @@ function readPassword(file) {
   if (!st.isFile() || st.isSymbolicLink() || st.size > 2048 || (process.platform !== 'win32' && (st.mode & 0o077))) fail(400, 'Password file must be protected');
   return fs.readFileSync(file, 'utf8').replace(/\r?\n$/, '');
 }
-async function readInternalInput() {
+async function readInternalInput(maxBytes = 16384) {
   let size = 0; const chunks = [];
   for await (const chunk of process.stdin) {
     size += chunk.length;
-    if (size > 16384) fail(413, 'Input too large');
+    if (size > maxBytes) fail(413, 'Input too large');
     chunks.push(chunk);
+    if (chunks.length === 1 && inputChannel.hasSubscribers) inputChannel.publish({ bytes: size });
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { fail(400, 'Invalid input'); }
@@ -76,7 +82,7 @@ function taskOperation(command, input, auth = createAuth()) {
         // builder and all AI dispatch/branch metadata remain exactly as recorded.
       } else {
         if (t.assigneeUserId !== user.id) fail(409, 'Task is not assigned to you');
-        if (['已完工', '已作废'].includes(t.status)) fail(409, 'Task is closed');
+        if (t.status !== '施工中' || t.blockReason || (t.deps?.blockedBy || []).length) fail(409, 'Task is not active member work');
         t.percent = input.percent;
         if (input.note !== undefined) t.nextMilestone = input.note;
       }
@@ -87,9 +93,37 @@ function taskOperation(command, input, auth = createAuth()) {
     return result;
   });
 }
+// Keep this semantic allowlist narrower than the general CLI registry. The
+// synchronous commands acquire their normal board locks inside the auth lock;
+// no child process, Promise or asynchronous work is awaited while holding it.
+function ownerOperation(input, auth = createAuth()) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).some(k => !['sessionToken', 'args'].includes(k)) ||
+      !Array.isArray(input.args) || input.args.some(a => typeof a !== 'string')) fail(400, 'Invalid owner command');
+  const [command, ...args] = input.args;
+  if (!['note', 'park', 'unpark', 'cancel', 'reopen', 'request-info', 'decide', 'undecide', 'mark-landed'].includes(command)) fail(403, 'Forbidden command');
+  const { REGISTRY, parseFlags } = require('./index.cjs');
+  const flags = parseFlags(args);
+  // Registry comes from the server's private environment, not an internal body.
+  flags.registry = process.env.DASHBOARD_REGISTRY || REGISTRY_PATH;
+  return auth.withSession(input.sessionToken, ({ user }) => {
+    if (user.role !== 'owner') fail(403, 'Forbidden');
+    const [file, name] = REGISTRY[command];
+    let result;
+    try { result = require(file)[name](flags) || { ok: true }; }
+    catch (e) { if (e.status) throw e; fail(400, e.message); }
+    // Match the existing CLI --json summary contract.
+    const t = result.task;
+    return t ? { ok: result.ok !== false, id: t.id, status: t.status, percent: t.percent || 0, changed: result.changed || [] } : result;
+  });
+}
 async function main(args = process.argv.slice(2)) {
   if (!args.length || args[0] === '--help') { console.log(USAGE); return; }
   const command = args.shift();
+  if (command === 'owner-command') {
+    if (args.length) fail(400, 'Internal owner commands accept stdin only');
+    console.log(JSON.stringify(ownerOperation(await readInternalInput(2 * 1024 * 1024)), publicJson)); return;
+  }
   if (['claim', 'progress'].includes(command)) {
     if (args.length) fail(400, 'Internal task commands accept stdin only');
     console.log(JSON.stringify(taskOperation(command, await readInternalInput()))); return;
@@ -115,4 +149,4 @@ async function main(args = process.argv.slice(2)) {
   console.log(JSON.stringify({ ok: true }));
 }
 if (require.main === module) main().catch(e => { console.log(JSON.stringify({ ok: false, status: e.status || 500, error: e.status ? e.message : 'Operation failed' })); process.exitCode = 1; });
-module.exports = { main, readPassword, taskOperation };
+module.exports = { main, readPassword, taskOperation, ownerOperation };
