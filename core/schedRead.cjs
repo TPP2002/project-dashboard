@@ -7,6 +7,7 @@ const { readLedger, connectedProjects } = require('./schedLedger.cjs');
 const { estimateTickets } = require('./schedEstimates.cjs');
 const { ticketCsv } = require('./schedCsv.cjs');
 const { ticketRelations } = require('./schedRelations.cjs');
+const { ticketReadCache } = require('./schedTicketReadCache.cjs');
 const { normalizeEngine, matchesEngine, engineOptions, groupExternalTickets } = require('./schedEngines.cjs');
 
 const STATES = ['queued', 'granted', 'running', 'paused', 'slow', 'unsatisfiable', 'passed', 'failed', 'cancelled', 'voided'];
@@ -73,9 +74,12 @@ function validateTicket(value, id) {
 }
 function readTickets(share) {
   const directory = c.schedPaths(share).tickets;
-  return jsonFiles(directory).map(file => {
+  ticketReadCache.select(directory);
+  const files = jsonFiles(directory);
+  ticketReadCache.prune(files);
+  return files.map(file => {
     const id = c.ticketId(file.slice(0, -5));
-    return validateTicket(c.readJson(path.join(directory, file)), id);
+    return ticketReadCache.read(file, id, validateTicket);
   });
 }
 function summarize(ticket) {
@@ -85,7 +89,7 @@ function summarize(ticket) {
     category: ticket.request.category, engine: normalizeEngine(ticket.request.engine), machine: attempt?.permit?.machine ?? attempt?.intent?.machine ?? null,
     requestedCores: ticket.request.requestedCores, grantedCores: attempt?.grantedCores ?? 0,
     state: ticket.state, result: ticket.state, resultReason: attempt?.result?.reason ?? null,
-    registerOnly: ticket.registerOnly, resident: ticket.request.resident === true, pauseReasons: ticket.pauseReasons, cancelRequested: ticket.cancelRequested,
+    registerOnly: ticket.registerOnly, resident: ticket.request.resident === true, pauseReasons: [...ticket.pauseReasons], cancelRequested: ticket.cancelRequested,
     createdAt: ticket.createdAt, endedAt: ticket.endedAt, ...ticket.timing,
   };
 }
