@@ -1,0 +1,15 @@
+{
+  "scope": { "authorityId": "synthetic-authority", "authorityEpoch": 7, "nodeId": "synthetic-node", "nodeSession": "synthetic-session-1", "gatewayInstance": "synthetic-gateway-1", "nodeInstance": "synthetic-process-1" },
+  "execution": { "ticketId": "tk-0123456789abcdef0123", "attemptId": "a1", "permitToken": "synthetic-not-a-credential", "controller": { "pid": 4242, "creationFileTime": "133700000000000001" } },
+  "machine": "synthetic-machine",
+  "authorityHost": "synthetic-cloud-host",
+  "at": "2030-01-02T03:04:05.000Z",
+  "clockId": "synthetic-monotonic-boot-1",
+  "sequence": [
+    { "kind": "session.open", "messageId": "open-1", "sequence": 1, "payload": { "replacesSession": null, "sessionGeneration": 1 }, "expected": "ready", "seen": 100 },
+    { "kind": "waiting.upsert", "messageId": "waiting-1", "sequence": 2, "payload": { "schema": 1, "ticketId": "tk-0123456789abcdef0123", "machine": "synthetic-machine", "pid": 4242, "seq": 1 }, "expected": "ready", "seen": 101 },
+    { "kind": "waiting.delete", "messageId": "waiting-3", "sequence": 4, "payload": { "schema": 1, "ticketId": "tk-0123456789abcdef0123", "machine": "synthetic-machine", "seq": 3 }, "expected": "ready", "seen": 102 },
+    { "kind": "waiting.upsert", "messageId": "waiting-2", "sequence": 3, "payload": { "schema": 1, "ticketId": "tk-0123456789abcdef0123", "machine": "synthetic-machine", "pid": 4242, "seq": 2 }, "expected": "ignored", "seen": 102 },
+    { "kind": "waiting.upsert", "messageId": "waiting-stale-new-transport", "sequence": 5, "payload": { "schema": 1, "ticketId": "tk-0123456789abcdef0123", "machine": "synthetic-machine", "pid": 4242, "seq": 2 }, "expected": "ignored", "seen": 102 }
+  ]
+}
