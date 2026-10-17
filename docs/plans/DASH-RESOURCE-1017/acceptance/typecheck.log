@@ -1,0 +1,17 @@
+
+[tk-c14e9c992338a009f876]
+npm run typecheck
+
+
+> claude-dashboard@1.0.0 typecheck
+> npm --prefix web run typecheck
+
+
+> claude-dashboard-web@0.1.0 typecheck
+> node ../cli/scheduledWork.cjs typecheck
+
+{"ticketId":"tk-26700adb6a7509cb8cc7","queuePosition":null}
+跑完之前别改受测文件
+
+调度单 tk-26700adb6a7509cb8cc7；撤单：node <共享盘>/sched/bin/sched.cjs cancel tk-26700adb6a7509cb8cc7 --share <共享盘>
+[sched] 本机跑(unknown-command):这条命令不在 dashboard 的菜单里(command-path:命令词带路径(<node-runtime>/node.exe):执行机上的路径不一样,换成菜单里的写法才能搬),留本机跑;常用的话加进菜单

@@ -1,0 +1,19 @@
+
+[tk-c14e9c992338a009f876]
+node --import tsx --test test/boardReadCache.test.cjs
+
+✔ entry and raw-byte limits, LRU touch, replacement accounting and oversize bypass (1.1105ms)
+✔ idle expiration is based on last access, including get without a polling timer (0.1759ms)
+✔ actual server uses 50/64 entry caps, complete reads, replacement, failure and deletion semantics (100.1866ms)
+✔ oversize actual board/archive are still returned whole and never retained (259.8454ms)
+✔ actual server caches obey aggregate raw-byte budgets below the entry caps (304.3147ms)
+✔ existing server poll reclaims idle caches; close clears all three intervals and caches (5.1191ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 794.2499
+

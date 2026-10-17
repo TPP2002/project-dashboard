@@ -1,0 +1,41 @@
+{
+  "provenance": "Read-only extract of controller verdict; original retained outside the public repository",
+  "slug": "dash-resource-1017",
+  "taskId": "AD-20261017-DASH-RESOURCE",
+  "controllerTicketId": "tk-c14e9c992338a009f876",
+  "forbiddenTouched": [],
+  "outsideAllowed": [],
+  "missingArtifacts": [],
+  "acceptance": [
+    { "id": "resource-regression", "required": true, "ran": true, "passed": true, "exitCode": 0 },
+    { "id": "cache-bounds", "required": true, "ran": true, "passed": true, "exitCode": 0 },
+    { "id": "server", "required": true, "ran": true, "passed": true, "exitCode": 0 },
+    { "id": "sched-api", "required": true, "ran": true, "passed": true, "exitCode": 0 },
+    { "id": "read-integrity", "required": true, "ran": true, "passed": true, "exitCode": 0 },
+    { "id": "typecheck", "required": true, "ran": true, "passed": true, "exitCode": 0 },
+    { "id": "resource-regression@base", "required": true, "ran": true, "passed": true, "exitCode": 1 }
+  ],
+  "authorizedOutside": [
+    {
+      "path": "web/src/components/sched/QueueTable.vue",
+      "reason": "负责人本次看板资源回收授权及旧接口最小适配持续授权：QueueTable 仅将 props 元数据类型与已批准的轻量队列数据对齐，保留模板、字段与交互。"
+    }
+  ],
+  "historicalVerdict": {
+    "finalStatus": "blocked",
+    "reasons": ["收单方有待拍板的问题,按施工段零决策红线停在这里等人拍。"],
+    "warnings": [
+      "没复用自动复核结论:收单命令给了 --force-rerun,要求强制重跑;验收全部重跑",
+      "验收整组排队:tk-c14e9c992338a009f876 (content:fa714b01d4406aaada5340cc97871f47b5bdf100b06958099f2eccbe50e16832)",
+      "旧代码复核:resource-regression@base 旧代码上红,合格"
+    ],
+    "acceptanceSource": "rerun"
+  },
+  "currentWorkerDelivery": {
+    "status": "completed",
+    "workerRanAcceptance": false,
+    "openQuestions": [],
+    "blockers": [],
+    "explanation": "Controller confirmed the historical question resolved by the recorded consumer-type authorization; final collect, CI, release and live acceptance remain controller-owned"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "source": "working store",
+  "removed": {
+    "details": [
+      "next"
+    ],
+    "errors": []
+  },
+  "stopped": {
+    "details": [],
+    "errors": []
+  },
+  "burstFetches": 1,
+  "aborted": 0,
+  "results": [
+    {
+      "name": "removed queue metadata released",
+      "passed": true
+    },
+    {
+      "name": "removed queue errors released",
+      "passed": true
+    },
+    {
+      "name": "stop metadata released",
+      "passed": true
+    },
+    {
+      "name": "stop errors released",
+      "passed": true
+    },
+    {
+      "name": "burst coalesced",
+      "passed": true
+    },
+    {
+      "name": "same-query request not aborted",
+      "passed": true
+    }
+  ]
+}

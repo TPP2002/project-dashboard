@@ -1,0 +1,55 @@
+{
+  "source": "working store",
+  "removed": {
+    "details": [
+      "first",
+      "next"
+    ],
+    "errors": [
+      "bad"
+    ]
+  },
+  "stopped": {
+    "details": [
+      "first",
+      "next"
+    ],
+    "errors": [
+      "bad"
+    ]
+  },
+  "burstFetches": 101,
+  "aborted": 100,
+  "results": [
+    {
+      "name": "removed queue metadata released",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n+   'first',\n    'next'\n  ]\n"
+    },
+    {
+      "name": "removed queue errors released",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   'bad'\n+ ]\n- []\n"
+    },
+    {
+      "name": "stop metadata released",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   'first',\n+   'next'\n+ ]\n- []\n"
+    },
+    {
+      "name": "stop errors released",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   'bad'\n+ ]\n- []\n"
+    },
+    {
+      "name": "burst coalesced",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n101 !== 1\n"
+    },
+    {
+      "name": "same-query request not aborted",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n100 !== 0\n"
+    }
+  ]
+}

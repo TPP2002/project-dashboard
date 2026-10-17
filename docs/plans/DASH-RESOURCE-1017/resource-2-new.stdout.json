@@ -1,0 +1,608 @@
+{
+  "mode": "new",
+  "seed": 1017,
+  "node": "v24.14.0",
+  "platform": "win32",
+  "arch": "x64",
+  "queueTransitions": 120,
+  "queueWidth": 8,
+  "enterExitCycles": 20,
+  "before": {
+    "phase": "baseline-after-gc",
+    "heapUsed": 35279296,
+    "external": 9618313,
+    "rss": 116748288
+  },
+  "peakSampled": {
+    "heapUsed": 93951680,
+    "external": 9618353,
+    "rss": 194379776
+  },
+  "osHighWaterRssBytes": 202768384,
+  "afterQueueReclaim": {
+    "phase": "queue-removal-stop-after-gc",
+    "heapUsed": 35460776,
+    "external": 9618353,
+    "rss": 119828480
+  },
+  "afterRepeatedExitReclaim": {
+    "phase": "after-repeated-exits-after-gc",
+    "heapUsed": 35579928,
+    "external": 9618353,
+    "rss": 119914496
+  },
+  "afterCacheLoad": {
+    "phase": "caches-loaded-after-gc",
+    "heapUsed": 60880528,
+    "external": 9618353,
+    "rss": 164139008
+  },
+  "afterIdleReclaim": {
+    "phase": "idle-after-gc",
+    "heapUsed": 35691104,
+    "external": 9618353,
+    "rss": 139644928
+  },
+  "afterCloseReclaim": {
+    "phase": "close-after-gc",
+    "heapUsed": 35691024,
+    "external": 9618353,
+    "rss": 139644928
+  },
+  "wallMs": 431.799,
+  "cpuMicros": {
+    "user": 625000,
+    "system": 125000
+  },
+  "samples": [
+    {
+      "phase": "baseline-after-gc",
+      "heapUsed": 35279296,
+      "external": 9618313,
+      "rss": 116748288
+    },
+    {
+      "phase": "queue-0",
+      "heapUsed": 35623168,
+      "external": 9618353,
+      "rss": 117137408
+    },
+    {
+      "phase": "queue-10",
+      "heapUsed": 37670632,
+      "external": 9618353,
+      "rss": 117219328
+    },
+    {
+      "phase": "queue-20",
+      "heapUsed": 39663208,
+      "external": 9618353,
+      "rss": 117256192
+    },
+    {
+      "phase": "queue-30",
+      "heapUsed": 41664896,
+      "external": 9618353,
+      "rss": 117407744
+    },
+    {
+      "phase": "queue-40",
+      "heapUsed": 43655256,
+      "external": 9618353,
+      "rss": 119087104
+    },
+    {
+      "phase": "queue-50",
+      "heapUsed": 37535216,
+      "external": 9618353,
+      "rss": 119267328
+    },
+    {
+      "phase": "queue-60",
+      "heapUsed": 39535944,
+      "external": 9618353,
+      "rss": 119279616
+    },
+    {
+      "phase": "queue-70",
+      "heapUsed": 41520520,
+      "external": 9618353,
+      "rss": 119279616
+    },
+    {
+      "phase": "queue-80",
+      "heapUsed": 43536232,
+      "external": 9618353,
+      "rss": 119287808
+    },
+    {
+      "phase": "queue-90",
+      "heapUsed": 37360368,
+      "external": 9618353,
+      "rss": 119287808
+    },
+    {
+      "phase": "queue-100",
+      "heapUsed": 39338480,
+      "external": 9618353,
+      "rss": 119508992
+    },
+    {
+      "phase": "queue-110",
+      "heapUsed": 41304408,
+      "external": 9618353,
+      "rss": 119508992
+    },
+    {
+      "phase": "queue-flow-before-gc",
+      "heapUsed": 43102528,
+      "external": 9618353,
+      "rss": 119508992
+    },
+    {
+      "phase": "queue-stop-before-gc",
+      "heapUsed": 43123952,
+      "external": 9618353,
+      "rss": 119508992
+    },
+    {
+      "phase": "queue-removal-stop-after-gc",
+      "heapUsed": 35460776,
+      "external": 9618353,
+      "rss": 119828480
+    },
+    {
+      "phase": "after-repeated-exits-before-gc",
+      "heapUsed": 37602920,
+      "external": 9618353,
+      "rss": 119910400
+    },
+    {
+      "phase": "after-repeated-exits-after-gc",
+      "heapUsed": 35579928,
+      "external": 9618353,
+      "rss": 119914496
+    },
+    {
+      "phase": "board-load-0",
+      "heapUsed": 36161280,
+      "external": 9618353,
+      "rss": 120373248
+    },
+    {
+      "phase": "board-load-8",
+      "heapUsed": 40477112,
+      "external": 9618353,
+      "rss": 121720832
+    },
+    {
+      "phase": "board-load-16",
+      "heapUsed": 44964792,
+      "external": 9618353,
+      "rss": 123432960
+    },
+    {
+      "phase": "board-load-24",
+      "heapUsed": 39625024,
+      "external": 9618353,
+      "rss": 121139200
+    },
+    {
+      "phase": "board-load-32",
+      "heapUsed": 44136288,
+      "external": 9618353,
+      "rss": 122109952
+    },
+    {
+      "phase": "board-load-40",
+      "heapUsed": 41670104,
+      "external": 9618353,
+      "rss": 122449920
+    },
+    {
+      "phase": "board-load-48",
+      "heapUsed": 46242640,
+      "external": 9618353,
+      "rss": 123772928
+    },
+    {
+      "phase": "board-load-56",
+      "heapUsed": 50829768,
+      "external": 9618353,
+      "rss": 126373888
+    },
+    {
+      "phase": "board-load-64",
+      "heapUsed": 55450776,
+      "external": 9618353,
+      "rss": 130908160
+    },
+    {
+      "phase": "board-load-72",
+      "heapUsed": 60056976,
+      "external": 9618353,
+      "rss": 135487488
+    },
+    {
+      "phase": "board-load-80",
+      "heapUsed": 57095432,
+      "external": 9618353,
+      "rss": 142508032
+    },
+    {
+      "phase": "board-load-88",
+      "heapUsed": 90109024,
+      "external": 9618353,
+      "rss": 182525952
+    },
+    {
+      "phase": "board-load-96",
+      "heapUsed": 83435800,
+      "external": 9618353,
+      "rss": 184123392
+    },
+    {
+      "phase": "caches-loaded-before-gc",
+      "heapUsed": 93951680,
+      "external": 9618353,
+      "rss": 194379776
+    },
+    {
+      "phase": "caches-loaded-after-gc",
+      "heapUsed": 60880528,
+      "external": 9618353,
+      "rss": 164139008
+    },
+    {
+      "phase": "idle-before-gc",
+      "heapUsed": 61103280,
+      "external": 9618353,
+      "rss": 164532224
+    },
+    {
+      "phase": "idle-after-gc",
+      "heapUsed": 35691104,
+      "external": 9618353,
+      "rss": 139644928
+    },
+    {
+      "phase": "close-after-gc",
+      "heapUsed": 35691024,
+      "external": 9618353,
+      "rss": 139644928
+    }
+  ],
+  "afterQueueFlow": {
+    "details": 8,
+    "errors": 1,
+    "serializedByteWeight": 845,
+    "snapshotReleased": false,
+    "ledgerReleased": false,
+    "intervals": 1
+  },
+  "afterQueueRemoval": {
+    "details": 0,
+    "errors": 0,
+    "serializedByteWeight": 0,
+    "snapshotReleased": false,
+    "ledgerReleased": false,
+    "intervals": 1
+  },
+  "afterQueueStop": {
+    "details": 0,
+    "errors": 0,
+    "serializedByteWeight": 0,
+    "snapshotReleased": true,
+    "ledgerReleased": true,
+    "intervals": 0
+  },
+  "afterRepeatedExits": {
+    "details": 0,
+    "errors": 0,
+    "serializedByteWeight": 0,
+    "snapshotReleased": true,
+    "ledgerReleased": true,
+    "intervals": 0
+  },
+  "exitSamples": [
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    },
+    {
+      "details": 0,
+      "errors": 0,
+      "serializedByteWeight": 0,
+      "snapshotReleased": true,
+      "ledgerReleased": true,
+      "intervals": 0
+    }
+  ],
+  "burst": {
+    "events": 100,
+    "includingInitialBeforeSettle": 1,
+    "abortedBeforeSettle": 0,
+    "totalFetchesAfterSettle": 2,
+    "finalResultCorrect": true
+  },
+  "fetchCounts": {
+    "ledgerFetches": 23,
+    "metadataFetches": 1120,
+    "snapshotFetches": 164,
+    "detailFetches": 0
+  },
+  "caches": {
+    "loaded": {
+      "summaryCache": {
+        "entries": 15,
+        "rawByteWeight": 15730073
+      },
+      "archiveCache": {
+        "entries": 15,
+        "rawByteWeight": 15729293
+      },
+      "mergedBoardCache": {
+        "entries": 7,
+        "rawByteWeight": 14681044
+      }
+    },
+    "failureStates": [
+      {
+        "summaryCache": {
+          "entries": 16,
+          "rawByteWeight": 15730147
+        },
+        "archiveCache": {
+          "entries": 15,
+          "rawByteWeight": 15729293
+        },
+        "mergedBoardCache": {
+          "entries": 7,
+          "rawByteWeight": 14681044
+        }
+      },
+      {
+        "summaryCache": {
+          "entries": 16,
+          "rawByteWeight": 15730147
+        },
+        "archiveCache": {
+          "entries": 15,
+          "rawByteWeight": 15729293
+        },
+        "mergedBoardCache": {
+          "entries": 7,
+          "rawByteWeight": 14681044
+        }
+      },
+      {
+        "summaryCache": {
+          "entries": 16,
+          "rawByteWeight": 15730147
+        },
+        "archiveCache": {
+          "entries": 15,
+          "rawByteWeight": 15729293
+        },
+        "mergedBoardCache": {
+          "entries": 7,
+          "rawByteWeight": 14681044
+        }
+      },
+      {
+        "summaryCache": {
+          "entries": 16,
+          "rawByteWeight": 15730147
+        },
+        "archiveCache": {
+          "entries": 15,
+          "rawByteWeight": 15729293
+        },
+        "mergedBoardCache": {
+          "entries": 7,
+          "rawByteWeight": 14681044
+        }
+      },
+      {
+        "summaryCache": {
+          "entries": 16,
+          "rawByteWeight": 15730147
+        },
+        "archiveCache": {
+          "entries": 15,
+          "rawByteWeight": 15729293
+        },
+        "mergedBoardCache": {
+          "entries": 7,
+          "rawByteWeight": 14681044
+        }
+      }
+    ],
+    "afterIdle": {
+      "summaryCache": {
+        "entries": 0,
+        "rawByteWeight": 0
+      },
+      "archiveCache": {
+        "entries": 0,
+        "rawByteWeight": 0
+      },
+      "mergedBoardCache": {
+        "entries": 0,
+        "rawByteWeight": 0
+      }
+    },
+    "afterClose": {
+      "summaryCache": {
+        "entries": 0,
+        "rawByteWeight": 0
+      },
+      "archiveCache": {
+        "entries": 0,
+        "rawByteWeight": 0
+      },
+      "mergedBoardCache": {
+        "entries": 0,
+        "rawByteWeight": 0
+      }
+    },
+    "intervalsAfterClose": 0
+  },
+  "responseSha256": "3ffd4bb2a81a7d252c6940ca89075e819da156560cfc0553c96841923d228f66",
+  "explicitGc": true,
+  "notes": [
+    "rawByteWeight and serializedByteWeight are residency budgets, not V8 heap sizes",
+    "peakSampled is a sampled peak; osHighWaterRssBytes is the process OS high-water mark",
+    "heap samples cover the combined workload and cannot separately attribute server versus store residency",
+    "wall/CPU includes instrumentation and explicit GC, not pure product throughput; per-exit nonempty byte weights are omitted to avoid repeated observer serialization",
+    "server module and real store/API run against controlled fixtures; no production data or network"
+  ]
+}

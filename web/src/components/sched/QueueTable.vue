@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { QueueEntry, TicketDetail, TicketEstimate } from '@/api/sched'
+import type { QueueEntry, TicketEstimate } from '@/api/sched'
+import type { QueueMetadata } from '@/stores/schedResourceLifecycle'
 import EstimateText from './EstimateText.vue'
 import { duration } from './format'
-defineProps<{ queue: QueueEntry[]; locks: { machine: string; byTicketId: string }[]; details: Record<string, TicketDetail>; errors: Record<string, string>; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
+defineProps<{ queue: QueueEntry[]; locks: { machine: string; byTicketId: string }[]; details: Record<string, QueueMetadata>; errors: Record<string, string>; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
 const emit = defineEmits<{ open: [id: string]; jump: [id: string]; cancel: [id: string] }>()
 </script>
 
