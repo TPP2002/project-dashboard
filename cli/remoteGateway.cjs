@@ -24,14 +24,16 @@ function main() {
       require('./remoteConfig.cjs').initialize(args[1],readInput());
       return;
     }
-    if (args.length !== 2 || args[0] !== '--authority') throw new Error('固定入口需 --authority <受保护配置>');
+    if (args.length !== 2 || !['--authority','--init-project'].includes(args[0])) throw new Error('固定入口需 --authority 或 --init-project <受保护配置>');
     a = loadAuthority(args[1]);
     // Explicit server data root prevents accidental use of a developer's remote.json.
     process.env.DASHBOARD_HOME = path.resolve(a.home);
     delete process.env.DASHBOARD_REMOTE_CONFIG;
     r = readInput();
-    const result = require('./commandService.cjs').run(r,{authority:a,subject:{id:a.ownerId,role:'owner'},registryPath:path.resolve(a.registryPath)});
-    process.stdout.write(JSON.stringify({version:protocol.VERSION,authorityId:a.authorityId,authorityEpoch:a.authorityEpoch,requestId:r.requestId,ok:true,result}) + '\n');
+    const result = args[0] === '--init-project' ? require('./remoteProject.cjs').initOnAuthority(r,a) : require('./commandService.cjs').run(r,{authority:a,subject:{id:a.ownerId,role:'owner'},registryPath:path.resolve(a.registryPath)});
+    const output = JSON.stringify({version:protocol.VERSION,authorityId:a.authorityId,authorityEpoch:a.authorityEpoch,requestId:r.requestId,ok:true,result}) + '\n';
+    if (Buffer.byteLength(output) > protocol.MAX_RESPONSE_BYTES) throw new Error('远程响应超过64MiB上限');
+    process.stdout.write(output);
   } catch (e) {
     process.stdout.write(JSON.stringify({version:protocol.VERSION,authorityId:a && a.authorityId,authorityEpoch:a && a.authorityEpoch,requestId:r && r.requestId,ok:false,error:e.message}) + '\n');
     process.exitCode = 1;

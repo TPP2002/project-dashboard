@@ -1,9 +1,11 @@
 'use strict';
 // Transport-neutral owner command protocol. No identity or filesystem capabilities in bodies.
 const crypto = require('node:crypto');
-const VERSION = 'board-command.v1';
+const VERSION = 'board-command.v2';
 const MAX_BYTES = 512 * 1024;
-const READ = new Set(['list', 'show', 'brief', 'inbox', 'claim-check']);
+const MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+const TRANSPORT_TIMEOUT = 180000;
+const READ = new Set(['list', 'show', 'brief', 'inbox', 'claim-check', 'projection', 'claim-evidence', 'backfill']);
 const FIELDS = {
   add: 'title plain-title model scope wave desc status payload',
   claim: 'branch builder scope brief', unclaim: 'branch reason',
@@ -16,6 +18,11 @@ const FIELDS = {
   list: 'all status wave builder brief fields', show: 'full pending', brief: '',
   inbox: 'tid limit all', 'claim-check': 'branch',
   'git-facts': 'facts', 'sync-progress': 'branch percent',
+  projection: '', 'claim-evidence': '',
+  'branch-cleanup': 'payload', 'audit-card': 'title plain-title model desc',
+  set: 'field value', backfill: '', 'backfill-patch': 'payload',
+  'import-batch': 'payload', 'archive-activity': 'before',
+  'project-init': 'name',
 };
 const MULTI = new Set(['scope', 'branch', 'by', 'pr', 'commit']);
 const BOOL = new Set(['brief','no-promote','collect','all','full','pending','typecheck']);
@@ -46,6 +53,7 @@ function validate(request) {
   safeTree(request);
   for (const key of Object.keys(request)) if (!['version','authorityId','authorityEpoch','requestId','projectId','command','args'].includes(key)) throw new Error('未知请求字段: ' + key);
   if (request.version !== VERSION) throw new Error('未知协议版本');
+  require('./boardCommandRetention.cjs').createdAt(request.requestId);
   for (const key of ['authorityId','requestId','projectId']) if (typeof request[key] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(request[key])) throw new Error('非法 ' + key);
   if (!Number.isSafeInteger(request.authorityEpoch) || request.authorityEpoch < 1) throw new Error('非法 authorityEpoch');
   if (typeof request.command !== 'string' || !Object.hasOwn(FIELDS,request.command)) throw new Error('远程未适配命令: ' + request.command);
@@ -81,6 +89,6 @@ function validate(request) {
 function publicResult(value) {
   if (Array.isArray(value)) return value.map(publicResult);
   if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.entries(value).filter(([k]) => k !== '_commandReceipts').map(([k,v]) => [k, publicResult(v)]));
+  return Object.fromEntries(Object.entries(value).filter(([k]) => !['_commandReceipts','_commandRetention'].includes(k)).map(([k,v]) => [k, publicResult(v)]));
 }
-module.exports = { VERSION, MAX_BYTES, READ, FIELDS, MULTI, BOOL, NUM, validate, canonical, inputHash, publicResult };
+module.exports = { VERSION, MAX_BYTES, MAX_RESPONSE_BYTES, TRANSPORT_TIMEOUT, READ, FIELDS, MULTI, BOOL, NUM, validate, canonical, inputHash, publicResult, safeTree };

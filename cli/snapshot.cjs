@@ -15,9 +15,10 @@ function resolveProj(flags) {
 
 function snapshot(flags) {
   const proj = resolveProj(flags);
-  const board = readBoard(proj.board);
+  const board = require('./projectBoard.cjs').readProjectBoard(proj);
   const stamp = String(flags.stamp || new Date().toISOString()).replace(/[:.]/g, '-');
-  const outDir = flags.out ? path.resolve(flags.out) : path.join(DASHBOARD_HOME, 'snapshots', proj.id);
+  if (proj.remote && /[\\/]/.test(stamp)) throw new Error('快照 stamp 不得包含路径');
+  const outDir = proj.remote ? require('./projectBoard.cjs').artifact(proj, flags.out, 'snapshots') : flags.out ? path.resolve(flags.out) : path.join(DASHBOARD_HOME, 'snapshots', proj.id);
   fs.mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, stamp + '.json');
   atomicWriteJsonSync(outPath, board);

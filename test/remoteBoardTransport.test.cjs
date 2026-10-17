@@ -43,7 +43,17 @@ test('BOM JSON inputs, batch add, pending, collect brief, repeated flags and JSO
   assert.equal(f.read().tasks.length,2);
   must(f.cli(['add','C','--project','p','--title','单卡','--plain-title','有卡号时只输出结果','--model','test','--json']));
   const original=fs.readFileSync(f.old,'utf8');
-  for(const args of [['set','A','--field','status','--value','"已完工"'],['backfill','--patch','x'],['archive-activity'],['render-index'],['snapshot'],['precheck'],['doctor'],['docs-audit']]) assert.equal(f.cli([...args,'--project','p']).status,1,args[0]);
+  must(f.cli(['set','A','--field','status','--value','"已完工"','--project','p']));
+  assert.equal(f.read().tasks.find(t=>t.id==='A').status,'已完工');
+  const invalidPatch=f.cli(['backfill','--patch','x','--project','p']);
+  assert.equal(invalidPatch.status,1);assert.match(invalidPatch.stderr,/ENOENT|no such file|找不到/i);
+  const invalidArchive=f.cli(['archive-activity','--project','p']);
+  assert.equal(invalidArchive.status,1);assert.match(invalidArchive.stderr,/before/);
+  for(const args of [['render-index'],['snapshot'],['precheck','--no-fetch'],['doctor','--quick'],['docs-audit']]) must(f.cli([...args,'--project','p']));
+  const snapDir=path.join(f.local,'remote-artifacts','p','snapshots');
+  const snap=JSON.parse(fs.readFileSync(path.join(snapDir,fs.readdirSync(snapDir)[0]),'utf8'));
+  assert.deepEqual(snap.tasks,f.read().tasks);
+  assert.ok(fs.readFileSync(path.join(f.local,'remote-artifacts','p','INDEX.md'),'utf8').includes('单卡'));
   assert.equal(fs.readFileSync(f.old,'utf8'),original);
   const result=must(f.cli(['brief','A','--project','p']));assert.ok(result.stdout.includes(CLI.replace(/\\/g,'/')));
 });

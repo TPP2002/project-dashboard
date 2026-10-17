@@ -53,7 +53,7 @@ function archiveActivity(flags) {
         months.get(month).push(item);
         moved++;
       }
-      if (!moved) throw noActivity;
+      if (!moved) { if (flags._remoteArchive) return; throw noActivity; }
       // 先读齐并校验所有目标文件，坏归档不触发任何内容写入。
       const plans = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, items]) => {
         const file = path.join(path.dirname(proj.board), `activity-${month}.json`);
@@ -62,7 +62,7 @@ function archiveActivity(flags) {
         return { file, items: merged, count: items.length };
       });
       for (const plan of plans) atomicWriteJsonSync(plan.file, plan.items);
-      files = plans.map(({ file, count }) => ({ path: file, count }));
+      files = plans.map(({ file, count, items }) => flags._remoteArchive ? {objectId:path.basename(file),count,sha256:require('../core/boardCommand.cjs').inputHash(items)} : {path:file,count});
       board.activity = kept;
     });
   } catch (e) {
@@ -71,8 +71,8 @@ function archiveActivity(flags) {
   return {
     ok: true, moved, files,
     text: moved
-      ? `已归档 ${moved} 条活动：\n` + files.map((f) => `  ${f.path}（搬入 ${f.count} 条）`).join('\n')
-      : '没有可归档的活动，未改动任何文件。',
+      ? `已归档 ${moved} 条活动：\n` + files.map((f) => `  ${f.objectId || f.path}（搬入 ${f.count} 条）`).join('\n')
+      : flags._remoteArchive ? '没有可归档的活动，请求回执已确认。' : '没有可归档的活动，未改动任何文件。',
   };
 }
 
