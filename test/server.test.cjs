@@ -464,14 +464,22 @@ test('board read-cache eviction preserves full activity, deduplication, sorting,
   assert.deepEqual((await getJson(endpoint)).body.activity, [b, c]);
 });
 
-test('ticket cache uses existing server sweep and releases on share switch, idle and server close without another timer', () => {
+test('read worker lifecycle uses the existing sweep for share changes, idles out, and closes with the server', async () => {
   const vm = require('node:vm');
   const { createRequire } = require('node:module');
   const { EventEmitter } = require('node:events');
-  const { ticketReadCache: cache } = require('../core/schedTicketReadCache.cjs');
+  const { createSchedReadExecutor } = require('../core/schedReadExecutor.cjs');
+  const { createSchedApi } = require('../server/schedApi.cjs');
   const { initialize, ticket, write } = require('./fixtures/sched/support.cjs');
-  const read = require('../core/schedRead.cjs');
-  const dir = realTmp('ticket-cache-lifecycle-'), intervals = [], cancelled = new Set();
+  const dir = realTmp('read-worker-lifecycle-'), intervals = [], cancelled = new Set();
+  const executor = createSchedReadExecutor({ idleMs: 100 });
+  const waitForReclaim = async () => {
+    const deadline = Date.now() + 5000;
+    while (executor.stats().workers) {
+      assert.ok(Date.now() < deadline, 'worker reclaim timed out');
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+  };
   let share = path.join(dir, 'one'), now = Date.now();
   const paths = initialize(share), value = ticket(1);
   write(path.join(paths.tickets, `${value.ticketId}.json`), value);
@@ -491,6 +499,7 @@ test('ticket cache uses existing server sweep and releases on share switch, idle
         REGISTRY_PATH: path.join(dir, 'registry.json'), readRegistry: () => ({ projects: {} }) };
       if (name === '../core/settings.cjs') return { ...localRequire(name), resolveSchedShare: () => share,
         resolveModules: () => ({ cpu: false }) };
+      if (name === './schedApi.cjs') return { createSchedApi: options => createSchedApi({ ...options, executor }) };
       return localRequire(name);
     },
   };
@@ -498,19 +507,21 @@ test('ticket cache uses existing server sweep and releases on share switch, idle
     vm.runInNewContext(fs.readFileSync(SERVER, 'utf8') +
       '\nmodule.exports.cacheLifecycle = { startIntervals, sweepBoardReadCaches };', context, { filename: SERVER });
     const lifecycle = loaded.exports.cacheLifecycle;
-    read.ticketPage(share); assert.equal(cache.stats().entries, 1);
+    await executor.run({ action: 'tickets', share }); assert.equal(executor.stats().workers, 1);
     lifecycle.startIntervals();
     assert.equal(intervals.length, 3, 'only the existing poll, SSE heartbeat and CI poll timers');
-    assert.equal(cache.stats().entries, 1);
+    assert.equal(executor.stats().workers, 1);
     share = path.join(dir, 'two'); now += 60000;
-    intervals[0].fn(); assert.equal(cache.stats().entries, 0, 'poll sweep observes share switch without API reads');
-    share = path.join(dir, 'one'); read.ticketPage(share);
-    assert.equal(cache.stats().entries, 1);
-    now = cache.stats().lastUsedAt + 600000; intervals[0].fn();
-    assert.equal(cache.stats().entries, 0); assert.equal(cache.stats().weightBytes, 0);
-    read.ticketPage(share); assert.equal(cache.stats().entries, 1);
+    intervals[0].fn(); await waitForReclaim();
+    assert.equal(executor.stats().workers, 0, 'poll sweep observes share switch without API reads');
+    share = path.join(dir, 'one'); await executor.run({ action: 'tickets', share });
+    assert.equal(executor.stats().workers, 1);
+    await waitForReclaim(); assert.equal(executor.stats().idleTimer, false);
+    await executor.run({ action: 'tickets', share }); assert.equal(executor.stats().workers, 1);
     server.emit('close');
-    assert.equal(cache.stats().entries, 0); assert.equal(cache.stats().weightBytes, 0);
-    assert.equal(cache.stats().lastUsedAt, null); assert.equal(cancelled.size, 3);
-  } finally { cache.clear(); clean(dir); }
+    assert.equal(executor.stats().closed, true);
+    await executor.close();
+    assert.equal(executor.stats().workers, 0); assert.equal(executor.stats().pending, 0);
+    assert.equal(executor.stats().waiters, 0); assert.equal(cancelled.size, 3);
+  } finally { await executor.close(); clean(dir); }
 });

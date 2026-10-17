@@ -41,7 +41,6 @@ const path = require('path');
 const url = require('url');
 const { createHash } = require('node:crypto');
 const { createBoardReadCache } = require('../core/boardReadCache.cjs');
-const { ticketReadCache } = require('../core/schedTicketReadCache.cjs');
 // 静态文件要用它善后:客户端中途断开时 pipe 不会关源流,句柄泄到进程退出(见 streamFile 头注)。
 const { pipeline } = require('node:stream');
 const { execFile } = require('child_process');
@@ -144,11 +143,10 @@ function sweepBoardReadCaches(at = Date.now()) {
   if (at - lastCacheSweep < 60000) return;
   lastCacheSweep = at;
   for (const cache of [summaryCache, archiveCache, mergedBoardCache]) cache.sweep(at);
-  ticketReadCache.sweep(at, schedContract.schedPaths(resolveSchedShare()).tickets);
+  schedApi.sweep();
 }
 function clearBoardReadCaches() {
   for (const cache of [summaryCache, archiveCache, mergedBoardCache]) cache.clear();
-  ticketReadCache.clear();
 }
 
 // ============ 通用工具 ============
@@ -1640,7 +1638,20 @@ function openBrowser(targetUrl) {
   } catch (_) { /* 开不了浏览器不算错，用户手动访问即可 */ }
 }
 
-server.on('close', clearBoardReadCaches);
+let schedReadClosing;
+function closeSchedReads() {
+  if (!schedReadClosing) schedReadClosing = schedApi.close().catch(error => console.error('[sched-read-close]', error));
+}
+// Stop pending reads before close waits for their HTTP connections to drain.
+const closeServer = server.close;
+server.close = function (...args) {
+  closeSchedReads();
+  return closeServer.apply(this, args);
+};
+server.on('close', () => {
+  clearBoardReadCaches();
+  closeSchedReads();
+});
 
 function startIntervals() {
   const poll = setInterval(() => {

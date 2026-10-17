@@ -213,3 +213,27 @@ test('sched:changed 与 board 通道共存：心跳 cursorSeq 和回执目录 mt
   assert.deepEqual((await receipts.wait(event => event.name === 'sched:changed')).data, { cursorSeq: 22 });
   assert.equal((await srv.json('/api/health')).body.ok, true);
 });
+
+test('worker reads retain CSV headers/bytes and detail related=0; every completed request reads again', async t => {
+  const read = require('../core/schedRead.cjs');
+  const srv = await startServer(t), value = ticket(1); saveTicket(srv, value);
+  const endpoint = '/api/sched/tickets.csv?project=sample';
+  let response = await fetch(srv.base + endpoint);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'text/csv; charset=utf-8');
+  assert.equal(response.headers.get('content-disposition'), 'attachment; filename="sched-ledger.csv"');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(await response.text(), read.exportTickets(srv.share, { project: 'sample' }));
+  const detail = await srv.json(`/api/sched/ticket/${value.ticketId}?related=0`);
+  assert.equal(detail.status, 200); assert.deepEqual(detail.body, { ok: true, ticket: value });
+  const file = path.join(srv.paths.tickets, value.ticketId + '.json'), stat = fs.statSync(file);
+  const bytes = fs.readFileSync(file), broken = Buffer.from(bytes); broken[0] = '!'.charCodeAt(0);
+  fs.writeFileSync(file, broken); fs.utimesSync(file, stat.atime, stat.mtime);
+  response = await fetch(srv.base + endpoint);
+  assert.equal(response.status, 503); assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.equal((await response.json()).readable, false);
+  fs.writeFileSync(file, bytes);
+  assert.equal((await srv.json('/api/sched/tickets')).body.total, 1);
+  saveTicket(srv, ticket(2));
+  assert.equal((await srv.json('/api/sched/tickets')).body.total, 2);
+});
