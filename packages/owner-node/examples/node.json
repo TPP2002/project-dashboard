@@ -1,0 +1,26 @@
+{
+  "version": "owner-node.v1",
+  "nodeId": "synthetic-node",
+  "stateRoot": "C:/OwnerNode/state",
+  "sessionsRoot": "C:/Users/OWNER/.codex/sessions",
+  "claudeProjectsRoot": "C:/Users/OWNER/.claude/projects",
+  "balance": "windows-key",
+  "launcher": "C:/Tools/Claude/claude.exe",
+  "schedulerConfig": "C:/OwnerNode/config/worker-scheduler.json",
+  "dashboardRemoteConfig": "C:/OwnerNode/config/dashboard-remote.json",
+  "ssh": {
+    "executable": "C:/Windows/System32/OpenSSH/ssh.exe",
+    "host": "owner-node@cloud.example.invalid",
+    "knownHosts": "C:/OwnerNode/ssh/known_hosts",
+    "identityFile": "C:/OwnerNode/ssh/node_identity"
+  },
+  "projects": {
+    "sample": {
+      "name": "Synthetic project",
+      "codeRepo": "C:/OwnerNode/repos/sample",
+      "docsRoot": "C:/OwnerNode/repos/sample",
+      "costRoots": ["C:/OwnerNode/repos/sample"],
+      "githubRepo": "example/sample"
+    }
+  }
+}

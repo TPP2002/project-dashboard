@@ -1,0 +1,10 @@
+{
+  "version": "owner-node.v1",
+  "stateRoot": "/var/lib/owner-node/dashboard",
+  "nodes": [{
+    "nodeId": "synthetic-node",
+    "nodeSocket": "/tmp/owner-node/synthetic-node.sock",
+    "clientSocket": "/tmp/owner-node/dashboard-client.sock",
+    "projects": ["sample"]
+  }]
+}

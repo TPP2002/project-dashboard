@@ -25,6 +25,9 @@ import { renderPrompt, completionMarker } from './codex-prompt'
 import { extractThreadId } from './codex-say'
 import { VERDICT_SCHEMA, type MachineAcceptance } from './codex-verdict'
 import { CODEX_WORKER_CONFIG_OVERRIDES, codexWorkerEnv } from './codex-worker-overrides'
+import scheduler from './codex-scheduler.cjs'
+import durable from '../../core/ownerNodeStore.cjs'
+import processIdentity from '../../core/ownerNodeProcess.cjs'
 
 const IS_WIN = process.platform === 'win32'
 
@@ -107,6 +110,8 @@ const dirtyFiles = (cwd: string): string[] => {
 }
 
 export interface JobMeta {
+  schedulerTicketId?: string
+  schedulerConfig?: string
   slug: string
   taskId: string
   taskHash: string
@@ -121,6 +126,10 @@ export interface JobMeta {
 }
 
 export interface JobState {
+  workerLaunch?: 'intent' | 'started' | 'exited' | 'unknown'
+  processIdentity?: { pid: number; birth: string; command: string } | null
+  schedulerFinish?: 'confirmed' | 'unknown'
+  treeExited?: boolean
   pid: number | null
   startedAt: string
   /** 监工命令行中的一次性标记；老工单没有，身份探针仍校验脚本、slug 与创建时刻。 */
@@ -137,7 +146,7 @@ export interface JobState {
 }
 
 const writeJson = (path: string, value: unknown): void => {
-  writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8')
+  durable.atomic(path, value)
 }
 
 export const readJson = <T>(path: string): T | null => {
@@ -214,7 +223,14 @@ const ensureWorktree = (slug: string): string => {
  * 返回工单目录,调用方拿去 collect。
  */
 export const dispatch = (task: CodexTask): { dir: string; pid: number | null; cwd: string } => {
+  const sched = scheduler.client(scheduler.config())
   const paths = jobPaths(task.slug)
+  const releaseDispatch = durable.exclusive(join(paths.dir, 'dispatch-owner'))
+  try {
+  if (existsSync(paths.meta) && !existsSync(paths.state)) throw new Error('Registration/startup outcome unknown; reconcile existing metadata first')
+  if (existsSync(paths.state) && readJson<JobState>(paths.state)?.treeExited !== true) {
+    throw new Error('Previous process tree exit is unconfirmed; reconcile locally before redispatch')
+  }
   mkdirSync(paths.dir, { recursive: true })
   mkdirSync(paths.acceptanceLogDir, { recursive: true })
 
@@ -249,6 +265,12 @@ export const dispatch = (task: CodexTask): { dir: string; pid: number | null; cw
     marker: completionMarker(task.slug),
   }
   writeJson(paths.meta, meta)
+  const ticket = sched.register({ key: scheduler.keyFor(task.slug + ':' + meta.dispatchedAt), title: task.title,
+    cwd, codeRef: 'commit:' + meta.baselineSha, targets: task.allowedPaths })
+  meta.schedulerTicketId = ticket
+  meta.schedulerConfig = process.env.DASHBOARD_WORKER_SCHED_CONFIG
+  writeJson(paths.meta, meta)
+  try { sched.permit(ticket, cwd) } catch (error) { sched.cancel(ticket, cwd); throw error }
 
   // 起一个**监工进程**,而不是直接把 codex 甩出去 detach。
   // 为什么多这一层:直接 detach 的话没人接退出码、没人管超时 —— 判决里的 exitCode 永远是
@@ -259,25 +281,21 @@ export const dispatch = (task: CodexTask): { dir: string; pid: number | null; cw
   // 不带 shell 直接 spawn .cmd 会当场 EINVAL —— 报错长得像"参数写错了",
   // 实际是平台策略,查半天查不到自己头上。
   const identityToken = randomUUID()
+  writeJson(paths.state, { pid: null, startedAt: new Date().toISOString(), identityToken,
+    finishedAt: null, exitCode: null, timedOut: false, threadId: null, workerLaunch: 'intent' } satisfies JobState)
   const supervisor = spawn(
     process.execPath,
     ['--import', 'tsx', join(REPO_ROOT, 'scripts', 'codex', 'codex-dispatch.ts'), '_supervise', task.slug, '--identity', identityToken],
     { cwd: REPO_ROOT, detached: true, stdio: 'ignore', windowsHide: true },
   )
   supervisor.unref()
+  supervisor.once('error', () => { try { sched.cancel(ticket, cwd) } catch {} })
 
-  const state: JobState = {
-    pid: supervisor.pid ?? null,
-    startedAt: new Date().toISOString(),
-    identityToken,
-    finishedAt: null,
-    exitCode: null,
-    timedOut: false,
-    threadId: null,
-  }
-  writeJson(paths.state, state)
+  // Supervisor owns state after launch. Do not overwrite its durable intent/worker phase.
+  // Parent PID is advisory; the supervisor writes its own PID before launching work.
 
   return { dir: paths.dir, pid: supervisor.pid ?? null, cwd }
+  } finally { releaseDispatch() }
 }
 
 /**
@@ -313,6 +331,17 @@ export const supervise = async (slug: string): Promise<void> => {
   const meta = readJson<JobMeta>(paths.meta)
   const task = readJson<CodexTask>(paths.task)
   if (!meta || !task) throw new Error('[codex-runner] 工单不完整,监工无法接管:' + slug)
+  const sched = scheduler.client(scheduler.config({ ...process.env, DASHBOARD_WORKER_SCHED_CONFIG: meta.schedulerConfig }))
+  if (!meta.schedulerTicketId) throw new Error('Missing worker registration; refusing launch')
+  const ticket = meta.schedulerTicketId
+  const initial = readJson<JobState>(paths.state)
+  const identityArgument = process.argv.indexOf('--identity')
+  if (!initial?.identityToken || identityArgument < 0 || process.argv[identityArgument + 1] !== initial.identityToken) throw new Error('Supervisor launch identity mismatch')
+  const launchLock = openSync(join(paths.dir, 'worker-launch-' + initial.identityToken + '.lock'), 'wx')
+  closeSync(launchLock)
+  try { sched.permit(ticket, meta.cwd) } catch (error) { sched.cancel(ticket, meta.cwd); throw error }
+  if (!initial || initial.workerLaunch !== 'intent') throw new Error('Unknown launch phase; refusing duplicate launch')
+  writeJson(paths.state, { ...initial, pid: process.pid, processIdentity: processIdentity.identity(process.pid), workerLaunch: 'unknown' })
 
   const prompt = readFileSync(paths.prompt, 'utf8')
   const args = buildCodexExecArgs(meta, task, paths, prompt)
@@ -327,22 +356,41 @@ export const supervise = async (slug: string): Promise<void> => {
     // WindowsApps,免得不提权沙箱的受限令牌起商店版 pwsh 而拒绝访问。
     env: codexWorkerEnv(process.env),
   })
+  const workerIdentity = processIdentity.identity(child.pid)
+  writeJson(paths.state, { ...readJson<JobState>(paths.state), workerLaunch: 'started', workerIdentity })
 
   let timedOut = false
+  let treeExitConfirmed = false
+  let permissionRevoked = false
+  const stopWorker = () => {
+    if (child.exitCode !== null || !workerIdentity || !processIdentity.matches(workerIdentity, processIdentity.identity(child.pid))) return
+    if (IS_WIN) {
+      const stopped = spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, encoding: 'utf8', timeout: 10000 })
+      treeExitConfirmed = !stopped.error && stopped.status === 0
+    } else child.kill('SIGTERM')
+  }
   const timer = setTimeout(() => {
     timedOut = true
-    try {
-      process.kill(child.pid as number)
-    } catch {
-      /* 已经自己退了 */
-    }
+    try { sched.cancel(ticket, meta.cwd) } catch { /* retain unknown outcome in state */ }
+    stopWorker()
+    // Never claim tree exit from killing just a PID. The registered supervisor stays
+    // responsible until the worker actually exits; cancellation is recorded above.
   }, task.timeoutSec * 1000)
+  const permission = setInterval(() => {
+    try { sched.permit(ticket, meta.cwd) } catch {
+      permissionRevoked = true
+      try { sched.cancel(ticket, meta.cwd) } catch {}
+      stopWorker()
+      // No new process is launched while permission is uncertain.
+    }
+  }, 10000)
 
   const exitCode = await new Promise<number | null>((resolve) => {
     child.on('exit', (code) => resolve(code))
     child.on('error', () => resolve(null))
   })
   clearTimeout(timer)
+  clearInterval(permission)
   closeSync(logFd)
 
   const prev = readJson<JobState>(paths.state)
@@ -356,7 +404,11 @@ export const supervise = async (slug: string): Promise<void> => {
     exitCode,
     timedOut,
     threadId: extractThreadId(paths.execLog),
+    workerLaunch: 'exited', treeExited: treeExitConfirmed,
   } satisfies JobState)
+  try { timedOut || permissionRevoked ? sched.cancel(ticket, meta.cwd) : sched.finish(ticket, meta.cwd, exitCode === 0)
+    writeJson(paths.state, { ...readJson<JobState>(paths.state), schedulerFinish: 'confirmed' })
+  } catch { writeJson(paths.state, { ...readJson<JobState>(paths.state), schedulerFinish: 'unknown' }) }
 }
 
 /** 完工标记有没有在事件流里出现过。 */
@@ -382,14 +434,11 @@ export const runAcceptance = (task: CodexTask, cwd: string, logDir: string): Mac
     const argv = resolveAcceptanceArgv(item)
     if (!argv) return { id: item.id, required: item.required, ran: false, passed: false, exitCode: null, manual: true }
 
-    const { cmd, args, shell } = acceptanceSpawnOptions(argv)
-    const r = spawnSync(cmd, args, {
-      cwd,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      timeout: 30 * 60 * 1000,
-      shell,
-    })
+    const literal = argv[0] === 'npm' && IS_WIN ? ['cmd.exe', '/d', '/s', '/c', 'npm', ...argv.slice(1)] : argv
+    if (literal[0] === 'node' && literal.includes('--test')) literal.splice(literal.indexOf('--test') + 1, 0, '--test-concurrency=1')
+    const r = scheduler.client(scheduler.config()).exec({ cwd, title: task.title + ' / ' + item.id,
+      target: item.target || task.allowedPaths.join(','), argv: literal,
+      category: item.kind.startsWith('test:') ? 'unit-test' : 'other', workType: item.kind.startsWith('test:') ? 'test' : 'build' })
     const output = (r.stdout || '') + '\n' + (r.stderr || '')
     writeFileSync(join(logDir, item.id + '.log'), argv.join(' ') + '\n\n' + output, 'utf8')
 
