@@ -20,7 +20,7 @@ const GLOBAL_FLAGS = [
 /** 退出码是全局约定(index.cjs 的 dispatch 决定),每条帮助都附一份。 */
 const EXIT_CODES = [
   ['0', '成功'],
-  ['1', '命令自己拒了:参数不合格 / 状态机不许这么迁移 / 建卡机器闸拦下'],
+  ['1', '参数/状态/机器闸拒绝；远程连接、协议失败或未适配命令拒绝（不回退旧板）'],
   ['2', '没有这条命令'],
   ['3', '这条命令还没实现(实现文件缺失或没导出)'],
 ];
@@ -32,11 +32,25 @@ const GROUPS = [
   ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
-    'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit']],
+    'release', 'claim-check', 'doctor', 'sync-from-git', 'remote-retry', 'cleanup', 'docs-audit']],
   ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot', 'archive-activity']],
 ];
 
 const COMMANDS = {
+  'remote-retry': {
+    summary: '用原请求编号重送结果未确认的远程写入，不重复追加账目',
+    usage: 'remote-retry <requestId> [--registry <本机注册表>] [--json]',
+    args: [
+      ['<requestId>', '失败时显示的请求编号，从本机待送记录读取原请求，不重新生成编号'],
+      ['--registry <本机注册表>', '只用于成功回执后的本机会话绑定；不会传给云端'],
+    ],
+    examples: ['remote-retry 00000000-0000-4000-8000-000000000000 --json'],
+    notes: [
+      '权威、代际和请求内容保持不变；同一请求已成功时返回原回执，同编号异内容拒绝。',
+      '不自动后台重试，不重放自动进度；待送记录属于旧权威时拒绝。',
+      '无需 --project，也不按当前仓库猜项目；项目来自待送记录。',
+    ],
+  },
   // ——— 开工与同步 ———
   protocol: {
     summary: '生成看板协议卡（与帮助同源的用法、状态行为、硬规则与正确示例）',
@@ -636,6 +650,24 @@ const COMMANDS = {
 };
 
 const { displayWidth, padRight: pad } = require('../core/termText.cjs');
+
+// Remote mode changes command boundaries, not the local command meanings above.
+for (const cmd of ['set','backfill','import','archive-activity','cleanup','onboard','enroll','register',
+  'render-index','snapshot','precheck','doctor','docs-audit']) {
+  COMMANDS[cmd].notes = [...(COMMANDS[cmd].notes || []), '已绑定远程项目时尚未适配：明确拒绝，不读取或写入本机旧板；后续由主控分别接入。'];
+}
+for (const [cmd, note] of [
+  ['brief', '远程项目每次查询云端当前状态，任务书中的后续操作使用本机正式 CLI。'],
+  ['claim', '远程写先存请求编号；确认成功后在本机记录原会话绑定。'],
+  ['done', '远程收官同样检查成本账，不能绕过机器闸；确认后保留本机会话绑定。'],
+  ['unclaim', '远程项目缺省分支由本机 Git 采集，云端不读取本机仓库。'],
+  ['add', '远程模式在本机解析文件/BOM/批量输入，再发送结构化内容；断网不写旧板。'],
+  ['pending', '远程模式在本机解析 JSON 输入，三件套仍由云端语义服务检查。'],
+  ['collect-brief', '远程模式的 --file 在本机读取，云端不接收或读取客户文件路径。'],
+  ['claim-check', '远程连接或协议失败退出 1，不当成未认领，也不以 2/3 兼容放行。'],
+  ['sync-from-git', '远程只传受信本机 Git 事实，断线保存待送请求并显示同编号重试命令。'],
+  ['sync-progress', '远程进度在云端锁内重新判断状态和分支，只进不退、封顶95，不排队重放。'],
+]) COMMANDS[cmd].notes = [...(COMMANDS[cmd].notes || []), note];
 
 /** 一条命令的一屏帮助:用法 / 参数 / 示例 / 退出码 / 补充。 */
 function renderCommandHelp(cmd, { cli = 'cli' } = {}) {

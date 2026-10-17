@@ -54,6 +54,9 @@ function scanCommits(repo, taskIds, opts = {}) {
 
 /** 从 git 派生并写回 board（只碰 git 派生字段）。 */
 function syncFromGit(flags) {
+  if (require('./remoteConfig.cjs').binding(flags.project)) {
+    return require('./remoteRoute.cjs').route('sync-from-git', flags).result;
+  }
   const proj = resolveProj(flags);
   // codeRepo 而非 mainRepo：卡的提交在「代码的家」里，板可能自成一家（见 resolveProject 头注）。
   const repo = proj.codeRepo;
@@ -78,7 +81,7 @@ function syncFromGit(flags) {
       const before = snap(t);
       t.commitShas = unionShas([...(t.commitShas || []), ...info.commits]);
       if (info.prs.size) t.prNumbers = unionBy([...(t.prNumbers || []), ...info.prs], String);
-      if (perTask[t.id] && branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
+      if (perTask[t.id] && commit && branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
       // 比【内容】不比【长度】：板里存的 8 位短哈希被 unionShas 升成 12 位时数组长度纹丝不动，
       // 但板确实变了。只比长度会让这类改动报成 changed=0，下游据此判「无需备份/无需留痕」就全错。
       if (snap(t) !== before) changed++;
