@@ -13,21 +13,46 @@ export interface ProcessIdentity {
 export type SupervisorLiveness = 'running' | 'exited' | 'reused' | 'unknown' | 'finished'
 
 const validPid = (pid: unknown): pid is number => Number.isSafeInteger(pid) && (pid as number) > 0
+const START_TOLERANCE_MS = 10_000
 const scriptPath = join(REPO_ROOT, 'scripts', 'codex', 'codex-dispatch.ts')
 const normalized = (value: string): string => value.replace(/\\/g, '/').toLowerCase()
 const escaped = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const argumentPair = (command: string, flag: string, value: string): boolean =>
   new RegExp(`(?:^|\\s)["']?${escaped(flag)}["']?\\s+["']?${escaped(value)}["']?(?:\\s|$)`, 'i').test(command)
 
+/** @internal 只构造原 Windows 子进程的脚本；导出供真实 PowerShell 注入禁止 CIM 的测试使用。 */
+export function windowsProcessScript(pids: number[], expectedStarts: readonly Pick<JobState, 'pid' | 'startedAt'>[] = []): string {
+  const candidates = [...new Set(pids.filter(validPid))].map(pid => {
+    // 一张单的坏/缺提示就足以阻止此 PID 的快路径，不能以最后一张单覆盖其它提示。
+    const hints = expectedStarts.filter(hint => hint?.pid === pid)
+    const times = hints.map(hint => typeof hint.startedAt === 'string' ? Date.parse(hint.startedAt) : NaN)
+    return { pid, times: times.length && times.every(Number.isFinite) ? times : [] }
+  })
+  // 仅插入已校验 PID 和解析后的毫秒整数，不将工单原文插入 PowerShell。
+  return `$ErrorActionPreference='Stop'; $rows=@(); $pending=@(); ` +
+    `$candidates=ConvertFrom-Json '${JSON.stringify(candidates)}'; ` +
+    `foreach ($candidate in $candidates) { $needsCim=$true; ` +
+      `if ($null -ne $candidate.times -and @($candidate.times).Count -gt 0) { $observedProcess=$null; try { ` +
+        `$observedProcess=[System.Diagnostics.Process]::GetProcessById([int]$candidate.pid); ` +
+        `$created=$observedProcess.StartTime.ToUniversalTime(); ` +
+        `$actualMs=([DateTimeOffset]$created).ToUnixTimeMilliseconds(); $different=$true; ` +
+        `foreach ($expectedStart in @($candidate.times)) { ` +
+          `if ([Math]::Abs($actualMs - [long]$expectedStart) -le ${START_TOLERANCE_MS}) { $different=$false; break } }; ` +
+        `if ($different) { $rows += [pscustomobject]@{ pid=[long]$candidate.pid; startedAt=$created.ToString('o'); commandLine=$null; executablePath=$null }; $needsCim=$false } ` +
+      `} catch { $needsCim=$true } finally { if ($null -ne $observedProcess) { $observedProcess.Dispose() } } }; ` +
+      `if ($needsCim) { $pending += $candidate.pid } }; ` +
+    `if ($pending.Count -gt 0) { $filter=($pending | ForEach-Object { 'ProcessId = ' + $_ }) -join ' OR '; ` +
+      `$rows += @(Get-CimInstance Win32_Process -Filter $filter | ForEach-Object { ` +
+        `[pscustomobject]@{ pid=[int]$_.ProcessId; startedAt=$_.CreationDate.ToUniversalTime().ToString('o'); commandLine=$_.CommandLine; executablePath=$_.ExecutablePath } }) }; ` +
+    `ConvertTo-Json -InputObject @($rows) -Compress`
+}
+
 /** 一次查所有未完成工单的 PID，避免 status 列表每行都冷启动一次 PowerShell。null = 探针故障。 */
-export function inspectProcesses(pids: number[]): Map<number, ProcessIdentity> | null {
+export function inspectProcesses(pids: number[], expectedStarts: readonly Pick<JobState, 'pid' | 'startedAt'>[] = []): Map<number, ProcessIdentity> | null {
   const unique = [...new Set(pids.filter(validPid))]
   if (!unique.length) return new Map()
   if (process.platform === 'win32') {
-    const filter = unique.map(pid => `ProcessId = ${pid}`).join(' OR ')
-    const script = `$ErrorActionPreference='Stop'; $rows=@(Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { ` +
-      `[pscustomobject]@{ pid=[int]$_.ProcessId; startedAt=$_.CreationDate.ToUniversalTime().ToString('o'); commandLine=$_.CommandLine; executablePath=$_.ExecutablePath } }); ` +
-      `ConvertTo-Json -InputObject $rows -Compress`
+    const script = windowsProcessScript(unique, expectedStarts)
     const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
       encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 1024 * 1024,
     })
@@ -68,13 +93,16 @@ export function supervisorLiveness(state: JobState | null, slug: string,
   if (!validPid(state?.pid)) return 'exited'
   if (observed === undefined) return 'unknown'
   if (observed === null) return 'exited'
+  if (!validPid(observed.pid)) return 'unknown'
+  const started = typeof state.startedAt === 'string' ? Date.parse(state.startedAt) : NaN
+  const actual = typeof observed.startedAt === 'string' ? Date.parse(observed.startedAt) : NaN
+  if (!Number.isFinite(started) || !Number.isFinite(actual)) return 'unknown'
   if (observed.pid !== state.pid) return 'reused'
+  // state.startedAt 在 spawn 返回后立即写；旧单没有 OS 创建时刻，容忍两侧时钟/写盘小抖动。
+  // 创建时刻明确不匹配即可否定旧身份；匹配本身绝不能证明 running。
+  if (Math.abs(actual - started) > START_TOLERANCE_MS) return 'reused'
   if (observed.executablePath && !/\/(?:node|node\.exe)$/i.test(normalized(observed.executablePath))) return 'reused'
   if (typeof observed.commandLine !== 'string' || !observed.commandLine) return 'unknown'
-  const started = Date.parse(state.startedAt), actual = Date.parse(observed.startedAt)
-  if (!Number.isFinite(started) || !Number.isFinite(actual)) return 'unknown'
-  // state.startedAt 在 spawn 返回后立即写；旧单没有 OS 创建时刻，容忍两侧时钟/写盘小抖动。
-  if (Math.abs(actual - started) > 10_000) return 'reused'
   const command = normalized(observed.commandLine)
   if (!command.includes(normalized(scriptPath)) || !argumentPair(command, '_supervise', slug)) return 'reused'
   if (state.identityToken && !argumentPair(command, '--identity', state.identityToken)) return 'reused'

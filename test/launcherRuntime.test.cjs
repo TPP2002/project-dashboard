@@ -1001,6 +1001,14 @@ async function waitFor(fn, ms = 15000) {
   }
 }
 
+// spawn 后父进程登记与子进程写 PID 文件没有先后保证；两项事实齐备才可断言起稳。
+// 仍使用原 waitFor 的 15 秒预算，不增加重试层或放宽生命周期断言。
+function registeredServerReady(recordFile, pidFile) {
+  if (!fs.existsSync(pidFile)) return false;
+  const serverPid = Number(fs.readFileSync(pidFile, 'utf8'));
+  return serverPid > 0 && JSON.parse(fs.readFileSync(recordFile, 'utf8')).serverPid === serverPid;
+}
+
 test('看护真实生命周期：外部 cancel（票面终态）→ 真的停掉自己管理的 server', { timeout: 30000 }, async () => {
   const e = makeEnv();
   e.share = path.join(e.dir, 'share');
@@ -1009,7 +1017,7 @@ test('看护真实生命周期：外部 cancel（票面终态）→ 真的停掉
   makeFakeShare(e.share, stateFile);
   const { child, pidFile } = spawnWatcher(e, { ticketId: 'tk-' + 'a'.repeat(20), wrapperPid: process.pid });
   try {
-    assert.ok(await waitFor(() => fs.existsSync(pidFile)), 'dummy server 没被看护拉起');
+    assert.ok(await waitFor(() => registeredServerReady(e.recordFile, pidFile)), 'dummy server 与归属登记未就绪');
     const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
     assert.equal(typeof rec.serverPid, 'number', '看护要把 serverPid 补进归属登记');
     fs.writeFileSync(stateFile, 'cancelled');   // 正式外部 cancel 之后票面就是这个状态
@@ -1034,7 +1042,7 @@ test('看护真实生命周期：包装进程死亡（父链断开）→ 真的�
   const { child: wrapper, pidFile, goFile, output } = spawnWatcher(e, { ticketId: 'tk-' + 'b'.repeat(20), viaWrapper: true });
   try {
     fs.writeFileSync(goFile, 'go');   // 票据事实已备好，放行 wrapper 写租约并拉起看护
-    assert.ok(await waitFor(() => fs.existsSync(pidFile)), 'dummy server 没被看护拉起');
+    assert.ok(await waitFor(() => registeredServerReady(e.recordFile, pidFile)), 'dummy server 与归属登记未就绪');
     const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
     assert.equal(typeof rec.serverPid, 'number', '授予核验（含实际父链）通过后 server 才起');
     const wrapperExit = once(wrapper, 'exit');
@@ -1124,7 +1132,7 @@ test('看护真实生命周期：真实 resident 授予形态（票面 granted�
   const T = 'tk-' + 'f'.repeat(20);
   const { child, pidFile } = spawnWatcher(e, { ticketId: T, wrapperPid: process.pid });
   try {
-    assert.ok(await waitFor(() => fs.existsSync(pidFile)), 'granted 的常驻单必须被核验为有效授予并起服务');
+    assert.ok(await waitFor(() => registeredServerReady(e.recordFile, pidFile)), 'granted 的常驻单必须被核验为有效授予并起服务、写入归属登记');
     const rec = JSON.parse(fs.readFileSync(e.recordFile, 'utf8'));
     assert.equal(typeof rec.serverPid, 'number', 'serverPid 照常补进归属登记');
   } finally {

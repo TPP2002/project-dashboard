@@ -41,6 +41,7 @@ const path = require('path');
 const url = require('url');
 const { createHash } = require('node:crypto');
 const { createBoardReadCache } = require('../core/boardReadCache.cjs');
+const { ticketReadCache } = require('../core/schedTicketReadCache.cjs');
 // 静态文件要用它善后:客户端中途断开时 pipe 不会关源流,句柄泄到进程退出(见 streamFile 头注)。
 const { pipeline } = require('node:stream');
 const { execFile } = require('child_process');
@@ -143,9 +144,11 @@ function sweepBoardReadCaches(at = Date.now()) {
   if (at - lastCacheSweep < 60000) return;
   lastCacheSweep = at;
   for (const cache of [summaryCache, archiveCache, mergedBoardCache]) cache.sweep(at);
+  ticketReadCache.sweep(at, schedContract.schedPaths(resolveSchedShare()).tickets);
 }
 function clearBoardReadCaches() {
   for (const cache of [summaryCache, archiveCache, mergedBoardCache]) cache.clear();
+  ticketReadCache.clear();
 }
 
 // ============ 通用工具 ============

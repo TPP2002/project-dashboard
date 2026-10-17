@@ -463,3 +463,54 @@ test('board read-cache eviction preserves full activity, deduplication, sorting,
   fs.unlinkSync(archive);
   assert.deepEqual((await getJson(endpoint)).body.activity, [b, c]);
 });
+
+test('ticket cache uses existing server sweep and releases on share switch, idle and server close without another timer', () => {
+  const vm = require('node:vm');
+  const { createRequire } = require('node:module');
+  const { EventEmitter } = require('node:events');
+  const { ticketReadCache: cache } = require('../core/schedTicketReadCache.cjs');
+  const { initialize, ticket, write } = require('./fixtures/sched/support.cjs');
+  const read = require('../core/schedRead.cjs');
+  const dir = realTmp('ticket-cache-lifecycle-'), intervals = [], cancelled = new Set();
+  let share = path.join(dir, 'one'), now = Date.now();
+  const paths = initialize(share), value = ticket(1);
+  write(path.join(paths.tickets, `${value.ticketId}.json`), value);
+  const server = new EventEmitter(), localRequire = createRequire(SERVER);
+  const fakeProcess = new EventEmitter();
+  fakeProcess.env = { ...process.env, DASHBOARD_HOME: dir, DASHBOARD_REGISTRY: path.join(dir, 'registry.json') };
+  const loaded = { exports: {} };
+  const context = {
+    module: loaded, exports: loaded.exports, __dirname: path.dirname(SERVER), __filename: SERVER,
+    process: fakeProcess, console, Buffer, URL,
+    Date: class extends Date { static now() { return now; } },
+    setInterval(fn, ms) { const timer = { fn, ms, unref() {} }; intervals.push(timer); return timer; },
+    clearInterval(timer) { cancelled.add(timer); }, setTimeout, clearTimeout,
+    require(name) {
+      if (name === 'node:http') return { ...http, createServer: () => server };
+      if (name === '../core/resolveProject.cjs') return { ...localRequire(name), DASHBOARD_HOME: dir,
+        REGISTRY_PATH: path.join(dir, 'registry.json'), readRegistry: () => ({ projects: {} }) };
+      if (name === '../core/settings.cjs') return { ...localRequire(name), resolveSchedShare: () => share,
+        resolveModules: () => ({ cpu: false }) };
+      return localRequire(name);
+    },
+  };
+  try {
+    vm.runInNewContext(fs.readFileSync(SERVER, 'utf8') +
+      '\nmodule.exports.cacheLifecycle = { startIntervals, sweepBoardReadCaches };', context, { filename: SERVER });
+    const lifecycle = loaded.exports.cacheLifecycle;
+    read.ticketPage(share); assert.equal(cache.stats().entries, 1);
+    lifecycle.startIntervals();
+    assert.equal(intervals.length, 3, 'only the existing poll, SSE heartbeat and CI poll timers');
+    assert.equal(cache.stats().entries, 1);
+    share = path.join(dir, 'two'); now += 60000;
+    intervals[0].fn(); assert.equal(cache.stats().entries, 0, 'poll sweep observes share switch without API reads');
+    share = path.join(dir, 'one'); read.ticketPage(share);
+    assert.equal(cache.stats().entries, 1);
+    now = cache.stats().lastUsedAt + 600000; intervals[0].fn();
+    assert.equal(cache.stats().entries, 0); assert.equal(cache.stats().weightBytes, 0);
+    read.ticketPage(share); assert.equal(cache.stats().entries, 1);
+    server.emit('close');
+    assert.equal(cache.stats().entries, 0); assert.equal(cache.stats().weightBytes, 0);
+    assert.equal(cache.stats().lastUsedAt, null); assert.equal(cancelled.size, 3);
+  } finally { cache.clear(); clean(dir); }
+});
