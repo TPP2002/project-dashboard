@@ -27,6 +27,7 @@ const { setTimeout, clearTimeout, setInterval, clearInterval } = require('node:t
 const { isUtf8 } = require('node:buffer')
 
 const deployment = require('./deployment-config.cjs')
+const remoteCli = require('./remote-cli.cjs')
 const CLIENT_VERSION = 1
 const SCHED_FORMAT_VERSION = 1
 const HOST_SMALL_JOB_POOL_CORES = 4
@@ -302,11 +303,12 @@ function assertWritableFormat(value) {
 // ---- I/O 边界：不创建共享盘目录；每次写都重新检查格式。 ----
 function runtime(options = {}, needsShare = true) {
   const env = options.env ?? process.env
+  const remote = remoteCli.isRemote(options)
   const inferred = path.basename(__dirname) === 'bin' && path.basename(path.dirname(__dirname)) === 'sched' ? path.resolve(__dirname, '../..') : undefined
   const share = options.share ?? env.SCHED_SHARE ?? inferred
-  if (needsShare && !share) throw new ClientError('必须指定 --share 或 SCHED_SHARE', 3)
+  if (needsShare && !share && !remote) throw new ClientError('必须指定 --share 或 SCHED_SHARE', 3)
   return {
-    ...options, share: share ? path.resolve(share) : undefined, env,
+    ...options, remote, share: remote ? `remote:${remoteCli.configuration(options).authorityId}` : share ? path.resolve(share) : undefined, env,
     now: options.now ?? (() => new Date().toISOString()),
     monotonic: options.monotonic ?? (() => performance.now()),
     nonce: options.nonce ?? randomUUID,
@@ -358,6 +360,7 @@ function readOptionalNewChannelJson(file) {
   catch (error) { if (error.cause?.code === 'ENOENT') return null; throw error }
 }
 function checkFormat(ctx) {
+  if (ctx.remote) throw new ClientError('远程模式禁止读写旧调度权威', 3)
   try { return assertWritableFormat(readJson(paths(ctx.share).format)) } catch (error) {
     throw new ClientError(`拒绝写入:${error.message}`, 3, error)
   }
@@ -397,8 +400,9 @@ function createSame(ctx, file, value) {
   }
 }
 function readTicket(ctx, id, optional = true) {
-  checkFormat(ctx)
-  const ticket = readJson(path.join(paths(ctx.share).tickets, `${ticketId(id)}.json`), optional)
+  if (!ctx.remote) checkFormat(ctx)
+  const ticket = ctx.remote ? remoteCli.syncRead('ticket', ticketId(id), ctx)
+    : readJson(path.join(paths(ctx.share).tickets, `${ticketId(id)}.json`), optional)
   if (!ticket) return null
   if (ticket.formatVersion !== 1 || ticket.ticketId !== id || !STATES.includes(ticket.state) || !Array.isArray(ticket.attempts)
     || !Array.isArray(ticket.timeline) || typeof ticket.cancelRequested !== 'boolean') throw new ClientError('快照身份或状态不合法', 3)
@@ -583,6 +587,7 @@ function usageCorrection(ctx, input) {
 
 /** 精确请求重传保留 createdAt；高级参数形式从原请求/快照取创建时刻，其他字段仍重新比较。 */
 async function submit(options) {
+  if (remoteCli.isRemote(options)) return remoteCli.submit(options)
   const ctx = runtime(options); checkFormat(ctx)
   let request = options.request
   if (!request) {
@@ -636,6 +641,7 @@ async function submit(options) {
 const EVENT_LABELS = { submitted: '入队', granted: '授予', started: '开跑', paused: '暂停', slowed: '低速', resumed: '恢复', restored: '恢复', finished: '结束', requeued: '重新入队', 'cancel-requested': '请求撤单', 'marked-unsatisfiable': '无法满足' }
 /** 重新连接时重放快照时间线，随后每个新事件只输出一次；五分钟无变化也报告存活。 */
 async function waitFor(id, options = {}) {
+  if (remoteCli.isRemote(options)) return remoteCli.waitFor(id, options)
   ticketId(id)
   const ctx = runtime(options), until = options.until ?? 'granted'
   oneOf(['granted', 'finished'])(until)
@@ -672,6 +678,7 @@ async function awaitCommandReceipt(ctx, commandId, timeoutMs) {
   return { ...receipt, exitCode: receipt.status === 'executed' ? 0 : 2 }
 }
 async function cancel(id, options = {}) {
+  if (remoteCli.isRemote(options)) return remoteCli.command('cancel', id, options)
   const ctx = runtime(options)
   const command = writeCancelCommand(ctx, id, options.reason)
   return awaitCommandReceipt(ctx, command.commandId, options.timeoutMs)
@@ -688,6 +695,7 @@ function writeCancelCommand(ctx, id, reason) {
 }
 /** 只登记类单子（category=codex-build）的正常完工入口；退出码口径与 cancel 一致。 */
 async function finish(id, options = {}) {
+  if (remoteCli.isRemote(options)) return remoteCli.command('finish', id, options)
   const ctx = runtime(options); checkFormat(ctx); ticketId(id)
   if (options.result !== 'passed' && options.result !== 'failed') throw new ClientError('finish 必须用 --result 指定 passed 或 failed', 2)
   const at = timestamp(ctx)
@@ -772,9 +780,9 @@ function statusMemoryGb(mb) {
 }
 /** 内存闸边车只认 90 秒内的读数;读不到、写坏、过期一律返回 null —— status 自己不能先炸,宁可少说。 */
 const MEMORY_FLOOR_STATE_FRESH_MS = 90_000
-function statusMemoryFloor(share, nowMs) {
-  let parsed
-  try { parsed = JSON.parse(fs.readFileSync(path.join(paths(share).root, 'memory-floor', 'state.json'), 'utf8')) } catch { return null }
+function statusMemoryFloor(share, nowMs, supplied) {
+  let parsed = supplied
+  if (arguments.length < 3) try { parsed = JSON.parse(fs.readFileSync(path.join(paths(share).root, 'memory-floor', 'state.json'), 'utf8')) } catch { return null }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || parsed.formatVersion !== 1) return null
   if (typeof parsed.at !== 'string' || !Number.isFinite(Date.parse(parsed.at))
     || nowMs - Date.parse(parsed.at) > MEMORY_FLOOR_STATE_FRESH_MS) return null
@@ -807,9 +815,9 @@ function overuseAlertText(id, mark) {
     + `已持续 ${minutes} 分钟;测试或训练里的重进程请按环境变量 SCHED_GRANTED_CORES 限线程`
 }
 /** 超用边车只认 120 秒内的读数;读不到、写坏、过期一律返回空数组——status 自己不能先炸。 */
-function statusOveruse(share, nowMs) {
-  let parsed
-  try { parsed = JSON.parse(fs.readFileSync(path.join(paths(share).root, 'managed-load', 'overuse.json'), 'utf8')) } catch { return [] }
+function statusOveruse(share, nowMs, supplied) {
+  let parsed = supplied
+  if (arguments.length < 3) try { parsed = JSON.parse(fs.readFileSync(path.join(paths(share).root, 'managed-load', 'overuse.json'), 'utf8')) } catch { return [] }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || parsed.formatVersion !== 1) return []
   if (typeof parsed.at !== 'string' || !Number.isFinite(Date.parse(parsed.at))
     || nowMs - Date.parse(parsed.at) > OVERUSE_STATE_FRESH_MS) return []
@@ -1007,9 +1015,10 @@ function statusSummary(machines, head, allowed = null) {
   return `${lead}${list}${ends}${tail}`
 }
 function status(id, options = {}) {
-  const ctx = runtime(options); checkFormat(ctx)
+  const remote = remoteCli.isRemote(options), evidence = remote ? remoteCli.syncRead('status', id, options) : null
+  const ctx = runtime(options); if (!remote) checkFormat(ctx)
   if (id) {
-    const ticket = readTicket(ctx, id)
+    const ticket = remote ? evidence : readTicket(ctx, id)
     if (!ticket) throw new ClientError('单子不存在', 2)
     // 超用标记(SCHED-GRANTED-CORES-OVERUSE-NOT-ENFORCED-0925):派单员标了红才多带 overuse/overuseText 两键;
     // 没标不给键,单张结果的顶层键与改前逐字相同(老调用方按整对象比对)。
@@ -1023,12 +1032,15 @@ function status(id, options = {}) {
       ...(original === undefined ? {} : { requestedCores: ticket.request.requestedCores,
         requestedCoresText: `${formatCores(ticket.request.requestedCores)} 核(申请 ${formatCores(original)},按历史改小)` }) }
   }
-  const heartbeat = readJson(path.join(paths(ctx.share).root, '_control', 'dispatcher-heartbeat.json'))
+  const heartbeat = remote ? evidence.objects.find(x => x.entry.kind === 'dispatcher-heartbeat')?.value
+    : readJson(path.join(paths(ctx.share).root, '_control', 'dispatcher-heartbeat.json'))
+  if (!heartbeat) throw new ClientError('当前派单心跳不可读', 3)
   isoTime(heartbeat.at); integer(heartbeat.queued); integer(heartbeat.granted)
   const nowMs = Date.parse(timestamp(ctx))
   // 总览的超用名单从边车现读,降级路径也带——status 是出问题时第一个被跑的命令,宁可多给一句实话。
   // 空名单不给键:总览顶层键要稳定,红了才多一个 overuse。
-  const overuse = statusOveruse(ctx.share, nowMs)
+  const overuse = remote ? evidence.objects.filter(x => x.entry.kind === 'managed-overuse').flatMap(x => statusOveruse(undefined, nowMs, x.value))
+    : statusOveruse(ctx.share, nowMs)
   const base = { machine: heartbeat.machine, heartbeatAgeMs: Math.max(0, nowMs - Date.parse(heartbeat.at)),
     queued: heartbeat.queued, granted: heartbeat.granted,
     ...(overuse.length > 0 ? { overuse } : {}) }
@@ -1052,7 +1064,7 @@ function status(id, options = {}) {
     return slots !== null && slots.occupied >= slots.capacity
   })
   const headFile = !slotsExplainNeeded || headTicket === null || typeof headTicket.ticketId !== 'string'
-    ? null : readTicket(ctx, headTicket.ticketId)
+    ? null : remote ? evidence.headTicket : readTicket(ctx, headTicket.ticketId)
   // 这台机器挡不挡队首这张票的槽:集群单每台候选机都占;auto 单只在自己挂号机之外的机器占;
   // 本地单与本地 auto 不占。读不到实物就是 null(未知),不做「槽满挡票」的结论。
   const occupiesSlot = machine => headFile === null ? null
@@ -1060,7 +1072,8 @@ function status(id, options = {}) {
       || (headFile.request.execution === 'auto' && headFile.request.origin !== machine.name)
   try {
     // 内存闸边车每拍读一次,按机器名对号入座;读不到(开关没开/老派单员)就是 null,解释退回核数口径。
-    const memoryFloor = statusMemoryFloor(ctx.share, nowMs)
+    const memoryFloor = remote ? statusMemoryFloor(undefined, nowMs, evidence.objects.find(x => x.entry.kind === 'memory-floor' && x.entry.view === 'state')?.value)
+      : statusMemoryFloor(ctx.share, nowMs)
     const machines = heartbeat.machines.map(machine => ({ name: machine.name,
       ...statusMachineReason(machine, heartbeat.locks, headTicket ? headTicket.requestedCores : null, nowMs,
         memoryFloor?.[machine.name] ?? null, occupiesSlot(machine)) }))
@@ -1181,6 +1194,7 @@ function reclaimHint(reason) {
   return undefined
 }
 async function run(id, options = {}) {
+  if (remoteCli.isRemote(options)) return remoteCli.run(id, options)
   const ctx = runtime(options); ticketId(id); checkFormat(ctx)
   requireText(options.command, '命令')
   if (!options._autoLocal) {
@@ -1387,6 +1401,7 @@ function writeResidentLease(ctx, lease) {
   return lease
 }
 async function hold(options) {
+  if (remoteCli.isRemote(options)) return remoteCli.hold(options)
   const ctx = runtime(options); checkFormat(ctx)
   requireText(options.project, '项目')
   requireText(options.title, '标题')
@@ -1684,7 +1699,8 @@ async function ownChangesBase(ctx, root, project, ref, timeoutMs) {
   // 共享盘读要异步且有界:SMB 卡住时 5 秒后按「没有最新主干」退回现行判法,不能把挂号卡死(#1095 评审)。
   let bytes, timer
   try {
-    bytes = await Promise.race([fs.promises.readFile(path.join(ctx.share, 'trunk-anchor.json')),
+    bytes = await Promise.race([ctx.remoteRead ? ctx.remoteRead({ kind: 'project-trunk-head', project }).then(commit => Buffer.from(JSON.stringify({ schema: 1, commit })))
+      : fs.promises.readFile(path.join(ctx.share, 'trunk-anchor.json')),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('trunk-anchor read timeout')), 5_000) })])
   } catch { return null } finally { clearTimeout(timer) }
   let anchor
@@ -1717,7 +1733,8 @@ async function branchClientAuto(root) {
 /** 开关关时在读取配置后立即返回，不加载菜单/快照模块，也不启动 git。 */
 async function decideAuto(ctx, options, root, category, workType) {
   let bytes
-  try { bytes = fs.readFileSync(path.join(ctx.share, 'sched', '_control', 'hub.json')) } catch { return null }
+  try { bytes = ctx.remoteRead ? Buffer.from(JSON.stringify(await ctx.remoteRead({ kind: 'hub-switch' })))
+    : fs.readFileSync(path.join(ctx.share, 'sched', '_control', 'hub.json')) } catch (error) { if (ctx.remoteRead) throw error; return null }
   let raw
   try { const body = bytes.toString('utf8'); raw = JSON.parse(body.charCodeAt(0) === 0xfeff ? body.slice(1) : body) } catch { return null }
   if (!raw || raw.schema !== 1 || raw.portable !== 'on') return null
@@ -1748,7 +1765,7 @@ async function decideAuto(ctx, options, root, category, workType) {
   let head
   try { head = await gitAsync(root, ['rev-parse', '--verify', 'HEAD^{commit}'], options.gitTimeoutMs); if (!SHA1.test(head)) throw new Error('invalid HEAD') }
   catch { return pinned('snapshot-no-head') }
-  const mainCommit = trunkHead(ctx.share, project)
+  const mainCommit = ctx.remoteRead ? await ctx.remoteRead({ kind: 'project-trunk-head', project }) : trunkHead(ctx.share, project)
   if (!mainCommit) return pinned('snapshot-base-missing')
   try { await gitAsync(root, ['cat-file', '-e', `${mainCommit}^{commit}`], options.gitTimeoutMs) }
   catch { return pinned('snapshot-base-missing', { mainCommit }) }
@@ -2173,6 +2190,7 @@ async function followAuto(ctx, id, initial, options) {
  * 拒绝，不占调度台的队。
  */
 async function execUnformatted(options) {
+  if (remoteCli.isRemote(options)) return remoteCli.exec(options)
   const ctx = runtime(options)
   const root = options.root ?? process.cwd()
   const resolved = resolveWindowsExecutable(options.command, options.args ?? [], { cwd: root, env: ctx.env })
@@ -2446,7 +2464,7 @@ async function exec(options) {
   if (mode !== 'raw' && mode !== 'summary') throw new ClientError('outputMode 只认 raw 或 summary', 2)
   if (mode === 'raw') return execUnformatted(options)
   const ctx = runtime(options, false), began = ctx.monotonic(), collector = createExecCollector(ctx)
-  const captured = { ...options, output: collector.notice, notice: collector.notice, remoteOutput: collector.output,
+  const captured = { ...options, output: collector.notice, notice: collector.notice, remoteOutput: collector.output, remoteError: collector.output,
     _summaryOutput: collector.output, _summaryTicket: collector.ticket, _summaryAccepted: collector.accepted }
   let result, advice = []
   try { result = await execUnformatted(captured) }
@@ -2720,7 +2738,7 @@ function parseArgs(argv) {
   const commandArgs = separator >= 0 ? argv.slice(separator + 1) : []
   const tokens = separator >= 0 ? argv.slice(0, separator) : argv
   const flags = {}, positionals = []
-  const names = ['share', 'project', 'key', 'category', 'title', 'cores', 'work-type', 'targets', 'code-ref', 'machines', 'exclusive', 'parent', 'until', 'timeout', 'beat-sec', 'reason', 'result', 'receipt-timeout', 'root', 'submitter', 'engine']
+  const names = ['share', 'project', 'key', 'category', 'title', 'cores', 'work-type', 'targets', 'code-ref', 'machines', 'exclusive', 'parent', 'until', 'timeout', 'beat-sec', 'reason', 'result', 'receipt-timeout', 'root', 'submitter', 'engine', 'duration-minutes']
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]
     if (!token.startsWith('--')) { positionals.push(token); continue }
@@ -2782,10 +2800,17 @@ async function main(argv = process.argv.slice(2), { ciObserver } = {}) {
       if (f.result !== 'passed' && f.result !== 'failed') throw new ClientError('finish 必须用 --result 指定 passed 或 failed')
       result = await finish(p[1], { ...opts, result: f.result, reason: f.reason, timeoutMs: opts.receiptTimeoutMs ?? opts.timeoutMs })
     }
+    else if (remoteCli.isRemote(opts) && ['pause', 'resume', 'reserve', 'owner-hold', 'owner-release'].includes(p[0]) && p.length === 2) {
+      const kind = p[0] === 'pause' ? 'pause-one' : p[0] === 'resume' ? 'resume-one' : p[0]
+      const data = ['pause', 'resume'].includes(p[0]) ? { ticketId: p[1] }
+        : p[0] === 'reserve' ? { machine: p[1], requestedCores: Number(f.cores), ...(f['duration-minutes'] ? { durationMinutes: Number(f['duration-minutes']) } : {}) }
+        : { machine: p[1] }
+      result = await remoteCli.command(kind, undefined, { ...opts, data })
+    }
     else if (p[0] === 'status' && p.length <= 2) result = { ...status(p[1], opts), exitCode: 0 }
     else throw new ClientError(`子命令或参数错误\n${USAGE}`)
     if (p[0] !== 'wait' && outputMode !== 'summary') { const body = { ...result }; delete body.exitCode; console.log(JSON.stringify(body)) }
-    return result.exitCode
+    return result.exitCode === null ? 3 : result.exitCode
   } catch (error) {
     console.error(error.message)
     if (waitContext && error.message === '等待超时' && error.exitCode === 4) {
@@ -2799,7 +2824,7 @@ module.exports = { CLIENT_VERSION, SCHED_FORMAT_VERSION, HOST_SMALL_JOB_POOL_COR
   RENAME_RETRY_DELAYS_MS, renameWithRetry, BEAT_FAILURE_TOLERANCE_MS,
   canonicalJson, contentHash, rawContentHash, deriveTicketId, validateSubmission, validateCommand, validateReport, assertWritableFormat,
   submit, waitFor, run, hold, cancel, finish, status, validatePermit, acquireSmallJob, contentFingerprint, ClientError, main, USAGE,
-  autoIdempotencyKey, autoCodeRef, resolveWindowsExecutable, queuePosition, awaitQueuePosition, QUEUE_POSITION_FRESH_WAIT_MS,
+  autoIdempotencyKey, autoCodeRef, decideAuto, resolveWindowsExecutable, queuePosition, awaitQueuePosition, QUEUE_POSITION_FRESH_WAIT_MS,
   exec, extractFailureItems, timeoutAdvice,
   // 长期占用单(SCHED-MR5-RESIDENT-LEASE-0924):续约凭据路径/内容/写入分开导出,
   // 看板与用例都要按同一份判据读它,不能在别处再拼一条路径或另造一个字段集。

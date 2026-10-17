@@ -1,3 +1,4 @@
+﻿param([string]$NativeCacheRoot)
 # 原生边界只走系统 DLL；不下载程序，不依赖第三方 Node 扩展。
 # 移植 T-pre 浏览器复测版，原始 sha256=25c3864b1a75；保留线程挂起计数确认判据。
 $nativeSource = @'
@@ -149,6 +150,9 @@ public partial class UdqNative : IDisposable {
         return member;
     }
     public void Launch(string exe, string command, string cwd, string dir) {
+        LaunchEnvironment(exe, command, cwd, dir, null);
+    }
+    public void LaunchEnvironment(string exe, string command, string cwd, string dir, string environment) {
         if (!IsProcessInJob(GetCurrentProcess(), IntPtr.Zero, out controllerAlreadyInJob)) throw Failure("IsProcessInJob(controller)");
         {
             job = CreateJobObject(IntPtr.Zero, null);
@@ -161,6 +165,7 @@ public partial class UdqNative : IDisposable {
         var security = new SA { length = Marshal.SizeOf(typeof(SA)), inherit = 1 };
         var handles = new List<IntPtr>();
         PI info = new PI();
+        IntPtr environmentBlock = environment == null ? IntPtr.Zero : Marshal.StringToHGlobalUni(environment);
         try {
             var start = new SI { cb = Marshal.SizeOf(typeof(SI)), flags = 0x100 };
             start.input = CreateFileW("NUL", 0x80000000, 3, ref security, 3, 0, IntPtr.Zero); handles.Add(start.input);
@@ -168,7 +173,8 @@ public partial class UdqNative : IDisposable {
             start.error = CreateFileW(Path.Combine(dir, "workload.stderr.log"), 0x40000000, 3, ref security, 1, 0, IntPtr.Zero); handles.Add(start.error);
             if (handles.Any(h => h == new IntPtr(-1))) throw Failure("CreateFileW(stdout/stderr/NUL)");
             // 必须先 CREATE_SUSPENDED，再纳入作业，最后放行，堵住启动即派生的窗口。
-            if (!CreateProcessW(exe, new StringBuilder(command), IntPtr.Zero, IntPtr.Zero, true, 0x08000004, IntPtr.Zero, cwd, ref start, out info)) throw Failure("CreateProcessW");
+            if (!CreateProcessW(exe, new StringBuilder(command), IntPtr.Zero, IntPtr.Zero, true,
+                environment == null ? 0x08000004u : 0x08000404u, environmentBlock, cwd, ref start, out info)) throw Failure("CreateProcessW");
             if (!IsProcessInJob(info.process, IntPtr.Zero, out childAlreadyInJob)) throw Failure("IsProcessInJob(child)");
             if (!AssignProcessToJobObject(job, info.process)) {
                 throw Failure("AssignProcessToJobObject：嵌套作业被拒；请核对外层作业的 UI/层级限制或权限，未尝试逃离外层作业");
@@ -186,6 +192,7 @@ public partial class UdqNative : IDisposable {
             }
             throw;
         } finally {
+            if (environmentBlock != IntPtr.Zero) Marshal.FreeHGlobal(environmentBlock);
             if (info.thread != IntPtr.Zero) CloseHandle(info.thread);
             if (info.process != IntPtr.Zero) CloseHandle(info.process);
             foreach (var h in handles) if (h != IntPtr.Zero && h != new IntPtr(-1)) CloseHandle(h);
@@ -435,7 +442,7 @@ $combinedSource = $nativeSource + [IO.File]::ReadAllText((Join-Path $PSScriptRoo
 # 未命中编译一次落盘供下一单复用;写不进缓存(无权限/并发占用)就退回现场编译,绝不因缓存挡住宿主启动。
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 try { $sourceHash = [System.BitConverter]::ToString($sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($combinedSource))).Replace('-', '').ToLowerInvariant() } finally { $sha256.Dispose() }
-$cacheDirectory = Join-Path ([System.Environment]::GetFolderPath('LocalApplicationData')) 'scheduler\sched-suspend-native-cache'
+$cacheDirectory = if ($NativeCacheRoot) { $NativeCacheRoot } else { Join-Path ([System.Environment]::GetFolderPath('LocalApplicationData')) 'scheduler\sched-suspend-native-cache' }
 $cachedAssembly = Join-Path $cacheDirectory ($sourceHash + '.dll')
 $loadedFromCache = $false
 if (Test-Path -LiteralPath $cachedAssembly) {

@@ -33,6 +33,8 @@ export interface ManagedExecution {
   ciAware?: boolean
   /** 只经私有控制管道转交，不能复制到 SuspendRecord/环境/日志。 */
   permitAuthority?: PermitAuthority
+  /** Remote mode prepares the tree here; only the native ACK/projection/lease gate releases it. */
+  remoteStartGate?: true
 }
 const memberKey = (member: TreeMember): string => `${member.pid}:${member.creationFileTime}`
 const UNKNOWN_CI_ALERT = '纯 CI 暂停的未知读数累计超过三小时；交人工处理，不自动恢复'
@@ -85,6 +87,7 @@ export class SuspensionController {
   private dirty = false
   /** 本次纳管的执行是不是 CI 期间按余量派出来的（只活在本进程，见 ManagedExecution.ciAware）。 */
   private ciAware = false
+  private remoteStartGate = false
   /** 同一段只读查询失败的告警去重(拍板【三】『只记一次告警』);核实通过即复位。 */
   private lastReadonlyWarn: string | undefined
   /** 暂时拿不准期间挂起保护失败的告警去重;核实通过即复位。 */
@@ -118,6 +121,8 @@ export class SuspensionController {
     observe: () => CiObservation = () => ({ state: 'unknown', observedAt: this.now() })): Promise<TreeMember> {
     if (this.options.store.read()) throw new Error('[sched] 同执行已有本机记录，拒绝重复启动')
     this.ciAware = input.ciAware === true
+    this.remoteStartGate = input.remoteStartGate === true || input.env.SCHED_MODE === 'remote'
+    if (this.remoteStartGate && !this.options.native) throw new Error('[sched] 远程执行必须提供受租约约束的原生树')
     this.record = { schema: 1, ticketId: input.ticketId, attemptId: input.attemptId, token: input.token,
       machine: input.machine, share: input.share, category: input.category, ownerPid: input.ownerPid,
       root: null, host: null, ended: false, sequence: 0, at: this.now(), mode: 'running', reasons: [],
@@ -133,7 +138,7 @@ export class SuspensionController {
       if (this.ciAware && !await this.operate('lower')) await this.holdAfterUncertainty('降优先级未确认')
       // 原生宿主编译/启动期间 CI 也可能出现；放行初始线程前再消费最新读数。
       await this.tick(observe(), intent)
-      await this.native.release()
+      if (!this.remoteStartGate) await this.native.release()
       return launched.root
     } catch (error) { await this.native.close(); throw error }
   }
@@ -480,6 +485,9 @@ export class SuspensionController {
   }
   /** 宿主意外死亡但外层代理尚活着：只在宿主与根都不存在时收尾，不执行任何进程操作。 */
   settleLostTree(): boolean {
+    // Remote observations require the full native identity and owned JobObject.
+    // Numeric PID probes are never enough to release a remote reservation.
+    if (this.remoteStartGate) return false
     if (!this.record.host || !this.record.root || !processGone(this.record.host.pid) || !processGone(this.record.root.pid)) return false
     this.endRecord(); return true
   }
