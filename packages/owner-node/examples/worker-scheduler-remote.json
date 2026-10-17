@@ -1,0 +1,5 @@
+{
+  "cli": "C:/OwnerNode/scheduler/bin/sched.cjs",
+  "project": "sample",
+  "clientConfig": "C:/OwnerNode/config/scheduler-client.json"
+}

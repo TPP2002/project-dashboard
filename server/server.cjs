@@ -85,6 +85,7 @@ const WEBHOOK_CONFIGURED = /^https?:\/\//.test(WEBHOOK_URL);
 const COLLABORATION = configuration();
 const collaborationApi = COLLABORATION ? createCollaborationApi({ config: COLLABORATION, home: DASHBOARD_HOME, registryPath: REGISTRY, summarize: deriveSummary }) : null;
 const ownerExecFile = collaborationApi ? collaborationApi.ownerExecFile : execFile;
+const ownerBridge = require('./ownerNodeBridge.cjs').fromEnvironment({ collaboration: collaborationApi });
 
 // —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——
 // 负责人日常用的服务必须从【发布副本】起（mode=release）；从 git 检出起的一律算开发实例（mode=dev），
@@ -514,7 +515,7 @@ function pollBoards() {
 
 // ============ API 处理 ============
 
-function handleHealth(req, res) {
+async function handleHealth(req, res) {
   const projects = Object.keys(readRegistrySafe().projects || {});
   const latestStamp = MODE === 'release' ? readStamp(releaseHome()) : null;
   const latestReleaseCommit = typeof latestStamp?.commit === 'string' && latestStamp.commit.trim()
@@ -530,7 +531,10 @@ function handleHealth(req, res) {
     pid: process.pid,
     uptimeMs: Date.now() - state.startedAt,
     projects,
-    hooksInstalled: hooksInstalledMap(projects),
+    hooksInstalled: ownerBridge ? Object.fromEntries(await Promise.all(projects.map(async id => {
+      try { return [id, (await ownerBridge.json(ownerBridge.node(id), 'project.facts', { projectId: id })).hookInstalled]; }
+      catch { return [id, null]; }
+    }))) : hooksInstalledMap(projects),
     sseSubscribers: state.subscribers.size,
     distBuilt: fs.existsSync(path.join(DIST_DIR, 'index.html')),
     webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(readSettings().webhookEvents) },
@@ -1158,6 +1162,9 @@ function handleDispatch(req, res) {
 
     // 生成启动指令(含"看板派单 header"让新对话认得出自己是被派来的)
     const prompt = buildDispatchPrompt(pid, proj, task, decision);
+    if (ownerBridge) return dispatchViaOwnerNode(req, res, { projectId: pid, mode: 'decision', taskId: tid, decisionId: did, text: prompt }, {
+      ok: true, dispatched: { pid, tid, did }, msg: '本机执行节点已处理派单',
+    });
 
     // 在 Windows 打开新 cmd 窗口跑 claude,cwd=项目【代码的家】,让 CLAUDE.md 协议锚生效
     const cwd = dispatchCwd(pid);
@@ -1217,6 +1224,9 @@ function handleDispatchProject(req, res) {
     const prompt = buildProjectDispatchPrompt(pid, proj, items);
     const preview = body.preview === true; // 前端可只要文本(不实际派单)
     if (preview) return sendJson(res, 200, { ok: true, prompt, count: items.length });
+    if (ownerBridge) return dispatchViaOwnerNode(req, res, { projectId: pid, mode: 'project', text: prompt }, {
+      ok: true, dispatched: { pid, count: items.length }, msg: '本机执行节点已处理派单',
+    });
 
     const cwd = dispatchCwd(pid);
     if (!cwd) return sendJson(res, 500, { ok: false, error: `派单失败:算不出项目 ${pid} 的代码目录(registry 里 codeRepo/mainRepo 都读不出)` });
@@ -1271,6 +1281,9 @@ function handleDispatchTask(req, res) {
     const trigger = shortTrigger(pid, tid);
     // preview:同时给【完整任务书】和【短触发指令】,前端用短触发做"复制接单"(可靠兜底)
     if (body.preview === true) return sendJson(res, 200, { ok: true, prompt, trigger, count: decisions.length });
+    if (ownerBridge) return dispatchViaOwnerNode(req, res, { projectId: pid, mode: 'task', taskId: tid, text: prompt }, {
+      ok: true, dispatched: { pid, tid, count: decisions.length }, trigger, msg: '本机执行节点已处理派单',
+    });
 
     // 自动开终端:只传【短触发指令】(避开命令行长度/转义炸裂),funnel through cli inbox。
     // 注意:开的是"终端里的 Claude Code",不是桌面 App——前端会同时提供"复制接单指令"兜底。
@@ -1287,6 +1300,19 @@ function handleDispatchTask(req, res) {
     }
     sendJson(res, 200, { ok: true, dispatched: { pid, tid, count: decisions.length }, trigger,
       msg: `已尝试开终端对话落地任务 ${tid}(${decisions.length} 条决策)` });
+  });
+}
+
+function dispatchViaOwnerNode(req, res, args, response) {
+  args = { ...args, text: args.text.split(displayCliCommand()).join('{{OWNER_NODE_CLI}}') };
+  ownerBridge.json(ownerBridge.node(args.projectId), 'dispatch.launch', args, {
+    operationId: req.headers['x-owner-operation-id'],
+    guard: send => new Promise((resolve, reject) => {
+      collaborationApi.withOwnerBody(req, () => { try { resolve(send()); } catch (error) { reject(error); } });
+      if (res.headersSent) reject(new Error('Owner authorization revoked'));
+    }),
+  }).then(() => sendJson(res, 200, response), error => {
+    if (!res.headersSent) sendJson(res, error.status || 503, { ok: false, error: '执行节点不可用或结果待核对；请勿重复派单' });
   });
 }
 
@@ -1528,6 +1554,15 @@ const server = http.createServer(async (req, res) => {
       if (sub === 'reader' && !modules.reader) return sendJson(res, 404, { ok: false, error: '审阅台模块未启用（在菜单设置里打开，或 settings.json 的 modules.reader 设为 true）' });
       if (sub === 'audition' && !modules.audition) return sendJson(res, 404, { ok: false, error: '试听台模块未启用，请在菜单设置里打开' });
 
+      // collaborationApi.handle has already consumed every anonymous/member request.
+      // POST body and the actual bridge submission re-enter the existing revocation guard.
+      if (ownerBridge && await ownerBridge.route(req, res, pathname, parsed.query || {}, {
+        readBody, sendJson, resolveProjectSafe, costCards, costBindings,
+        guard: (request, run) => collaborationApi.withOwnerBody(request, run),
+        dashRoot: DASH_ROOT, dataRoot: DASHBOARD_HOME, cliIndex: CLI_INDEX, execFile: ownerExecFile,
+        registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards,
+      })) return;
+
       if (sub === 'health' && req.method === 'GET') return handleHealth(req, res);
       if (sub === 'settings' && req.method === 'POST') return handleSettings(req, res);
       if (sub === 'projects' && req.method === 'GET') return handleProjects(req, res);
@@ -1564,7 +1599,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { ok: false, error: '仅支持 GET' });
     return serveStatic(req, res, pathname);
   } catch (e) {
-    return sendJson(res, 500, { ok: false, error: '服务器内部错误：' + (e && e.message) });
+    return sendJson(res, ownerBridge ? (e.status || 503) : 500, { ok: false, error: '服务器内部错误：' + (e && e.message) });
   }
 });
 
@@ -1661,6 +1696,26 @@ function openBrowser(targetUrl) {
 let schedReadClosing;
 function closeSchedReads() {
   if (!schedReadClosing) schedReadClosing = schedApi.close().catch(error => console.error('[sched-read-close]', error));
+  return schedReadClosing;
+}
+const activeConnections = new Set();
+server.on('connection', socket => { activeConnections.add(socket); socket.once('close', () => activeConnections.delete(socket)); });
+let shutdownPromise;
+let stopIntervals = () => {};
+function shutdown() {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    stopIntervals();
+    for (const res of state.subscribers) res.end();
+    state.subscribers.clear();
+    if (collaborationApi) collaborationApi.close();
+    const closed = new Promise(resolve => { if (!server.listening) resolve(); else closeServer.call(server, resolve); });
+    server.closeIdleConnections?.();
+    const timer = setTimeout(() => { for (const socket of activeConnections) socket.destroy(); }, 5000);
+    try { await Promise.all([closed, closeSchedReads(), ownerBridge?.close()]); }
+    finally { clearTimeout(timer); clearBoardReadCaches(); }
+  })();
+  return shutdownPromise;
 }
 // Stop pending reads before close waits for their HTTP connections to drain.
 const closeServer = server.close;
@@ -1670,6 +1725,7 @@ server.close = function (...args) {
   return closeServer.apply(this, args);
 };
 server.on('close', () => {
+  if (ownerBridge) ownerBridge.close().catch(error => console.error('[owner-close]', error.message));
   if (collaborationApi) collaborationApi.close();
   clearBoardReadCaches();
   closeSchedReads();
@@ -1682,9 +1738,10 @@ function startIntervals() {
   }, POLL_MS);
   const beat = setInterval(() => broadcast('ping', { ts: Date.now() }), HEARTBEAT_MS);
   const refreshCi = () => {
-    if (resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
+    if (!ownerBridge && resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
   };
   const ciPoll = setInterval(refreshCi, CI_POLL_MS);
+  stopIntervals = () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); };
   ciPoll.unref();
   server.once('close', () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); });
   refreshCi();
@@ -1764,11 +1821,16 @@ process.on('uncaughtException', (e) => { console.error('[uncaught]', e && (e.sta
 
 // 直接 `node server/server.cjs` 才自动起服务；嵌入式入口可显式调用 main。
 // (派单要 spawn 真实终端窗口跑 claude,单测碰不得,只能验落脚点怎么算出来的)。
-if (require.main === module) main();
+if (require.main === module) {
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+    shutdown().then(() => { process.exitCode = 0; }, error => { console.error('[shutdown]', error.message); process.exitCode = 1; });
+  });
+  main();
+}
 
 /** 这份代码的身份与端口段（给测试与排错用；不起服务也能问出来）。 */
 function runtimeInfo() {
   return { mode: MODE, codeRoot: DASH_ROOT, releaseCommit: RELEASE_COMMIT, portBase: PORT_BASE, portRange: PORT_RANGE };
 }
 
-module.exports = { main, dispatchCwd, codexRepo, costPrefixes, isSameRuntime, runtimeInfo, readCiRepository };
+module.exports = { main, shutdown, dispatchCwd, codexRepo, costPrefixes, isSameRuntime, runtimeInfo, readCiRepository };

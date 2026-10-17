@@ -4,13 +4,13 @@ const s = require('./schema.cjs');
 const { fail, canonicalJson, ProtocolValidationError } = require('./json.cjs');
 const READ_KINDS = Object.freeze(['ticket-index', 'ticket', 'scheduler-format', 'dispatcher-config', 'dispatcher-heartbeat',
   'command-receipt-index', 'command-receipt', 'ledger-index', 'ledger-segment', 'hub-switch', 'ci-policy', 'memory-floor',
-  'managed-overuse', 'usage-history', 'project-trunk-head', 'execution-index', 'snapshot-metadata', 'artifact-manifest', 'artifact-zip', 'log-descriptor', 'log-segment', 'job-result']);
+  'managed-overuse', 'usage-history', 'project-trunk-head', 'execution-index', 'snapshot-metadata', 'snapshot-bundle', 'artifact-manifest', 'artifact-zip', 'log-descriptor', 'log-segment', 'job-result']);
 const SHARED_READ_KINDS = Object.freeze(['scheduler-format', 'dispatcher-config', 'dispatcher-heartbeat', 'hub-switch', 'ci-policy', 'memory-floor']);
 const OWNER_ONLY_READ_KINDS = Object.freeze(['ledger-index', 'ledger-segment']);
 const objectRef = s.fields({ objectId: s.id, hash: s.hash, size: s.count });
 const cursor = (v, p) => { s.fields({ seq: s.count, hash: s.nullable(s.hash) })(v, p); if ((v.seq === 0) !== (v.hash === null)) fail('CURSOR', p); };
 const readScope = s.fields({ kind: s.enumeration(['authority-read']), authorityId: s.id, authorityEpoch: s.positive });
-const executionKinds = ['execution-index', 'snapshot-metadata', 'artifact-manifest', 'artifact-zip', 'log-descriptor', 'log-segment', 'job-result'];
+const executionKinds = ['execution-index', 'snapshot-metadata', 'snapshot-bundle', 'artifact-manifest', 'artifact-zip', 'log-descriptor', 'log-segment', 'job-result'];
 function selectorFields(kind) {
   if (kind === 'memory-floor') return { view: s.enumeration(['config', 'state']) };
   if (kind === 'ticket') return { ticketId: s.ticketId };
@@ -29,7 +29,7 @@ const audience = (v, p) => {
 const entry = (v, p) => {
   s.enumeration(READ_KINDS)(v?.kind, `${p}.kind`);
   s.fields({ kind: s.enumeration([v.kind]), ...selectorFields(v.kind), snapshotId: s.id, ledgerCursor: cursor,
-    object: objectRef, audience, contentType: s.enumeration(['application/json', 'application/x-ndjson', 'application/zip', 'text/plain']),
+    object: objectRef, audience, contentType: s.enumeration(['application/json', 'application/x-ndjson', 'application/zip', 'application/octet-stream', 'text/plain']),
   })(v, p);
   if (OWNER_ONLY_READ_KINDS.includes(v.kind) && v.audience.kind !== 'owner') fail('READ_OWNER_ONLY', p);
   if (v.audience.kind === 'authority' && !SHARED_READ_KINDS.includes(v.kind)) fail('READ_NOT_SHARED', p);

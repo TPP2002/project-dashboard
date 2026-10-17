@@ -531,8 +531,30 @@ test('read directory discovers original complete queued/unsatisfiable/register-o
   assert.equal(p.authorizeProjectionRead({ ...request, entry: ownerEntry }, { ...d.manifest, entries: [ownerEntry] }, node).allowed, false);
 });
 
+test('snapshot bundles use the versioned project read manifest and reject foreign or forged entries', () => {
+  const d = require('../packages/scheduler/fixtures/protocol/read-directory.cjs');
+  const ticket = d.manifest.entries.find(e => e.kind === 'ticket');
+  const data = Buffer.from('# v2 git bundle\nsynthetic payload');
+  const hash = require('node:crypto').createHash('sha256').update(data).digest('hex');
+  const entry = { ...ticket, kind: 'snapshot-bundle', attemptId: 'a1',
+    object: { objectId: 'synthetic-bundle', hash, size: data.length }, contentType: 'application/octet-stream' };
+  const manifest = { ...d.manifest, entries: [entry] };
+  const context = { ...f.trust(), now: f.at, maxObjectBytes: 1024 * 1024,
+    principal: { ...f.trust().principal, readAccess: { role: 'node', machine: f.machine,
+      projects: ['synthetic-project'], authorityKinds: [] } } };
+  p.validateReadManifest(manifest);
+  const local = { kind: 'read-object', callId: 'synthetic-bundle-read', snapshotId: manifest.snapshotId,
+    ledgerCursor: manifest.ledgerCursor, entry, offset: 0, length: data.length };
+  p.validateLocalSemanticRequest(local);
+  assert.deepEqual(Buffer.from(p.verifyProjectionObject(data, entry, manifest, context).bytes), data);
+  assert.throws(() => p.verifyProjectionObject(data, { ...entry, attemptId: 'a2' }, manifest, context));
+  assert.throws(() => p.verifyProjectionObject(Buffer.from('changed'), entry, manifest, context));
+  assert.throws(() => p.verifyProjectionObject(data, entry, manifest, { ...context,
+    principal: { ...context.principal, readAccess: { ...context.principal.readAccess, projects: ['other-project'] } } }));
+});
+
 test('local semantic IPC cannot supply transport identities or native reports; original source is hash bound', () => {
-  const submit = { kind: 'submit', callId: 'synthetic-local-call', request: f.payloads.submission, localContext: { cwd: 'C:/synthetic-worktree' } };
+  const submit = { kind: 'submit', callId: 'synthetic-local-call', request: f.payloads.submission, localContext: { cwd: 'C:/path/to/worktree' } };
   assert.deepEqual(p.validateLocalSemanticRequest(submit), submit);
   const { localContext, ...missingContext } = submit;
   throws(() => p.validateLocalSemanticRequest(missingContext), 'MISSING');
@@ -566,7 +588,7 @@ test('local semantic IPC cannot supply transport identities or native reports; o
 
 test('local execution intent preserves argv and worktree without accepting native identity or SSH use', () => {
   const run = { kind: 'local-run', callId: 'synthetic-run', submission: f.submissionIdentity,
-    command: 'node', args: ['-e', 'process.exit(7)', '', 'space argument'], cwd: 'C:/worktrees/task', env: { PATH: 'C:/node', EMPTY: '' } };
+    command: 'node', args: ['-e', 'process.exit(7)', '', 'space argument'], cwd: 'C:/path/to/worktrees/task', env: { PATH: 'C:/path/to/node', EMPTY: '' } };
   assert.deepEqual(p.validateLocalSemanticRequest(run), run);
   for (const key of ['pid', 'controller', 'permitToken', 'source', 'callerSid', 'lease']) {
     throws(() => p.validateLocalSemanticRequest({ ...run, [key]: 'self-claimed' }), 'UNKNOWN_FIELD');

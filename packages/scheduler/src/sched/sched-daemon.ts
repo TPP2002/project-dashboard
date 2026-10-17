@@ -75,8 +75,11 @@ import { prepareLedgerReplay, rebuildTicketSnapshots, writeTicketSnapshot, type 
 import { createWaitingTracker } from './sched-waiting'
 import { createEtaBook, type EtaBook } from './sched-eta'
 import { CROSS_MACHINE_WIRED } from './sched-placement'
+import type { RemoteSchedulerPort, RemoteDomainContext } from './sched-remote'
 
 export interface SchedulerDaemonOptions {
+  mode?: 'local' | 'remote'
+  remote?: RemoteSchedulerPort
   share: string; machine: string; host: string; pid: number; protocol: number; head: string
   sources: SchedulerSources
   readMachines?: () => LifecycleStatusSnapshot
@@ -112,6 +115,7 @@ export interface SchedulerDaemon {
   readonly owner: SchedulerOwner
   tick: () => boolean
   close: () => void
+  commit: <T>(operation: (context: RemoteDomainContext) => T) => T
 }
 const IO_ERRORS = ['ENOENT', 'EACCES', 'EPERM', 'EIO', 'EBUSY', 'ENOTDIR', 'ENETDOWN', 'ENETUNREACH', 'ETIMEDOUT', 'ECONNRESET']
 
@@ -156,7 +160,7 @@ function sleepSync(ms: number): void {
 
 /** 只对「活」迁移锁原地重读；过期锁、其他任何错误原样上抛，由节拍按原口径分类。 */
 function readMachinesWithRetry(options: SchedulerDaemonOptions, checkpoint: () => void): LifecycleStatusSnapshot {
-  const read = options.readMachines
+  const read = options.mode === 'remote' ? options.remote!.readMachines : options.readMachines
     ?? (() => readLifecycleStatusSnapshot(options.share, undefined, { tolerateMachineFaults: true }))
   const sleep = options.sleepSync ?? sleepSync
   for (let attempt = 0; ; attempt++) {
@@ -213,7 +217,7 @@ function readTick(options: SchedulerDaemonOptions, machine: string, ciLanes: CiL
     submissions: progress.read('submissions', () => readSubmissionBatchCached(options.share, readCache, progress.checkpoint)),
     commands: progress.read('commands', () => readCommandBatchCached(options.share, readCache, progress.checkpoint)),
     reports: progress.read('reports', () => readReportBatchCached(options.share, readCache, progress.checkpoint)),
-    beats: progress.read('beats', () => readBeatBatchFor(options.share, wantedBeats)),
+    beats: progress.read('beats', () => options.mode === 'remote' ? options.remote!.readBeats() : readBeatBatchFor(options.share, wantedBeats)),
     machines: progress.read('machines', () => readMachinesWithRetry(options, progress.checkpoint)),
     // 与 dispatcher.json 同一处读法；缺文件就是缺省表，坏文件整份忽略并告警一次（见 sched-ci-lanes.ts）。
     ciLanes: progress.read('ci-lanes', () => ciLanes.read()),
@@ -475,7 +479,7 @@ export function remoteKillClusterTickets(context: RemoteKillContext): void {
       if (error instanceof ActiveTransitionLeaseError) continue
       throw error
     }
-    if (observation.kind === 'transition') continue
+    if (observation.kind === 'transition' || observation.kind === 'unknown') continue
     if (observation.kind === 'absent' || observation.kind === 'claim-only') {
       if (observation.kind === 'claim-only') {
         finishRemoteKill(context, ticket, { result: 'handoff-interrupted', terminal: false,
@@ -526,6 +530,8 @@ function cleanupRemoteKillInstructions(context: RemoteKillContext, live: Readonl
 }
 
 export function startSchedulerDaemon(options: SchedulerDaemonOptions): SchedulerDaemon {
+  if (options.mode === 'remote' && !options.remote) throw new Error('[sched] remote port required')
+  if (options.mode !== 'remote' && options.remote) throw new Error('[sched] remote port requires explicit remote mode')
   if (!deployment.getDeploymentConfig().machines.some((machine: { name: string }) => machine.name === options.machine)) {
     throw new Error('[scheduler-config] dispatcher machine not configured')
   }
@@ -570,7 +576,7 @@ export function startSchedulerDaemon(options: SchedulerDaemonOptions): Scheduler
   for (;;) {
     let pauseForRenewal = false
     rebuilt = owner.commit(() => {
-      publishSchedulerClient(options.share)
+      if (options.mode !== 'remote') publishSchedulerClient(options.share)
       ensureUsageHistoryCapability(options.share) // 幂等,每轮增量 commit 都可重做
       return rebuildTicketSnapshots(options.share, {
         replay,
@@ -641,7 +647,7 @@ export function startSchedulerDaemon(options: SchedulerDaemonOptions): Scheduler
   const memoryFloorTracker = options.memoryFloorTracker ?? createMemoryFloorTracker()
   const memoryFloorReporter = options.memoryFloorReporter ?? createMemoryFloorReporter({ share: options.share,
     log: message => options.log?.(message) })
-  const originProbe = options.originProbe ?? createOriginProbe({ log: message => options.log?.(message),
+  const originProbe = options.mode === 'remote' ? options.remote!.originProbe : options.originProbe ?? createOriginProbe({ log: message => options.log?.(message),
     now: () => Date.parse(isoTime(options.sources.now())) })
   const etaBook = options.etaBook ?? createEtaBook(Object.values(state.tickets))
   const crossMachine = options.crossMachine ?? CROSS_MACHINE_WIRED
@@ -782,6 +788,11 @@ export function startSchedulerDaemon(options: SchedulerDaemonOptions): Scheduler
   }
   return {
     get state() { return state }, owner,
+    commit: operation => {
+      if (stopped || owner.stopped) throw new Error('[sched] 派单员已经停止')
+      owner.renew()
+      return owner.commit(() => operation({ at: isoTime(options.sources.now()), state: () => state, append }))
+    },
     tick: () => {
       if (stopped || owner.stopped) throw new Error('[sched] 派单员已经停止')
       renewReadOwner()
@@ -861,7 +872,7 @@ export function startSchedulerDaemon(options: SchedulerDaemonOptions): Scheduler
           }
           state = ingestSubmissions(options.share, state, sources, { ...options.hooks?.intake,
             batch: input.submissions, project: projectLedgerDelta }, true).state
-          acceptCommands({ share: options.share, at, dispatcherHost: config.machine, state: () => state, append,
+          acceptCommands({ share: options.share, at, dispatcherHost: config.machine, remote: options.mode === 'remote', state: () => state, append,
             deliveredReceipts, loggedInvalidNames, log: message => options.log?.(message) }, input.commands)
           const untilAt = state.reservationUntil[submissionKey(config.machine)]
           if (untilAt && untilAt <= at) append({ at, type: 'reservation-changed', data: {
@@ -870,26 +881,26 @@ export function startSchedulerDaemon(options: SchedulerDaemonOptions): Scheduler
           // 长期占用单(SCHED-MR5-RESIDENT-LEASE-0924)：先按心跳判销单，再当拍授予新登记的，
           // 最后清掉终局票据残留的凭据。这三步都排在排队/准入之前——登记即授予的单子不进队列。
           const machineNames = input.machines.machines.map(candidate => candidate.machine)
-          expireResidentLeases({ at, state: () => state, append, leaseFiles: input.leaseFiles,
+          if (options.mode !== 'remote') expireResidentLeases({ at, state: () => state, append, leaseFiles: input.leaseFiles,
             log: message => options.log?.(message), logged: loggedResidentNames })
           grantResidentLeases({ at, state: () => state, append, sources, machineNames,
             log: message => options.log?.(message), logged: loggedResidentNames })
           cleanupResidentLeases(options.share, input.leaseFiles, liveResidentTicketIds(state))
           acceptSuspensionReports({ at, state: () => state, append, beats: input.beats, log: message => options.log?.(message) })
-          acceptReports({ share: options.share, at, state: () => state, append, deliveredReceipts: reportReceipts,
+          acceptReports({ share: options.share, at, state: () => state, append, remote: options.mode === 'remote', deliveredReceipts: reportReceipts,
             loggedInvalidNames: invalidReportNames, log: message => options.log?.(message) }, input.reports)
           for (const invalid of input.beats.invalid) options.log?.(`[sched] 忽略非法执行心跳:${invalid}`)
-          reclaimLocalAttempts({ at, machine: config.machine, tickets: Object.values(state.tickets), beats: input.beats,
+          if (options.mode !== 'remote') reclaimLocalAttempts({ at, machine: config.machine, tickets: Object.values(state.tickets), beats: input.beats,
             append, probe: options.probeProcess ?? probeDispatcherExecutionProcess, log: message => options.log?.(message), loggedHoldNames })
           // 授予后一直不开跑的本机单按「挂号端没来领」收回(SCHED-GRANTED-ORPHAN-NO-RECLAIM);
           // 只动 granted 的本机单,auto/集群单不在此列。
-          reclaimUnstartedGrants({ at, machine: config.machine, tickets: Object.values(state.tickets), append,
+          if (options.mode !== 'remote') reclaimUnstartedGrants({ at, machine: config.machine, tickets: Object.values(state.tickets), append,
             log: message => options.log?.(message) })
           // 挂号端等待心跳停更 2 分钟 = 挂号端已不在:排队的撤单、授予未开跑的立即收回(SCHED-QUEUED-ORPHAN-LIVENESS-1009)。
           // 判定自身出错只告警(连续失败只报一行)、本拍照常派单;写流水失败与别处同口径上抛,不在这里吞掉。
           let waitingAppendError = false
           try {
-            waitingTracker.reclaim({ at, share: options.share, tickets: Object.values(state.tickets),
+            if (options.mode !== 'remote') waitingTracker.reclaim({ at, share: options.share, tickets: Object.values(state.tickets),
               append: draft => { try { return append(draft) } catch (error) { waitingAppendError = true; throw error } },
               log: message => options.log?.(message) })
             loggedWaitingFailure = false
@@ -996,9 +1007,11 @@ export function startSchedulerDaemon(options: SchedulerDaemonOptions): Scheduler
             if (ticket.state !== 'unsatisfiable') append({ at, type: 'marked-unsatisfiable', ticketId: ticket.ticketId,
               attemptId: ticket.currentAttemptId, data: { reason: blocked.reason } })
           }
-          applySnapshotGate({ share: options.share, at, state: () => state, append,
+          if (options.mode === 'remote') options.remote!.snapshot({ at, state: () => state, append })
+          else applySnapshotGate({ share: options.share, at, state: () => state, append,
             logged: loggedSnapshotNames, log: message => options.log?.(message) })
-          handoffClusterTickets({ share: options.share, at, sources, state: () => state, append,
+          const handoff = options.mode === 'remote' ? options.remote!.handoff : handoffClusterTickets
+          handoff({ share: options.share, at, sources, state: () => state, append,
             // 共存下 CI 只是外部负载:许可本就不带共存标,不能拿「没带标」当收回理由(SCHED-CI-COEXIST-0925)。
             ...(input.ciPolicy === 'coexist' ? {} : { ciYieldRecall: { activeMachines: ciActiveMachines(leased.machines), minInboxMs: CI_YIELD_RECALL_MIN_INBOX_MS } }),
             agentProtocols: agentProtocolsFrom(input.machines),
@@ -1008,7 +1021,8 @@ export function startSchedulerDaemon(options: SchedulerDaemonOptions): Scheduler
             ...(options.hooks?.handoff ? { checkpoint: options.hooks.handoff } : {}) })
           // 必须排在交接事务之后：作业侧终态(含 paused/slow)的常规回填先由它结清，
           // 这里只管撤单、硬超时与执行方消失的收尾；双方都以投影终态幂等。
-          remoteKillClusterTickets({ share: options.share, at, sources, state: () => state, append,
+          if (options.mode === 'remote') options.remote!.reclaim({ at, state: () => state, append })
+          else remoteKillClusterTickets({ share: options.share, at, sources, state: () => state, append,
             killFiles: input.killFiles, log: message => options.log?.(message), loggedNames: loggedKillNames, autoLaunch })
           autoLaunch.prune(new Set(Object.values(state.tickets).filter(ticket => ticket.request.execution === 'auto'
             && ticket.endedAt === null && ticket.attempts.at(-1)?.intent)

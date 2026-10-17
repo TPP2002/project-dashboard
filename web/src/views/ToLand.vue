@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { authFetch } from '../collaboration/http'
+import { authFetch, responseJson } from '../collaboration/http'
 // 待落地队列（任务级派单）。
 // 治的病:决策从属于任务——P10 的 d1/d2/d3 是同一任务的三个问题,
 // 不该一个决策一个对话(会开三个对话各自 claim 同一 P10 打架)。
@@ -108,7 +108,7 @@ async function dispatchTask(task: UnlandedTask) {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ pid: task.projectId, tid: task.task.id }),
     })
-    const data = await response.json()
+    const data = await responseJson<{ok: boolean; error?: string}>(response)
     if (!response.ok || !data.ok) throw new Error(data.error || '派单失败')
     dispatched.value[key] = nowHM()
   } catch (error) {
@@ -127,7 +127,7 @@ async function dispatchProject(pid: string, name: string, taskCount: number, dec
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ pid }),
     })
-    const data = await response.json()
+    const data = await responseJson<{ok: boolean; error?: string}>(response)
     if (!response.ok || !data.ok) throw new Error(data.error || '派单失败')
     projDispatched.value[pid] = nowHM()
   } catch (error) {

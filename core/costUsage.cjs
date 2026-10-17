@@ -515,6 +515,10 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
     }
   }
 
+  return summarizeGroups({ totalDays, sessionAcc, days, cards, bindings, dirNames, sharedDirs, scanned, cachedFiles, sessions });
+}
+
+function summarizeGroups({ totalDays, sessionAcc, days = 30, cards = [], bindings = null, dirNames = [], sharedDirs = [], scanned = 0, cachedFiles = 0, sessions = 0 }) {
   // 最近 N 天窗口(含今天),按日期升序
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - (days - 1));
@@ -589,6 +593,7 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
 }
 
 module.exports = {
+  groupStatEntries, sameGroupFiles, scanGroup, mergeDays, mergeSessionFiles, summarizeGroups,
   estimateCodexSavings,
   getUsage,
   mapRepoToPrefix,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { authFetch } from '../../collaboration/http'
+import { authFetch, responseText, responseJson } from '../../collaboration/http'
 import type { IconName } from '@/icons/paths'
 import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
@@ -67,13 +67,6 @@ function formatAt(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
-async function responseText(response: Response): Promise<string> {
-  const text = await response.text()
-  if (response.ok) return text
-  let reason = text || `请求失败（${response.status}）`
-  try { reason = JSON.parse(text).error || reason } catch { /* 非 JSON 错误原样显示。 */ }
-  throw new Error(reason)
-}
 
 async function loadDetail(slug: string, includeTail = false): Promise<boolean> {
   detailLoading.value = true
@@ -223,7 +216,7 @@ async function dispatchAgain(modifiedText?: string) {
     const response = await authFetch(codexUrl('dispatch', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     })
-    const result = JSON.parse(await responseText(response))
+    const result = await responseJson<{ ok: true; slug: string }>(response)
     notice.value = `已复派 ${result.slug}`
     editingTask.value = false
     await loadJobs(false)
