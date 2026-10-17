@@ -169,7 +169,7 @@ const collect = (slug: string, rerun: boolean): number => {
   if (!meta) return die('[codex-dispatch] 没有这个工单:' + slug) as never
   const state = readJson<JobState>(paths.state)
 
-  const observed = state?.finishedAt || !state?.pid ? new Map<number, ProcessIdentity>() : inspectProcesses([state.pid])
+  const observed = state?.finishedAt || !state?.pid ? new Map<number, ProcessIdentity>() : inspectProcesses([state.pid], [state])
   const alive = supervisorLiveness(state, slug, observed === null ? undefined : observed.get(state?.pid ?? 0) ?? null)
   if (alive === 'unknown') {
     process.stdout.write('无法确认监工进程身份，暂不收单；请检查本机进程探针后重试。\n')
@@ -332,12 +332,12 @@ switch (command) {
       process.stdout.write('没有工单。\n')
       break
     }
-    const pids = slugs.flatMap(slug => {
+    const expectedStarts = slugs.flatMap(slug => {
       const paths = jobPaths(slug)
       const state = readJson<JobState>(paths.state)
-      return state?.pid && !state.finishedAt && !existsSync(paths.verdict) ? [state.pid] : []
+      return state?.pid && !state.finishedAt && !existsSync(paths.verdict) ? [{ pid: state.pid, startedAt: state.startedAt }] : []
     })
-    const observed = inspectProcesses(pids)
+    const observed = inspectProcesses(expectedStarts.map(hint => hint.pid), expectedStarts)
     process.stdout.write(slugs.map(slug => oneLineStatus(slug, observed)).join('\n') + '\n')
     break
   }
