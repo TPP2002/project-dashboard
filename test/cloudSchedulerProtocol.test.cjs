@@ -532,8 +532,11 @@ test('read directory discovers original complete queued/unsatisfiable/register-o
 });
 
 test('local semantic IPC cannot supply transport identities or native reports; original source is hash bound', () => {
-  const submit = { kind: 'submit', callId: 'synthetic-local-call', request: f.payloads.submission };
+  const submit = { kind: 'submit', callId: 'synthetic-local-call', request: f.payloads.submission, localContext: { cwd: 'C:/synthetic-worktree' } };
   assert.deepEqual(p.validateLocalSemanticRequest(submit), submit);
+  const { localContext, ...missingContext } = submit;
+  throws(() => p.validateLocalSemanticRequest(missingContext), 'MISSING');
+  throws(() => p.validateLocalSemanticRequest({ ...submit, localContext: { cwd: 'relative-tree' } }), 'LOCAL_CWD');
   const r = f.payloads['projection.read'];
   const localRead = { kind: 'read-object', callId: 'synthetic-local-read', snapshotId: r.snapshotId,
     ledgerCursor: r.ledgerCursor, entry: r.entry, offset: r.offset, length: r.length };
@@ -559,6 +562,43 @@ test('local semantic IPC cannot supply transport identities or native reports; o
   p.validateEnvelope(unknown, context('origin.proof'));
   assert.equal(p.toOriginProbeResult(initialProbe, unknown, 'a1').verdict, 'failed');
   throws(() => p.validateRequest('origin.proof', { ...unknown.payload, verdict: 'verified', observedOwnerSid: missingSid }), 'ENUM');
+});
+
+test('local execution intent preserves argv and worktree without accepting native identity or SSH use', () => {
+  const run = { kind: 'local-run', callId: 'synthetic-run', submission: f.submissionIdentity,
+    command: 'node', args: ['-e', 'process.exit(7)', '', 'space argument'], cwd: 'C:/worktrees/task', env: { PATH: 'C:/node', EMPTY: '' } };
+  assert.deepEqual(p.validateLocalSemanticRequest(run), run);
+  for (const key of ['pid', 'controller', 'permitToken', 'source', 'callerSid', 'lease']) {
+    throws(() => p.validateLocalSemanticRequest({ ...run, [key]: 'self-claimed' }), 'UNKNOWN_FIELD');
+  }
+  throws(() => p.validateLocalSemanticRequest({ ...run, submission: f.execution }), 'ENUM');
+  throws(() => p.validateLocalSemanticRequest({ ...run, cwd: 'C:relative' }), 'LOCAL_CWD');
+  throws(() => p.validateLocalSemanticRequest({ ...run, args: ['bad\0argument'] }), 'LOCAL_NUL');
+  throws(() => p.validateLocalSemanticRequest({ ...run, env: { 'A=B': 'x' } }), 'LOCAL_ENV');
+  assert.equal(p.KINDS.includes('local-run'), false);
+  throws(() => p.validateRequest('local-run', run));
+  const read = { kind: 'local-run-read', callId: 'synthetic-read', runId: 'synthetic-run', stdoutOffset: 2, stderrOffset: 0, maxBytes: 65536, waitMs: 1000 };
+  assert.deepEqual(p.validateLocalSemanticRequest(read), read);
+  throws(() => p.validateLocalSemanticRequest({ ...read, maxBytes: 65537 }), 'INTEGER');
+  throws(() => p.validateLocalSemanticRequest({ ...read, waitMs: 1001 }), 'INTEGER');
+  assert.deepEqual(p.validateLocalSemanticRequest({ kind: 'local-run-cancel', callId: 'synthetic-cancel', runId: run.callId }),
+    { kind: 'local-run-cancel', callId: 'synthetic-cancel', runId: run.callId });
+});
+
+test('local output offsets are bounded and terminal results retain failure and unknown exit semantics', () => {
+  const empty = { offset: 0, nextOffset: 0, bytesBase64: '' };
+  const reply = { kind: 'execution', runId: 'synthetic-run', state: 'terminal', stdout: { offset: 3, nextOffset: 6, bytesBase64: Buffer.from('out').toString('base64') },
+    stderr: { offset: 0, nextOffset: 3, bytesBase64: Buffer.from('err').toString('base64') }, terminal: { ok: false, exitCode: 7, reason: 'child failed' } };
+  assert.deepEqual(p.validateLocalExecutionReply(reply), reply);
+  const notStarted = { ok: false, exitCode: null, notStarted: { attemptId: 'a1', state: 'granted', waitedMs: 10 } };
+  assert.deepEqual(p.validateLocalExecutionReply({ ...reply, terminal: notStarted }).terminal, notStarted);
+  throws(() => p.validateLocalExecutionReply({ ...reply, terminal: { ok: true, exitCode: null } }), 'LOCAL_TERMINAL');
+  throws(() => p.validateLocalExecutionReply({ ...reply, terminal: { ok: true } }), 'LOCAL_TERMINAL');
+  throws(() => p.validateLocalExecutionReply({ ...reply, state: 'running' }), 'LOCAL_TERMINAL');
+  throws(() => p.validateLocalExecutionReply({ ...reply, stdout: { ...reply.stdout, nextOffset: 7 } }), 'LOCAL_OUTPUT_RANGE');
+  throws(() => p.validateLocalExecutionReply({ ...reply, stderr: { ...empty, bytesBase64: '***' } }), 'LOCAL_OUTPUT_RANGE');
+  const large = { offset: 0, nextOffset: 40000, bytesBase64: Buffer.alloc(40000).toString('base64') };
+  throws(() => p.validateLocalExecutionReply({ ...reply, stdout: large, stderr: large }), 'LOCAL_OUTPUT_LIMIT');
 });
 
 test('native release requires started business ACK, current projection, native clock lease and one release', () => {
