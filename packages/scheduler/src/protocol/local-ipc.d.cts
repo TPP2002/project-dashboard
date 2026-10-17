@@ -1,4 +1,4 @@
-import type { SubmissionRequest, SchedulerCommand, ProtocolResult, RuntimeScope, CallOptions, PayloadMap, KindBindingMap, ResidentIdentity, SourceProof } from './contract.cjs';
+import type { SubmissionRequest, SchedulerCommand, ProtocolResult, RuntimeScope, CallOptions, PayloadMap, KindBindingMap, ResidentIdentity, SourceProof, Envelope, CloudReply } from './contract.cjs';
 import type { ReadSelector, ReadManifest, ProjectionRead, ProjectionChunk } from './read-manifest.cjs';
 /** Supplied by the named-pipe/OS adapter, never deserialized from CLI input. */
 export interface AuthenticatedLocalPeer { sid: string; pid: number; creationFileTime: string; logonSessionId: string; }
@@ -31,5 +31,13 @@ export type NativeObservation = { [K in NativeObservationKind]: { kind: K; paylo
   & (K extends keyof KindBindingMap ? { identity: KindBindingMap[K] } : { identity?: never }) }[NativeObservationKind];
 export interface TrustedExecutionNodePort {
   /** A distinct ACL/credential endpoint; a normal LocalClientPort caller cannot invoke this. Gateway wraps the envelope. */
-  acceptObservation(peer: AuthenticatedLocalPeer, observation: NativeObservation, options: CallOptions): Promise<ProtocolResult>;
+  acceptObservation(peer: AuthenticatedLocalPeer, observation: Exclude<NativeObservation, { kind: 'lease.challenge' }>, options: CallOptions): Promise<ProtocolResult>;
+  /** Allocate and seal the real frame without sending it. Bind the handle to the authenticated peer and connection generation. */
+  prepareObservation(peer: AuthenticatedLocalPeer, observation: NativeObservation, options: CallOptions): Promise<{
+    preparationId: string; envelope: Envelope<NativeObservationKind>;
+  }>;
+  /** Send exactly the sealed frame; returns both that frame and the correlated authenticated reply. */
+  sendPrepared(peer: AuthenticatedLocalPeer, preparationId: string, options: CallOptions): Promise<{
+    envelope: Envelope<NativeObservationKind>; reply: CloudReply;
+  }>;
 }
