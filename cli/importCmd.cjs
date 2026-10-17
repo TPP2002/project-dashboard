@@ -88,7 +88,7 @@ function importCmd(flags) {
     const alt = path.join(proj.docsRoot, 'BOARD.md');
     if (fs.existsSync(alt)) from = alt;
   }
-  const md = fs.readFileSync(from, 'utf8');
+  const md = proj.remote ? require('./remoteClient.cjs').textInput(from,32*1024*1024) : fs.readFileSync(from, 'utf8');
   const docPrefix = path.relative(proj.docsRoot, path.dirname(from)).replace(/\\/g, '/');
   const { tasks, revoked } = parseIndexTable(md, docPrefix);
   if (!tasks.length) throw new Error(`未从 ${from} 解析出任务表格（需有"第一列是任务号 P01/M0/HOTFIX… 的 markdown 表格"）`);
@@ -104,9 +104,11 @@ function importCmd(flags) {
 
   const summary = tasks.map((t) => `  ${String(t.id).padEnd(8)} ${String(t.status).padEnd(5)} ${t.gitBranch.join(',') || '-'}  PR${t.prNumbers.join(',') || '-'}  ${t.title}`).join('\n');
   if (flags['dry-run']) {
+    if (proj.remote) require('./projectBoard.cjs').readProjectBoard(proj);
     return { ok: true, dryRun: true, count: tasks.length, revoked: revoked.length,
       text: `[dry-run] 将抽 ${tasks.length} 个任务（未落盘）· 剥离作废 ${revoked.length} 处\n可靠字段(id/title/status/branch/PR/commit/date/doc)已填；语义字段留待 backfill：\n${summary}` };
   }
+  if (proj.remote) return require('./remoteAdmin.cjs').importLocal(proj,flags,tasks,require('../core/boardCommand.cjs').inputHash({tasks,revoked}),revoked.length);
   fs.mkdirSync(path.dirname(proj.board), { recursive: true });
   withLock(proj.lock, () => { atomicWriteJsonSync(proj.board, board); });
   return { ok: true, count: tasks.length, text: `✔ import 完成：${tasks.length} 个任务写入 ${proj.board}\n语义字段待 backfill 补齐（decisions/deps/wave/bot/tests/禁区）。` };

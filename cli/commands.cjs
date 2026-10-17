@@ -77,6 +77,7 @@ function statsLine(s) { return `进度 ${s.progress}%（${s.done}/${s.total} 完
 
 // ---------- register（写 registry + 建空 board） ----------
 function register(flags) {
+  if (flags['remote-binding']) return require('./remoteProject.cjs').bind(flags);
   const id = need(flags.id, 'register --id <id> --name <名> --root <主仓路径> [--board <path>]');
   if (require('./remoteConfig.cjs').binding(id)) throw new Error('已绑定远程项目，禁止本机 register');
   const name = flags.name || id;
@@ -1051,7 +1052,10 @@ function set(flags) {
   const field = need(flags.field, '--field <点路径>');
   const raw = need(flags.value, '--value <json>');
   let val; try { val = JSON.parse(raw); } catch { val = raw; }
-  const { board, changed } = mutateTask(proj, id, (b) => { setPath(findTask(b, id), field, val); },
+  const { board, changed } = mutateTask(proj, id, (b) => {
+    if (require('./store.cjs').inCommandTransaction()) require('../core/boardCommandTasks.cjs').setPath(findTask(b,id),field,val);
+    else setPath(findTask(b, id), field, val);
+  },
     act('note', flags.author, `set ${id}.${field}=${raw}`, id));
   const better = dedicatedCommandsFor(field);
   if (better.length) {

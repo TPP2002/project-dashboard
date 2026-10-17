@@ -10,6 +10,9 @@ function load() {
   let config;
   try { config = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); }
   catch (e) { if (e.code === 'ENOENT' && !process.env.DASHBOARD_REMOTE_CONFIG) return { projects: Object.create(null) }; throw new Error('远程配置不可读/不存在（拒绝本机回退）'); }
+  return validateConfig(config);
+}
+function validateConfig(config) {
   if (!config || config.version !== 1 || !config.projects || typeof config.projects !== 'object' || Array.isArray(config.projects)) throw new Error('远程配置格式错误');
   for (const [id, binding] of Object.entries(config.projects)) {
     if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(id) || ['__proto__','constructor','prototype'].includes(id)
@@ -28,4 +31,4 @@ function initialize(file, value) {
   const fd = fs.openSync(file, 'wx', 0o600);
   try { fs.writeFileSync(fd, JSON.stringify(value, null, 2) + '\n'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
-module.exports = { load, binding, initialize, configPath };
+module.exports = { load, binding, initialize, configPath, validateConfig };

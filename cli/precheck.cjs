@@ -57,6 +57,8 @@ function precheck(flags) {
   const pid = flags.project;
   if (!pid || pid === true) throw new Error('缺参数。用法: precheck --project <id> [--repo <worktree路径>] [--no-fetch]');
   const proj = resolveProject(pid, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
+  // Remote failure must precede Git fetch, docs generation, or any local output.
+  const remoteBoard = proj.remote ? require('./projectBoard.cjs').readProjectBoard(proj) : null;
   // codeRepo 而非 mainRepo:三查查的是「代码的家」,板可能自成一家(见 resolveProject 头注)。
   const repo = flags.repo ? path.resolve(String(flags.repo)) : proj.codeRepo;
   const L = [];
@@ -113,7 +115,7 @@ function precheck(flags) {
 
   // ── ② 看板占用 ──
   L.push('', '【② 看板占用】');
-  const board = readBoardOrNull(proj.board);
+  const board = remoteBoard || readBoardOrNull(proj.board);
   if (!board) {
     L.push(`  ✖ 读不到看板 ${proj.board}`);
   } else {
@@ -155,7 +157,7 @@ function precheck(flags) {
 
   // ── ③ 正本三读 ──
   L.push('', '【③ 正本必读(读了再动手,禁止凭记忆臆定)】');
-  const docsIndex = refreshDocsIndex(repo);
+  const docsIndex = refreshDocsIndex(repo,proj.remote ? {output:require('./projectBoard.cjs').artifact(proj,undefined,'docs-index.md')} : undefined);
   if (docsIndex.text) L.push(docsIndex.text);
   const musts = [
     ['开工须知', path.join(proj.codeRepo, 'docs', '开工须知.md')],
