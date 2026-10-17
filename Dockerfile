@@ -27,7 +27,10 @@ COPY docs/self-hosting.md ./docs/self-hosting.md
 COPY --from=web-build /app/web/dist/ ./web/dist/
 # Do not produce a deployable image from the pre-collaboration worktree.
 # This CLI is supplied by the backend integration, not by the packaging task.
-RUN test -f cli/collaboration.cjs && mkdir -p /data && chown 1000:1000 /data
+RUN test -f cli/collaboration.cjs \
+    && find /app -type d -exec chmod 0755 {} + \
+    && find /app -type f -exec chmod 0644 {} + \
+    && mkdir -p /data && chown 1000:1000 /data
 USER 1000:1000
 EXPOSE 6060
 CMD ["node", "server/server.cjs"]
