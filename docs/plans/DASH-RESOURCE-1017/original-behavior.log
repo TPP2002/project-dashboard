@@ -1,0 +1,22 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:421:11)
+    at Object.spawn (node:child_process:796:9)
+    at ensureServiceIsRunning (<repo>/node_modules/esbuild/lib/main.js:2272:29)
+    at startSyncServiceWorker (<repo>/node_modules/esbuild/lib/main.js:2478:19)
+    at Object.<anonymous> (<repo>/node_modules/esbuild/lib/main.js:2519:3)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn',
+  name: 'TransformError'
+}
+
+Node.js v24.14.0

@@ -40,6 +40,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const { createHash } = require('node:crypto');
+const { createBoardReadCache } = require('../core/boardReadCache.cjs');
 // 静态文件要用它善后:客户端中途断开时 pipe 不会关源流,句柄泄到进程退出(见 streamFile 头注)。
 const { pipeline } = require('node:stream');
 const { execFile } = require('child_process');
@@ -133,11 +134,19 @@ const state = {
   webhookSending: new Map(), // 同项目串行发送；只合并期间的变更标记，不保存重试队列
 };
 
-// 路径只保留最新版本；摘要/合并缓存限制项目数，避免长驻服务积攒旧板。
-const summaryCache = new Map();
-const archiveCache = new Map();
-const mergedBoardCache = new Map();
-const BOARD_CACHE_LIMIT = 50;
+// Each cache has independent entry/source-byte/idle budgets. These are not JS heap limits.
+const summaryCache = createBoardReadCache({ maxEntries: 50 });
+const archiveCache = createBoardReadCache({ maxEntries: 64 });
+const mergedBoardCache = createBoardReadCache({ maxEntries: 50 });
+let lastCacheSweep = 0;
+function sweepBoardReadCaches(at = Date.now()) {
+  if (at - lastCacheSweep < 60000) return;
+  lastCacheSweep = at;
+  for (const cache of [summaryCache, archiveCache, mergedBoardCache]) cache.sweep(at);
+}
+function clearBoardReadCaches() {
+  for (const cache of [summaryCache, archiveCache, mergedBoardCache]) cache.clear();
+}
 
 // ============ 通用工具 ============
 
@@ -226,13 +235,6 @@ function readBoardFile(boardPath) {
   return JSON.parse(raw);
 }
 
-function rememberBoard(cache, boardPath, entry) {
-  cache.delete(boardPath);
-  cache.set(boardPath, entry);
-  if (cache.size > BOARD_CACHE_LIMIT) cache.delete(cache.keys().next().value);
-  return entry;
-}
-
 /** 摘要只由板内数据派生，归档不改变项目清单现有口径。 */
 function readSummaryCached(boardPath) {
   let stat;
@@ -240,10 +242,11 @@ function readSummaryCached(boardPath) {
   catch (e) { if (e.code === 'ENOENT') { summaryCache.delete(boardPath); return null; } throw e; }
   const cached = summaryCache.get(boardPath);
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.summary;
+  summaryCache.delete(boardPath);
   const board = readBoardFile(boardPath);
   if (!board) return null;
   const summary = deriveSummary(board);
-  rememberBoard(summaryCache, boardPath, { mtimeMs: stat.mtimeMs, size: stat.size, summary });
+  summaryCache.set(boardPath, { mtimeMs: stat.mtimeMs, size: stat.size, summary }, stat.size);
   return summary;
 }
 
@@ -263,15 +266,16 @@ function activitySnapshot(boardPath) {
     [boardPath, boardStat.mtimeMs, boardStat.size],
     ...archives.map((a) => [a.file, a.mtimeMs, a.size]),
   ]);
-  return { archives, version };
+  return { archives, version, weightBytes: boardStat.size + archives.reduce((bytes, item) => bytes + item.size, 0) };
 }
 
 function readArchiveCached(info) {
   const cached = archiveCache.get(info.file);
   if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.items;
+  archiveCache.delete(info.file);
   const items = JSON.parse(fs.readFileSync(info.file, 'utf8'));
   if (!Array.isArray(items)) throw new Error(`归档应为 JSON 数组：${info.file}`);
-  archiveCache.set(info.file, { mtimeMs: info.mtimeMs, size: info.size, items });
+  archiveCache.set(info.file, { mtimeMs: info.mtimeMs, size: info.size, items }, info.size);
   return items;
 }
 
@@ -283,6 +287,7 @@ function compareActivity(a, b) {
 function readMergedBoard(boardPath, snapshot) {
   const cached = mergedBoardCache.get(boardPath);
   if (cached && cached.version === snapshot.version) return cached.board;
+  mergedBoardCache.delete(boardPath);
   const board = readBoardFile(boardPath);
   if (!board) return null;
   const seen = new Set();
@@ -295,7 +300,7 @@ function readMergedBoard(boardPath, snapshot) {
   }
   activity.sort(compareActivity);
   const merged = { ...board, activity };
-  rememberBoard(mergedBoardCache, boardPath, { version: snapshot.version, board: merged });
+  mergedBoardCache.set(boardPath, { version: snapshot.version, board: merged }, snapshot.weightBytes);
   return merged;
 }
 
@@ -1632,15 +1637,20 @@ function openBrowser(targetUrl) {
   } catch (_) { /* 开不了浏览器不算错，用户手动访问即可 */ }
 }
 
+server.on('close', clearBoardReadCaches);
+
 function startIntervals() {
-  const poll = setInterval(() => { try { pollBoards(); } catch (_) {} }, POLL_MS);
+  const poll = setInterval(() => {
+    sweepBoardReadCaches();
+    try { pollBoards(); } catch (_) {}
+  }, POLL_MS);
   const beat = setInterval(() => broadcast('ping', { ts: Date.now() }), HEARTBEAT_MS);
   const refreshCi = () => {
     if (resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
   };
   const ciPoll = setInterval(refreshCi, CI_POLL_MS);
   ciPoll.unref();
-  server.once('close', () => clearInterval(ciPoll));
+  server.once('close', () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); });
   refreshCi();
   poll.unref(); beat.unref(); // 别因定时器卡住进程退出
 }

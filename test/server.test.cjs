@@ -138,7 +138,8 @@ before(async () => {
   const dir = realTmp('srv-');
   const reg = path.join(dir, 'registry.json');
   fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
-  const s = await startServer({ DASHBOARD_REGISTRY: reg, DASHBOARD_PORT: String(await freePort()) });
+  const s = await startServer({ DASHBOARD_HOME: dir, DASHBOARD_REGISTRY: reg, DASHBOARD_PORT: String(await freePort()),
+    DASHBOARD_MODULES: '', DASHBOARD_SCHED_SHARE: path.join(dir, 'unused-share'), DASHBOARD_EVENT_WEBHOOK: '' });
   SRV = { ...s, dir, reg };
 });
 
@@ -416,4 +417,49 @@ test('GET /api/health → 共用仓仅有 alpha 同步块时，beta 的 hooksIns
   assert.equal(status, 200);
   assert.equal(body.hooksInstalled.alpha, true);
   assert.equal(body.hooksInstalled.beta, false, '共用仓里 alpha 装过不代表 beta 已装');
+});
+
+test('board read-cache eviction preserves full activity, deduplication, sorting, ETag and read errors', async () => {
+  const p = newProject('cache-read-contract');
+  cmds.add({ _: ['P01'], title: '缓存契约', ...p.P });
+  const board = JSON.parse(fs.readFileSync(p.board, 'utf8'));
+  const a = { ts: '2026-01-01T00:00:00.000Z', taskId: 'P01', text: 'oldest' };
+  const b = { ts: '2026-02-01T00:00:00.000Z', taskId: 'P01', text: 'duplicate' };
+  const c = { ts: '2026-03-01T00:00:00.000Z', taskId: 'P01', text: 'newest' };
+  board.activity = [c, b]; fs.writeFileSync(p.board, JSON.stringify(board));
+  const archive = path.join(path.dirname(p.board), 'activity-202601.json');
+  fs.writeFileSync(archive, JSON.stringify([b, a]));
+  const endpoint = '/api/board/' + p.id;
+  const first = await fetch(SRV.base + endpoint), etag = first.headers.get('etag');
+  assert.equal(first.status, 200); assert.ok(etag);
+  assert.deepEqual((await first.json()).activity, [a, b, c]);
+  const limited = await getJson(endpoint + '?activityLimit=1');
+  assert.deepEqual(limited.body.activity, [c]);
+  const conditional = await fetch(SRV.base + endpoint, { headers: { 'if-none-match': etag } });
+  assert.equal(conditional.status, 304);
+
+  // Read more projects than the old 50-project cache cap, then revisit the original.
+  for (let i = 0; i < 51; i++) {
+    const other = newProject(`cache-eviction-${i}`);
+    fs.writeFileSync(other.board, JSON.stringify({ project: { id: other.id }, tasks: [], activity: [] }));
+    assert.equal((await getJson('/api/board/' + other.id)).status, 200);
+  }
+  const reread = await fetch(SRV.base + endpoint);
+  assert.equal(reread.headers.get('etag'), etag);
+  assert.deepEqual((await reread.json()).activity, [a, b, c]);
+  const history = await getJson('/api/activity/' + p.id + '?limit=2');
+  assert.equal(history.status, 200); assert.deepEqual(history.body.items, [c, b]);
+
+  const d = { ts: '2025-12-01T00:00:00.000Z', taskId: 'P01', text: 'archive replacement' };
+  fs.writeFileSync(archive, JSON.stringify([d, a, b]));
+  const updated = await fetch(SRV.base + endpoint, { headers: { 'if-none-match': etag } });
+  assert.equal(updated.status, 200); assert.notEqual(updated.headers.get('etag'), etag);
+  assert.deepEqual((await updated.json()).activity, [d, a, b, c]);
+  fs.writeFileSync(archive, '{invalid archive');
+  const failed = await fetch(SRV.base + endpoint);
+  assert.equal(failed.status, 500); assert.equal(failed.headers.get('etag'), null);
+  const tasksOnly = await getJson(endpoint + '?fields=tasks');
+  assert.equal(tasksOnly.status, 200); assert.equal(tasksOnly.body.tasks.length, 1);
+  fs.unlinkSync(archive);
+  assert.deepEqual((await getJson(endpoint)).body.activity, [b, c]);
 });

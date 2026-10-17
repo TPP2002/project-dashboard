@@ -1,0 +1,37 @@
+[sched] 未通过(退出码 1) · 看板旧版生命周期缺陷正式证红 · 命令退出码:1 · 单号 tk-78db9fe28eb2b3393a44 · 日志 <temporary-fixture>/sched-logs/20261016-225557-tk-78db9fe28eb2b3393a44.log
+失败项:没认出来(只认 vitest / tsc / eslint 的输出格式),看下面末尾输出
+调度提示:
+[sched] 本机跑(pinned-by-user):你加了 --pin,按要求留本机
+{"ticketId":"tk-78db9fe28eb2b3393a44","queuePosition":null}
+跑完之前别改受测文件
+末尾 30 行:
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n+   'first',\n    'next'\n  ]\n"
+    },
+    {
+      "name": "removed queue errors released",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   'bad'\n+ ]\n- []\n"
+    },
+    {
+      "name": "stop metadata released",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   'first',\n+   'next'\n+ ]\n- []\n"
+    },
+    {
+      "name": "stop errors released",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ [\n+   'bad'\n+ ]\n- []\n"
+    },
+    {
+      "name": "burst coalesced",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n101 !== 1\n"
+    },
+    {
+      "name": "same-query request not aborted",
+      "passed": false,
+      "assertion": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n100 !== 0\n"
+    }
+  ]
+}

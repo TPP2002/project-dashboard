@@ -1,0 +1,14 @@
+
+[tk-c14e9c992338a009f876]
+node --import tsx --test test/schedResourceLifecycle.test.cjs
+
+✔ scheduler store resource lifecycle (actual store with browser/API fixtures) (6725.5851ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6823.2933
+
