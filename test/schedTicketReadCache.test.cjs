@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path');
 const Module = require('node:module');
+const { EventEmitter, once } = require('node:events');
 const c = require('../core/schedContract.cjs');
 // Deliberately load the real existing module BEFORE touching any new cache interface.
 const read = require('../core/schedRead.cjs');
@@ -111,46 +112,57 @@ test('same-length rewrite with restored mtime, replacement, append and truncatio
   f.save(f.records[0]); assert.equal(read.ticketPage(f.share).items[0].title, 'replacement');
 });
 
-test('UTF8, JSON, fields, filenames, non-files and directory errors preserve complete public API errors', t => {
+test('UTF8, JSON, fields, filenames, non-files and directory errors preserve complete public API errors', async t => {
   const f = fixture(t, 1), reference = uncachedReader();
   const apiFile = require.resolve('../server/schedApi.cjs');
-  function api(reader, action, query = {}) {
+  async function api(reader, action, query = {}) {
     const loaded = new Module(apiFile, module); loaded.filename = apiFile; loaded.paths = module.paths;
     const baseRequire = Module.createRequire(apiFile);
     loaded.require = name => name === '../core/schedRead.cjs' ? reader : baseRequire(name);
     loaded._compile(fs.readFileSync(apiFile, 'utf8'), apiFile);
     let response;
+    // Keep the original cached/uncached reader comparison; adapt only the async transport.
+    const executor = { async run({ action, share, query, nowMs }) {
+      if (action === 'snapshot') return reader.snapshot(share, nowMs);
+      if (action === 'tickets') return reader.ticketPage(share, query);
+      if (action === 'tickets.csv') return reader.exportTickets(share, query);
+      const ticket = reader.ticketDetail(share, action.slice(7));
+      return { ok: true, ticket, ...(query.related === '0' ? {} : { related: reader.relatedTickets(share, ticket) }) };
+    }, async close() {} };
     const router = loaded.exports.createSchedApi({ resolveShare: () => f.share, sources: { now: () => Date.parse(AT) },
-      sendJson: (_, status, body) => { response = { status, body }; } });
-    router.route(action, { method: 'GET' }, {
+      executor, sendJson: (res, status, body) => { response = { status, body }; res.emit('finish'); } });
+    const res = Object.assign(new EventEmitter(), {
       writeHead(status, headers) { response = { status, headers }; },
-      end(body) { response.body = body; },
-    }, query); return response;
+      end(body) { response.body = body; this.emit('finish'); },
+    });
+    const finished = once(res, 'finish');
+    router.route(action, Object.assign(new EventEmitter(), { method: 'GET' }), res, query);
+    await finished; await router.close(); return response;
   }
-  const equalErrors = () => {
+  const equalErrors = async () => {
     for (const action of ['snapshot', 'tickets', 'tickets.csv', `ticket/${f.records[0].ticketId}`]) {
-      assert.deepEqual(api(read, action), api(reference, action), action);
+      assert.deepEqual(await api(read, action), await api(reference, action), action);
     }
     assert.deepEqual(read.relatedTickets(f.share, f.records[0]), reference.relatedTickets(f.share, f.records[0]));
   };
   for (const bad of [Buffer.from([0xff, 0xfe]), '{', 'null', JSON.stringify({ ...f.records[0], state: 'bad' }),
     JSON.stringify({ ...f.records[0], pauseReasons: ['bad'] }), JSON.stringify({ ...f.records[0], ticketId: ticket(2).ticketId })]) {
-    f.save(f.records[0]); assert.equal(api(read, 'tickets').status, 200);
-    fs.writeFileSync(f.file, bad); equalErrors(); equalErrors();
-    assert.equal(api(read, 'tickets').status, 503);
+    f.save(f.records[0]); assert.equal((await api(read, 'tickets')).status, 200);
+    fs.writeFileSync(f.file, bad); await equalErrors(); await equalErrors();
+    assert.equal((await api(read, 'tickets')).status, 503);
   }
   f.save(f.records[0]); read.ticketPage(f.share);
-  fs.mkdirSync(path.join(f.paths.tickets, 'not-a-file.json')); equalErrors();
+  fs.mkdirSync(path.join(f.paths.tickets, 'not-a-file.json')); await equalErrors();
   fs.rmdirSync(path.join(f.paths.tickets, 'not-a-file.json'));
-  write(path.join(f.paths.tickets, 'invalid-id.json'), f.records[0]); equalErrors();
+  write(path.join(f.paths.tickets, 'invalid-id.json'), f.records[0]); await equalErrors();
   fs.unlinkSync(path.join(f.paths.tickets, 'invalid-id.json'));
-  fs.renameSync(f.paths.tickets, f.paths.tickets + '.saved'); equalErrors();
-  fs.writeFileSync(f.paths.tickets, 'not a directory'); equalErrors();
+  fs.renameSync(f.paths.tickets, f.paths.tickets + '.saved'); await equalErrors();
+  fs.writeFileSync(f.paths.tickets, 'not a directory'); await equalErrors();
   fs.unlinkSync(f.paths.tickets); fs.renameSync(f.paths.tickets + '.saved', f.paths.tickets);
-  fs.unlinkSync(f.file); equalErrors(); assert.equal(api(read, `ticket/${f.records[0].ticketId}`).status, 404);
+  fs.unlinkSync(f.file); await equalErrors(); assert.equal((await api(read, `ticket/${f.records[0].ticketId}`)).status, 404);
   for (const query of [{ limit: '0' }, { cursor: 'bad' }, { result: 'bad' }, { from: 'yesterday' }]) {
-    assert.deepEqual(api(read, 'tickets', query), api(reference, 'tickets', query));
-    assert.equal(api(read, 'tickets', query).status, 400);
+    assert.deepEqual(await api(read, 'tickets', query), await api(reference, 'tickets', query));
+    assert.equal((await api(read, 'tickets', query)).status, 400);
   }
 });
 

@@ -12,8 +12,9 @@ const { temporary, initialize, ticket, write, AT } = require('./fixtures/sched/s
 const NOW = Date.parse(AT) + 3600000;
 
 async function apiFixture(t) {
-  let server;
+  let server, api;
   const share = temporary(t, async () => {
+    await api?.close();
     if (!server) return;
     await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   });
@@ -21,7 +22,7 @@ async function apiFixture(t) {
   const beat = c.readJson(paths.heartbeat); beat.at = new Date(NOW).toISOString();
   for (const machine of beat.machines) { machine.heartbeatAt = beat.at; machine.loadSampledAt = beat.at; }
   write(paths.heartbeat, beat);
-  const api = createSchedApi({ resolveShare: () => share, sources: { now: () => NOW, nonce: () => 'fixture-nonce' },
+  api = createSchedApi({ resolveShare: () => share, sources: { now: () => NOW, nonce: () => 'fixture-nonce' },
     bodyMax: 1024,
     readBody: () => { throw new Error('只读验收不应读取指令请求体'); },
     sendJson: (res, status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); },

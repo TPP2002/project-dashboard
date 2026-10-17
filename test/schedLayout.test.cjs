@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { EventEmitter, once } = require('node:events');
 const { normalizeEngine, engineFilterValue, matchesEngine, engineOptions, groupExternalTickets } = require('../core/schedEngines.cjs');
 const { createSchedApi } = require('../server/schedApi.cjs');
 const { contentHash } = require('../core/schedContract.cjs');
@@ -50,17 +51,21 @@ test('字段缺失或脏值归未标注，未读到数据安全返回空投影�
 
 // 使用真实路由与真实读盘，只收集 HTTP 输出；不启动服务、不触碰真实共享盘或指令通道。
 function apiFixture(t, readable = true) {
-  const share = temporary(t), paths = readable ? initialize(share) : null;
+  let api;
+  const share = temporary(t, async () => { await api?.close(); }), paths = readable ? initialize(share) : null;
   if (paths) fs.mkdirSync(path.join(paths.root, 'ledger'));
-  const api = createSchedApi({ resolveShare: () => share, sources: { now: () => Date.parse(AT) + 3600000, nonce: () => 'fixture' },
+  api = createSchedApi({ resolveShare: () => share, sources: { now: () => Date.parse(AT) + 3600000, nonce: () => 'fixture' },
     bodyMax: 1024,
     readBody: () => { throw new Error('布局读盘用例不能发指令'); },
-    sendJson: (res, status, body) => { res.status = status; res.body = body; },
+    sendJson: (res, status, body) => { res.status = status; res.body = body; res.emit('finish'); },
   });
-  function get(action, query = {}) {
-    const res = { status: null, body: null, headers: null,
-      writeHead(status, headers) { this.status = status; this.headers = headers; }, end(body) { this.body = body; } };
-    assert.equal(api.route(action, { method: 'GET' }, res, query), true);
+  async function get(action, query = {}) {
+    const res = Object.assign(new EventEmitter(), { status: null, body: null, headers: null,
+      writeHead(status, headers) { this.status = status; this.headers = headers; },
+      end(body) { this.body = body; this.emit('finish'); } });
+    const finished = once(res, 'finish');
+    assert.equal(api.route(action, Object.assign(new EventEmitter(), { method: 'GET' }), res, query), true);
+    await finished;
     return res;
   }
   function save(index, engine, options = {}) {
@@ -74,13 +79,13 @@ function apiFixture(t, readable = true) {
   return { get, save };
 }
 
-test('快照透传施工方，分组与原 registerOnly 数据一致，并保留已无在跑单的窗口', t => {
+test('快照透传施工方，分组与原 registerOnly 数据一致，并保留已无在跑单的窗口', async t => {
   const api = apiFixture(t);
   const active = api.save(1, 'fixture-a', { registerOnly: true, state: 'running' });
   api.save(2, 'fixture-b', { registerOnly: true });
   const unlabelled = api.save(3, undefined, { registerOnly: true, state: 'running' });
   api.save(4, 'fixture-compute', { state: 'running' });
-  const result = api.get('snapshot');
+  const result = await api.get('snapshot');
   assert.equal(result.status, 200);
   assert.deepEqual(result.body.registerOnly.map(row => row.ticketId), [active.ticketId, unlabelled.ticketId]);
   assert.deepEqual(result.body.registerOnlyGroups.map(group => [group.engine, group.tickets.map(row => row.ticketId)]), [
@@ -91,42 +96,42 @@ test('快照透传施工方，分组与原 registerOnly 数据一致，并保留
   assert.equal(result.body.machines[0].externalLoadCores, 1.25);
 });
 
-test('台账施工方筛选与导出一致，动态选项不受当前页或其他筛选限制，游标绑定施工方', t => {
+test('台账施工方筛选与导出一致，动态选项不受当前页或其他筛选限制，游标绑定施工方', async t => {
   const api = apiFixture(t);
   const first = api.save(1, 'fixture-a'), second = api.save(2, 'fixture-a');
   const other = api.save(3, 'fixture-b', { project: 'fixture-other' });
   const unlabelled = api.save(4, undefined);
-  const page = api.get('tickets', { engine: engineFilterValue('fixture-a'), limit: '1' });
+  const page = await api.get('tickets', { engine: engineFilterValue('fixture-a'), limit: '1' });
   assert.equal(page.status, 200); assert.equal(page.body.total, 2);
   assert.equal(page.body.items[0].ticketId, second.ticketId);
   assert.equal(page.body.items[0].engine, 'fixture-a');
   assert.deepEqual(page.body.filters.engines.map(option => option.label), ['fixture-a', 'fixture-b', '未标注']);
-  assert.deepEqual(api.get('tickets', { project: 'fixture-other' }).body.filters.engines, page.body.filters.engines);
-  const next = api.get('tickets', { engine: engineFilterValue('fixture-a'), limit: '1', cursor: page.body.nextCursor });
+  assert.deepEqual((await api.get('tickets', { project: 'fixture-other' })).body.filters.engines, page.body.filters.engines);
+  const next = await api.get('tickets', { engine: engineFilterValue('fixture-a'), limit: '1', cursor: page.body.nextCursor });
   assert.deepEqual(next.body.items.map(row => row.ticketId), [first.ticketId]);
-  assert.equal(api.get('tickets', { engine: engineFilterValue('fixture-b'), cursor: page.body.nextCursor }).status, 400);
-  const csv = api.get('tickets.csv', { engine: engineFilterValue('fixture-a'), limit: '1' });
+  assert.equal((await api.get('tickets', { engine: engineFilterValue('fixture-b'), cursor: page.body.nextCursor })).status, 400);
+  const csv = await api.get('tickets.csv', { engine: engineFilterValue('fixture-a'), limit: '1' });
   assert.equal(csv.status, 200); assert.equal(csv.body.charCodeAt(0), 0xFEFF);
   assert.ok(csv.body.includes(first.ticketId)); assert.ok(csv.body.includes(second.ticketId));
   assert.equal(csv.body.includes(other.ticketId), false); assert.equal(csv.body.includes(unlabelled.ticketId), false);
   assert.equal(csv.body.split('\r\n').filter(Boolean).length, 3);
-  const missing = api.get('tickets', { engine: engineFilterValue(null) });
+  const missing = await api.get('tickets', { engine: engineFilterValue(null) });
   assert.deepEqual(missing.body.items.map(row => row.ticketId), [unlabelled.ticketId]);
-  assert.equal(api.get('tickets', { engine: ['invalid'] }).status, 400);
+  assert.equal((await api.get('tickets', { engine: ['invalid'] })).status, 400);
 });
 
-test('旧挂号请求及脏施工方字段仍可读，共享盘不可读由路由降级而不抛出', t => {
+test('旧挂号请求及脏施工方字段仍可读，共享盘不可读由路由降级而不抛出', async t => {
   const api = apiFixture(t);
   for (const [index, engine] of [undefined, null, '', 7, {}].entries()) api.save(index + 1, engine, { registerOnly: true, state: 'running' });
-  const snapshot = api.get('snapshot');
+  const snapshot = await api.get('snapshot');
   assert.equal(snapshot.status, 200);
   assert.equal(snapshot.body.registerOnlyGroups.length, 1); assert.equal(snapshot.body.registerOnlyGroups[0].engine, null);
   assert.equal(snapshot.body.registerOnlyGroups[0].tickets.length, 5);
-  assert.equal(api.get('tickets', { engine: engineFilterValue(null) }).body.total, 5);
+  assert.equal((await api.get('tickets', { engine: engineFilterValue(null) })).body.total, 5);
   const unreadable = apiFixture(t, false);
   for (const action of ['snapshot', 'tickets', 'tickets.csv']) {
     let result;
-    assert.doesNotThrow(() => { result = unreadable.get(action); });
+    await assert.doesNotReject(async () => { result = await unreadable.get(action); });
     assert.equal(result.status, 503); assert.equal(result.body.readable, false);
     if (action === 'snapshot') assert.equal(result.body.registerOnlyGroups, null);
   }
