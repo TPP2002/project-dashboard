@@ -257,6 +257,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     const pre = d.probeHealth();
     const preRoute = lr.classifyInstance({
       health: pre && pre.running ? pre.health : null, record, launcherMode, client, share,
+      kill: d.kill,
       hostname: d.hostname, stamp: d.readStamp(d.relHome), releaseRoot: d.relHome,
       noRestart: d.env.DASHBOARD_NO_RESTART === '1',
     });
@@ -324,6 +325,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     const health = probed && probed.running ? probed.health : null;
     const route = lr.classifyInstance({
       health, record, launcherMode, client, share,
+      kill: d.kill,
       hostname: d.hostname, stamp: stampNow, releaseRoot: d.relHome,
       noRestart: d.env.DASHBOARD_NO_RESTART === '1',
     });

@@ -211,18 +211,28 @@ function refuseUnknownReason(record, health) {
  *   ① 探活：/api/health 有没有在跑的实例；
  *   ② 归属登记：本机数据根里有没有一条 schema/主机/进程号都对得上的记录；
  *   ③ 票态核验：严格模式实例还要求它的调度单非终态、标题与登记一致。
+ * 健康未响应时，另用登记 PID 的存活查询保守阻止重复启动；这不构成归属证明。
  * 返回 {kind, ...}：
  *   none          —— 没有实例，正常走启动；
  *   reuse         —— 本启动器登记的同版本实例，复用即可（不重复挂号、不重复长期占核）；
  *   reuse-old     —— 本启动器登记的旧版本实例 + DASHBOARD_NO_RESTART=1：复用旧实例并明说仍是旧版；
  *   restart-own-old—— 本启动器登记的旧版本实例：按既有换新语义退旧单、停旧进程、再起新单；
- *   refuse        —— 未知归属 / 跨模式 / 票态核验失败：明确拒绝接管，一个进程都不动。
+ *   refuse        —— 健康未响应但登记进程可能仍活 / 未知归属 / 跨模式 / 票态核验失败：明确拒绝接管，一个进程都不动。
  */
 function classifyInstance({
   health, record, launcherMode, client = null, share = null,
   hostname = os.hostname(), stamp = null, releaseRoot = null, noRestart = false,
+  kill = (pid, signal) => process.kill(pid, signal),
 } = {}) {
-  if (!health) return { kind: 'none' };
+  if (!health) {
+    const rec = validRecord(record, hostname);
+    // PID 仅用于保守阻止重复启动，不能证明归属、授权复用或退旧。
+    if (rec && pidAlive(rec.serverPid, kill)) {
+      return { kind: 'refuse', reason: `健康检查未响应，但本机登记进程（pid ${rec.serverPid}）仍活着或无法确认已退出。` +
+        '本次拒绝新启动，不复用、不换版、不覆盖归属登记，也不停止进程；请稍后重试或检查现有服务。' };
+    }
+    return { kind: 'none' };
+  }
   if (health.mode === 'dev') {
     return { kind: 'refuse', reason: `端口 ${health.port} 上是【开发实例】（pid ${health.pid}，代码根 ${health.codeRoot}）。` +
       '启动器不接管开发实例 —— 负责人日常用的看板该从发布副本起。请先关掉它再双击启动器。' };
