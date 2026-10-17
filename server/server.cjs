@@ -66,6 +66,7 @@ const schedContract = require('../core/schedContract.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
 const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
+const { configuration, createCollaborationApi } = require('./collaborationApi.cjs');
 
 // ============ 常量 ============
 
@@ -79,6 +80,9 @@ const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
 const WEBHOOK_URL = (process.env.DASHBOARD_EVENT_WEBHOOK || '').trim();
 const WEBHOOK_CONFIGURED = /^https?:\/\//.test(WEBHOOK_URL);
+// Product mode is separate from MODE (dev/release runtime identity).
+const COLLABORATION = configuration();
+const collaborationApi = COLLABORATION ? createCollaborationApi({ config: COLLABORATION, home: DASHBOARD_HOME, registryPath: REGISTRY, summarize: deriveSummary }) : null;
 
 // —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——
 // 负责人日常用的服务必须从【发布副本】起（mode=release）；从 git 检出起的一律算开发实例（mode=dev），
@@ -374,6 +378,7 @@ function sseWrite(res, event, data) {
 
 /** 向所有 SSE 订阅者广播；写失败的连接顺手清理 */
 function broadcast(event, data) {
+  if (collaborationApi) collaborationApi.broadcast(event, data);
   for (const res of state.subscribers) {
     if (!sseWrite(res, event, data)) state.subscribers.delete(res);
   }
@@ -481,6 +486,7 @@ async function notifyWebhook(id) {
  * 首次见到某项目只记基线不广播（避免启动瞬间刷一波）。全程 try/catch，绝不让定时器崩。
  */
 function pollBoards() {
+  if (collaborationApi) collaborationApi.sweep();
   schedApi.poll(broadcast, resolveModules().cpu);
   let reg;
   try { reg = readRegistrySafe(); } catch (_) { return; }
@@ -1446,6 +1452,7 @@ function streamFile(res, fullPath, status) {
 
 /** dist 未构建时的占位页：让 API 先可用、并提示怎么把前端 build 出来 */
 function sendPlaceholder(res, status) {
+  if (collaborationApi) return sendText(res, status || 200, '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>项目管理看板</title><p>登录界面尚未就绪，请联系负责人。</p></html>', 'text/html; charset=utf-8');
   const buildRoot = DASH_ROOT.replace(/\\/g, '/')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
@@ -1485,14 +1492,16 @@ function serveStatic(req, res, pathname) {
 
 // ============ 主入口：路由 ============
 
-const server = http.createServer((req, res) => {
-  if (!isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
+const server = http.createServer(async (req, res) => {
+  if (!collaborationApi && !isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
   let parsed;
   try { parsed = url.parse(req.url, true); }
   catch (_) { return sendJson(res, 400, { ok: false, error: '非法 URL' }); }
   const pathname = parsed.pathname || '/';
 
   try {
+    if (collaborationApi && await collaborationApi.handle(req, res, pathname)) return;
+    if (!collaborationApi && pathname === '/api/auth/session' && req.method === 'GET') return sendJson(res, 200, { ok: true, mode: 'local', user: null });
     if (pathname.startsWith('/api/')) {
       // 拆分并逐段解码路径参数（project id / task id 可能含非 ASCII）
       const rawSegs = pathname.split('/').filter(Boolean); // ['api','board','game']
@@ -1645,10 +1654,12 @@ function closeSchedReads() {
 // Stop pending reads before close waits for their HTTP connections to drain.
 const closeServer = server.close;
 server.close = function (...args) {
+  if (collaborationApi) collaborationApi.close();
   closeSchedReads();
   return closeServer.apply(this, args);
 };
 server.on('close', () => {
+  if (collaborationApi) collaborationApi.close();
   clearBoardReadCaches();
   closeSchedReads();
 });
@@ -1673,7 +1684,7 @@ function tryListen(port, attemptsLeft) {
   server.removeAllListeners('error');
   // 上次端口占用留下的回调不能在下一次成功时重复宣布旧地址、启动重复轮询。
   server.removeAllListeners('listening');
-  server.listen(port, '127.0.0.1');
+  server.listen(port, COLLABORATION ? COLLABORATION.host : '127.0.0.1');
   server.once('listening', () => {
     state.actualPort = server.address().port;
     const localUrl = `http://127.0.0.1:${state.actualPort}/`;
@@ -1707,6 +1718,8 @@ function tryListen(port, attemptsLeft) {
 }
 
 async function main() {
+  // A collaboration instance never probes, reuses or terminates another service.
+  if (collaborationApi) return tryListen(PORT_BASE, 0);
   const inst = await findExistingInstance();
   if (!inst) return tryListen(PORT_BASE, PORT_RANGE);
 
