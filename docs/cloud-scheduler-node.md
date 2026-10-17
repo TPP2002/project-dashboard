@@ -1,6 +1,6 @@
 # Windows 执行节点施工记录
 
-公开执行节点已接入生产调用路径，但正式收单 tk-033cc96aefb4b9f75f55 被拒。本轮只针对已定位失败完成一轮修复，修后测试未运行，交主控正式 collect；不宣称验收或部署通过。
+公开执行节点已接入实际调用路径。2026-10-18 正式收单 `tk-c7819e75a23735efd856` 通过：客户端 13、运行端 15、原生控制 9，共 37 项，无失败或跳过；提交为 `434008ceaed20ddc7c7173ea01c1673e78b4ed32`。这是 Windows 组件验收，真实 Ubuntu＋SSH＋主副机联调及正式切换仍待完成。
 
 ## 共同版本与来源
 
@@ -16,7 +16,7 @@
 - snapshot-bundle 通过 semantic.accept 的 read/read-object 获取。每块至多 131072 字节，核 manifest 版本、权限、长度、分块及完整 hash；返回 Buffer。bundle 的 hash/size 对齐 handoff.snapshot，允许 Cloud 分配不同 objectId。导入使用现有 fetchSnapshot 的 bundle verify/fetch/exact commit 校验，再创建执行工作树。源 snapshot 沿原 cwd/targetPaths，持久操作回执避免重复生成。
 - 安装依赖与菜单命令在同一原生 JobObject 内执行；只使用 catalog 中的 npm/pip 配方，在本单工作树与缓存目录安装，不连接开发者共享 node_modules。菜单 argv 从配置 forms 还原并经过原 classifier 回环，保留 require/emit/worker 限额。项目正式入口及部署 catalog 的实际接线仍由主控集成验证。
 - 执行持续续租，原 SuspensionController 消费 CI/manual/owner-hold，保留原因、累计时间及超时扣除。原 sched-rerun 提炼暂停超时补跑计划，并在下一次发布时传入 selection；Windows 只把结果写入原 jobs-v12，不写云 ledger。
-- 双路原生日志有配额；本机读取总量每次不超过 64 KiB、等待不超过 1 秒。远程日志按已校验版本汇成追加流，跨 attempt 保持输出偏移；产物沿原声明打包，并通过实际 ObjectRef 发现、完整校验和原安全解包器取回。resultObject 仍承载原完整作业结果（包括 suspension），不借它传产物。无文件明确 unavailable，不伪造 hash；解包在 Worker 内，避免阻塞续租。
+- 双路原生日志有配额；本机读取总量每次不超过 64 KiB、等待不超过 1 秒。远程日志按已校验版本汇成追加流，跨 attempt 保持输出偏移；产物沿原声明打包，并通过实际 ObjectRef 发现、完整校验和原安全解包器取回。resultObject 承载严格 JobResult 与 suspension；jobs-v12 身份外层保留在原始生命周期记录中，不误送给结果读取器，也不借结果对象传产物。无文件明确 unavailable，不伪造 hash；解包在 Worker 内，避免阻塞续租。
 - 所有 Cloud 回包经 gateway.replyTo。Node 不分配上行 envelope/session/sequence。代际改变停止旧树、旧任务不重派，新 scope 可接后续不同任务；owner lease 丢失则停止接单。
 
 ## 本轮三个消费者修复
