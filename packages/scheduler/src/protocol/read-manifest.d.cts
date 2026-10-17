@@ -5,7 +5,7 @@ import type { MemoryFloorConfig } from '../sched/sched-memory-floor';
 import type { HubSwitch } from '../sched/client/sched-hub-switch.cjs';
 export interface AuthorityReadScope { kind: 'authority-read'; authorityId: string; authorityEpoch: number; }
 export type SharedReadKind = 'scheduler-format' | 'dispatcher-config' | 'dispatcher-heartbeat' | 'hub-switch' | 'ci-policy' | 'memory-floor';
-export type ExecutionReadKind = 'execution-index' | 'snapshot-metadata' | 'artifact-manifest' | 'artifact-zip' | 'log-descriptor' | 'log-segment' | 'job-result';
+export type ExecutionReadKind = 'execution-index' | 'snapshot-metadata' | 'snapshot-bundle' | 'artifact-manifest' | 'artifact-zip' | 'log-descriptor' | 'log-segment' | 'job-result';
 export type ReadSelector = { kind: 'ticket'; ticketId: string } | { kind: 'command-receipt'; commandId: string }
   | { kind: 'usage-history' | 'managed-overuse' | 'project-trunk-head'; project: string }
   | { kind: Exclude<ExecutionReadKind, 'log-segment'>; ticketId: string; attemptId: string }
@@ -18,7 +18,7 @@ export type ReadAudience = { kind: 'owner' } | { kind: 'authority' } | { kind: '
   | { kind: 'machine-project'; machine: string; project: string };
 export type ReadAccess = { role: 'owner' } | { role: 'node'; machine: string; projects: string[]; authorityKinds: SharedReadKind[] };
 export type ReadEntry = ReadSelector & { snapshotId: string; ledgerCursor: BusinessCursor; object: ObjectRef; audience: ReadAudience;
-  contentType: 'application/json' | 'application/x-ndjson' | 'application/zip' | 'text/plain' };
+  contentType: 'application/json' | 'application/x-ndjson' | 'application/zip' | 'application/octet-stream' | 'text/plain' };
 export interface ProjectionCatalog {
   requestId: string; scope: AuthorityReadScope; snapshotId: string | null; pageToken: string | null;
   selectors: ReadSelector[]; limit: number; knownObjects?: { objectId: string; hash: string }[];
@@ -67,7 +67,7 @@ export interface ProjectionObjectBodyMap {
   'ci-policy': { formatVersion: 1; mode: 'freeze' | 'coexist'; note?: string };
   'memory-floor': MemoryFloorObjectBodies['config' | 'state']; 'managed-overuse': ManagedOveruseBody;
   'usage-history': UsageHistoryFile; 'project-trunk-head': string; 'execution-index': ObjectDirectory;
-  'snapshot-metadata': import('./contract.cjs').SnapshotMetadata; 'artifact-manifest': ArtifactManifestBody;
+  'snapshot-metadata': import('./contract.cjs').SnapshotMetadata; 'snapshot-bundle': Uint8Array; 'artifact-manifest': ArtifactManifestBody;
   'artifact-zip': Uint8Array; 'log-descriptor': LogDescriptorBody; 'log-segment': Uint8Array;
   'job-result': import('./contract.cjs').JobResult & { suspension?: import('../sched/sched-suspend-store').SuspendRecord };
 }

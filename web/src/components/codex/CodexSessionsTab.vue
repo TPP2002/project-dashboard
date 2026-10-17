@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { authFetch } from '../../collaboration/http'
+import { authFetch, responseText } from '../../collaboration/http'
 import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import type { SessionDetail, SessionSummary } from '@/types/codex'
@@ -48,13 +48,6 @@ function speaker(role?: string) {
   return role || '消息'
 }
 
-async function responseText(response: Response): Promise<string> {
-  const text = await response.text()
-  if (response.ok) return text
-  let reason = text || `请求失败（${response.status}）`
-  try { reason = JSON.parse(text).error || reason } catch { /* 非 JSON 错误原样显示。 */ }
-  throw new Error(reason)
-}
 
 async function loadDetail(sessionId: string) {
   detailLoading.value = true

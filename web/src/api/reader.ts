@@ -1,19 +1,9 @@
-import { authFetch } from '../collaboration/http'
+import { authFetch, responseJson } from '../collaboration/http'
 // 审阅台 REST 客户端(READER-INTO-BOARD)。契约见 server/readerApi.cjs。
 const API = '/api/reader'
 
 async function asJson<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`
-    try {
-      const body = await res.json()
-      if (body && typeof body.error === 'string') msg = body.error
-    } catch {
-      /* 非 JSON 错误体 */
-    }
-    throw new Error(msg)
-  }
-  return (await res.json()) as T
+  return responseJson<T>(res)
 }
 
 export interface ReaderNoteLayerRef { id: string; name: string; file: string; key?: string }

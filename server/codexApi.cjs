@@ -15,8 +15,8 @@ const MESSAGE_MAX = 8000;
 function createCodexApi({
   resolveRepo, readRegistry, dashboardRoot, sessionsRoot, registryPath,
   readBody, sendJson, sendText, bodyMax,
+  jobHealth = attachLiveness, spawnResume, activeDispatches = new Set(), confirmDispatch = false, spawnJob = spawnDispatchCli,
 }) {
-  const activeDispatches = new Set();
 
   function context(res, query) {
     const projectId = query.project;
@@ -50,7 +50,7 @@ function createCodexApi({
 
   function waitForCodex(repo, args, callback) {
     let child;
-    try { child = spawnDispatchCli(repo, args, { stdio: ['ignore', 'pipe', 'pipe'] }); }
+    try { child = spawnJob(repo, args, { stdio: ['ignore', 'pipe', 'pipe'] }); }
     catch (error) { callback({ kind: 'spawn', error }); return; }
     waitForChild(child, callback);
   }
@@ -70,21 +70,21 @@ function createCodexApi({
     if (!repo) return [];
     // 这里没有会话数据,只走「进程没了」「早该收工却没收尾」两条铁证;
     // 「长时间没动静」这条软判据要扫会话文件,留给战报那条路径算。
-    return attachLiveness(listJobs(path.join(repo, '.codex', 'jobs')), { nowMs: Date.now() });
+    return jobHealth(listJobs(path.join(repo, '.codex', 'jobs')), { nowMs: Date.now() });
   }
 
   // 每个请求绑定自己的仓库，异步续聊也不会被另一个项目的请求改写上下文。
   function sessionApiFor(repo) {
     return createCodexSessionApi({
       readBody, sendJson, sendText, bodyMax, dashboardRoot, sessionsRoot, readRegistry,
-      getJobs: () => currentJobs(repo), commandError,
+      getJobs: () => currentJobs(repo), commandError, spawnResume,
     });
   }
   // 成本与额度扫描会话文件，不需要工单仓库。
   const sessionApi = sessionApiFor();
 
   function handleJobs(res, ctx) {
-    sendJson(res, 200, attachLiveness(listJobs(ctx.jobsRoot), { nowMs: Date.now() }));
+    sendJson(res, 200, jobHealth(listJobs(ctx.jobsRoot), { nowMs: Date.now() }));
   }
 
   function handleJob(res, query, ctx) {
@@ -96,7 +96,7 @@ function createCodexApi({
     // (CODEX-LIVENESS-VERDICT-SPLIT,2026-09-02)——否则战报已经标红「很久没动静」,
     // 用户从战报点进详情核实,详情却因为查不到这条软证据而说「还在干」,自相矛盾。
     const session = detail.threadId ? getJobSessionSummary(detail.threadId, { sessionsRoot }) : null;
-    sendJson(res, 200, attachLiveness([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]);
+    sendJson(res, 200, jobHealth([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]);
   }
 
   function handleTask(res, query, ctx) {
@@ -145,7 +145,7 @@ function createCodexApi({
       // 分支成了死代码,和详情页(handleJob)各说各话 —— CODEX-DISPATCH-CONFIRM-MISSING-SESSION-DATA。
       const session = detail?.threadId ? getJobSessionSummary(detail.threadId, { sessionsRoot }) : null;
       const health = detail
-        ? attachLiveness([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]
+        ? jobHealth([detail], { nowMs: Date.now(), sessions: session ? [session] : undefined })[0]
         : null;
       const state = detail ? { finishedAt: detail.running ? null : 'done' } : { finishedAt: 'new' };
       const dispatchKey = path.join(ctx.jobsRoot, slug);
@@ -176,13 +176,20 @@ function createCodexApi({
       }
       let child;
       activeDispatches.add(dispatchKey);
-      try { child = spawnDispatchCli(ctx.repo, ['dispatch', '--task', task], { detached: true, stdio: 'ignore' }); }
+      try { child = spawnJob(ctx.repo, ['dispatch', '--task', task], { detached: true, stdio: confirmDispatch ? ['ignore', 'pipe', 'pipe'] : 'ignore' }); }
       catch (error) {
         activeDispatches.delete(dispatchKey);
         return sendJson(res, 500, { ok: false, error: '启动派单器失败：' + error.message });
       }
       let replied = false;
       child.once('close', () => activeDispatches.delete(dispatchKey));
+      if (confirmDispatch) {
+        waitForChild(child, result => {
+          if (result.kind !== 'exit' || result.code !== 0) return commandError(res, result);
+          sendJson(res, 202, { ok: true, slug });
+        });
+        return;
+      }
       child.once('spawn', () => {
         if (replied) return;
         replied = true;

@@ -31,10 +31,17 @@ export const GRANTED_WAITING_ABANDONED_REASON = '授予后挂号端等待心跳�
 export interface WaitingReclaimOptions {
   at: string; share: string; tickets: readonly TicketSnapshot[]
   append: (draft: EventDraft) => unknown; log?: (message: string) => void
+  /** Remote mode supplies authenticated observations and persists stop intent
+   * for a granted execution; absence/unknown never means physical tree exit. */
+  remote?: {
+    read(ticketId: string): WaitingRead
+    remove(ticketId: string): void
+    grantedStale(ticket: TicketSnapshot, reason: string): void
+  }
 }
 export interface WaitingTracker { reclaim(options: WaitingReclaimOptions): void }
 
-type WaitingRead = { status: 'absent' } | { status: 'invalid'; reason: string } | { status: 'ok'; beat: WaitingBeat }
+export type WaitingRead = { status: 'absent' } | { status: 'invalid'; reason: string } | { status: 'ok'; beat: WaitingBeat }
 
 /** 归类:排队中 / 授予未开跑的本机单 / 不归本规则管(null)。授予那一族的边界与 reclaimUnstartedGrants 逐条相同。 */
 function waitingKind(ticket: TicketSnapshot): 'queued' | 'granted' | null {
@@ -75,6 +82,7 @@ export function createWaitingTracker(): WaitingTracker {
   let lastScanMs: number | null = null
   /** 已终结单的残留心跳文件顺手删;只认投影里有、且已终结的单,其余(排队中、刚挂号还没受理、不是单号)一概不碰。 */
   const sweepEnded = (options: WaitingReclaimOptions): void => {
+    if (options.remote) return
     let names: string[]
     try { names = readdirSync(schedPaths(options.share).waiting) } catch (error) {
       // 旧共享盘没有 waiting 目录:没有残留可清。
@@ -109,7 +117,7 @@ export function createWaitingTracker(): WaitingTracker {
         const kind = waitingKind(ticket)
         if (!kind) continue
         watched.add(ticket.ticketId)
-        const read = readWaitingBeat(options.share, ticket.ticketId)
+        const read = options.remote ? options.remote.read(ticket.ticketId) : readWaitingBeat(options.share, ticket.ticketId)
         // 不在 = 没有等待心跳(老挂号端、两步式、挂号端写不进心跳时主动撤了旧文件),照旧规矩、清记录;
         // 新挂号端异常离场不删文件,所以已见过之后再消失也不等于死了(见文件头)。
         if (read.status === 'absent') { seen.delete(ticket.ticketId); continue }
@@ -128,11 +136,12 @@ export function createWaitingTracker(): WaitingTracker {
         options.log?.(`[sched] ${ticket.ticketId}/${ticket.currentAttemptId} 挂号端等待心跳停更 ${Math.round(staleMs / 1_000)} 秒，`
           + `按挂号端已不在${kind === 'queued' ? '撤单' : '收回许可'}`)
         if (kind === 'queued') finishQueuedTicket(options.append, ticket, options.at, WAITING_ABANDONED_REASON)
+        else if (options.remote) options.remote.grantedStale(ticket, GRANTED_WAITING_ABANDONED_REASON)
         else options.append({ at: options.at, type: 'finished', ticketId: ticket.ticketId, attemptId: ticket.currentAttemptId,
           data: { result: ticket.cancelRequested ? 'cancelled' as const : 'failed' as const, terminal: true,
             reason: GRANTED_WAITING_ABANDONED_REASON } })
         // 终局已落流水,挂号端已不在、没有别人会删:当场删掉;删不掉下次扫描随已终结单的残留一并再清。
-        try { removeWaitingBeat(options.share, ticket.ticketId) } catch (error) {
+        try { if (options.remote) options.remote.remove(ticket.ticketId); else removeWaitingBeat(options.share, ticket.ticketId) } catch (error) {
           options.log?.(`[sched] 已判死单的等待心跳文件删除失败(下次扫描再清):${ticket.ticketId}:${errorMessage(error)}`)
         }
       }

@@ -1,0 +1,5 @@
+{
+  "cli": "C:/path/to/owner-node/scheduler/bin/sched.cjs",
+  "project": "sample",
+  "share": "C:/path/to/owner-node/synthetic-scheduler-share"
+}

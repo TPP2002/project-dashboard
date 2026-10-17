@@ -1,12 +1,10 @@
-import { authFetch } from '../collaboration/http'
+import { authFetch, responseJson } from '../collaboration/http'
 import type { AuditionBatchResult, AuditionIndexResult, AuditionMutation, AuditionOperations, AuditionState } from '@/types/audition'
 import { normalizeBatch } from '@/utils/audition/manifest'
 
 const API = '/api/audition'
 async function json<T>(response: Response): Promise<T> {
-  const body = await response.json()
-  if (!response.ok || body.ok !== true) throw new Error(typeof body.error === 'string' ? body.error : '试听台暂时无法读取，请稍后重试')
-  return body as T
+  return responseJson<T>(response)
 }
 export const auditionFileUrl = (project: string, path: string) => `${API}/file?${new URLSearchParams({ project, path })}`
 export async function fetchAuditionIndex(project: string): Promise<AuditionIndexResult> {

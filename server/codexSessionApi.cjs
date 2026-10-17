@@ -102,7 +102,7 @@ function createCodexSessionApi(options) {
       const cwd = detail.cwd && fs.existsSync(detail.cwd) ? detail.cwd : dashboardRoot;
       let child;
       try {
-        child = spawnSessionResume({
+        child = (options.spawnResume || spawnSessionResume)({
           executable, sessionId, message: body.message,
           sandboxMode: body.sandboxMode || 'read-only', cwd,
         });
