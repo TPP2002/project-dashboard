@@ -11,9 +11,11 @@ import type { JobSummary } from '@/types/codex'
 import TopBar from '@/components/TopBar.vue'
 import SideNav from '@/components/SideNav.vue'
 import TaskDrawer from '@/components/TaskDrawer.vue'
+import { authFetch } from '@/collaboration/http'
 
 const store = useBoardStore()
 const hasRunningJob = ref(false)
+let disposed = false
 
 /**
  * 宽屏内嵌详情栏：窗口够宽(≥1600)时，任务详情不再糊一层遮罩挡住列表，
@@ -39,23 +41,23 @@ let jobsRequestInFlight = false
 
 async function refreshRunningJobs() {
   const projectId = store.currentProjectId
-  if (!store.modules.codex || !projectId || document.visibilityState !== 'visible' || jobsRequestInFlight) return
+  if (disposed || !store.modules.codex || !projectId || document.visibilityState !== 'visible' || jobsRequestInFlight) return
   jobsRequestInFlight = true
   try {
-    const response = await fetch(`/api/codex/jobs?project=${encodeURIComponent(projectId)}`)
+    const response = await authFetch(`/api/codex/jobs?project=${encodeURIComponent(projectId)}`)
     if (!response.ok) {
       hasRunningJob.value = false
       return
     }
     const jobs = await response.json() as JobSummary[]
-    if (store.modules.codex && store.currentProjectId === projectId) {
+    if (!disposed && store.modules.codex && store.currentProjectId === projectId) {
       hasRunningJob.value = Array.isArray(jobs) && jobs.some(job => job.running === true)
     }
   } catch (_) {
     hasRunningJob.value = false
   } finally {
     jobsRequestInFlight = false
-    if (store.currentProjectId !== projectId) void refreshRunningJobs()
+    if (!disposed && store.currentProjectId !== projectId) void refreshRunningJobs()
   }
 }
 
@@ -86,8 +88,15 @@ watch(() => store.modules, () => {
   if (module && !store.modules[module]) void router.replace('/overview')
 }, { deep: true })
 
+function clearOwnerData() {
+  store.stopStream()
+  store.$patch({ projects: [], boards: {}, etags: {}, activityComplete: {}, currentProjectId: null,
+    selectedTaskId: null, selectedTaskProjectId: null, initialized: false })
+  store.decidedRecently.clear()
+}
+
 onMounted(() => {
-  store.init()
+  void store.init().finally(() => { if (disposed) clearOwnerData() })
   document.addEventListener('visibilitychange', onVisibilityChange)
   startJobsPolling()
   dockMql = window.matchMedia(DOCK_QUERY)
@@ -97,11 +106,12 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   stopJobsPolling()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   dockMql?.removeEventListener('change', syncDock)
   window.removeEventListener('resize', syncDock)
-  store.stopStream()
+  clearOwnerData()
 })
 </script>
 
