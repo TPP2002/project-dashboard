@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { authFetch } from '../../collaboration/http'
 import type { IconName } from '@/icons/paths'
 import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
@@ -77,7 +78,7 @@ async function responseText(response: Response): Promise<string> {
 async function loadDetail(slug: string, includeTail = false): Promise<boolean> {
   detailLoading.value = true
   try {
-    const response = await fetch(codexUrl('job?slug=' + encodeURIComponent(slug) + '&tail=' + (includeTail ? '1' : '0'), projectId))
+    const response = await authFetch(codexUrl('job?slug=' + encodeURIComponent(slug) + '&tail=' + (includeTail ? '1' : '0'), projectId))
     const text = await responseText(response)
     if (selectedSlug.value === slug) {
       const incoming = JSON.parse(text) as JobDetail
@@ -97,7 +98,7 @@ async function loadJobs(withDetail = true) {
   if (refreshing.value) return
   refreshing.value = true
   try {
-    const response = await fetch(codexUrl('jobs', projectId))
+    const response = await authFetch(codexUrl('jobs', projectId))
     jobs.value = JSON.parse(await responseText(response)) as JobSummary[]
     if (!jobs.value.some((job) => job.slug === selectedSlug.value)) {
       selectedSlug.value = jobs.value.find((job) => jobGroupKey(job) !== 'completed')?.slug || ''
@@ -146,7 +147,7 @@ async function sendMessage() {
   sending.value = true
   notice.value = ''
   try {
-    const response = await fetch(codexUrl('say', projectId), {
+    const response = await authFetch(codexUrl('say', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ slug, message: outgoing }),
     })
@@ -171,7 +172,7 @@ async function collectJob() {
   collecting.value = true
   notice.value = ''
   try {
-    const response = await fetch(codexUrl('collect', projectId), {
+    const response = await authFetch(codexUrl('collect', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug }),
     })
     notice.value = (await responseText(response)).trim() || '收单完成'
@@ -219,7 +220,7 @@ async function dispatchAgain(modifiedText?: string) {
   try {
     const body: { slug: string; taskText?: string } = { slug }
     if (modifiedText !== undefined) body.taskText = modifiedText
-    const response = await fetch(codexUrl('dispatch', projectId), {
+    const response = await authFetch(codexUrl('dispatch', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
     })
     const result = JSON.parse(await responseText(response))
@@ -235,7 +236,7 @@ async function openTaskEditor() {
   if (!canRedispatch.value || !detail.value) return
   jsonError.value = ''
   try {
-    const response = await fetch(codexUrl('task?slug=' + encodeURIComponent(detail.value.slug), projectId))
+    const response = await authFetch(codexUrl('task?slug=' + encodeURIComponent(detail.value.slug), projectId))
     const body = JSON.parse(await responseText(response))
     taskText.value = body.text
     editingTask.value = true
