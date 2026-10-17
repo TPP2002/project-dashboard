@@ -223,7 +223,7 @@ test('worker reads retain CSV headers/bytes and detail related=0; every complete
   assert.equal(response.headers.get('content-type'), 'text/csv; charset=utf-8');
   assert.equal(response.headers.get('content-disposition'), 'attachment; filename="sched-ledger.csv"');
   assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.equal(await response.text(), read.exportTickets(srv.share, { project: 'sample' }));
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from(read.exportTickets(srv.share, { project: 'sample' }), 'utf8'));
   const detail = await srv.json(`/api/sched/ticket/${value.ticketId}?related=0`);
   assert.equal(detail.status, 200); assert.deepEqual(detail.body, { ok: true, ticket: value });
   const file = path.join(srv.paths.tickets, value.ticketId + '.json'), stat = fs.statSync(file);

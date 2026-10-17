@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const options = workerData || {};
 
 if (options.fault) {
-  parentPort.once('message', () => {
+  parentPort.on('message', () => {
     if (options.fault === 'hang') return;
     if (options.fault === 'error') throw new Error('fixture worker failure');
     if (options.fault === 'exit') process.exit(0);
