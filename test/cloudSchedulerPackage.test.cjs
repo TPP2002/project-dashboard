@@ -6,6 +6,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { DASHBOARD_HOME } = require('../core/resolveProject.cjs')
 const source = path.resolve(__dirname, '../packages/scheduler')
 
 function files(dir) {
@@ -43,12 +44,20 @@ test('standalone scheduler builds and executes its actual ledger state machine i
     const forbidden = [
       /(?<![A-Za-z])[A-Z]:[\\/](?!\/)/i,
       /\b(?:\d{1,3}\.){3}\d{1,3}\b/,
-      /(?:stock-rogue|calib-share|DESKTOP-[A-Z0-9]{7}|Dx-\d{12}|SSUN-[A-Z]+|github:[A-Za-z0-9_-]+\/)/i,
+      /(?:DESKTOP-[A-Z0-9]{7}|LAPTOP-[A-Z0-9]{7}|github:[A-Za-z0-9_-]+\/)/i,
       /tk-[0-9a-f]{20}/,
     ]
+    // Private names belong in the same external list used by the repository
+    // privacy gate, never in a public test's negative-match expression.
+    const privateList = path.join(DASHBOARD_HOME, 'opensource-forbidden.txt')
+    const privateTokens = fs.existsSync(privateList)
+      ? fs.readFileSync(privateList, 'utf8').split(/\r?\n/).map(line => line.trim().toLowerCase()).filter(line => line && !line.startsWith('#'))
+      : []
     for (const file of files(pkg)) {
       const text = fs.readFileSync(file, 'utf8')
       for (const pattern of forbidden) assert.doesNotMatch(text, pattern, `private deployment data in ${path.relative(pkg, file)}`)
+      const normalized = text.replace(/\\+/g, '\\').toLowerCase()
+      for (const token of privateTokens) assert.equal(normalized.includes(token), false, `private identifier in ${path.relative(pkg, file)}`)
     }
     const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json')))
     assert.deepEqual(manifest.dependencies ?? {}, {})
