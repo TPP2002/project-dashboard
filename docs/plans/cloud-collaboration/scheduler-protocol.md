@@ -230,6 +230,10 @@ NativeStartGatePort.prepare 先创建受控暂停门禁并返回真实 controlle
 
 ## 跨工位函数端口（仅接口，没有空实现）
 
+原生启动的消费者使用 `gateway.execution.prepareObservation` / `sendPrepared` 两步。prepare 由唯一 gateway 分配序号和消息编号、封装并校验实际 envelope，返回 `preparationId` 及原文，尚不发送。句柄绑定操作系统核验的 peer、当前连接代际，不能把 frame/principal/session 当成 sendPrepared 的输入。网关串行保留该发送位置，准备阶段最长 5 秒，超时或断线释放位置并拒绝发送，不无限阻挡其他调用。started 经 sendPrepared 返回实际原文与关联的业务 ACK，交给 native gate 校验。lease.challenge 先 prepare，再由 native 记录原文挑战及自己当前的 Stopwatch 时刻，之后才 sendPrepared；返回关联的 lease.renewal 原文给 native。准备、排队和 IPC 时间都消耗现有 TTL，不从回复到达时重新计时。实时挑战不能持久离线重放；普通客户端不能调用这个受信端口。便捷 acceptObservation 保留给不需要原文的非租约事实。
+
+产物首次发现使用现有 `handoff.observe-request` → `handoff.observe`：当 result.artifacts 含 manifest/zip 文件名时，回复必须带 artifactObjects。ready 分支给每个被命名文件的 ObjectRef（objectId/hash/size），zip 大小与原统计一致；随后 cloud 用相同 ticket/attempt 的 artifact.read 按块取字节、核整文件 hash，再发布自己的只读目录。node 只在原 jobs-v12 产物根内注册这些对象，不把文件名当任意路径。无法取得实物时返回 unavailable 及原因，不能编造哈希或把“文件未取回”变成已下载。resultObject 仍只指作业结果原件，不承担产物目录语义。
+
 类型正本中的端口可经固定 SSH framed stdio 或其他已有承载实现，本单不增公网端口。函数签名见 contract.d.cts；共同错误类型 PortFailure 的 code 为 TIMEOUT、DISCONNECTED、FENCED、NOT_CONFIGURED、IO_FAILURE。CallOptions 必须显式提供正的有限 timeoutMs（上限 60000ms）；到期抛 TIMEOUT，不能无限 pending、不改写为业务成功。ProtocolValidationError 拒收输入；未收到回执的 immutable 调用结果是未知，允许按原 operationKey/hash 有界重试；live 调用丢弃，重新采样。端口实现必须核验返回 envelope 与请求的 authority/node/执行/对象/requestId 关联，不能只看 kind。
 
 | 工位 | 冻结端口 | 行为 |
