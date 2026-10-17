@@ -532,7 +532,7 @@ test('read directory discovers original complete queued/unsatisfiable/register-o
 });
 
 test('local semantic IPC cannot supply transport identities or native reports; original source is hash bound', () => {
-  const submit = { kind: 'submit', callId: 'synthetic-local-call', request: f.payloads.submission, localContext: { cwd: 'C:/synthetic-worktree' } };
+  const submit = { kind: 'submit', callId: 'synthetic-local-call', request: f.payloads.submission, localContext: { cwd: 'C:/path/to/worktree' } };
   assert.deepEqual(p.validateLocalSemanticRequest(submit), submit);
   const { localContext, ...missingContext } = submit;
   throws(() => p.validateLocalSemanticRequest(missingContext), 'MISSING');
@@ -566,7 +566,7 @@ test('local semantic IPC cannot supply transport identities or native reports; o
 
 test('local execution intent preserves argv and worktree without accepting native identity or SSH use', () => {
   const run = { kind: 'local-run', callId: 'synthetic-run', submission: f.submissionIdentity,
-    command: 'node', args: ['-e', 'process.exit(7)', '', 'space argument'], cwd: 'C:/worktrees/task', env: { PATH: 'C:/node', EMPTY: '' } };
+    command: 'node', args: ['-e', 'process.exit(7)', '', 'space argument'], cwd: 'C:/path/to/worktrees/task', env: { PATH: 'C:/path/to/node', EMPTY: '' } };
   assert.deepEqual(p.validateLocalSemanticRequest(run), run);
   for (const key of ['pid', 'controller', 'permitToken', 'source', 'callerSid', 'lease']) {
     throws(() => p.validateLocalSemanticRequest({ ...run, [key]: 'self-claimed' }), 'UNKNOWN_FIELD');
