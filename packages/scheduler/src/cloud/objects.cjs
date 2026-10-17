@@ -6,6 +6,9 @@ const p = require('../protocol/contract.cjs');
 const load = require('./domain.cjs');
 const { atomicBytes, hashBytes, failure } = require('./storage.cjs');
 const MAX_OBJECT_BYTES = 64 * 1024 * 1024;
+const MAX_READ_VERSIONS = 8;
+const READ_METADATA_BUDGET = 32 * 1024 * 1024;
+const READ_VERSION_UNAVAILABLE = 'READ_VERSION_UNAVAILABLE: expired or evicted; restart catalog with snapshotId=null and pageToken=null';
 
 function createObjects({ root, store, authority, epoch, state, now, catalog: configuration, ledgerIndex }) {
   const snapshots = new Map();
@@ -34,20 +37,54 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
   function expire() {
     for (const [key, value] of snapshots) if (value.expiresAt <= now()) snapshots.delete(key);
   }
+  // Charge strings at twice their UTF-8 JSON size plus per-record overhead.
+  // Object bodies stay on disk, never in this cache. These are budget units,
+  // not a claim about measured V8 heap/RSS (see health.readCache).
+  const charge = value => 2 * Buffer.byteLength(JSON.stringify(value)) + 512;
+  function reserveMetadata(frozen, extra) {
+    if (frozen.metadataBytes + extra > READ_METADATA_BUDGET) throw failure('READ_LIMIT', 'read version metadata exceeds byte budget');
+    let total = frozen.metadataBytes + extra;
+    for (const value of snapshots.values()) if (value !== frozen) total += value.metadataBytes;
+    for (const [id, value] of snapshots) {
+      if (total <= READ_METADATA_BUDGET) break;
+      if (value === frozen) continue;
+      snapshots.delete(id); total -= value.metadataBytes;
+    }
+    frozen.metadataBytes += extra;
+  }
+  function touch(frozen) {
+    snapshots.delete(frozen.snapshotId);
+    while (snapshots.size >= MAX_READ_VERSIONS) snapshots.delete(snapshots.keys().next().value);
+    snapshots.set(frozen.snapshotId, frozen);
+  }
+  function appendEntry(frozen, entry) {
+    if (frozen.entries.length >= 16384) throw failure('READ_LIMIT', 'read snapshot entry capacity exceeded');
+    reserveMetadata(frozen, charge(entry)); frozen.entries.push(entry);
+  }
+  function addPage(frozen, token, page) {
+    if (frozen.pages.size >= 4096) throw failure('READ_LIMIT', 'page bound exceeded');
+    reserveMetadata(frozen, charge([token, page])); frozen.pages.set(token, page);
+  }
+  function cacheUsage() {
+    expire();
+    return { versions: snapshots.size, maxVersions: MAX_READ_VERSIONS, metadataBudgetBytes: READ_METADATA_BUDGET,
+      metadataBytes: [...snapshots.values()].reduce((sum, v) => sum + v.metadataBytes, 0),
+      entries: [...snapshots.values()].reduce((sum, v) => sum + v.entries.length, 0),
+      pageTokens: [...snapshots.values()].reduce((sum, v) => sum + v.pages.size, 0) };
+  }
   function freeze(principal) {
     expire();
-    if (snapshots.size >= 8) throw failure('READ_LIMIT', 'read snapshot capacity reached; retry after expiry');
     const current = state(), snapshotId = randomUUID();
     const cursor = { seq: current.cursor.seq, hash: current.cursor.sha256 };
     const frozen = { principalId: principal.id, snapshotId, ledgerCursor: cursor, issuedAt: now(),
-      expiresAt: new Date(Date.parse(now()) + 60000).toISOString(), entries: [], pages: new Map() };
+      expiresAt: new Date(Date.parse(now()) + 60000).toISOString(), entries: [], pages: new Map(), metadataBytes: 1024 };
     function add(selector, body, audience, contentType = 'application/json') {
       if (!allowed(principal, audience, selector.kind)) return;
       if (frozen.entries.length >= 16384) throw failure('READ_LIMIT', 'read snapshot entry capacity exceeded');
       const ref = Buffer.isBuffer(body) ? save(body) : save(Buffer.from(JSON.stringify(body)));
       const object = { ...ref, objectId: p.contentHash([snapshotId, selector, frozen.entries.length, ref.hash]) };
       const entry = { ...selector, snapshotId, ledgerCursor: cursor, object, audience, contentType };
-      frozen.entries.push(entry); return entry;
+      appendEntry(frozen, entry); return entry;
     }
     const c = load('sched-contract'), paths = c.schedPaths(path.dirname(root));
     // Freeze local projections only. Transport fetches exactly the requested
@@ -63,7 +100,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
         for (const [kind, object] of Object.entries(extra)) {
           if (!object || !p.READ_KINDS.includes(kind) || !allowed(principal, audience, kind)) continue;
           if (frozen.entries.length >= 16384) throw failure('READ_LIMIT', 'read snapshot entry capacity exceeded');
-          frozen.entries.push({ kind, ticketId: ticket.ticketId, attemptId: attempt.attemptId,
+          appendEntry(frozen, { kind, ticketId: ticket.ticketId, attemptId: attempt.attemptId,
             snapshotId, ledgerCursor: cursor, object: { ...object, objectId: p.contentHash([snapshotId, ticket.ticketId, attempt.attemptId, kind, object.hash]) }, audience,
             contentType: kind === 'artifact-zip' ? 'application/zip' : kind === 'snapshot-bundle' ? 'application/octet-stream' : kind === 'log-segment' ? 'text/plain' : 'application/json',
             ...(kind === 'log-segment' ? { segmentId: 'complete' } : {}) });
@@ -125,7 +162,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
       add({ kind: 'managed-overuse', project }, { formatVersion: 1, at: now(), tickets: overuse }, audience);
     }
     frozen.add = add;
-    snapshots.set(snapshotId, frozen); return frozen;
+    reserveMetadata(frozen, 0); touch(frozen); return frozen;
   }
   function ledgerPage(frozen) {
     // One request materializes at most 128 original events. The immutable
@@ -140,7 +177,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
     scan.pages++;
     if (nextPageToken) {
       if (frozen.pages.size >= 4096) throw failure('READ_LIMIT', 'page bound exceeded');
-      frozen.pages.set(nextPageToken, { selectorHash: p.contentHash([{ kind: 'ledger-index' }]), offset: scan.pages, ledger: true });
+      addPage(frozen, nextPageToken, { selectorHash: p.contentHash([{ kind: 'ledger-index' }]), offset: scan.pages, ledger: true });
     }
     const body = { schema: 1, snapshotId: frozen.snapshotId, ledgerCursor: frozen.ledgerCursor, entries, nextPageToken };
     p.validateObjectDirectory(body); frozen.add({ kind: 'ledger-index' }, body, { kind: 'owner' });
@@ -158,7 +195,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
       const nextPageToken = offset + 64 < all.length ? randomUUID() : null;
       if (nextPageToken) {
         if (frozen.pages.size >= 4096) throw failure('READ_LIMIT', 'page bound exceeded');
-        frozen.pages.set(nextPageToken, { selectorHash: p.contentHash([selector]), offset: offset / 64 + 1 });
+        addPage(frozen, nextPageToken, { selectorHash: p.contentHash([selector]), offset: offset / 64 + 1 });
       }
       const body = { schema: 1, snapshotId: frozen.snapshotId, ledgerCursor: frozen.ledgerCursor,
         entries: all.slice(offset, offset + 64), nextPageToken };
@@ -176,7 +213,8 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
     const q = request.payload;
     expire();
     const frozen = q.snapshotId === null ? freeze(principal) : snapshots.get(q.snapshotId);
-    if (!frozen || frozen.principalId !== principal.id) throw failure('FENCED', 'read version expired or belongs to another principal');
+    if (!frozen) throw failure('FENCED', READ_VERSION_UNAVAILABLE);
+    if (frozen.principalId !== principal.id) throw failure('FENCED', 'read version belongs to another principal');
     for (const selector of q.selectors) {
       if (selector.kind.startsWith('ledger-')) {
         if (principal.readAccess?.role !== 'owner') throw failure('FENCED', 'owner-only ledger');
@@ -193,7 +231,13 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
       }
       if (selector.ticketId) {
         const entry = frozen.entries.find(e => e.kind === 'ticket' && e.ticketId === selector.ticketId);
-        if (!entry) throw failure('FENCED', 'ticket is outside read access');
+        // The CLI probes its deterministic ID before first submission. Only a
+        // absent ticket selector is an empty lookup (also when it was created
+        // after this frozen cutoff). Existing hidden tickets and execution-object
+        // selectors retain their authorization gate even with an older version.
+        const actual = state().tickets[selector.ticketId];
+        if (!entry && (selector.kind !== 'ticket' || actual && !allowed(principal,
+          { kind: 'project', project: actual.request.project }, 'ticket'))) throw failure('FENCED', 'ticket is outside read access');
       }
       if (selector.project && principal.readAccess?.role === 'node' && !principal.readAccess.projects.includes(selector.project)) throw failure('FENCED', 'project denied');
       directory(frozen, selector);
@@ -209,15 +253,16 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
     const nextPageToken = offset + q.limit < selected.length ? randomUUID() : null;
     if (nextPageToken) {
       if (frozen.pages.size >= 4096) throw failure('READ_LIMIT', 'page bound exceeded');
-      frozen.pages.set(nextPageToken, { selectorHash, offset: offset + q.limit });
+      addPage(frozen, nextPageToken, { selectorHash, offset: offset + q.limit });
     }
     const manifest = { requestId: q.requestId, scope: q.scope, snapshotId: frozen.snapshotId, ledgerCursor: frozen.ledgerCursor,
       issuedAt: frozen.issuedAt, expiresAt: frozen.expiresAt, entries: selected.slice(offset, offset + q.limit), nextPageToken };
-    p.validateReadManifest(manifest); return manifest;
+    p.validateReadManifest(manifest); touch(frozen); return manifest;
   }
   function read(principal, request) {
     expire(); const q = request.payload, frozen = snapshots.get(q.snapshotId);
-    if (!frozen || frozen.principalId !== principal.id) throw failure('FENCED', 'read version expired');
+    if (!frozen) throw failure('FENCED', READ_VERSION_UNAVAILABLE);
+    if (frozen.principalId !== principal.id) throw failure('FENCED', 'read version belongs to another principal');
     const entry = frozen.entries.find(e => p.canonicalJson(e) === p.canonicalJson(q.entry));
     if (!entry) throw failure('FENCED', 'object not in fixed snapshot');
     const manifest = { requestId: q.requestId, scope: q.scope, snapshotId: q.snapshotId, ledgerCursor: frozen.ledgerCursor,
@@ -225,6 +270,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
     const checked = p.authorizeProjectionRead(q, manifest, { principal, authorityId: authority.id, authorityEpoch: epoch, now: now(), maxObjectBytes: MAX_OBJECT_BYTES });
     if (!checked.allowed) throw failure('FENCED', checked.reason);
     const chunk = bytes(entry.object).subarray(q.offset, q.offset + q.length);
+    touch(frozen);
     return { ...q, dataBase64: chunk.toString('base64'), chunkHash: hashBytes(chunk) };
   }
   function queue(item) {
@@ -236,7 +282,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
       { table: 'meta', key: 'downloads', value: pending.concat(key) }]);
   }
   return {
-    save, bytes, catalog, read, maxObjectBytes: MAX_OBJECT_BYTES,
+    save, bytes, catalog, read, cacheUsage, maxObjectBytes: MAX_OBJECT_BYTES,
     snapshotSize(ticket) {
       const key = [ticket.ticketId, ticket.currentAttemptId], metadata = store.get('snapshot', key);
       const object = store.get('execution-objects', key)?.['snapshot-bundle'];

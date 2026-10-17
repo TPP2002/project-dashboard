@@ -67,13 +67,86 @@ test('full original ticket remains fixed at its read cursor after domain changes
   } finally { await f.dispose(); }
 });
 
+test('first ticket lookup is empty, then submission and status use the original deterministic identity', async () => {
+  const f = await fixture();
+  try {
+    await f.open(); await f.observe();
+    const request = f.request('first-client-submit');
+    const id = require('../packages/scheduler/src/cloud/domain.cjs')('sched-contract').deriveTicketId(request.project, request.idempotencyKey);
+    const absent = await catalog(f, [{ kind: 'ticket', ticketId: id }], principal);
+    assert.deepEqual(absent.entries, []); assert.equal(absent.nextPageToken, null);
+    const job = await f.submit(request.idempotencyKey);
+    assert.equal(job.id, id);
+    const found = await catalog(f, [{ kind: 'ticket', ticketId: id }], principal);
+    assert.equal(found.entries.length, 1);
+    const ticket = JSON.parse(await object(f, found, found.entries[0], principal));
+    assert.equal(ticket.request.createdAt, request.createdAt);
+    assert.equal(ticket.request.idempotencyKey, request.idempotencyKey);
+    assert.equal(ticket.state, 'granted');
+    assert.ok(found.ledgerCursor.seq > absent.ledgerCursor.seq);
+    assert.deepEqual((await catalog(f, [{ kind: 'ticket', ticketId: id }], principal, absent)).entries, []);
+    // Empty lookup permission does not authorize unrelated execution objects.
+    const missing = require('../packages/scheduler/src/cloud/domain.cjs')('sched-contract').deriveTicketId(request.project, 'still-missing');
+    await denied(f, [{ kind: 'execution-index', ticketId: missing, attemptId: 'a1' }]);
+  } finally { await f.dispose(); }
+});
+
+test('32 live status polls stay bounded, see changes, and retain accessed immutable versions without extending TTL', async t => {
+  const f = await fixture();
+  try {
+    await f.open(); await f.observe(); await f.open(owner);
+    const job = await f.submit('continuous-status', { category: 'codex-build', requestedCores: 0 });
+    const selectors = [{ kind: 'ticket', ticketId: job.id }];
+    const held = await catalog(f, selectors), before = await object(f, held, held.entries[0]);
+    let evicted;
+    for (let i = 0; i < 32; i++) {
+      f.advance(250);
+      if (i === 16) {
+        await f.send('command', { commandId: 'continuous-finish', kind: 'finish', data: { ticketId: job.id, result: 'passed' },
+          submitter: 'fixture', createdAt: f.now(), expiresAt: '2026-01-02T00:00:00.000Z' });
+        await f.service.tick();
+      }
+      const current = await catalog(f, selectors);
+      if (i === 0) evicted = current;
+      const body = JSON.parse(await object(f, current, current.entries[0]));
+      assert.equal(body.state, i < 16 ? JSON.parse(before).state : 'passed');
+      if (i >= 16) assert.ok(current.ledgerCursor.seq > held.ledgerCursor.seq);
+      assert.deepEqual(await object(f, held, held.entries[0]), before);
+      const usage = f.service.health().readCache;
+      assert.ok(usage.versions <= 8); assert.equal(usage.maxVersions, 8);
+      assert.ok(usage.metadataBytes <= 32 * 1024 * 1024);
+      assert.equal(usage.metadataBudgetBytes, 32 * 1024 * 1024);
+      assert.ok(usage.entries <= 8 * 16384); assert.ok(usage.pageTokens <= 8 * 4096);
+    }
+    assert.equal(f.service.health().readCache.versions, 8);
+    t.diagnostic(`32-poll retained metadata budget evidence: ${JSON.stringify(f.service.health().readCache)}`);
+    const stillHeld = await catalog(f, selectors, owner, held);
+    assert.equal(stillHeld.issuedAt, held.issuedAt); assert.equal(stillHeld.expiresAt, held.expiresAt);
+    const refused = await denied(f, selectors, owner, evicted);
+    assert.match(refused.payload.reason, /^READ_VERSION_UNAVAILABLE:/);
+    const refusedObject = await f.send('projection.read', { requestId: randomUUID(), scope: scope(f), snapshotId: evicted.snapshotId,
+      ledgerCursor: evicted.ledgerCursor, entry: evicted.entries[0], offset: 0, length: 1 }, undefined, owner);
+    assert.equal(refusedObject.payload.status, 'business_rejected');
+    assert.match(refusedObject.payload.reason, /^READ_VERSION_UNAVAILABLE:/);
+    // Restart the whole read under a fresh manifest; never splice old chunks.
+    const retried = await catalog(f, selectors);
+    assert.equal(JSON.parse(await object(f, retried, retried.entries[0])).state, 'passed');
+    f.advance(60001);
+    const expired = await denied(f, selectors, owner, held);
+    assert.match(expired.payload.reason, /^READ_VERSION_UNAVAILABLE:/);
+  } finally { await f.dispose(); }
+});
+
 test('fixed ReadAccess refuses another project and owner ledger, including forged immutable entries', async () => {
   const writer = { ...principal, readAccess: { ...principal.readAccess, projects: ['sample', 'private'] } };
   const reader = { ...principal, id: 'limited-reader', nodeIds: ['limited-node'], nativeObservation: false };
   const f = await fixture({ principal: writer, readers: [reader] });
   try {
     await f.open(); await f.observe(); await f.open(owner); await f.open(reader);
-    const own = await f.submit('public'), hidden = await f.submit('private', { project: 'private', category: 'codex-build', requestedCores: 0 });
+    const own = await f.submit('public');
+    const earlier = await catalog(f, [{ kind: 'ticket', ticketId: own.id }], reader);
+    const hidden = await f.submit('private', { project: 'private', category: 'codex-build', requestedCores: 0 });
+    await denied(f, [{ kind: 'ticket', ticketId: hidden.id }], reader, earlier);
     await denied(f, [{ kind: 'ticket', ticketId: hidden.id }], reader);
     await denied(f, [{ kind: 'usage-history', project: 'private' }], reader);
     await assert.rejects(f.send('projection.catalog', { requestId: randomUUID(), scope: scope(f), snapshotId: null, pageToken: null,
@@ -100,6 +173,12 @@ test('directory and catalog pagination are bounded; cursor is tied to selectors 
     assert.equal(first.entries.length, 1); assert.ok(first.nextPageToken);
     const page1 = JSON.parse(await object(f, first, first.entries[0]));
     assert.equal(page1.entries.length, 64); assert.ok(page1.nextPageToken);
+    // Other status requests may replace idle versions, but an actively read
+    // directory must retain its original objects/cursor across page boundaries.
+    for (let i = 0; i < 10; i++) {
+      await catalog(f, [{ kind: 'scheduler-format' }]);
+      assert.deepEqual(JSON.parse(await object(f, first, first.entries[0])), page1);
+    }
     const next = await catalog(f, [{ kind: 'ticket-index' }], owner, first, 1, page1.nextPageToken);
     const page2 = JSON.parse(await object(f, next, next.entries[0]));
     assert.equal(page2.entries.length, 1); assert.equal(page2.nextPageToken, null);

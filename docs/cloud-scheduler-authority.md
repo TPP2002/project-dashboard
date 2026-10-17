@@ -65,7 +65,11 @@ pause/resume、CI 让路、owner-hold、预留及暂停计账复用原逻辑，�
 
 GUI 目录与执行 state.snapshot 分开。目录提供完整原 TicketSnapshot（全部 attempt、timeline、许可）、format/config/heartbeat、command receipts、策略、usage/overuse、项目 head、snapshot metadata、job result、log descriptor/segment、artifact manifest/zip。控制文件只从云 dataRoot 固定位置读取；空队列有空目录和原控制信息。缺实物不伪造 hash。
 
-固定 ReadAccess 限制项目/机器；ledger 仅 owner。版本固定业务 cutoff，60 秒过期，最多 8 个同时有效版本；每版本最多 16384 entries、4096 continuation tokens。响应最多 64 entries，分块最多 131072 bytes，完整对象最多 64 MiB。cursor 绑定 principal/版本/selector；越权、旧版本、伪造 entry、坏 hash、越界均拒绝。shape-valid 投影不是许可。
+固定 ReadAccess 限制项目/机器；ledger 仅 owner。有限 ticket 查询在权威状态中确实不存在时返回 entries=[]、nextPageToken=null，供 remote-cli.submit 在首次提交前确定幂等 createdAt；真实存在但不在读取权限内的票据仍拒绝，execution-index 等对象查询不获得这项空结果例外。原 selector、身份、epoch 和领域验证不变。
+
+版本固定业务 cutoff，创建后 60 秒过期；最多保留 8 个版本，满额不再拒绝新查询，而是淘汰最久未成功读取的只读版本。成功的 catalog/read 更新淘汰顺序，不改变 issuedAt/expiresAt、对象字节、hash、cursor 或任何领域新鲜度。另有全缓存 32 MiB 元数据计费预算：每条 entry/page token 按 JSON UTF-8 字节数的两倍加 512 字节计费，每版本基数 1024 字节；不足时同样淘汰旧版本，单版本本身超过预算明确 READ_LIMIT。每版本原有 16384 entries、4096 tokens 上限保留。health().readCache 暴露版本数、条目数、token 数、计费字节与预算，供真实 service 测试断言；计费不是 V8 实测内存，整体 4GB 机器性能仍须主控验证。对象正文在磁盘，单对象 64 MiB、响应 64 entries、分块 131072 bytes 的既有上限不变。
+
+过期或淘汰的 catalog/projection.read 使用已有 result 形状返回 business_rejected，reason 固定前缀 `READ_VERSION_UNAVAILABLE:`。消费者行为契约：只对该前缀以相同 selectors、snapshotId=null、pageToken=null 重取 catalog；放弃旧目录游标和已读分块，从新 manifest 重新读完整对象并验证 hash，不能拼接两个版本。使用新 requestId/envelope；每次完整读取最多重启一次，仍冲突则把可重试失败交上层下一次 status/wait 轮询。权限拒绝、旧 epoch、坏 hash、错误 cursor 不按该前缀重试。不改接口签名或协议；本工位没有 Node/remote-cli 消费者代码，由主控协调它们落实上述窄重试行为。未被淘汰且未到期的版本继续可跨页读取原内容；请求新目录必定冻结当前值，不靠 mtime 冒充新鲜。shape-valid 投影仍不是许可。
 
 账本索引只存原文件 offset/length/hash，不复制账本。首次导入或崩溃后未索引尾部每 128 条一批恢复，批间释放 guard 并续租；日常按新事件增量索引。owner 可通过目录 continuation，或直接请求 ledger-segment 的 fromSeq/throughSeq（最多 128 条），避免每次 wait 从历史开头扫描。每条核验原 checksum，不越该版本 cutoff。只跨网传请求的对象，不随每拍全量同步账本。
 
@@ -77,7 +81,7 @@ GUI 目录与执行 state.snapshot 分开。目录提供完整原 TicketSnapshot
 
 - `test/cloudSchedulerAuthority.test.cjs`：生命周期、started/lease、unknown 占用、cold start、驻留、暂停意图/确认、owner-hold、原补跑及 local 模式。
 - `test/cloudSchedulerAuthorityRecovery.test.cjs`：真实子进程在领域/回执/WAL 边界退出，重启只生效一次；丢 ACK、同 ID 异文、换 session、旧 epoch、waiting 墓碑、fsync/CAS 失败及离线 lease。
-- `test/cloudSchedulerAuthorityRead.test.cjs`：空队列、完整对象、固定 cutoff、跨项目拒绝、owner-only 账本、分页/旧 cursor/超限、产物 hash 与日志。
+- `test/cloudSchedulerAuthorityRead.test.cjs`：空队列、首次查询→提交→查询、连续 32 次状态查询及中途变化、读取缓存资源上界、旧版本保留/淘汰/到期与完整重读、跨页压力、完整对象、固定 cutoff、跨项目拒绝、owner-only 账本、分页/旧 cursor/超限、产物 hash 与日志。本轮未运行，待主控正式 collect。
 
 由派单器按单文件、concurrency 1 挂号执行；没有裸跑验收或构建。静态自查只有源码核对和 git diff 检查，不能替代运行验收。
 
