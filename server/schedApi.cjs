@@ -2,8 +2,10 @@
 /** 调度 API：读盘快照、发指令；预留只由统一调度执行。 */
 const c = require('../core/schedContract.cjs');
 const read = require('../core/schedRead.cjs');
+const { createSchedReadExecutor } = require('../core/schedReadExecutor.cjs');
 
-function createSchedApi({ sendJson, readBody, bodyMax, resolveShare, sources = c.productionSources }) {
+function createSchedApi({ sendJson, readBody, bodyMax, resolveShare, sources = c.productionSources,
+  executor = createSchedReadExecutor() }) {
   let previousStamp;
 
   function validateInput(body) {
@@ -45,24 +47,34 @@ function createSchedApi({ sendJson, readBody, bodyMax, resolveShare, sources = c
       handlePost(req, res); return true;
     }
     if (req.method !== 'GET') return false;
+    if (!['snapshot', 'tickets', 'tickets.csv'].includes(action) && !action.startsWith('ticket/')) return false;
     const share = resolveShare();
-    try {
-      if (action === 'snapshot') {
-        const result = read.snapshot(share, sources.now());
-        sendJson(res, result.readable ? 200 : 503, result);
-      } else if (action === 'tickets') sendJson(res, 200, read.ticketPage(share, query));
-      else if (action === 'tickets.csv') {
-        const csv = read.exportTickets(share, query);
-        res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="sched-ledger.csv"', 'cache-control': 'no-store' });
-        res.end(csv);
-      } else if (action.startsWith('ticket/')) {
-        const ticket = read.ticketDetail(share, action.slice(7));
-        sendJson(res, 200, { ok: true, ticket, ...(query.related === '0' ? {} : { related: read.relatedTickets(share, ticket) }) });
-      } else return false;
-    } catch (error) {
-      sendJson(res, error.status || 503, error.status ? { ok: false, error: error.message } : read.readFailure(error));
-    }
+    void handleRead(action, req, res, query, share);
     return true;
+  }
+  async function handleRead(action, req, res, query, share) {
+    const controller = new AbortController();
+    const disconnect = () => controller.abort();
+    const connected = () => !controller.signal.aborted && !res.destroyed && !res.writableEnded;
+    req.once('aborted', disconnect);
+    res.once('close', disconnect);
+    if (req.aborted || res.destroyed || res.writableEnded) disconnect();
+    try {
+      const result = await executor.run({ action, share, query,
+        ...(action === 'snapshot' ? { nowMs: sources.now() } : {}) }, { signal: controller.signal });
+      if (!connected()) return;
+      if (action === 'snapshot') {
+        sendJson(res, result.readable ? 200 : 503, result);
+      } else if (action === 'tickets.csv') {
+        res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="sched-ledger.csv"', 'cache-control': 'no-store' });
+        res.end(result);
+      } else sendJson(res, 200, result);
+    } catch (error) {
+      if (connected()) sendJson(res, error.status || 503, error.status ? { ok: false, error: error.message } : read.readFailure(error));
+    } finally {
+      req.removeListener('aborted', disconnect);
+      res.removeListener('close', disconnect);
+    }
   }
   /** 与 board:changed 共用现有轮询；读失败也发变更，促使页面立即呈现不可读状态。 */
   function poll(broadcast, enabled) {
@@ -73,7 +85,7 @@ function createSchedApi({ sendJson, readBody, bodyMax, resolveShare, sources = c
     if (previousStamp !== undefined && stamp.key !== previousStamp) broadcast('sched:changed', { cursorSeq: stamp.cursorSeq });
     previousStamp = stamp.key;
   }
-  return { route, poll };
+  return { route, poll, sweep: () => executor.sweep(resolveShare()), close: () => executor.close() };
 }
 
 module.exports = { createSchedApi };
