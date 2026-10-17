@@ -81,7 +81,9 @@ function syncFromGit(flags) {
       const before = snap(t);
       t.commitShas = unionShas([...(t.commitShas || []), ...info.commits]);
       if (info.prs.size) t.prNumbers = unionBy([...(t.prNumbers || []), ...info.prs], String);
-      if (perTask[t.id] && commit && branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
+      // Local compatibility: an explicitly supplied branch applies to structural references
+      // even during a window scan. Remote git-facts keeps its separate exact-only rule.
+      if (perTask[t.id] && branch && branch !== 'HEAD') t.gitBranch = unionBy([...(t.gitBranch || []), branch], String);
       // 比【内容】不比【长度】：板里存的 8 位短哈希被 unionShas 升成 12 位时数组长度纹丝不动，
       // 但板确实变了。只比长度会让这类改动报成 changed=0，下游据此判「无需备份/无需留痕」就全错。
       if (snap(t) !== before) changed++;
@@ -109,8 +111,14 @@ function doctorReport(issues, flags, cleanText) {
 function doctor(flags) {
   const proj = resolveProj(flags);
   const repo = proj.codeRepo; // 同 syncFromGit：hook 与提交都在「代码的家」
+  const remoteBackups = [];
+  const queueBackup = board => {
+    const file = require('./projectBoard.cjs').artifact(proj,undefined,'doctor',Date.now() + '-' + (++backupSequence) + '.json');
+    remoteBackups.push({file,board});
+    return file;
+  };
 
-  let board = readBoardOrNull(proj.board);
+  let board = require('./projectBoard.cjs').readProjectBoard(proj,{optional:true});
   if (!board) {
     if (flags.quick || flags.quiet) return doctorReport(['board.json 不存在'], flags, '');
     return { ok: false, text: '✖ board.json 不存在' };
@@ -177,7 +185,8 @@ function doctor(flags) {
   // 3) --fix：备份 + syncFromGit（只补 git 派生字段，语义字段绝不碰）
   let fixBackup = null;
   if (flags.fix && missing > 0) {
-    fixBackup = backup(proj.board);
+    const beforeFix = board;
+    if (!proj.remote) fixBackup = backup(proj.board);
     // commit 显式清掉：doctor 是【整窗口对账】，修复也得按整窗口来。
     // 把外面传进来的 --commit 带下去，会变成「诊断看一整窗、修复只修一条」，又是一次口径分裂。
     const r = syncFromGit({ ...flags, commit: undefined });
@@ -188,6 +197,7 @@ function doctor(flags) {
       fixBackup = null;
       issues.push('已尝试自动补齐，但 board 实际无需改动（changed=0，未留备份）');
     } else {
+      if (proj.remote) fixBackup = queueBackup(beforeFix);
       issues.push(`已备份 ${path.basename(fixBackup)} 并自动补齐（changed=${r.changed}）`);
     }
   }
@@ -196,7 +206,7 @@ function doctor(flags) {
   let branchSummary = '', cleanupSummary = '';
   if (flags.branches) {
     // Stop 钩子的默认 doctor 不加载提交图；补提交后体检必须使用最新台账。
-    if (flags.fix && missing > 0) board = readBoardOrNull(proj.board);
+    if (flags.fix && missing > 0) board = require('./projectBoard.cjs').readProjectBoard(proj,{optional:true});
     const { loadClaimIndex, auditBoardBranches, planBranchCleanup, applyBranchCleanup } = require('./branchAudit.cjs');
     const claims = loadClaimIndex(flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH);
     const audit = auditBoardBranches(board, repo, { claims });
@@ -217,6 +227,11 @@ function doctor(flags) {
         : `跳过 有依赖关系 ${plan.skipped.related} / 主干 ${plan.skipped.trunk}`;
       let removed = 0, bak = null;
       if (plan.removals.length > 0) {
+        if (proj.remote) {
+          const result = require('./remoteClient.cjs').perform('branch-cleanup',proj.id,{_:[],payload:{expected:require('./remoteMaintenance.cjs').stateHash(board),entries:plan.removals,tier,trunk:audit.trunk}});
+          removed = result.removed;
+          bak = path.basename(fixBackup || queueBackup(board));
+        } else {
         // 补提交前若已备份，整次修复共用这份原样备份，保留完整回退点。
         const backupPath = fixBackup || backup(proj.board);
         if (!fs.existsSync(backupPath)) throw new Error('分支台账备份失败，未执行清理');
@@ -226,6 +241,7 @@ function doctor(flags) {
           removed = applyBranchCleanup(b, plan.removals);
           activity.text = `${command}：摘掉 ${removed} 条误扣分支（备份 ${bak}；${skippedText}）`;
         }, activity);
+        }
       }
       audit.cleanup = { tier, removed, skipped: plan.skipped, backup: bak, entries: plan.removals };
       if (removed > 0) {
@@ -242,6 +258,10 @@ function doctor(flags) {
     }
   }
   Object.assign(result, doctorReport(issues, flags, 'board 与 git 一致、hook 已装'));
+  for (const {file,board:before} of remoteBackups) {
+    fs.mkdirSync(path.dirname(file),{recursive:true});
+    atomicWriteJsonSync(file,before);
+  }
   if (flags.quiet) return result;
   if (branchSummary && !result.branchAudit.summary.suspect) result.text += '\n' + branchSummary;
   if (cleanupSummary) result.text += '\n' + cleanupSummary;

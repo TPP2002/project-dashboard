@@ -4,7 +4,24 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 /** 文档地图是本地生成物；缺依赖是常态，脚本失败不能阻止开工。 */
-function refreshDocsIndex(repo, { run = execFileSync } = {}) {
+function refreshDocsIndex(repo, { run = execFileSync, output } = {}) {
+  if (output) {
+    // Remote maintenance has an explicit output boundary. Scan local documents instead
+    // of invoking an arbitrary repository script with undeclared output destinations.
+    const files = [];
+    const walk = dir => {
+      if (!fs.existsSync(dir)) return;
+      for (const e of fs.readdirSync(dir,{withFileTypes:true})) {
+        const file = path.join(dir,e.name);
+        if (e.isDirectory()) walk(file);
+        else if (e.isFile() && /\.md$/i.test(e.name)) files.push(path.relative(repo,file).replace(/\\/g,'/'));
+      }
+    };
+    walk(path.join(repo,'docs'));
+    fs.mkdirSync(path.dirname(output),{recursive:true});
+    require('../core/atomicWrite.cjs').atomicWriteFileSync(output,'# 本机文档地图\n\n' + files.sort().map(f => '- ' + f).join('\n') + '\n');
+    return {status:'refreshed',text:`  ✔ 本机文档扫描 ${files.length} 篇，地图已写 ${output}；远程模式不执行输出位置未声明的 docs:index 脚本`};
+  }
   const file = path.join(repo, 'package.json');
   if (!fs.existsSync(file)) return { status: 'skipped' };
   try {

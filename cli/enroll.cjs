@@ -25,7 +25,7 @@ function enroll(flags) {
   const steps = [];
 
   // ① 注册
-  register({ id, name, root, registry: flags.registry });
+  register({ ...flags, id, name, root, registry: flags.registry });
   steps.push(`register: 已注册 ${id} → ${root}`);
 
   // ② 装 hook（默认装；--no-hooks 可跳过）
@@ -46,11 +46,13 @@ function enroll(flags) {
   }
 
   // ③ 可选自动 import 任务台账
-  if (flags.from || autoDetectTaskFile(root)) {
+  const detectedSource = autoDetectTaskFile(root);
+  if (flags.from || detectedSource) {
     try {
-      const imp = importCmd({ project: id, from: flags.from, registry: flags.registry, 'dry-run': false });
+      const imp = importCmd({ project: id, from: flags.from || (flags['remote-binding'] ? detectedSource : undefined), registry: flags.registry, 'dry-run': false });
       steps.push(`import: ${imp.count} 个任务骨架 已抽入 board`);
     } catch (e) {
+      if (flags['remote-binding']) throw e;
       steps.push(`import: 跳过（${e.message.split('\n')[0]}）`);
     }
   }

@@ -38,6 +38,8 @@ function parseFlags(argv) {
 
 // 命令 → [模块相对路径, 导出名]
 const REGISTRY = {
+  'remote-bind': ['./remoteProject.cjs','bind'],
+  'remote-project-init': ['./remoteProject.cjs','initializeRemote'],
   'remote-retry': ['./remoteClient.cjs', 'retry'],
   // —— 已实现（core+cli 承重墙）——
   register: ['./commands.cjs', 'register'], add: ['./commands.cjs', 'add'],
@@ -87,6 +89,7 @@ const REGISTRY = {
  * 给这些命令做反查纯属白跑一个 git 子进程，而 claim-check 挂在每次 commit 上，那点开销是要还的（审计 A9）。
  */
 const NO_AUTO_PROJECT = new Set([
+  'remote-bind', 'remote-project-init',
   'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol', 'remote-retry',
 ]);
 

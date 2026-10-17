@@ -118,7 +118,9 @@ if (process.argv.includes('--server-fixture')) {
       decisions: [{ id: 'd1', question: 'Proceed?', options: ['yes', 'no'], recommended: 'yes', answer: null }] }];
     board.revision = 1;
     const receiptKey = 'a'.repeat(64);
-    board._commandReceipts = { [receiptKey]: { inputHash: 'b'.repeat(64), revision: 1,
+    const receiptCreatedAt = Date.now();
+    board._commandRetention = { version: 2, rejectBefore: receiptCreatedAt, lastNow: receiptCreatedAt };
+    board._commandReceipts = { [receiptKey]: { inputHash: 'b'.repeat(64), revision: 1, createdAt: receiptCreatedAt,
       result: { private: 'INTERNAL-RECEIPT-SECRET' } } };
     write(boardFile, board); write(path.join(home, 'settings.json'), { webhookEvents: { done: true, pending: true, block: true } });
     const manifest = path.join(home, 'docs/design/审计回流/reader.json');
@@ -253,10 +255,11 @@ if (process.argv.includes('--server-fixture')) {
     await t.test('all board projections hide internal receipts without changing persisted metadata', async () => {
       for (const suffix of ['', '?fields=tasks', '?fields=activity']) {
         const response = await request(srv, '/api/board/alpha' + suffix, owner);
-        assert.equal(response.status, 200); assert.doesNotMatch(JSON.stringify(response.body), /_commandReceipts|INTERNAL-RECEIPT-SECRET/);
+        assert.equal(response.status, 200); assert.doesNotMatch(JSON.stringify(response.body), /_commandReceipts|_commandRetention|INTERNAL-RECEIPT-SECRET/);
       }
       assert.equal(JSON.parse(fs.readFileSync(boardFile))._commandReceipts[receiptKey].result.private, 'INTERNAL-RECEIPT-SECRET');
-      assert.equal(JSON.stringify({ result: { _commandReceipts: ['private'], ok: true } }, publicJson), '{"result":{"ok":true}}');
+      assert.deepEqual(JSON.parse(fs.readFileSync(boardFile))._commandRetention, board._commandRetention);
+      assert.equal(JSON.stringify({ result: { _commandReceipts: ['private'], _commandRetention: { rejectBefore: 1 }, ok: true } }, publicJson), '{"result":{"ok":true}}');
     });
 
     await t.test('local mode still permits settings and CLI board writes without credentials', async () => {

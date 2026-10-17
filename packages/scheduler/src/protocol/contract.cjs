@@ -42,5 +42,6 @@ module.exports = {
   verifyProjectionObject: require('./read-manifest.cjs').verifyProjectionObject,
   dispatcherCompatibilityIdentity: require('./read-manifest.cjs').dispatcherCompatibilityIdentity,
   validateLocalSemanticRequest: require('./local-ipc.cjs').validateLocalSemanticRequest,
+  validateLocalExecutionReply: require('./local-execution.cjs').validateLocalExecutionReply,
   ...require('./native-release.cjs'),
 };

@@ -32,6 +32,11 @@ function loadClaimIndex(registryPath) {
   };
   for (const id of Object.keys(registry.projects || {})) {
     let boardPath, board;
+    if (require('./remoteConfig.cjs').binding(id)) {
+      // A disconnected authority is missing evidence, never permission to use frozen local files.
+      collect(require('./remoteClient.cjs').perform('claim-evidence',id,{_:[]}).activity);
+      continue;
+    }
     try {
       boardPath = resolveProject(id, { registryPath }).board;
       board = JSON.parse(fs.readFileSync(boardPath, 'utf8'));
