@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { authFetch, responseText } from '../../collaboration/http'
 import Icon from '@/components/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import type { SessionDetail, SessionSummary } from '@/types/codex'
@@ -47,18 +48,11 @@ function speaker(role?: string) {
   return role || '消息'
 }
 
-async function responseText(response: Response): Promise<string> {
-  const text = await response.text()
-  if (response.ok) return text
-  let reason = text || `请求失败（${response.status}）`
-  try { reason = JSON.parse(text).error || reason } catch { /* 非 JSON 错误原样显示。 */ }
-  throw new Error(reason)
-}
 
 async function loadDetail(sessionId: string) {
   detailLoading.value = true
   try {
-    const response = await fetch(codexUrl('session?id=' + encodeURIComponent(sessionId) + '&tail=200', projectId))
+    const response = await authFetch(codexUrl('session?id=' + encodeURIComponent(sessionId) + '&tail=200', projectId))
     const body = JSON.parse(await responseText(response)) as SessionDetail
     if (selectedId.value === sessionId) detail.value = body
     error.value = ''
@@ -71,7 +65,7 @@ async function loadSessions(withDetail = true) {
   if (loading.value) return
   loading.value = true
   try {
-    const response = await fetch(codexUrl('sessions?limit=100', projectId))
+    const response = await authFetch(codexUrl('sessions?limit=100', projectId))
     sessions.value = JSON.parse(await responseText(response)) as SessionSummary[]
     if (!sessions.value.some((session) => session.sessionId === selectedId.value)) {
       selectedId.value = sessions.value[0]?.sessionId || ''
@@ -98,7 +92,7 @@ async function sendMessage() {
   sending.value = true
   notice.value = ''
   try {
-    const response = await fetch(codexUrl('say-session', projectId), {
+    const response = await authFetch(codexUrl('say-session', projectId), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         sessionId, message: outgoing,

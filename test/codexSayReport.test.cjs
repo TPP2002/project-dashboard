@@ -112,6 +112,7 @@ function sayWithReply(stdout, statePatch = {}) {
     import childProcess from 'node:child_process'
     import { syncBuiltinESMExports } from 'node:module'
     import { sayToJob } from './scripts/codex/codex-say.ts'
+    import scheduler from './scripts/codex/codex-scheduler.cjs'
 
     const stateBefore = { pid: 4242, startedAt: '2026-09-08T20:00:00.000Z', finishedAt: '2026-09-08T21:00:00.000Z',
       exitCode: 0, timedOut: false, threadId: '01a-session', ...${JSON.stringify(statePatch)} }
@@ -126,7 +127,8 @@ function sayWithReply(stdout, statePatch = {}) {
     fs.writeFileSync = (file, content) => { writes.push({ file: String(file).replace(/\\\\/g, '/'), content }) }
     fs.appendFileSync = () => {}
     fs.openSync = () => { throw new Error('不该去翻事件流:state.json 里已经有会话号了') }
-    childProcess.spawnSync = () => ({ status: 0, stdout: ${JSON.stringify(stdout)}, stderr: '', error: undefined })
+    scheduler.registeredRun = () => ({ status: 0, stdout: ${JSON.stringify(stdout)}, stderr: '', error: undefined })
+    childProcess.spawnSync = () => { throw new Error('This report test must not start a worker or scheduler') }
     syncBuiltinESMExports()
 
     process.env.CODEX_BIN = process.execPath

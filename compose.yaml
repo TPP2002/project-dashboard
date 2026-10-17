@@ -1,0 +1,56 @@
+services:
+  dashboard:
+    image: ${DASHBOARD_IMAGE:-dashboard-selfhost:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+        VCS_REF: ${DASHBOARD_REVISION:-unknown}
+    user: "1000:1000"
+    init: true
+    environment:
+      NODE_ENV: production
+      DASHBOARD_MODE: collaboration
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: "6060"
+      DASHBOARD_HOME: /data
+      DASHBOARD_PUBLIC_ORIGIN: ${DASHBOARD_PUBLIC_ORIGIN:-http://127.0.0.1:6060}
+      DASHBOARD_NO_OPEN: "1"
+    ports:
+      - "127.0.0.1:${DASHBOARD_BIND_PORT:-6060}:6060"
+    volumes:
+      - type: bind
+        source: ${DASHBOARD_DATA_DIR:?Set DASHBOARD_DATA_DIR to your prepared data directory}
+        target: /data
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1770
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 1.0
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 128
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      # Status only: never print the health response (it can contain metadata).
+      test:
+        - CMD
+        - node
+        - -e
+        - "const h=require('node:http');const r=h.get('http://127.0.0.1:6060/api/health',s=>{s.resume();s.on('end',()=>process.exit(s.statusCode===200?0:1));s.on('error',()=>process.exit(1));});r.setTimeout(3000,()=>r.destroy());r.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),4000).unref();"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

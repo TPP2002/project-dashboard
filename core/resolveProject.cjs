@@ -40,6 +40,7 @@ const DASHBOARD_HOME = process.env.DASHBOARD_HOME
   ? path.resolve(process.env.DASHBOARD_HOME)
   : path.join(os.homedir(), '.claude', 'dashboard');
 const REGISTRY_PATH = path.join(DASHBOARD_HOME, 'registry.json');
+const remoteBoards = new Set();
 
 function readRegistry(registryPath = REGISTRY_PATH) {
   try {
@@ -108,8 +109,11 @@ function resolveProject(projectId, opts = {}) {
     : [mainRepo];
   if (!costRoots.length) costRoots.push(mainRepo);
   const board = entry.board ? normalizeReal(entry.board) : path.join(mainRepo, '.dashboard', 'board.json');
+  if (require('../cli/remoteConfig.cjs').binding(projectId)) remoteBoards.add(normalizeReal(board));
   return {
     id: projectId,
+    // Local Git paths stay local; authority is independently bound in remote.json.
+    remote: require('../cli/remoteConfig.cjs').binding(projectId),
     name: entry.name || projectId,
     mainRepo,
     // codeRepo：跑 git / 找正本的消费方读这个（缺省 = mainRepo，见文件头注）。
@@ -124,4 +128,16 @@ function resolveProject(projectId, opts = {}) {
   };
 }
 
-module.exports = { resolveProject, readRegistry, detectProjectIds, DASHBOARD_HOME, REGISTRY_PATH };
+function assertLocalBoard(boardPath) {
+  if (remoteBoards.has(normalizeReal(boardPath))) throw new Error('已绑定远程权威，禁止读写本机旧板');
+  const config = require('../cli/remoteConfig.cjs').load();
+  if (!Object.keys(config.projects).length) return;
+  const registry = readRegistry();
+  for (const id of Object.keys(config.projects)) {
+    const entry = registry.projects && registry.projects[id];
+    if (!entry) continue;
+    const board = entry.board || path.join(entry.mainRepo, '.dashboard','board.json');
+    if (normalizeReal(board) === normalizeReal(boardPath)) throw new Error('项目 ' + id + ' 已绑定远程权威，禁止读写本机旧板');
+  }
+}
+module.exports = { resolveProject, readRegistry, detectProjectIds, DASHBOARD_HOME, REGISTRY_PATH, assertLocalBoard };

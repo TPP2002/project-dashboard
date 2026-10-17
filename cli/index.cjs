@@ -12,13 +12,18 @@
 
 /** 解析 argv：位置参数进 _，--key value 进 flags（重复 key 收集成数组，末位 --flag 记 true） */
 function parseFlags(argv) {
-  const _ = []; const flags = {};
+  const _ = []; const flags = Object.create(null);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const key = a.slice(2);
       const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) { flags[key] = true; }
+      if (key.split('.').some(k => ['__proto__','constructor','prototype'].includes(k))) throw new Error('禁止原型参数');
+      if (next === undefined || next.startsWith('--')) {
+        if (flags[key] === undefined) flags[key] = true;
+        else if (Array.isArray(flags[key])) flags[key].push(true);
+        else flags[key] = [flags[key], true];
+      }
       else {
         if (flags[key] === undefined) flags[key] = next;
         else if (Array.isArray(flags[key])) flags[key].push(next);
@@ -33,6 +38,9 @@ function parseFlags(argv) {
 
 // 命令 → [模块相对路径, 导出名]
 const REGISTRY = {
+  'remote-bind': ['./remoteProject.cjs','bind'],
+  'remote-project-init': ['./remoteProject.cjs','initializeRemote'],
+  'remote-retry': ['./remoteClient.cjs', 'retry'],
   // —— 已实现（core+cli 承重墙）——
   register: ['./commands.cjs', 'register'], add: ['./commands.cjs', 'add'],
   claim: ['./commands.cjs', 'claim'], unclaim: ['./commands.cjs', 'unclaim'],
@@ -81,7 +89,8 @@ const REGISTRY = {
  * 给这些命令做反查纯属白跑一个 git 子进程，而 claim-check 挂在每次 commit 上，那点开销是要还的（审计 A9）。
  */
 const NO_AUTO_PROJECT = new Set([
-  'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol',
+  'remote-bind', 'remote-project-init',
+  'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol', 'remote-retry',
 ]);
 
 /**
@@ -143,6 +152,13 @@ function slimJson(res) {
   };
 }
 
+function printResult(cmd, flags, res) {
+  res = res || { ok: true };
+  if (res.silent) return;
+  if (flags.json) console.log(JSON.stringify(slimJson(res)));
+  else if (res.text) console.log(res.text);
+  else console.log(`✔ ${cmd}` + (res.task ? ` ${res.task.id} → ${res.task.status}` : ''));
+}
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   // `help <命令>` / 裸 help / 无参数：全局一览或单条用法。
@@ -161,6 +177,13 @@ function main() {
   // "缺参数 --project"、`add --help` 会被 --model 闸拦下 —— AGENTS.md 让施工方走的正是这条路。
   if (rest.includes('--help') || rest.includes('-h')) { printHelp(cmd); process.exit(0); }
 
+  const flags = parseFlags(rest);
+  autoFillProject(cmd, flags);
+  const routed = require('./remoteRoute.cjs').route(cmd, flags);
+  if (routed.handled) {
+    printResult(cmd, flags, routed.result);
+    return;
+  }
   let fn;
   try { fn = require(entry[0])[entry[1]]; }
   catch (e) {
@@ -169,42 +192,9 @@ function main() {
   }
   if (typeof fn !== 'function') { console.error(`✖ 命令 ${cmd} 尚未实现（${entry[0]} 未导出 ${entry[1]}）`); process.exit(3); }
 
-  const flags = parseFlags(rest);
-  autoFillProject(cmd, flags);
-  // 批量建卡(add --json-file / --json)的档位与人话标题闸是【逐项】判的(见 commands.addBatch),
-  // 这里放行,否则整批必被这两道单卡闸拦死——它们查的是命令行 flag,批量清单里根本没有。
-  const batchAdd = cmd === 'add' && require('./commands.cjs').isBatchAdd(flags);
-  // ADD-MODEL-GATE(0901 负责人拍板):命令行建卡必须标建议档位——纪律靠自觉必失守,机器闸兜底。
-  // 只拦 CLI 入口;内部编程调用 cmds.add(importCmd 历史导入/docsAudit 自动巡检卡/测试)不经此处。
-  if (cmd === 'add' && !batchAdd && (flags.model === undefined || flags.model === true || String(flags.model).trim() === '')) {
-    console.error('✖ 建卡必须带 --model <建议档位>(0901 拍板,机器闸)。按模型路由表(skill §12.2)照抄一个:\n' +
-      '  机械执行/清单/一行修 → --model "sonnet·低"\n' +
-      '  照单施工/接线/修复   → --model "opus·中"\n' +
-      '  设计/评审/校准/疑难  → --model "fable·高"\n' +
-      '  负责人亲办不开对话   → --model "负责人本人办"\n' +
-      '  (编排型可组合,如 "fable·高编排+opus施工";≤40 字符)');
-    process.exit(1);
-  }
-  // ADD-PLAINTITLE-GATE(CLI-ADD-NO-PLAINTITLE-FILESCOPE):建卡三件套(skill §11.9)要求
-  // plainTitle(负责人看的人话标题)与 title(模型看的技术说明)都要给——纪律靠自觉必失守,
-  // --model 闸已证明有效,同样机器闸兜底。只拦 CLI 入口,内部编程调用不经此处。
-  if (cmd === 'add' && !batchAdd && (flags['plain-title'] === undefined || flags['plain-title'] === true || String(flags['plain-title']).trim() === '')) {
-    console.error('✖ 建卡必须带 --plain-title <人话标题>(skill §11.9 建卡三件套,机器闸兜底)。\n' +
-      '  --title 是给模型看的技术详细说明(照旧不变),--plain-title 是另加给负责人看的一句人话\n' +
-      '  (20~35 字,禁文件名/路径/函数名/类名/命令/英文缩写/内部编号)。例:\n' +
-      '  add T1 --model "sonnet·低" --title "统一 roundToTick 的实现" \\\n' +
-      '         --plain-title "价格计算的四舍五入有五套规则并存,可能算出对不上的数字"\n' +
-      '  （顺手可加 --scope "<glob>"（可重复）登记这张卡大概会改哪些文件，不必等 claim 才补）');
-    process.exit(1);
-  }
-  // COST-LEDGER-CLOSEOUT-DISCIPLINE(0914 负责人当面下达并当场加码):每张卡收官前必须把这一单
-  // 消耗的开销/额度登记入账,**不登记不得收官**。判据与拒收文案在 commands.costGateRefusal;
-  // 同上两道闸,只拦 CLI 入口(人敲的、派单器 spawn 的都走这条路),内部编程调用不经此处。
-  if (cmd === 'done') {
-    const refusal = require('./commands.cjs').costGateRefusal(flags);
-    if (refusal) { console.error('✖ ' + refusal); process.exit(1); }
-  }
   try {
+    const service = require('./commandService.cjs');
+    service.gates(cmd, flags);
     const res = fn(flags) || { ok: true };
     if (res.silent) return;
     if (flags.json) console.log(JSON.stringify(slimJson(res)));
@@ -217,6 +207,8 @@ function main() {
 }
 
 // 直接跑才分发；被 require 时只导出注册表（test/cliHelp.test.cjs 拿它逐条比对帮助覆盖率）。
-if (require.main === module) main();
+if (require.main === module) {
+  try { main(); } catch (e) { console.error('✖ ' + e.message); process.exitCode = 1; }
+}
 
 module.exports = { REGISTRY, parseFlags };

@@ -24,3 +24,21 @@ data/reader/
 # 面向所有 AI 工具的公开协议正本是 AGENTS.md,不是 CLAUDE.md。
 /CLAUDE.md
 /.claude/
+
+# Self-hosted runtime state and credentials belong outside source control.
+.env
+.env.*
+!.env.example
+/data/
+/private/
+/secrets/
+/backups/
+/dashboard-restore.*/
+/compose.override.yaml
+/compose.override.yml
+*.pem
+*.key
+*.p12
+*.pfx
+*.tar
+*.tar.gz

@@ -78,6 +78,7 @@ function createAuditionApi(deps) {
   }
   function loadBatch(proj, key) {
     checkKey(key);
+    if (deps.sourceBatch && deps.sourceBatch.key === key) return deps.sourceBatch.value;
     const entry = readIndex(proj).batches.find((item) => item.key === key);
     if (!entry) fail(404, '清单里没有这个批次');
     const batch = readJson(proj, entry.path);
@@ -326,4 +327,4 @@ function createAuditionApi(deps) {
   }
   return { route, DATA_DIR };
 }
-module.exports = { createAuditionApi, INDEX_REL, EXPORT_DIR_REL };
+module.exports = { createAuditionApi, INDEX_REL, EXPORT_DIR_REL, byteRange };

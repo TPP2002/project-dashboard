@@ -1,0 +1,23 @@
+.collab { color: var(--text); font-size: var(--fs-base); }
+.collab-page { max-width: 1200px; margin: auto; padding: var(--s5); }
+.collab-auth { width: min(100%, 480px); margin: 5vh auto; padding: var(--s4); }
+.collab-toolbar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); background: var(--surface); }
+.collab-toolbar ~ .collab-owner .shell { height: calc(100dvh - 64px); }
+.collab-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); margin-bottom: var(--s4); }
+.collab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: var(--s4); }
+.collab-card { min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-lg); padding: var(--s4); margin-bottom: var(--s4); overflow-wrap: anywhere; }
+.collab h1 { font-size: var(--fs-xl); margin-bottom: var(--s4); }
+.collab h2 { font-size: var(--fs-lg); margin: var(--s4) 0; }
+.collab h3 { font-size: var(--fs-md); margin-bottom: var(--s3); }
+.collab p { margin: var(--s3) 0; }
+.collab-form { display: flex; flex-direction: column; gap: var(--s3); }
+.collab label { display: flex; flex-direction: column; gap: var(--s2); }
+.collab input:not([type=checkbox]), .collab textarea, .collab select { width: 100%; min-width: 0; padding: var(--s2); border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); color: var(--text); font: inherit; }
+.collab :is(button,input,select,textarea):focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.collab button { min-height: 36px; white-space: normal; }
+.collab .collab-check, .collab-choices label { flex-direction: row; align-items: center; }
+.collab-choices { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
+.collab-error { color: var(--bad); background: var(--bad-bg); padding: var(--s3); border-radius: var(--r); }
+.collab-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.collab-secret { border-color: var(--warn); }
+@media (max-width: 600px) { .collab-page { padding: var(--s3); } .collab-toolbar { justify-content: flex-start; } }

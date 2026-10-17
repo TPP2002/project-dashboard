@@ -137,7 +137,9 @@ function writeCommand(share, command, sources = productionSources) {
   validateCommand(command);
   const bytes = canonicalJson(command);
   const target = path.join(paths.commands, `${command.commandId}.json`);
-  const staging = path.join(paths.staging, `.dashboard-${segment(sources.nonce())}.tmp`);
+  // Keep temporary and published commands in the same writable mount. The
+  // dashboard's view of the rest of the scheduler authority is read-only.
+  const staging = path.join(paths.commands, `.dashboard-${segment(sources.nonce())}.tmp`);
   // wx 失败时文件不属于本次调用，不能在 finally 删除它。
   fs.writeFileSync(staging, bytes, { encoding: 'utf8', flag: 'wx' });
   try { fs.linkSync(staging, target); }

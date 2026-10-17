@@ -110,11 +110,12 @@ function docsAudit(flags) {
   const pid = flags.project;
   if (!pid || pid === true) throw new Error('缺参数。用法: docs-audit --project <id> [--create-card] [--monthly-tick] [--stale-days 30] [--recheck-days 90]');
   const proj = resolveProject(pid, { registryPath: flags.registry ? path.resolve(flags.registry) : REGISTRY_PATH });
+  const remoteBoard = proj.remote ? require('./projectBoard.cjs').readProjectBoard(proj) : null;
 
   // --monthly-tick:月度节拍器(给计划任务用,幂等可反复触发)。
   // 距上次成功巡检不足 30 天 → 秒退零成本;到期才真跑,成功后写 lastSuccessAt ⇒ 下次自动从成功日顺延 30 天。
   // 配合计划任务「每日多个触发点 + 错过开机补跑」= 负责人要的「没开机就下次试、失败当日重试、成功即顺延」。
-  const statePath = path.join(path.dirname(proj.board), 'docs-audit-state.json');
+  const statePath = proj.remote ? require('./projectBoard.cjs').artifact(proj,undefined,'docs-audit-state.json') : path.join(path.dirname(proj.board), 'docs-audit-state.json');
   if (flags['monthly-tick']) {
     let st = null;
     try { st = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch (_) { /* 无状态 = 从未成功跑过 → 到期 */ }
@@ -127,8 +128,9 @@ function docsAudit(flags) {
   }
   const staleDays = parseInt(flags['stale-days'], 10) || 30;
   const recheckDays = parseInt(flags['recheck-days'], 10) || 90;
-  const docsRoot = path.join(proj.mainRepo, 'docs');
-  const board = readBoardOrNull(proj.board) || { tasks: [] };
+  const scanRepo = proj.remote ? proj.codeRepo : proj.mainRepo;
+  const docsRoot = path.join(scanRepo, 'docs');
+  const board = remoteBoard || readBoardOrNull(proj.board) || { tasks: [] };
   const taskById = new Map((board.tasks || []).map((t) => [t.id, t]));
 
   const files = [];
@@ -137,11 +139,11 @@ function docsAudit(flags) {
     if (fs.existsSync(dir)) files.push(...listMd(dir));
   }
 
-  const frozen = frozenExemptSet(proj.mainRepo); // 字节冻结件:不催、不算桶(见 frozenExemptSet 注释)
+  const frozen = frozenExemptSet(scanRepo); // 字节冻结件:不催、不算桶(见 frozenExemptSet 注释)
   const stale = [], recheck = [], untagged = [], legacy = [];
   let archived = 0, tagged = 0, frozenSkipped = 0;
   for (const f of files) {
-    const rel = path.relative(proj.mainRepo, f).replace(/\\/g, '/');
+    const rel = path.relative(scanRepo, f).replace(/\\/g, '/');
     if (frozen.has(rel)) { frozenSkipped += 1; continue; } // 已终止任务的历史凭据,字节冻死,不许贴标签也不该催
     const st = readStatusLine(f);
     if (!st) { untagged.push(rel); continue; }
@@ -182,9 +184,9 @@ function docsAudit(flags) {
   L.push('', '处置口径:本清单只是疑似名单,改标签前先看内容;拿不准的登记待拍板,别硬改。状态行规矩 = docs/开工须知.md §5.7。');
 
   // 报告落盘(board 同目录,本机不入库)
-  const reportPath = path.join(path.dirname(proj.board), `docs-audit-${ym}.txt`);
+  const reportPath = proj.remote ? require('./projectBoard.cjs').artifact(proj,flags.out,`docs-audit-${ym}.txt`) : path.join(path.dirname(proj.board), `docs-audit-${ym}.txt`);
   const full = L.join('\n') + (untagged.length > 15 ? '\n\n【C 全量清单】\n' + untagged.map((s) => '  · ' + s).join('\n') : '');
-  fs.writeFileSync(reportPath, full, 'utf8');
+  if (!proj.remote) fs.writeFileSync(reportPath, full, 'utf8');
   L.push('', `报告已写:${reportPath}`);
 
   // 建巡检卡(幂等)
@@ -195,21 +197,30 @@ function docsAudit(flags) {
     } else if (stale.length + recheck.length + untagged.length === 0) {
       L.push('三桶全空,本月无需巡检卡 ✔');
     } else {
-      cmds.add({
+      const cardFlags = {
         _: [cardId], project: pid, registry: flags.registry,
         title: `月度文档巡检 ${ym}:疑似过期 ${stale.length} + 核对过期 ${recheck.length} + 无标签 ${untagged.length}`,
         desc: `docs-audit 探雷清单(机械比对,未判内容):A 疑似该转历史 ${stale.length} 篇 / B 核对过期 ${recheck.length} 篇 / C 无标签 ${untagged.length} 篇。完整清单:${reportPath}。施工=低档对话过清单逐篇确认改标签(§5.7 口径),拿不准的登记待拍板;完毕后重跑 docs-audit 验三桶归零并销卡。`,
         author: 'docs-audit',
         model: 'sonnet·低', // 巡检=过清单改标签的机械活,自动建卡天生带档位徽章(ADD-MODEL-GATE 配套)
-      });
+        'plain-title': `处理本月文档中需要核对和补充标注的内容`,
+      };
+      if (proj.remote) require('./remoteClient.cjs').perform('audit-card',pid,require('./remoteClient.cjs').typedArgs('audit-card',cardFlags));
+      else cmds.add(cardFlags);
       L.push(`已建巡检卡 ${cardId}(未开工,待派发)`);
     }
+  }
+
+  if (proj.remote) {
+    fs.mkdirSync(path.dirname(reportPath),{recursive:true});
+    require('../core/atomicWrite.cjs').atomicWriteFileSync(reportPath,full);
   }
 
   // monthly-tick 走到这里 = 本次巡检真跑成功 → 记账,下个节拍从今天顺延 30 天
   if (flags['monthly-tick']) {
     try {
-      fs.writeFileSync(statePath, JSON.stringify({ lastSuccessAt: new Date().toISOString() }), 'utf8');
+      if (proj.remote) { fs.mkdirSync(path.dirname(statePath),{recursive:true}); require('../core/atomicWrite.cjs').atomicWriteJsonSync(statePath,{lastSuccessAt:new Date().toISOString()}); }
+      else fs.writeFileSync(statePath, JSON.stringify({ lastSuccessAt: new Date().toISOString() }), 'utf8');
       L.push(`节拍已记账:下次月度巡检自 ${new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)} 起触发`);
     } catch (e) {
       L.push(`⚠ 节拍状态写入失败(${e.message})——下次触发会再跑一遍,不丢巡检只多跑`);
