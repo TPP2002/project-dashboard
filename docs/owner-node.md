@@ -95,7 +95,7 @@
 - 新增 Linux 真子进程锁持续持有/冲突/异常退出/固定 inode 断言及旧格式和链接边界断言；已有跨平台恢复竞争测试证明目标是两竞争者只能一个成功，已有 Journal 崩溃测试继续断言未知意图不重派。这些是待执行断言，不是通过证据；本轮没有运行脚本、锁实验、验收或服务器命令，跨 namespace 实机验证留给主控。
 
 - `protocol`、`brief` 已读；brief 已显示 r2 分支由派单器认领，任务施工中 0%。
-- 本轮追加 claim 失败：`EPERM: operation not permitted, open 'F:\project-dashboard\.dashboard\board.json.lock'`。沙箱只允许本工位，不能绕过锁、直接写板或扩大权限。阻碍/待拍板记录需主控代登记。
+- 本轮追加 claim 失败：`EPERM: operation not permitted, open 'F:\board-repo\.dashboard\board.json.lock'`。沙箱只允许本工位，不能绕过锁、直接写板或扩大权限。阻碍/待拍板记录需主控代登记。
 - 按施工单“费用主控从独立 session token 记账”，本轮成本交原主控归因登记；施工方没有冒记共享账户差值，也没有声称已落账。
 - 必需代码/测试文件均已落盘。三项指定验收 `ran=false`，新增网页检查也未执行，不声称通过。
 - 曾通过正式调度申请单文件语法检查，票据 `tk-80909554a1a5f575c6a9` 未获执行；随后 cancel，回读状态为 cancelled，未裸跑。此票据不是语法通过证据。

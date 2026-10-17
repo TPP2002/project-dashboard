@@ -1,4 +1,24 @@
 'use strict';
+
+// Owner workers and the execution node share a remote client contract. A
+// catalog path must never accidentally switch remote work back to local mode.
+require('node:test')('owner scheduler adapter selects the explicit IPC endpoint and mode', () => {
+  const assert = require('node:assert/strict');
+  const adapter = require('../scripts/codex/codex-scheduler.cjs');
+  for (const remote of [false, true]) {
+    const calls = [];
+    const config = { cli: __filename, project: 'synthetic',
+      ...(remote ? { clientConfig: __filename } : { share: __dirname }) };
+    adapter.client(config, (file, args, options) => {
+      calls.push({ file, args, options }); return { status: 0, stdout: '', stderr: '' };
+    }).exec({ cwd: __dirname, title: 'synthetic endpoint check', target: 'fixture', argv: ['node', '-v'] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].options.env.SCHED_MODE, remote ? 'remote' : 'local');
+    assert.equal(calls[0].options.env.SCHED_CONFIG, process.env.SCHED_CONFIG);
+    assert.equal(calls[0].args.includes('--share'), !remote);
+    if (remote) assert.equal(calls[0].options.env.SCHED_REMOTE_CONFIG, __filename);
+  }
+});
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');

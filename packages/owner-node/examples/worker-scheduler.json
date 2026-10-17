@@ -1,5 +1,5 @@
 {
-  "cli": "C:/OwnerNode/scheduler/bin/sched.cjs",
+  "cli": "C:/path/to/owner-node/scheduler/bin/sched.cjs",
   "project": "sample",
-  "share": "C:/OwnerNode/synthetic-scheduler-share"
+  "share": "C:/path/to/owner-node/synthetic-scheduler-share"
 }

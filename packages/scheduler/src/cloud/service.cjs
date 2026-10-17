@@ -452,6 +452,7 @@ async function createCloudService({ dataRoot, catalog, authority, sendToNode, fa
   };
   return { authority: { accept, issue, snapshot: only('state.read'), leaseReply: only('lease.challenge') }, start, tick, close,
     health: () => ({ authorityId: authority.id, authorityEpoch: epoch, authorityHost: authority.host, ownerMachine: authority.ownerMachine,
-      mode: 'remote', stopped: closed || daemon.owner.stopped, cursor: cursor(), pending: store.pending().length, lastError }) };
+      mode: 'remote', stopped: closed || daemon.owner.stopped, cursor: cursor(), pending: store.pending().length,
+      readCache: objects.cacheUsage(), lastError }) };
 }
 module.exports = { createCloudService };

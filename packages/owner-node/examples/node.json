@@ -1,25 +1,25 @@
 {
   "version": "owner-node.v1",
   "nodeId": "synthetic-node",
-  "stateRoot": "C:/OwnerNode/state",
-  "sessionsRoot": "C:/Users/OWNER/.codex/sessions",
-  "claudeProjectsRoot": "C:/Users/OWNER/.claude/projects",
+  "stateRoot": "C:/path/to/owner-node/state",
+  "sessionsRoot": "C:/Users/demo/.codex/sessions",
+  "claudeProjectsRoot": "C:/Users/demo/.claude/projects",
   "balance": "windows-key",
-  "launcher": "C:/Tools/Claude/claude.exe",
-  "schedulerConfig": "C:/OwnerNode/config/worker-scheduler.json",
-  "dashboardRemoteConfig": "C:/OwnerNode/config/dashboard-remote.json",
+  "launcher": "C:/path/to/tools/Claude/claude.exe",
+  "schedulerConfig": "C:/path/to/owner-node/config/worker-scheduler.json",
+  "dashboardRemoteConfig": "C:/path/to/owner-node/config/dashboard-remote.json",
   "ssh": {
-    "executable": "C:/Windows/System32/OpenSSH/ssh.exe",
+    "executable": "C:/path/to/OpenSSH/ssh.exe",
     "host": "owner-node@cloud.example.invalid",
-    "knownHosts": "C:/OwnerNode/ssh/known_hosts",
-    "identityFile": "C:/OwnerNode/ssh/node_identity"
+    "knownHosts": "C:/path/to/owner-node/ssh/known_hosts",
+    "identityFile": "C:/path/to/owner-node/ssh/node_identity"
   },
   "projects": {
     "sample": {
       "name": "Synthetic project",
-      "codeRepo": "C:/OwnerNode/repos/sample",
-      "docsRoot": "C:/OwnerNode/repos/sample",
-      "costRoots": ["C:/OwnerNode/repos/sample"],
+      "codeRepo": "C:/path/to/owner-node/repos/sample",
+      "docsRoot": "C:/path/to/owner-node/repos/sample",
+      "costRoots": ["C:/path/to/owner-node/repos/sample"],
       "githubRepo": "example/sample"
     }
   }
