@@ -108,6 +108,10 @@ test('全量测试显式列出本仓文件，拒绝覆盖授予并发；构建�
   assert.ok(job.args(2).length > 30);
   assert.ok(job.args(2).slice(2).every(file => /^test\/[^/]+\.test\.cjs$/.test(file)));
   assert.ok(job.targets.includes('packaging'), '打包自检也属于全量测试的受测内容');
+  for (const file of ['packages/owner-node', 'packages/scheduler/src', 'packages/scheduler/fixtures', 'packages/scheduler/build.cjs']) {
+    assert.ok(job.targets.includes(file), `内容指纹不能漏掉云端调度测试输入 ${file}`);
+  }
+  assert.equal(job.targets.some(file => file.includes('node_modules') || file.endsWith('/dist')), false);
   assert.throws(() => scheduledJob('test', root, ['--test-concurrency=20']), /不接受/);
   assert.equal(scheduledJob('typecheck', root).cores, 1);
   assert.equal(scheduledJob('build', root).cores, 1);

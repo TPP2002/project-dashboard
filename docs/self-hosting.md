@@ -1,6 +1,6 @@
 # 在自己的 Linux 服务器部署协作看板
 
-本方案只打包看板：一个 Node 服务、一个用户提供的数据目录，不附带示例应用、真实项目、外部认证或收费服务。默认只绑定服务器的 `127.0.0.1:6060`。原有本机模式不变；Compose 显式启用 `collaboration`。
+基础 Compose 启动看板服务，使用部署者自己的数据目录；可选 `compose.scheduler.yaml` 增加云端调度权威。两者不附带真实项目、外部认证或收费服务。网页默认只绑定服务器的 `127.0.0.1:6060`。原有本机模式不变；Compose 显式启用 `collaboration`。云端调度及 Windows 节点的组合仍须完成第 9 节所述的整体验证，不能仅因镜像包含代码就视为已经迁移。
 
 认证后端与协作界面已接入，包含邀请注册、项目授权、成员领取任务，以及负责人主动信任常用浏览器。Dockerfile 会拒绝缺少协作初始化命令的源码。部署者仍须在自己的环境完成文末验收；单元测试和界面构建不代表容器、备份恢复或公网访问已经验证。
 
@@ -58,7 +58,7 @@ docker compose config --quiet
 docker compose build --pull dashboard
 ```
 
-Dockerfile 的构建阶段只对 `web/package-lock.json` 执行 `npm ci`，随后执行现有 `core/scheduledJobs.cjs` 对应的 Vite 构建载荷生成 `web/dist`，保留默认生产模式，不启用 mock。根包只有开发用 tsx，运行层不安装它，也不复制任何 `node_modules`、前端源码或依赖锁。最终层只有 Node 基础镜像、`core/server/cli`、本部署文档与构建出的静态文件。`.dockerignore` 默认拒绝所有内容，再仅允许构建所需源码，排除历史、工位、环境文件、私有资料、已有 dist 和真实数据。
+Dockerfile 对前端和独立调度包的锁文件分别执行 `npm ci`。前端执行现有 `core/scheduledJobs.cjs` 对应的 Vite 构建载荷，保留默认生产模式；调度包用锁定的 TypeScript 编译并检查公开运行依赖闭包。运行层不安装 tsx、编译器或任何 `node_modules`，只保留 Node、应用代码、调度编译产物和前端静态文件。`.dockerignore` 默认拒绝所有内容，再仅允许构建所需源码，排除历史、工位、环境文件、私有资料、已有 dist 和真实数据。
 
 独立部署者的 Linux Docker 构建不依赖开发团队的私有调度共享盘；不要伪造 CI 环境变量或许可。**本仓施工方不得直接运行上述构建**，本机测试仍须调度，真实 Docker build/config/start/restart/恢复由主控在授权环境执行。此处列的是部署操作手册，不是本轮执行记录。
 
@@ -118,16 +118,28 @@ ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:6060:127.0.0.1:6060 user@your-se
 
 ## 4. HTTPS、公开来源与备案边界
 
-长期远程访问应由部署者设置 HTTPS 反向代理，本单不附带代理服务或证书自动续期。代理在同一宿主机连接 `127.0.0.1:6060`；Compose 的回环映射保持不变。代理应：
+长期远程访问使用 HTTPS 反向代理。可选的 `compose.https.yaml` 和 `deploy/Caddyfile` 使用 Caddy 管理证书，代理经 Docker 私有网络连接 `dashboard:6060`；看板的宿主机 HTTP 映射仍只绑定回环地址。使用自己的宿主机代理时，上游为 `127.0.0.1:6060`。代理应：
 
 1. 使用浏览器信任且名称匹配的有效证书；将 `DASHBOARD_PUBLIC_ORIGIN` 设为浏览器看到的准确 `https://主机名[:端口]`（无路径），变更后重新 `docker compose up -d --no-build dashboard`。
 2. 保留原始 Host/Origin，删除传给应用的 `Forwarded` 和所有 `X-Forwarded-*` 头，包括代理默认添加的头。应用拒绝带这些头的写请求；Cookie 的 Secure 标志只依据配置的 `DASHBOARD_PUBLIC_ORIGIN`，不依赖代理头，不因来源回环就授予负责人身份。
 3. 支持 SSE 长连接，关闭该流的响应缓冲并配置合适超时；限制请求体和速率。不要在访问日志记录 Cookie、Authorization、请求体或含令牌的邀请 URL；有查询参数的日志应脱敏或省略查询。
 4. 用浏览器确认 HTTPS 会话 Cookie 的 `HttpOnly`、`Secure`、`SameSite` 属性，以及来源/CSRF 拒绝行为；不能为了让登录成功关闭这些检查。回环 HTTP 仅是后端契约允许的本机验证例外。
 
-开放防火墙、TLS 和公网端口前另行获得授权并验证；只开放必要的 HTTPS 入口，不开放管理端口和 Docker socket。不把调度页面能显示当作底层调度已迁移；Windows 进程控制、共享盘许可、执行及回执仍由原调度系统管理。
+开放防火墙、TLS 和公网端口前另行获得授权并验证；不开放管理端口和 Docker socket。不把调度页面能显示当作底层调度已迁移；完整调度组合与切换要求见第 9 节。
 
-没有域名而希望对公网 IP 使用 HTTPS，可评估支持 IP SAN 的受信任证书；或在受控设备上部署私有 CA 并分发信任；也可继续使用 SSH 隧道做私有验证。签发机构是否支持目标 IP、证书有效期及客户端兼容性需部署者另行确认。本单不实现、不承诺自动续期，也不指导绕过浏览器证书告警。获取域名并用常规证书是另一选项。
+没有域名也可以使用受信任的 IP 证书。Let's Encrypt 已公开提供 [IP 地址与 160 小时证书](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability/)；模板显式选择其 `shortlived` ACME 配置，避免 Caddy 对 IP 默认使用私有 CA。证书有效期短，必须保留 Caddy 的证书数据、保持自动续期能访问签发机构及验证端口，并检查续期失败日志。此能力不改变服务器所在地的接入要求，也不保证某次实际签发成功。
+
+私有验证通过且批准开放后，在源码外新建归 UID/GID 1000 所有的 0700 目录存放证书；在未入库的 `.env` 中填写 `CADDY_DATA_DIR`、`DASHBOARD_PUBLIC_HOST`（仅 IP 或主机名，不含协议、端口或路径），将 `DASHBOARD_PUBLIC_ORIGIN` 改成对应的 `https://...`。模板使用固定 Caddy 版本，实际发布可将 `CADDY_BASE_IMAGE` 固定到已验证的官方镜像摘要。代理构建只移除官方二进制的低端口文件能力：容器监听 8080/8443，运行时无需该能力。证书目录含私钥，不与项目成员共享。
+
+```bash
+docker compose -f compose.yaml -f compose.https.yaml config --quiet
+docker compose -f compose.yaml -f compose.https.yaml build caddy
+# 核对服务、数据路径和端口后再执行；需已批准 TCP 80/443 入站。
+docker compose -f compose.yaml -f compose.https.yaml up -d --no-build dashboard caddy
+docker compose -f compose.yaml -f compose.https.yaml logs --tail 100 caddy
+```
+
+TCP 80 用于证书验证和跳转，TCP 443 用于 HTTPS；模板不发布 UDP 或 Caddy 管理 API。若同时启用调度或 owner-node，所有管理命令都须附上正在使用的那些 Compose 文件，避免意外丢掉配置。使用受信任浏览器及 `curl --fail https://你的IP/api/health` 验证证书、登录、邀请和成员权限；配置校验与容器运行不代表证书已经签发。不要关闭证书校验来让测试通过。
 
 中国内地部署需区分 IP 测试与长期服务。腾讯云 [是否需要备案 FAQ](https://cloud.tencent.com/document/product/243/19630/) 说明未解析域名、仅通过公网 IP 测试可暂不备案；其 [备案场景：IP 访问的网站](https://cloud.tencent.com/document/product/243/18910) 同时说明，内地 IP 网站长期提供互联网信息服务仍涉及备案义务，腾讯云系统不直接办理 IP 备案，需向当地主管部门咨询。邀请制、封闭成员或换端口不等于永久豁免。按服务器地域、服务用途和接入商要求确认后再对外提供服务。以上链接核对于 2026-10-18，政策变化时以官方及主管部门答复为准。
 
@@ -245,7 +257,7 @@ docker compose -p dashboard-restore restart dashboard
 
 ## 8. 主控收单清单与忽略项
 
-本轮仅静态核对源码、构建入口、数据读取路径和配置；本机能找到 Docker 命令不代表守护进程可用，也不代表执行过验收。主控需在合并后的精确源码与真实 Ubuntu 环境检查：
+每个部署都需在选定源码和实际服务器上检查以下项目。源码测试、配置校验、镜像构建和实际访问分别留有结果，不能互相代替：
 
 1. `docker compose config`、真实构建、镜像内容/构建上下文无秘密，官方 Node 24、UID 1000、只读根、限额与回环端口实际生效。
 2. 合并后的后端正确支持 mode/host/port/public origin；缺失、损坏认证状态拒绝服务，无默认公开登录或自动负责人重建。
@@ -253,4 +265,35 @@ docker compose -p dashboard-restore restart dashboard
 4. 前后端认证与授权、重启持久化；停止期间一致备份、新目录新项目恢复、撤销旧会话/设备、更新和镜像回退均真实验证。
 5. 只保留外部部署必需能力；没有把云端调度页面作为底层调度跨平台迁移的证据。
 
-本单不修改 `.gitignore`。主控收集时应补充排除本地 `.env`、`.env.*`（保留 `.env.example`）、实际数据目录（默认 `/data/`）、`/private/`、`/secrets/`、`/backups/`、`/dashboard-restore.*/`、`compose.override.yaml` 及其它含真实地址的部署覆盖文件。`*.tar`、`*.tar.gz`、证书/私钥、密码输入临时文件和镜像导出也不能提交；更安全的做法是把数据、备份、证书、秘密统一放在源码之外。`.dockerignore` 只管构建上下文，不代替 Git 忽略规则，也不保证已跟踪文件自动退出版本控制。
+不要提交本地 `.env`、`.env.*`（保留 `.env.example`）、实际数据目录、`private/`、`secrets/`、`backups/`、恢复目录、`compose.override.yaml` 及其它含真实地址的部署覆盖文件。归档、证书/私钥、密码输入临时文件和镜像导出也不能提交；把数据、备份、证书、秘密统一放在源码之外。`.dockerignore` 只管构建上下文，不代替 Git 忽略规则，也不保证已跟踪文件自动退出版本控制。
+
+## 9. 云端调度与 Windows 执行节点
+
+这部分组合正在联调。完整交付必须证明真实 Linux 权威、SSH 连接和 Windows 执行节点之间能够完成任务、取消、断线恢复及产物读取；目前不能将基础看板的私有验证结果视为该组合已通过。
+
+云端保留唯一调度账本及派单决策，Windows 保留进程身份核验和实际命令执行。执行节点主动通过 SSH 连接服务器，无需开放 Windows 入站端口。SSH 的主机密钥必须预先核对，禁止关闭严格校验或转发代理。CLI 经本机受保护连接访问当前权威，断线时不能回退写旧共享盘。已有 AI 工具、仓库和素材留在各自节点，负责人功能经独立的 owner-node 通道访问；学校成员不能使用这些管理入口。
+
+准备两个源码之外的目录，在 `.env` 填入 `SCHEDULER_DATA_DIR` 和 `SCHEDULER_CONFIG_DIR`。前者包含实际 `sched/` 状态；后者存放私有 `cloud.json` 及每个固定 SSH 入口的配置。容器内路径分别为 `/scheduler`、`/run/scheduler`。文件归服务 UID 1000 所有，目录 0700、文件 0600，不把凭据写入环境文件。Unix socket 使用容器临时目录下的私有子目录，例如 `/tmp/scheduler-ipc`，不把过期 socket 当作持久账本恢复。
+
+`cloud.json` 的 `version` 为 1，包含明确的 `dataRoot`、公开调度包的部署 `catalog`、`authority` 和 `transport`。入口从权威启动结果读取实际代际，再启动受保护 socket；不能把旧配置中的代际当作当前值。Windows 使用 `cloud-scheduler node --config <绝对配置路径>`，配置提供该节点的 `catalog`、`gateway` 和 `node`。各节点、机器、项目目录和菜单都由部署者填写，仓库不提供开发者的真实配置。
+
+要让服务器在多台电脑之间分配任务，部署目录 `catalog.machines` 必须包含每台执行机，项目的 `machines` 列出允许执行该项目的机器；每台机器对应独立的受保护 SSH 入口和节点身份。按负载自动选择时省略项目的 `preferredMachines`：该字段是显式优先级，在两台机器均能接单时优先于预计完成时间。各节点上报实际负载、内存和执行槽；服务器先检查可用容量及环境，再比较运行、代码搬运和预热开销，不按任务数量平均分配。离线或过期心跳不算空闲容量。
+
+跨机开关另存于调度数据的 `sched/_control/hub.json`，不在 `catalog` 内。首次部署时显式填写 `schema: 1`、`portable: "on"`、启用的 `projects` 和 `workTypes`；迁移时保留并核对已有配置。项目菜单必须标记可搬运，命令要能被菜单识别，且节点具备对应环境。需要历史实际占用及内存准入时沿用已验证的 `managedLoad`、`residentActualUsage`、`actualUsageAdmission`、`coresHistoryCorrect`、`memoryFloor` 配置。缺少开关时默认关闭跨机，不能只启动两个节点就认为已开启。
+
+自动快照还需要该项目已核对的基准提交：普通项目存于 `sched/repos/<项目id>.head`，配置为 `legacyProjectId` 的项目使用数据目录根部的 `code-head.txt`。提交须在执行节点的本地仓库中存在，更新基准和代码准备走部署方已有的同步流程。安装依赖、专用设备操作、显式 `--pin` 及未识别的命令仍在提交机器执行；保留 CLI 给出的原因，不能通过伪造菜单或取消来源检查强行搬运。
+
+完成单独配置及验证后，用同一组 Compose 文件管理两项服务：
+
+```bash
+docker compose -f compose.yaml -f compose.scheduler.yaml config --quiet
+docker compose -f compose.yaml -f compose.scheduler.yaml up -d --no-build
+docker compose -f compose.yaml -f compose.scheduler.yaml ps
+docker compose -f compose.yaml -f compose.scheduler.yaml logs --tail 100 scheduler
+```
+
+该覆盖文件不给调度服务发布 TCP 端口；看板只读其状态目录，仅 `sched/commands` 投递目录可写。调度容器预算为 1 CPU、768 MiB 内存，与看板预算分开。健康检查只判断云端心跳是否持续更新，不替代一次真实任务执行。Windows 节点离线时页面应显示不可用，不能把它标为空闲。
+
+调度容器通过 `flock --no-fork` 持有数据目录中的固定 `authority.flock` 文件，阻止不同容器 PID 空间同时成为写者。内核锁随进程退出释放，Node 直接接收停止信号；不要删除或替换此文件。已有调度账本的代际、租约和提交检查仍然生效，取得文件锁不会跳过业务恢复。
+
+迁移必须先升级并验证读者和客户端，再停止旧派单员及其自动重启来源，确认没有双写后启用云端权威。停止或恢复调度服务会影响执行租约，应先停止接收新工作并等待现有工作收场。备份除了第 6 节的看板数据，还必须包括停写后的调度数据、私有配置和版本记录；恢复到新目录，保留当前权威的代际和未决任务信息，确认旧会话不能重新授权执行，再恢复节点连接。不能删除未决任务或将未知进程视为已停止来制造空队列。

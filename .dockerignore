@@ -13,6 +13,15 @@
 !cli/
 !cli/**/
 !cli/**/*.cjs
+!packages/
+!packages/owner-node/
+!packages/owner-node/*.cjs
+!packages/scheduler/
+!packages/scheduler/package.json
+!packages/scheduler/package-lock.json
+!packages/scheduler/build.cjs
+!packages/scheduler/src/
+!packages/scheduler/src/**
 !docs/
 !docs/self-hosting.md
 !web/

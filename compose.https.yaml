@@ -1,0 +1,50 @@
+# Optional public HTTPS entry. Review firewall/access requirements before use.
+# The base dashboard's HTTP port remains bound to the host loopback address.
+services:
+  caddy:
+    image: ${CADDY_IMAGE:-dashboard-caddy:2.11.7}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.caddy
+      args:
+        CADDY_BASE_IMAGE: ${CADDY_BASE_IMAGE:-caddy:2.11.7-alpine}
+    user: "1000:1000"
+    init: true
+    environment:
+      DASHBOARD_PUBLIC_HOST: ${DASHBOARD_PUBLIC_HOST:?Set the public IP or hostname}
+      XDG_DATA_HOME: /data
+      XDG_CONFIG_HOME: /tmp/config
+    ports:
+      - "80:8080/tcp"
+      - "443:8443/tcp"
+    volumes:
+      - type: bind
+        source: ./deploy/Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CADDY_DATA_DIR:?Set a protected persistent certificate directory}
+        target: /data
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,uid=1000,gid=1000,mode=1770
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 0.25
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 64
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

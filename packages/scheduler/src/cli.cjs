@@ -15,9 +15,31 @@ function parse(allowed) {
   for (const flag of allowed) if (!flags[flag]) throw new Error(`Required: ${flag}`)
   return flags
 }
-try {
+async function main() {
   if (command === 'help' && !args.length) {
-    console.log('cloud-scheduler validate-config --config FILE\ncloud-scheduler daemon --data DIRECTORY --config FILE --machine NAME --protocol NUMBER --head SHA\nData must already be explicitly initialized. No production directories are inferred.')
+    console.log('cloud-scheduler validate-config --config FILE\ncloud-scheduler daemon --data DIRECTORY --config FILE --machine NAME --protocol NUMBER --head SHA\ncloud-scheduler cloud --config ABSOLUTE_FILE\ncloud-scheduler node --config ABSOLUTE_FILE\nData must already be explicitly initialized. No production directories are inferred.')
+  } else if (command === 'cloud' || command === 'node') {
+    const flags = parse(['--config'])
+    const runtime = require('./runtime.cjs')
+    const config = runtime.readRuntimeConfig(flags['--config'])
+    const service = await (command === 'cloud' ? runtime.startCloudRuntime(config) : runtime.startNodeRuntime(config))
+    let stopping = false, monitor
+    const stop = async (failed = false) => {
+      if (stopping) return
+      stopping = true; clearInterval(monitor)
+      if (failed) process.exitCode = 1
+      try { await service.close() } catch (error) { console.error(error.message); process.exitCode = 1 }
+    }
+    if (command === 'cloud') monitor = setInterval(() => {
+      if (service.health().stopped) {
+        console.error('scheduler authority stopped; closing transport for supervised restart')
+        void stop(true)
+      }
+    }, 1000)
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+      void stop()
+    })
+    console.error(`scheduler ${command} started`)
   } else if (command === 'validate-config') {
     const flags = parse(['--config'])
     const config = deployment.validateConfig(JSON.parse(readFileSync(resolve(flags['--config']), 'utf8')))
@@ -36,4 +58,5 @@ try {
     const timer = setInterval(() => { try { daemon.tick() } catch (error) { clearInterval(timer); daemon.close(); console.error(error); process.exitCode = 1 } }, 2000)
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { clearInterval(timer); daemon.close() })
   } else throw new Error(`Unknown command: ${command}`)
-} catch (error) { console.error(error.stack ?? String(error)); process.exitCode = 1 }
+}
+main().catch(error => { console.error(error.stack ?? String(error)); process.exitCode = 1 })
