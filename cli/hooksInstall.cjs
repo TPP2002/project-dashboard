@@ -192,7 +192,7 @@ function installGitHooks(codeRepo, id, registryFwd) {
       '__BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")',
       '__SHA=$(git rev-parse HEAD 2>/dev/null || echo "")',
       cliLine('sync-from-git', id, registryFwd, '--branch "$__BR" --commit "$__SHA"'),
-      ...(require('./remoteConfig.cjs').binding(id) ? ['# remote authority: render-index 尚未适配，不读写本机旧板'] : [cliLine('render-index', id, registryFwd)]),
+      cliLine('render-index', id, registryFwd),
     ], '看板自动同步') },
     // 分支并入后：反推 board（合并带来的 commit / status:merged 等）。
     // 刻意不传 --branch：合并带进来的提交属于源分支，而这里只知道当前分支，

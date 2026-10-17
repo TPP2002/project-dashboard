@@ -74,19 +74,20 @@ function mutate(proj, mutator, activityEntry) {
 function commandTransaction(proj, identity, fn) {
   if (transaction) throw new Error('禁止嵌套 commandTransaction');
   guardLocal(proj.board);
-  fs.mkdirSync(path.dirname(proj.board), { recursive: true });
+  if (!fs.existsSync(proj.board)) throw new Error('权威账本不存在，必须由固定管理员入口初始化或主控迁移');
   return withLock(proj.lock, () => {
-    const board = fs.existsSync(proj.board) ? rawBoard(proj.board) : emptyBoard(proj);
+    const board = rawBoard(proj.board);
     const { request, subject, inputHash } = identity;
     const key = require('../core/boardCommand.cjs').inputHash([subject, proj.id, request.requestId]);
-    const receipts = board._commandReceipts || {};
+    assertValid(board);
+    const retention = require('../core/boardCommandRetention.cjs').prepare(board, request.requestId, identity.receiptPolicy);
+    const receipts = retention.receipts;
     const old = receipts[key];
     if (old) {
       if (old.inputHash !== inputHash) throw new Error('requestId 已用于不同内容');
       return old.result;
     }
-    // Prototype retains receipts forever. Refuse NEW work at capacity; never forget a replay.
-    if (Object.keys(receipts).length >= 10000) throw new Error('回执容量已满；停止新写入，需升级容量/过老请求拒绝机制');
+    retention.checkNew();
     transaction = { proj, board, subject };
     try {
       const raw = syncOnly(fn()) || { ok: true };
@@ -96,7 +97,8 @@ function commandTransaction(proj, identity, fn) {
       delete result.board;
       if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024) throw new Error('稳定回执超过上限');
       board.revision = (board.revision || 0) + 1;
-      board._commandReceipts = { ...receipts, [key]: { inputHash, revision: board.revision, result } };
+      receipts[key] = { inputHash, createdAt: retention.stamp, revision: board.revision, result };
+      retention.finish();
       assertValid(board);
       atomicWriteJsonSync(proj.board, board);
       return result;

@@ -1,7 +1,6 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
 const { spawnSync, execFileSync } = require('node:child_process');
 const p = require('../core/boardCommand.cjs');
 const config = require('./remoteConfig.cjs');
@@ -21,9 +20,10 @@ function transportSpec(binding) {
 function send(request, binding) {
   p.validate(request);
   const spec = transportSpec(binding);
-  const result = spawnSync(spec.executable, spec.argv, { input: JSON.stringify(request) + '\n', encoding: 'utf8', timeout: 30000, maxBuffer: 2 * 1024 * 1024, windowsHide: true });
+  const result = spawnSync(spec.executable, spec.argv, { input: JSON.stringify(request) + '\n', encoding: 'utf8', timeout: p.TRANSPORT_TIMEOUT, maxBuffer: p.MAX_RESPONSE_BYTES, windowsHide: true });
   // Do not echo stderr from a transport: it may contain deployment credentials or user text.
   if (result.error || !result.stdout) throw new Error('远程连接/执行失败');
+  if (Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr || '') > p.MAX_RESPONSE_BYTES) throw new Error('远程响应超过上限');
   let reply;
   try { reply = JSON.parse(result.stdout); } catch { throw new Error('远程响应不是有效协议'); }
   if (!reply || typeof reply !== 'object' || Array.isArray(reply) || reply.version !== p.VERSION || reply.requestId !== request.requestId || reply.authorityId !== request.authorityId || reply.authorityEpoch !== request.authorityEpoch || typeof reply.ok !== 'boolean') throw new Error('远程响应版本/身份不匹配');
@@ -35,13 +35,13 @@ function send(request, binding) {
 function localBranch(repo = process.cwd()) {
   return execFileSync('git', ['-C',repo,'rev-parse','--abbrev-ref','HEAD'], { encoding:'utf8',windowsHide:true,stdio:['ignore','pipe','pipe'],timeout:15000 }).trim();
 }
-function textInput(file) {
+function textInput(file, maxBytes = p.MAX_BYTES) {
   if (file !== undefined && (typeof file !== 'string' || !file.trim())) throw new Error('文件参数必须是单个非空本机路径');
   const fd = file === undefined ? 0 : fs.openSync(path.resolve(file), 'r');
   const chunks = []; let total = 0;
   try {
     const buf = Buffer.alloc(8192);
-    for (;;) { const n = fs.readSync(fd, buf, 0, buf.length, null); if (!n) break; total += n; if (total > p.MAX_BYTES) throw new Error('输入超过上限'); chunks.push(Buffer.from(buf.subarray(0,n))); }
+    for (;;) { const n = fs.readSync(fd, buf, 0, buf.length, null); if (!n) break; total += n; if (total > maxBytes) throw new Error('输入超过上限'); chunks.push(Buffer.from(buf.subarray(0,n))); }
   } finally { if (file !== undefined) fs.closeSync(fd); }
   return Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
 }
@@ -75,9 +75,19 @@ function typedArgs(command, flags) {
   return args;
 }
 function perform(command, projectId, args, options = {}) {
+  return performRequest(createRequest(command,projectId,args),options);
+}
+function createRequest(command, projectId, args) {
   const binding = config.binding(projectId);
   if (!binding) throw new Error('项目未绑定远程');
-  const request = { version:p.VERSION,authorityId:binding.authorityId,authorityEpoch:binding.authorityEpoch,requestId:crypto.randomUUID(),projectId,command,args };
+  const request = { version:p.VERSION,authorityId:binding.authorityId,authorityEpoch:binding.authorityEpoch,requestId:require('../core/boardCommandRetention.cjs').requestId(),projectId,command,args };
+  p.validate(request);
+  return request;
+}
+function performRequest(request, options = {}) {
+  const {command,projectId,args} = request;
+  const binding = config.binding(projectId);
+  if (!binding || request.authorityId !== binding.authorityId || request.authorityEpoch !== binding.authorityEpoch) throw new Error('请求属于旧权威，禁止重放');
   p.validate(request);
   const queued = !p.READ.has(command) && command !== 'sync-progress';
   if (queued) require('./remoteOutbox.cjs').save(request);
@@ -105,8 +115,8 @@ function bindSession(projectId, taskId, via, registryPath) {
 function retry(id, registryPath) {
   const entry = require('./remoteOutbox.cjs').read(id);
   const r = entry.request;
-  p.validate(r);
   if (r.requestId !== id) throw new Error('待送记录 requestId 与文件编号不符，禁止发送');
+  p.validate(r);
   if (r.command === 'sync-progress' || p.READ.has(r.command)) throw new Error('该命令不得排队重放');
   const b = config.binding(r.projectId);
   if (!b || r.authorityId !== b.authorityId || r.authorityEpoch !== b.authorityEpoch) throw new Error('待送请求属于旧权威，禁止重放');
@@ -117,4 +127,4 @@ function retry(id, registryPath) {
     return result;
   } catch (e) { throw new Error(e.message + '；结果待确认 requestId=' + id + '；使用同一 remote-retry 命令重试'); }
 }
-module.exports = { transportSpec, send, typedArgs, perform, retry, localBranch };
+module.exports = { transportSpec, send, typedArgs, perform, performRequest, createRequest, retry, localBranch, textInput };

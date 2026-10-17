@@ -1,36 +1,23 @@
-# 远程唯一账本 CLI 原型
+# 远程唯一账本 CLI：生产容量与本机维护
 
-当前交付为工作区原型，正式集成验收由主控执行。主控已批准最小扩围 `cli/help.cjs`，remote-retry 已纳入正式帮助表和维护命令分组，原临时帮助分支已移除；没有隐藏注册命令或修改既有帮助测试。本文中的实现说明不代表测试通过或生产切换完成。
+本轮交付为工作区源码、临时目录测试及本说明；**真实切换尚未完成**。原型基点 `29a87dfa7c644f62450c82acbfa64570af02b336` 已由主控收单（COMMAND 5/5、TRANSPORT 7/7、GIT 3/3、ASSIGNMENT 2/2），不代表本轮通过。本施工方没有执行四份验收文件，没有连接真实服务器、迁移实际账本、权限或配置，也没有 release、commit、push。正式收单、SSH、PR、迁移、部署、切换、费用登记均归原主控。
 
-本实现保留本机正式 CLI 与 Git hooks，已绑定项目的业务读写经 `board-command.v1` 发往云端。首个生产传输为 SSH stdio，SSH / 操作系统认证的 owner 才能进入 gateway。它不是学校成员 HTTP 接口，不提供通用 shell、文件读取、整卡补丁或整板同步。没有连接实际服务器、迁移数据、切换发布副本或证明生产可用。
+## 运输与权威
 
-## 已实现与拒绝范围
+业务协议升级为 `board-command.v2`。SSH stdio 是固定 owner OS 认证入口，不是学生 HTTP 接口，不接受通用 shell 或远端用户路径。仍固定使用 `-T`、BatchMode=yes、StrictHostKeyChecking=yes、ForwardAgent=no；host 不接受选项，entry 每个 token 独立 POSIX 引用，用户文字只走 JSON stdin。首次可信主机确认由主控执行，不自动接受密钥。
 
-| 类别 | 命令与行为 |
-| --- | --- |
-| 语义写 | add（单卡/批量）、claim、unclaim、progress、await-collect、collect-brief、pending、decide、undecide、park、unpark、block、done、cancel、reopen、note、request-info、edit、mark-landed、cost |
-| 只读 | list、show、brief、inbox：每次读取云端当前状态，不缓存旧板结果 |
-| Git 桥 | sync-from-git：本机采集不可变事实、云端按当前卡集合合并；claim-check：查询当前权威认领；sync-progress：本机分支与百分比、锁内重判状态及归属 |
-| 本机工具 | help / --help、protocol、release、hooks-install、hooks-global、hooks-trunk-guard 保留原本机用途；release 仍须主控授权及正式排队，本单未执行 |
-| 明确未适配 | set、backfill（包括 --patch）、import、archive-activity、cleanup、onboard、enroll 及 register 对已绑定远程项目不执行原本机函数 |
-| 混合命令 | render-index：拒绝本机板派生；snapshot：拒绝本机旧板快照；precheck：拒绝混合板/仓检查；doctor（含 quick/fix）：拒绝旧板对账和修复；docs-audit：拒绝巡检建卡。各项均须后续分别适配，不能声称全量兼容 |
+请求仍最多 **512 KiB**，单文本最多 128 Ki 字符、数组最多 2000 项、嵌套最多 16 层。未知字段、原型链及文件能力继续拒绝。响应 stdout 与 stderr 合计最多 **64 MiB**，子进程 maxBuffer 有界，客户端 **180 秒硬超时**。网关先序列化检查成功响应再发送。非法 JSON、截断、超限、超时、版本/权威/代际/编号错误均失败，不能回退本机旧板。
 
-新生成的远程 post-commit hook 保留 Git 同步，省略未适配的 render-index。旧 hook 调 render-index 会得到明确拒绝。CC Stop 的 doctor 同样明确拒绝，尚未适配。没有静默回退。claim-check 连接/协议失败退出 1，不能落入旧 pre-commit 对 2/3 的兼容放行。
-
-## 本机配置
-
-默认读取 `DASHBOARD_HOME/remote.json`（未设数据根时为用户数据目录下的 remote.json），也可显式设置 `DASHBOARD_REMOTE_CONFIG`。独立测试必须显式使用临时 DASHBOARD_HOME；不能继承开发者配置。显式配置缺失或配置损坏均拒绝执行，不推定为 local 模式。未配置 remote.json 的项目继续使用原 local 模式。
-
-配置示例均为占位机器、路径和标识；没有真实账户或凭据：
+配置取 `DASHBOARD_REMOTE_CONFIG` 或 `DASHBOARD_HOME/remote.json`。显式配置丢失、损坏或绑定无效时拒绝；无远程配置的项目保留原 local 模式。配置例子仅含占位值：
 
 ```json
 {
   "version": 1,
   "projects": {
-    "example-project": {
+    "example": {
       "authorityId": "example-authority",
       "authorityEpoch": 1,
-      "repoBindingId": "owner-device-repo",
+      "repoBindingId": "owner-repo",
       "transport": {
         "type": "ssh",
         "host": "owner@board.example.invalid",
@@ -41,87 +28,78 @@
 }
 ```
 
-本机 registry 继续描述本机代码仓、worktree 归属和会话绑定文件位置；不把其 board 路径上传。云端 registry 是单独的受保护配置，指向云端账本，完全不需要本机 Git 仓。`resolveProject.remote` 区分远程权威绑定；store 对已绑定项目的本机 read/mutate 拒绝（含显式 registry 解析出的路径）。防线只覆盖新版程序，**不能阻止未升级的旧 CLI 直接写旧板**。
+本机 registry 只管本机代码仓、共仓/worktree、冻结旧板路径、会话绑定。云端 registry 独立定位云端账本，不需要本机仓库或 Git。`store.guardLocal` 仍阻止已绑定项目读取或修改本机旧板，没有猴补或临时缓存权威。
 
-SSH 固定使用 `-T`、BatchMode=yes、StrictHostKeyChecking=yes、ForwardAgent=no，host 不接受 SSH 选项。entry 各 token 独立进行 POSIX 引用，再组成固定远端命令。用户文本、任务号、分支和请求内容只走 JSON stdin。不要把密钥、密码、令牌放在配置 entry、argv、环境或日志中；使用操作系统的 SSH 身份和预先验证的 known_hosts。首次主机信任由主控操作，工具不自动接受主机密钥。
+数据根、待送文件应为 owner 私有。POSIX 新建配置 0600、待送目录 0700。禁止把密码、密钥、令牌写入 entry、参数、日志或任务文字。
 
-## 云端 authority 初始化
+## 回执、水位和原型升级
 
-先在云端创建私有数据目录与 registry，由主控在停写窗口校验导入账本。authority 配置须为私有普通文件（POSIX 权限 0600），并由部署层保护父目录、文件所有者、程序文件及 forced-command 入口。仅给受信 owner OS 账户调用权；不可给学生账户或学生 HTTP 服务访问这个入口。
+requestId 为 `创建毫秒戳-32位随机十六进制数`；创建时间直接从不可变编号解析。写请求首次发送前持久化到 `remote-outbox`，重试只读原编号、原内容、原权威代际。确认只改确认状态；过期或失联不能自动换号。
 
-```json
-{
-  "version": 1,
-  "authorityId": "example-authority",
-  "authorityEpoch": 1,
-  "ownerId": "owner-device",
-  "home": "/srv/example-board",
-  "registryPath": "/srv/example-board/registry.json",
-  "projects": {
-    "example-project": {
-      "repoBindings": {
-        "owner-device-repo": {"ownerIds": ["owner-device"]}
-      }
-    }
-  }
-}
-```
+默认保留 7 天，每板最多 10000 条，回执对象序列化总量最多 8 MiB；单条结果仍最多 128 KiB。受保护 authority 可设 `receiptPolicy: {retainMs,maxCount,maxBytes}` 缩小这些边界，不能超过默认硬上限。回执只存输入哈希、创建时间、revision 和结果摘要，不存整板、完整请求或秘密。键绑定已认证主体、项目、编号；同键异内容拒绝。
 
-受信设备使用各自经 OS 认证保护的入口/authority 配置，其 ownerId 必须在项目 repoBindings 的 ownerIds 中。请求 body 不能声明 owner、主体或文件位置。单纯知道 repoBindingId 不授予访问权。
+业务变更、revision、回执及 `_commandRetention` 在同一 board 锁、同一次原子写中提交。`rejectBefore` 单调递增，时钟高水位持久化，服务器时钟后退不会重新接纳旧请求。新 ID 不得早于水位，也不得超过当前服务器时间 5 分钟。GC 先推进拒绝水位，再删除所有已不可能接受的回执。容量提前驱逐时，把水位提升到最早逐出毫秒之后，同毫秒全部逐出；不能只删 LRU。当前请求的回执也保不住时，整个业务事务拒绝。
 
-初始化入口：`node /app/cli/remoteGateway.cjs --init /run/board/authority.json < authority-input.json`。它使用独占创建，既有文件绝不覆盖；初始化后仍须主控审核配置并配置 OS 权限。`remoteConfig.initialize(file, value)` 同样用于本机配置的独占初始化；没有覆盖式初始化命令。正常固定入口为 `node /app/cli/remoteGateway.cjs --authority /run/board/authority.json`。Docker 可按上方 entry 数组执行，无需 Web 认证或 server 改动。
+过老丢 ACK 请求永久返回 `expired` 和结果待核对，即使收据已 GC 也不会再次执行。应读当前权威和审计人工核对；`remote-retry <requestId>` 不自动重新编号。自动进度继续使用禁止重放的短期日志，云端锁内重判当前状态和分支，只增不减、封顶 95。
 
-## 协议、回执与断网
+**明确升级规则：** v1 请求拒绝。板内含没有可信创建时间的原型收据时，完整保留并拒绝新 v2 写入；不猜旧 UUID 日期、不删除后重执行。只读仍可用。原型回执、旧待送、旧写者及新代际须由主控在专门停写迁移中核对，本工单不迁移真实数据。正常 v2 重启从板内水位和收据恢复。
 
-请求字段仅有 version、authorityId、authorityEpoch、requestId、projectId、command、typed args。未知版本、权威、代际、命令及多余参数拒绝；参数按命令白名单检查，拒绝原型点路径及客户端提供的 registry/root/board/lock 等路径能力。请求不超过 512 KiB，单文本不超过 128 Ki 字符，数组不超过 2000 项，嵌套不超过 16 层。业务参数还保留原命令校验（包括建卡三件套、claim builder、待拍板三件套、成本与收官闸）。
+CLI owner 投影剔除 `_commandReceipts`、`_commandRetention`；**成员 HTTP 过滤由后端集成方另行落实**，本单未改 server 或认证权限。
 
-本机先解析 --json-file（剥 UTF-8 BOM）、pending JSON、批量 add JSON、collect-brief --file，再发送结构化内容。远端不读取客户提供的文件。保留重复分支/范围等 flags；单卡 add --json 仍是结果格式，未给卡号的 add --json 才从 stdin 读取批量输入；pending --json 仍从 stdin 读输入。unclaim 缺省分支在本机 Git 解析，云端不猜。本机 claim/done 成功确认后继续记录原有会话绑定，云端不从其环境推断本机会话。
+## 维护命令
 
-成员归属边界：正式 claim 在同一 board 锁内发现有效 assigneeUserId 时拒绝，不能自动夺取成员任务。正式 unclaim 在原有状态闸通过后，同锁清除 assigneeUserId/assigneeName、按原规则摘指定分支，并保留进度、builder 和其它 Git 元数据。同一条 unclaim activity 的 releasedAssignee 保存原成员 userId/name，releasedBy 保存操作方来源、author 标签及已认证传输 subjectId；本机 local-cli 没有远程认证主体，subjectId 明确为 null，不把 author 标签冒充认证身份。失败不写入，成功后同编号重放只返回回执，不重复释放审计。成员 HTTP progress 的状态约束由后端作者另行负责，本单未改该接口。
+`readProjectBoard` 显式取得每次的当前 owner 投影，随后才扫描本机或写派生文件。默认输出为 `DASHBOARD_HOME/remote-artifacts/<projectId>/`；显式输出仍禁止冻结旧板目录及其实际路径别名。派生文件永不回写权威。
 
-写请求发送前持久化到本机数据根 `remote-outbox/<requestId>.json`，包含不可变请求与 unconfirmed/confirmed 状态。传输超时、断网、响应截断或协议错误，退出 1 并打印“结果待确认”和 requestId。不能把断网解释为未认领或未写入。请使用显示的 `node <本机正式CLI> remote-retry <requestId>` 重试：原 ID、原内容、原权威代际不变；不自动换 ID，不无限后台重试。待送记录可能包含用户任务文本，数据目录应为 owner 私有且不要输入秘密。云端已执行但本机没收到回执时，重试只返回已存结果。
+| 命令 | 远程模式行为 |
+| --- | --- |
+| snapshot | 当前云端投影导出到本机 snapshots；`--out` 指定本机目录 |
+| render-index | 默认生成独立 INDEX；`--index` 指定已有文件时保留人工段及原锚校验；dry-run 不写 |
+| precheck | 云端占用、决策和留言；本机 Git/hook/正本检查。本机 docs 扫描地图写入 artifacts；明确不执行输出位置未声明的仓库 docs:index 脚本。local 仍保留原脚本刷新 |
+| doctor --quick | 当前云端决策质量及本机 hook；quick 与 fix/branches 同传仍不扫描提交图、不修复 |
+| doctor --fix | 本机采集不可变提交事实，云锁内复用现有 Git 合并。确认后修复前投影备份落在本机 artifacts/doctor |
+| doctor --branches [--fix --tier …] | 本机提交图，当前及归档 claim 从各项目权威读取；仅上传受约束清理条目、档位和 expected hash。云锁内重判当前板、依赖、分支持有人及显式 claim；并发变化拒绝 |
+| docs-audit | 本机文档与当前云端卡比较；报告、monthly 成功戳只写本机 artifacts 或显式报告路径 |
+| cleanup | 原本机 Git 检查、默认干跑、显式 --yes 执行、主干保护；不写 board、不接受云端 shell |
 
-sync-progress 发送前同样持久化 requestId，但使用单独的 remote-progress 短期日志，正常返回或失败后立即清除，不落待送队列；进程崩溃可能留下 replayable=false 的取证记录，工具不会重放它。失败后只可重新采集当前分支/状态。它不允许通过 remote-retry 延迟重放。云端每次锁内重新查施工中且仍归属此分支的卡，写入 max(current, min(95, incoming))，不降进度，不写 done/unclaim 后的卡。未来如增加自动进度重放，必须先加明确 task 与 claim 代际。
+docs-audit 月度卡具备原建卡三件套，云端按月度卡号锁内幂等。丢 ACK 保留不可变待送请求，两次同号重试只有一次建卡审计。需要的云端操作确认后才写远程模式报告及 monthly 成功戳。doctor 不上传整板或任意 JSON 补丁；Git 事实仍核验受信 repoBindingId。
 
-业务变更、revision 和 `_commandReceipts` 在现有 board 锁中一次 atomicWriteJsonSync 持久化。回执键绑定传输主体、项目、requestId；相同 ID 不同内容拒绝。同一事务的嵌套 read/mutate 使用同一个对象，不接收 Promise，finally 清理上下文。只保存输入哈希、revision 和有界结果摘要，不保存完整输入、秘密或整本板。对外 CLI 读结果剔除内部回执。**HTTP 投影必须由后端集成方另行过滤此元数据，本单未修改 server。**
+新远程 post-commit 恢复 render-index；旧 doctor/precheck/render-index hooks 同样适配。共仓认领检查逐个确认权威，远程失联不能当作无认领。claim/done 确认后仍只在本机记录真实会话绑定，云端不猜本机会话。
 
-### 原型容量边界
+本机 `syncFromGit` 保留原兼容入口：显式传入 branch 时，即便没有 commit，也给窗口内结构化引用的卡记录该分支；不传 branch 仍不猜分支，正文引用仍要求明确提交与已有认领。远程 `git-facts` 是不同入口，window 仍禁止传播分支，只有 exact 模式允许指定分支。主控提供的 PR118 首次 CI `39066019795`（HEAD `f56cabc`）为 1276 通过、2 失败、1 跳过；其中 `gitE2e.test.cjs:75` 暴露了本机错误增加 commit 条件的兼容回归。本轮移除该额外条件，原测试只读，尚待主控整文件重验；不把这次修复记为已通过。
 
-回执暂不 GC，每块板最多 10000 个回执；到达上限后只准旧 ID 重放，新写请求拒绝，不能删回执后把旧请求当新请求执行。每条结果上限 128 KiB（批量卡结果也压成摘要），这是保守的原型硬上限，远非生产容量承诺；所有回执与账本都要随一次写重新序列化，达到数量上限之前也可能因体积而不适用。生产需容量评估及可验证的过老请求拒绝/保留期限协议，再设计归档或 GC；不能直接删除字段或清待送记录来绕过。
+## Owner 管理命令
 
-## Git 事实规则
+- set、backfill --patch 限现有 task 业务域，禁止 id、project/registry、revision、内部回执、水位、原型链和文件能力。补丁在本机有界解析，云锁内复用 schema；非法批次不写。backfill 只读直接查云端。
+- import 在本机最多读取 32 MiB Markdown，复用原解析器；每语义批次最多 50 张、请求仍最多 512 KiB。只新增，相同已有卡幂等跳过，冲突拒绝覆盖；不清空旧任务或历史。artifacts/imports 保存不可变请求计划和逐批确认数。失败明确报告部分完成；相同输入续接原 ID/原内容，或使用显示的 remote-retry。已确认批次不重发，未确认过期批次不能换号重执行。
+- archive-activity --before YYYY-MM 仍先持久归档再删板内记录；目录只从受保护云端 registry 派生，不接受客户路径。保持原去重规则。回复只有月份对象身份、摘要和条数；同号重试返回原回执。
 
-本机按登记代码仓的 Git common-dir 校验当前 worktree，再采集 repoBindingId、exact/window、明确 commit/branch 与 commits 的 sha/subject。云端校验项目的受信设备绑定，仅以当前卡集合和既有 subjectRefs / unionShas / unionBy 合并 commitShas、prNumbers、gitBranch 与必要流水。status、decisions、deps 不改。
+onboard 仍明确拒绝远程调用，不拿本机整板重建充当迁移。其余未适配命令同样明确失败，不静默跳过或读旧板。现有数据迁移由主控专门脚本执行。
 
-结构化卡号可补字段；正文提及仅对本次明确提交且该卡已认领本分支生效；window 只扫描结构化引用、不传播当前分支；post-merge 不发送当前分支。post-commit 断线仍允许已经发生的 Git 提交保留，并保存不可变事实、明显报“未确认”及幂等重试命令。pre-commit 连接失败则拦截提交。共仓多项目 claim-check 保留“施工中/待收单”口径，任一所需远程权威不可达时拒绝放行。
+## 初始化和本机绑定
 
-## 验证与生产切换前置项
+`remoteGateway --init <authority-file>` 仍独占创建私有 authority。普通业务入口 `--authority <authority-file>` 不能初始化项目。固定管理员入口为 `--init-project <authority-file>`，受保护配置还需 `admin: true`，只给 owner OS 使用。authority 的其他字段保持 version、authorityId、authorityEpoch、ownerId、home、registryPath、projects/repoBindings，部署层保护父目录、所有者和 forced-command。
 
-本轮源码自审修正：无效或空项目绑定必须拒绝，缺少文件路径和超限输入在本机拒绝；list 字段选择也禁止原型点路径；待送文件编号必须等于请求编号，不能篡改编号后重送。待送目录/文件在 POSIX 上收紧为私有权限，自动进度日志清理失败不会覆盖原来的请求结果。共享建卡闸保留原模型提示表与检查顺序；传输主体必须匹配受保护 owner 配置。Git 引用只按锁内当前任务集合解析，并复用每个提交的解析结果。事务与重放代码已逐段检查，但这些源码观察仍需以下测试和真实集成验收证明。
+1. 准备单个绑定对象的本机管理员 JSON，transport.entry 固定指向 `--init-project`。
+2. `remote-project-init --id example --name 示例 --binding-file ./admin-binding.json`。请求只提供 ID/name，目录由管理员 home 派生为 projects/ID。独占创建 board、锁内追加云端 registry；初始化清单支持创建 board 后中断的恢复。既有板绝不清空或覆盖，名字/目录冲突拒绝。丢 ACK 用原编号 `--request-id` 重送。
+3. 独立认证流程授予所需 owner/repoBindings；初始化不增加设备或成员权限。
+4. 准备指向普通 `--authority` 的绑定 JSON，运行 `remote-bind --id example --root ./repo --binding-file ./binding.json`。先确认云端投影，才登记本机代码仓、旧板路径和 remote 配置；不创建本机 board。已有项目/绑定必须显式 `--update`。
+5. register/enroll 显式 `--remote-binding <文件>` 可调用上述绑定流程；enroll 保留装 hooks 和远程语义导入，不把已有账本改成空板。已存在远程配置时，其他新本机项目必须显式 `--local`，防止误建本机权威；没有远程配置的原 local 流程不变。
 
-已编写以下真实子进程/临时目录测试，**施工方依工单要求未执行验收文件**，通过与否待派单器重跑：
+远程配置与本机 registry 为两个独立文件，双锁防并发更新。两文件写入之间断电时，原绑定加显式 --update 完成本机登记；恢复不创建或覆盖旧板。绑定不是数据迁移。
 
-静态自查记录：`git diff --check` 已执行且无差异错误（存在工作区换行提示）。此前统一调度静态语法申请 `tk-79831f0925780e76ce35` 返回“等待超时 / 命令没开跑，没有日志 / 票据不存在”，没有语法检查通过证据。扩围后单独申请既有帮助兼容检查，单号 `tk-4a44b912c80c2627b363`，同样返回“等待超时 / 命令没开跑，没有日志 / 票据不存在”；未重复提交、未裸跑或越权恢复调度台。两次调度单号均保留供主控核对。
+## 验证与历史证据
 
-既有 `test/cliHelp.test.cjs` 必须在主控正式验收中原样运行：COMMANDS 与 REGISTRY 双向一致，remote-retry 在全局帮助中出现，每条帮助保持一句话、用法、参数、示例、退出码和最多40行；`help remote-retry`、`remote-retry --help`、`remote-retry -h` 走同一帮助生成器，已有命令帮助继续兼容。该文件未修改，本施工方没有该检查通过的执行证据。
+新增文件已编写，**施工方未执行验收，结果待派单器重跑**：
 
-此前真实看板 progress、unknown 成本登记及调度故障留言因沙箱外 board lock 的 EPERM 失败；当前成本按主控指示，由主控使用本施工会话独立 token 证据登记，不读取共享账户窗口，不宣称已落账。
+- remoteBoardRetention：GC 丢 ACK 与重启、永久拒旧、同毫秒容量、字节边界、时钟后退、未来 ID、多主体/项目、异内容及原型安全拒写。
+- remoteBoardMaintenance：临时真实 Git/hook，云端无仓库，旧板不可读写，断线无派生文件，并发认领保护，巡检重试单次审计，语义管理、归档、部分导入恢复、管理员初始化和显式绑定。
+- remoteBoardLargeRead：至少 20 MiB 合成板，真实客户端→stdio→网关，逐卡/逐活动完整性；真实超限、解析失败和 180 秒硬超时。超时用例约三分钟，主控排队执行。
+- remoteBoardTransport：正式授权的旧维护拒绝断言改为合法成功、权威读写、旧板不变；非法 patch、缺少月份仍按真实原因拒绝。原 SSH argv/字面文本/断网/同 ID/身份/512 KiB 边界保留。新版编号仅最小适配夹具。cliHelp 原测试不改。
 
-- remoteBoardCommand：typed 参数、语义/机器闸、同锁事务、截断响应后重启重放 note/cost/pending、同 ID 异内容拒绝、Promise 拒绝与上下文清理、本机入口机器闸、并发追加及本机普通写保留回执。
-- remoteBoardTransport：固定 SSH argv、真实 stdio gateway、中文/BOM/引号/换行、批量输入、断网/错协议不碰旧板、未适配命令拒绝、独占初始化、无效项目绑定、缺路径/超限输入、篡改待送编号拒绝、本机会话绑定与云端环境隔离。
-- remoteBoardGit：真实 Git 与生成 hooks、云端无仓库、两个 worktree、共仓多项目、正文/历史/window/postmerge、断网 precommit 拦截与 postcommit 待送、并发自动进度不倒退。
-- remoteBoardAssignment：仅构造临时含成员归属的账本，验证本机与真实 stdio gateway 的 AI 冲突、原子释放、释放审计身份、重复回执不清除后来成员的归属、校验失败/终态拒绝时数据完整，以及既有 builder/Git 元数据保留；不引入多人后端模块依赖。
+正式执行均须统一调度、逐文件重跑；静态自审和原型绿色不代替本轮验收。实际 SSH、Ubuntu 权限、发布 hooks、成员 HTTP 元数据过滤、旧写者冻结及唯一权威切换仍未证明。
 
-后续正式收单基线（修复前，主控提供，单号 `tk-358496695d8f76fc9c34`）：COMMAND 5/5、GIT 3/3，TRANSPORT 6/7。原 `acceptance/TRANSPORT.log` 保留；失败的首项实际重复传入了 --title（辅助函数已有一次，测试又追加一次），按既有重复 flags 规则得到数组，故在发送前被严格字符串校验拒绝。本次只替换辅助参数中已有标题的值，完整保留中文、引号、换行和特殊字符字面量及所有原断言，没有修改生产解析器或放宽协议类型校验；修复后的首项尚待主控用原验收重跑。既有帮助检查由主控续跑原单后 10/10 通过，本轮未改帮助且未重复运行；这些修复前证据不代替当前工作区正式验收。
+历史失败保留：原型语法单 `tk-79831f0925780e76ce35`、帮助单 `tk-4a44b912c80c2627b363` 曾等待超时、未开跑、票据不存在，不是通过证据。原收单 `tk-358496695d8f76fc9c34` 初次 TRANSPORT 6/7，原 `acceptance/TRANSPORT.log` 不可覆盖；重复 title 辅助参数修复后主控正式收为 7/7。原成员单 `tk-e7335960ab21c5bccd0b` 曾调度状态目录 EPERM 未启动；早期实际 progress/成本板锁亦曾 EPERM。以上不是本轮新执行结果。
 
-本轮成员定向检查单 `tk-e7335960ab21c5bccd0b` 获准后在启动阶段因写入本机调度状态目录失败（EPERM）退出，命令没有启动，无测试通过证据；没有重挂或裸跑。主控须正式执行新增成员隔离检查，并重跑原收单验收。真实成员 HTTP 联动、实际 SSH 服务器、发布 hooks 和生产唯一权威切换仍未验收，临时 fixture 不替代这些集成证据。
+本轮静态语法申请 `tk-ed84d5b91fe59ce451df` 获准后，在命令启动前因写入本机 `sched-suspend` 状态文件 EPERM 失败，未运行语法检查、没有通过证据。未裸跑或重复 submit。工作区 `git diff --check` 已执行无差异格式错误；此结果不代替语法或验收。
 
-正式执行使用统一调度与 `node --test --test-concurrency=1 <单个文件>`，三条验收由派单器统一跑。测试只使用临时 authority/registry/home 和显式 stdio 测试运输（`DASHBOARD_REMOTE_TEST_TRANSPORT=1`），不接实际服务器或生产账本。
-
-生产切换必须由同一主控集成验收：
-
-1. 先升级发布 CLI 与全部本机 hooks，识别所有旧写者和混合命令消费者；分别适配必需的 doctor/precheck/render-index 等或明确停用其业务用途。
-2. 停写，核对项目绑定和账本数据完整性，在云端导入并验证；学校 HTTP 接口保持独立权限边界，过滤内部回执。
-3. 配置受保护 owner 入口、可信主机和 repo/device 绑定，启用云端 authority，验证权威代际、断网、丢回执和真实提交链。
-4. 冻结旧写者：撤销旧板写权限/旧写服务、停旧进程与自动任务并核验不能再写，再放开云端写入。只设环境变量或 schemaVersion 不会阻止旧 CLI。
-5. 证明发布副本、进程、实际页面/接口、各机器 hooks 与云端账本一致，并评估回执容量。上述生产动作、账户配置、release/commit/push 均不在本工单施工中执行。
+费用按主控指示用本施工会话独立 token 取数，不用共享账户窗口差，施工方不声称已落账。

@@ -32,11 +32,25 @@ const GROUPS = [
   ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
-    'release', 'claim-check', 'doctor', 'sync-from-git', 'remote-retry', 'cleanup', 'docs-audit']],
+    'release', 'claim-check', 'doctor', 'sync-from-git', 'remote-retry', 'remote-bind', 'remote-project-init', 'cleanup', 'docs-audit']],
   ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot', 'archive-activity']],
 ];
 
 const COMMANDS = {
+  'remote-bind': {
+    summary: '验证云端项目后显式绑定本机仓库，保留旧板且不创建本机账本',
+    usage: 'remote-bind --id <id> --root <本机仓库> --binding-file <绑定.json> [--update]',
+    args: [['--id <id>', '已有云端项目'],['--root <路径>', '本机代码仓库'],['--binding-file <文件>', '本机运输与权威绑定'],['--update', '显式更新已有绑定及本机登记'],['--board <路径>', '仅记录冻结旧板路径，不读写该文件']],
+    examples: ['remote-bind --id example --root ./repo --binding-file ./binding.json'],
+    notes: ['先确认云端当前投影；成员授权另由认证管理，不因绑定增权。'],
+  },
+  'remote-project-init': {
+    summary: '通过固定管理员入口创建不存在的云端项目，已有账本绝不覆盖',
+    usage: 'remote-project-init --id <id> --name <名字> --binding-file <管理员绑定.json> [--request-id <原编号>]',
+    args: [['--id <id>', '项目标识，不是文件路径'],['--name <名字>', '项目展示名'],['--binding-file <文件>', '固定 --init-project 管理员运输入口'],['--request-id <编号>', '从待送记录重放原初始化请求']],
+    examples: ['remote-project-init --id example --name 示例 --binding-file ./admin-binding.json'],
+    notes: ['数据目录仅由管理员配置的数据根派生；不赋予设备或成员权限。'],
+  },
   'remote-retry': {
     summary: '用原请求编号重送结果未确认的远程写入，不重复追加账目',
     usage: 'remote-retry <requestId> [--registry <本机注册表>] [--json]',
@@ -44,7 +58,7 @@ const COMMANDS = {
       ['<requestId>', '失败时显示的请求编号，从本机待送记录读取原请求，不重新生成编号'],
       ['--registry <本机注册表>', '只用于成功回执后的本机会话绑定；不会传给云端'],
     ],
-    examples: ['remote-retry 00000000-0000-4000-8000-000000000000 --json'],
+    examples: ['remote-retry 1792267200000-00000000000000000000000000000001 --json'],
     notes: [
       '权威、代际和请求内容保持不变；同一请求已成功时返回原回执，同编号异内容拒绝。',
       '不自动后台重试，不重放自动进度；待送记录属于旧权威时拒绝。',
@@ -662,6 +676,8 @@ for (const [cmd, note] of [
   ['done', '远程收官同样检查成本账，不能绕过机器闸；确认后保留本机会话绑定。'],
   ['unclaim', '远程项目缺省分支由本机 Git 采集，云端不读取本机仓库。'],
   ['add', '远程模式在本机解析文件/BOM/批量输入，再发送结构化内容；断网不写旧板。'],
+  ['register', '远程项目用 --remote-binding <本机文件>；已有登记需 --update；混合环境新本机项目须 --local。'],
+  ['enroll', '远程接入显式用 --remote-binding <本机文件>，不创建本机权威账本；已有登记须 --update。'],
   ['pending', '远程模式在本机解析 JSON 输入，三件套仍由云端语义服务检查。'],
   ['collect-brief', '远程模式的 --file 在本机读取，云端不接收或读取客户文件路径。'],
   ['claim-check', '远程连接或协议失败退出 1，不当成未认领，也不以 2/3 兼容放行。'],

@@ -84,12 +84,24 @@ test('格式比代码新、缺失、读不到或损坏即拒写，不能初始�
 });
 test('暂存碰撞不删别人的文件；目标目录缺失不降级成非原子写入', t => {
   const share = temporary(t), paths = initialize(share), command = golden.commands[0].command;
-  const staging = path.join(paths.staging, '.dashboard-collision.tmp'); fs.writeFileSync(staging, 'occupied');
+  const staging = path.join(paths.commands, '.dashboard-collision.tmp'); fs.writeFileSync(staging, 'occupied');
   assert.throws(() => c.writeCommand(share, command, { nonce: () => 'collision' }), { code: 'EEXIST' });
   assert.equal(fs.readFileSync(staging, 'utf8'), 'occupied');
   fs.renameSync(paths.commands, paths.commands + '-away');
   assert.throws(() => c.writeCommand(share, command, { nonce: () => 'missing-directory' }));
-  assert.deepEqual(fs.readdirSync(paths.staging), ['.dashboard-collision.tmp']);
+  assert.equal(fs.readFileSync(path.join(paths.commands + '-away', '.dashboard-collision.tmp'), 'utf8'), 'occupied');
+  assert.deepEqual(fs.readdirSync(paths.staging), []);
+});
+
+test('commands-only mount publishes atomically without access to authority staging', t => {
+  const share = temporary(t), paths = initialize(share), command = golden.commands[0].command;
+  fs.renameSync(paths.staging, paths.staging + '-unmounted');
+  const target = c.writeCommand(share, command, { nonce: () => 'commands-only' });
+  assert.deepEqual(c.readJson(target), command);
+  assert.deepEqual(fs.readdirSync(paths.commands).sort(), ['_receipts', `${command.commandId}.json`].sort());
+  assert.equal(fs.existsSync(paths.staging), false);
+  assert.throws(() => c.writeCommand(share, command), { code: 'EEXIST' });
+  assert.deepEqual(c.readJson(target), command);
 });
 
 test('派单员心跳可带 CI 车道字段(ciRunners/ciReserveCores),缺省仍合法;别的未知字段照拒(0914 看板读不到共享盘的病根)', () => {

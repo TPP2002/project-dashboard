@@ -3,11 +3,13 @@ const s = require('./schema.cjs');
 const b = require('./business.cjs');
 const { fail } = require('./json.cjs');
 const { selector, localRead } = require('./read-manifest.cjs');
+const { LOCAL_EXECUTION_KINDS, localContext, localExecution } = require('./local-execution.cjs');
 const semantic = (v, p) => {
-  s.enumeration(['submit', 'command', 'read', 'read-object', 'wait', 'resident-renew'])(v?.kind, `${p}.kind`);
+  s.enumeration(['submit', 'command', 'read', 'read-object', 'wait', 'resident-renew', ...LOCAL_EXECUTION_KINDS])(v?.kind, `${p}.kind`);
+  if (LOCAL_EXECUTION_KINDS.includes(v.kind)) return localExecution(v, p);
   if (v.kind === 'read-object') return localRead(v, p);
   const bodies = {
-    submit: { request: b.submission }, command: { command: b.command },
+    submit: { request: b.submission, localContext }, command: { command: b.command },
     read: { selectors: s.list(selector, 1, 32, true), snapshotId: s.nullable(s.id), pageToken: s.nullable(s.id) },
     wait: { ticketId: s.ticketId, afterSeq: s.count },
     'resident-renew': { ticketId: s.ticketId, attemptId: s.attemptId, permitToken: s.text(256), cores: s.positive },

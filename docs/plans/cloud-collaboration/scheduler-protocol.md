@@ -288,6 +288,19 @@ NativeStartGatePort.prepare 先创建受控暂停门禁并返回真实 controlle
 
 ## 共享夹具与验证交接
 
+本机执行入口使用 `LocalExecutionRequest` 的 `local-run` / `local-run-read` / `local-run-cancel`。
+它们不是 SSH 消息，不允许携带 PID、SID、permit 或 lease；gateway 从真实管道连接注入 peer，再调用 node 的 `LocalExecutionIngress.accept`。
+普通提交必须附本机 `localContext.cwd`。gateway 在转发 submission 前原子保存原始 request、规范化 cwd、实际 OS peer 与 SourceProof；
+仅组合进程内的 `SubmissionSourcesPort.get(identity,expectedSource,options)` 可读，须重新核对 hash、既有 ticketId 派生规则、project 和 expectedSource。
+无原件时返回 unknown，禁止把 node 自己的身份或网关文件当前所有者当作原提交者。
+
+Node 从原请求及当前许可决定能否执行；检查调用者 SID、项目工作树、machine 和 attempt，再走暂停子树、started ACK、当前投影和原生租约闸。
+提交 cwd 必须保持实际 Git worktree，不能替换成配置中的主仓。env 仅用于本机子进程，过滤监督字段，不能继承网关秘密或上传到云端。
+同一 SID + callId + 请求 hash 至多产生一次启动；同 ID 异文拒绝，重启后不确定的 claim 不能重新启动。
+输出按两个字节偏移读取，一次合计不超过 64 KiB、等待不超过一秒；越界或日志已清理必须明确失败。
+终态保留完整 JobResult，包含 notStarted/refused/rerunPlan/null exit，未知退出码不能当成功；cancel 只能取消该调用者自己的运行。
+来源证明与内容快照沿用这份原请求及其 targetPaths。驻留 hold 仍走 resident-renew，不伪造应用 started。
+
 `fixtures/protocol/scenario.json` 是纯合成身份与预期序列；`messages.cjs` 为全部 kind 提供可 require 的合成样本和租约上下文；`phase-flow.cjs` 按真实 submission→来源证明→grant→快照/交接→started 顺序给出无预造 PID/token 的消息序列；`resident-flow.cjs` 则直接 grant→真实包装器续驻留占用，不出现 controller/started；`read-directory.cjs` 提供完整原票据七种状态与空队列心跳/目录原件。notStarted/null exit、拒绝/补跑结果与本机 IPC 场景亦使用合成身份。不是生产配置、持久层、IPC 或节点实现，不能被后续工位当生产端口导入。
 
 `test/cloudSchedulerProtocol.test.cjs` 真实 require 正本，覆盖每种字段白名单、认证/epoch/session/sequence/hash/出生绑定、所有 command kind、业务去重与 durable 窗口身份预留、同 ID 异文、共享 direct/framed 序列判定一致、乱序心跳不刷新、墓碑压旧 upsert、租约延迟/重放/回退/重启/PID 复用/过期挑战、投影批次水位和有界读。它只验证协议，不伪造 fsync、真实 SSH、Windows OS 或 watchdog 证明。
