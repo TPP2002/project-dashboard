@@ -131,6 +131,8 @@ export interface HandoffObserve extends HandoffIdentity {
   identity: LifecycleIdentityFact | null;
   state: 'absent' | 'inbox' | 'claim' | 'transition' | 'running' | 'done' | 'failed' | 'quarantine' | 'unknown';
   result?: JobResult; resultObject?: ObjectRef; exitCode?: number | null; log?: ObjectRef; executionProcess?: { pid: number; createdAt: string }; payloadHash?: string;
+  /** Required when result.artifacts names a manifest/zip; never reinterpret resultObject. */
+  artifactObjects?: { state: 'ready'; manifest?: ObjectRef; zip?: ObjectRef } | { state: 'unavailable'; reason: string };
 }
 export interface HandoffQuarantine extends HandoffIdentity, RequestOptions { expected: LifecycleIdentityFact; reason: string; createdAt: string; }
 export type SnapshotMetadata = { schema: 1; ticketId: string; attemptId: string; requestId: string; createdAt: string } & (

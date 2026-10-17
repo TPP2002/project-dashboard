@@ -14,6 +14,11 @@ const executionFields = identities.startedFields;
 const scopeFields = { authorityId: s.id, authorityEpoch: s.positive, nodeId: s.id, nodeSession: s.id };
 const binding = s.fields(executionFields);
 const objectRef = s.fields({ objectId: s.id, hash: s.hash, size: s.count });
+const artifactObjects = (v, p) => {
+  s.enumeration(['ready', 'unavailable'])(v?.state, `${p}.state`);
+  if (v.state === 'unavailable') s.fields({ state: s.enumeration(['unavailable']), reason: s.text(4096) })(v, p);
+  else s.fields({ state: s.enumeration(['ready']) }, { manifest: objectRef, zip: objectRef })(v, p);
+};
 const cursor = (v, p) => {
   s.fields({ seq: s.count, hash: s.nullable(s.hash) })(v, p);
   if ((v.seq === 0) !== (v.hash === null)) fail('CURSOR', p);
@@ -128,11 +133,21 @@ const schemas = {
   'handoff.intent': publication,
   'handoff.publish': publication,
   'handoff.observe-request': s.fields({ ...handoffIdentity, ...requestFields, expected: lifecycleIdentity }, { legacyIdentities: s.list(lifecycleIdentity, 0, 8) }),
-  'handoff.observe': s.fields({ ...handoffIdentity, requestId: s.id, observationSequence: s.positive, observedAt: s.iso,
+  'handoff.observe': (v, p) => {
+    s.fields({ ...handoffIdentity, requestId: s.id, observationSequence: s.positive, observedAt: s.iso,
     state: s.enumeration(['absent', 'inbox', 'claim', 'transition', 'running', 'done', 'failed', 'quarantine', 'unknown']),
     identity: s.nullable(lifecycleIdentity),
   }, { result: jobResult, exitCode: s.nullable(s.integer(-2147483648, 2147483647)), log: objectRef,
-    executionProcess: s.fields({ pid: s.pid, createdAt: s.text(128) }), payloadHash: s.hash, resultObject: objectRef }),
+    executionProcess: s.fields({ pid: s.pid, createdAt: s.text(128) }), payloadHash: s.hash, resultObject: objectRef, artifactObjects })(v, p);
+    const names = v.result?.artifacts;
+    if (names?.manifest || names?.zip) {
+      if (!v.artifactObjects) fail('ARTIFACT_DISCOVERY_REQUIRED', p);
+      if (v.artifactObjects.state === 'ready') {
+        if (!!names.manifest !== !!v.artifactObjects.manifest || !!names.zip !== !!v.artifactObjects.zip ||
+          (names.zipBytes !== undefined && v.artifactObjects.zip?.size !== names.zipBytes)) fail('ARTIFACT_DISCOVERY_BINDING', p);
+      }
+    } else if (v.artifactObjects) fail('ARTIFACT_DISCOVERY_BINDING', p);
+  },
   'handoff.quarantine': s.fields({ ...handoffIdentity, ...requestFields, expected: lifecycleIdentity, reason: s.text(), createdAt: s.iso }),
   'snapshot.request': s.fields({ ...requestFields, machine: s.segment, project: s.text(128), codeRef: s.codeRef }),
   'snapshot.metadata': snapshot,
