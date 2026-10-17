@@ -55,7 +55,12 @@ test('standalone scheduler builds and executes its actual ledger state machine i
       : []
     for (const file of files(pkg)) {
       const text = fs.readFileSync(file, 'utf8')
-      for (const pattern of forbidden) assert.doesNotMatch(text, pattern, `private deployment data in ${path.relative(pkg, file)}`)
+      const relativeFile = path.relative(pkg, file).replace(/\\/g, '/')
+      // This documented, deterministic ticket belongs only to the protocol
+      // fixture. Keep detecting every other ticket-shaped deployment value.
+      const structuralText = relativeFile === 'fixtures/protocol/scenario.json'
+        ? text.replaceAll('tk-0123456789abcdef0123', 'synthetic-ticket') : text
+      for (const pattern of forbidden) assert.doesNotMatch(structuralText, pattern, `private deployment data in ${relativeFile}`)
       const normalized = text.replace(/\\+/g, '\\').toLowerCase()
       for (const token of privateTokens) assert.equal(normalized.includes(token), false, `private identifier in ${path.relative(pkg, file)}`)
     }

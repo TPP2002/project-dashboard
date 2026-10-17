@@ -116,7 +116,10 @@ if (process.argv.includes('--server-fixture')) {
     const board = emptyBoard({ id: 'alpha', name: 'Alpha' });
     board.tasks = [{ id: 'ONE', title: 'One', wave: 1, status: '待拍板', percent: 0,
       decisions: [{ id: 'd1', question: 'Proceed?', options: ['yes', 'no'], recommended: 'yes', answer: null }] }];
-    board._commandReceipts = [{ token: 'INTERNAL-RECEIPT-SECRET', result: { private: true } }];
+    board.revision = 1;
+    const receiptKey = 'a'.repeat(64);
+    board._commandReceipts = { [receiptKey]: { inputHash: 'b'.repeat(64), revision: 1,
+      result: { private: 'INTERNAL-RECEIPT-SECRET' } } };
     write(boardFile, board); write(path.join(home, 'settings.json'), { webhookEvents: { done: true, pending: true, block: true } });
     const manifest = path.join(home, 'docs/design/审计回流/reader.json');
     fs.mkdirSync(path.dirname(manifest), { recursive: true });
@@ -234,7 +237,7 @@ if (process.argv.includes('--server-fixture')) {
       assert.equal((await request(srv, '/api/settings', owner, { webhookEvents: { done: false } })).status, 200);
       assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'settings.json'))).webhookEvents.done, false);
       const result = await request(srv, '/api/task/alpha/ONE/note', owner, { text: 'authorized note' });
-      assert.equal(result.status, 200); assert.equal(result.body.ok, true);
+      assert.equal(result.status, 200, JSON.stringify(result.body)); assert.equal(result.body.ok, true);
       assert.equal(JSON.parse(fs.readFileSync(boardFile)).activity.at(-1).text, 'authorized note');
       assert.equal((await request(srv, '/api/sched/command', owner, { kind: 'owner-hold', data: {} })).status, 200);
       assert.equal(fs.readdirSync(paths.commands).filter(name => name.endsWith('.json')).length, 1);
@@ -243,7 +246,7 @@ if (process.argv.includes('--server-fixture')) {
     await t.test('authorized reader annotation still mirrors through the protected CLI executor', async () => {
       const result = await request(srv, '/api/reader/annos', owner,
         { project: 'alpha', key: 'fixture', anno: { text: 'authorized annotation' } });
-      assert.equal(result.status, 200); assert.equal(result.body.mirror, true);
+      assert.equal(result.status, 200); assert.equal(result.body.mirror, true, JSON.stringify(result.body));
       assert.match(JSON.parse(fs.readFileSync(boardFile)).activity.at(-1).text, /authorized annotation/);
     });
 
@@ -252,7 +255,7 @@ if (process.argv.includes('--server-fixture')) {
         const response = await request(srv, '/api/board/alpha' + suffix, owner);
         assert.equal(response.status, 200); assert.doesNotMatch(JSON.stringify(response.body), /_commandReceipts|INTERNAL-RECEIPT-SECRET/);
       }
-      assert.equal(JSON.parse(fs.readFileSync(boardFile))._commandReceipts[0].token, 'INTERNAL-RECEIPT-SECRET');
+      assert.equal(JSON.parse(fs.readFileSync(boardFile))._commandReceipts[receiptKey].result.private, 'INTERNAL-RECEIPT-SECRET');
       assert.equal(JSON.stringify({ result: { _commandReceipts: ['private'], ok: true } }, publicJson), '{"result":{"ok":true}}');
     });
 
