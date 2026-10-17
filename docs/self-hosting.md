@@ -273,6 +273,8 @@ docker compose -p dashboard-restore restart dashboard
 
 云端保留唯一调度账本及派单决策，Windows 保留进程身份核验和实际命令执行。执行节点主动通过 SSH 连接服务器，无需开放 Windows 入站端口。SSH 的主机密钥必须预先核对，禁止关闭严格校验或转发代理。CLI 经本机受保护连接访问当前权威，断线时不能回退写旧共享盘。已有 AI 工具、仓库和素材留在各自节点，负责人功能经独立的 owner-node 通道访问；学校成员不能使用这些管理入口。
 
+首次安装执行节点时，先在受保护的父目录中执行 `node dist/cli.cjs init-node --data <尚不存在的绝对目录> --machine <当前机器名> --head <安装版本的40位提交号>`，然后把返回目录填为 `node.lifecycleRoot`。该入口建立空生命周期、五态目录和带摘要的冷初始化凭据，最后才发布控制文件；任何已有目录都会被拒绝，失败留下的部分目录也不能自动覆盖。迁移已有节点继续使用原记录及迁移流程，不能用初始化命令重置旧工单。
+
 准备两个源码之外的目录，在 `.env` 填入 `SCHEDULER_DATA_DIR` 和 `SCHEDULER_CONFIG_DIR`。前者包含实际 `sched/` 状态；后者存放私有 `cloud.json` 及每个固定 SSH 入口的配置。容器内路径分别为 `/scheduler`、`/run/scheduler`。文件归服务 UID 1000 所有，目录 0700、文件 0600，不把凭据写入环境文件。Unix socket 使用容器临时目录下的私有子目录，例如 `/tmp/scheduler-ipc`，不把过期 socket 当作持久账本恢复。
 
 `cloud.json` 的 `version` 为 1，包含明确的 `dataRoot`、公开调度包的部署 `catalog`、`authority` 和 `transport`。入口从权威启动结果读取实际代际，再启动受保护 socket；不能把旧配置中的代际当作当前值。Windows 使用 `cloud-scheduler node --config <绝对配置路径>`，配置提供该节点的 `catalog`、`gateway` 和 `node`。各节点、机器、项目目录和菜单都由部署者填写，仓库不提供开发者的真实配置。

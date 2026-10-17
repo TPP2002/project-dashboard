@@ -56,6 +56,16 @@ test('reads retain complete queued, unsatisfiable, registerOnly, resident and te
   assert.ok(status.objects.some(x => x.entry.kind === 'ticket-index'));
 });
 
+test('the gateway receipt remains bound to the original manifest during object reads', async () => {
+  const x = fixture(), call = x.port.call, readObject = x.port.readObject, receipts = new WeakSet();
+  x.port.call = async request => { const reply = await call(request); receipts.add(reply.manifest); return reply; };
+  x.port.readObject = async (entry, manifest) => {
+    assert.ok(receipts.has(manifest), 'semantic gateway requires its original receipt-bearing manifest');
+    return readObject(entry, manifest);
+  };
+  assert.deepEqual(await x.client.ticket(d.tickets[0].ticketId), d.tickets[0]);
+});
+
 test('version eviction restarts the whole paged read once with fresh calls and no old objects', async () => {
   for (const failureAt of ['initial', 'page', 'object']) {
     const x = fixture(), readObject = x.port.readObject, calls = [], readVersions = [];
@@ -229,7 +239,7 @@ test('synchronous validatePermit consumes current bounded IPC data and retains o
   vm.runInThisContext(Module.wrap(source), { filename: file })(module.exports,
     ref => ref === './remote-cli.cjs' ? remoteModule.exports : actualRequire(ref), module, file, root);
   const result = module.exports.validatePermit({ mode: 'remote', remoteConfig: { authorityId: 'fixture-authority' },
-    share: 'Z:/forbidden-old-authority', category: ticket.request.category, cores: 1,
+    share: 'D:/unrelated/forbidden-old-authority', category: ticket.request.category, cores: 1,
     env: { SCHED_MODE: 'remote', SCHED_PERMIT: `${ticket.ticketId}:a1:forged-token` } });
   assert.equal(result.ok, false); assert.match(result.reason, /令牌不符/); assert.equal(calls.length, 1);
   assert.ok(calls[0].argv[0].endsWith('remote-sync.cjs')); assert.ok(calls[0].options.timeout <= 60000);

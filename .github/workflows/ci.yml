@@ -60,5 +60,59 @@ jobs:
         run: npm ci --no-audit --no-fund
         working-directory: web
 
-      - name: node --test(全量)
-        run: npm test
+      # 原生进程和真实 180 秒超时另开独立作业，仍覆盖全部文件。
+      # TAP 在失败发生时输出细节，避免作业取消后只有测试名而没有断言。
+      - name: 其余全部测试
+        shell: pwsh
+        run: |
+          $separate = @('cloudSchedulerNodeNative.test.cjs', 'cloudSchedulerNodeRuntime.test.cjs', 'remoteBoardLargeRead.test.cjs')
+          $files = @(Get-ChildItem test -Filter '*.test.cjs' | Where-Object { $_.Name -notin $separate } | Sort-Object Name | ForEach-Object { 'test/' + $_.Name })
+          npm test -- --test-reporter=tap @files 2>&1 | Tee-Object -FilePath test-core.log
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-core
+          path: test-core.log
+
+  native-execution:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+        working-directory: web
+      - name: Windows 原生进程与菜单执行
+        shell: pwsh
+        run: |
+          npm test -- --test-reporter=tap test/cloudSchedulerNodeNative.test.cjs test/cloudSchedulerNodeRuntime.test.cjs 2>&1 | Tee-Object -FilePath test-native.log
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-native
+          path: test-native.log
+
+  large-board-transport:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - name: 真实大账本与连接硬超时
+        shell: pwsh
+        run: |
+          npm test -- --test-reporter=tap test/remoteBoardLargeRead.test.cjs 2>&1 | Tee-Object -FilePath test-large-board.log
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-large-board
+          path: test-large-board.log

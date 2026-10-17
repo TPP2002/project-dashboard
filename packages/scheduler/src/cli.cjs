@@ -17,7 +17,12 @@ function parse(allowed) {
 }
 async function main() {
   if (command === 'help' && !args.length) {
-    console.log('cloud-scheduler validate-config --config FILE\ncloud-scheduler daemon --data DIRECTORY --config FILE --machine NAME --protocol NUMBER --head SHA\ncloud-scheduler cloud --config ABSOLUTE_FILE\ncloud-scheduler node --config ABSOLUTE_FILE\nData must already be explicitly initialized. No production directories are inferred.')
+    console.log('cloud-scheduler validate-config --config FILE\ncloud-scheduler daemon --data DIRECTORY --config FILE --machine NAME --protocol NUMBER --head SHA\ncloud-scheduler init-node --data NEW_ABSOLUTE_DIRECTORY --machine NAME --head SHA\ncloud-scheduler cloud --config ABSOLUTE_FILE\ncloud-scheduler node --config ABSOLUTE_FILE\nData must already be explicitly initialized. No production directories are inferred.')
+  } else if (command === 'init-node') {
+    const flags = parse(['--data', '--machine', '--head'])
+    console.log(JSON.stringify(require('./node/initialize.cjs').initializeFreshNode({
+      root: flags['--data'], machine: flags['--machine'], head: flags['--head'],
+    })))
   } else if (command === 'cloud' || command === 'node') {
     const flags = parse(['--config'])
     const runtime = require('./runtime.cjs')

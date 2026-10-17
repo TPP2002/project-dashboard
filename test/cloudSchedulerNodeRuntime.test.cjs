@@ -130,6 +130,19 @@ test('real jobs-v12 claim is idempotent and restart/claim-only never republishes
   assert.deepEqual(await fsp.readdir(x.paths.inbox), []);
 });
 
+test('fresh node initialization satisfies the original status reader and refuses existing data', async t => {
+  const parent = await temporary(t), root = path.join(parent, 'fresh-lifecycle'), load = sourceLoader();
+  const init = load('node/initialize.cjs').initializeFreshNode;
+  const input = { root, machine: f.machine, head: '1'.repeat(40) };
+  const result = init(input);
+  const status = load('bot/cluster-lifecycle-status.ts').readLifecycleStatusSnapshot(root, undefined, { tolerateMachineFaults: true });
+  assert.equal(status.control.epoch, result.epoch); assert.deepEqual(status.control.configuredMachines, [f.machine]);
+  const control = load('bot/cluster-lifecycle-control.ts').activeLifecycleControlPath(root), before = await fsp.readFile(control, 'utf8');
+  assert.throws(() => init(input), { code: 'EEXIST' });
+  assert.equal(await fsp.readFile(control, 'utf8'), before);
+  assert.throws(() => init({ ...input, root: 'relative' }), /ABSOLUTE_ROOT/);
+});
+
 test('original lifecycle transition keeps notStarted/refused/null exit and rerun plan intact', async t => {
   const results = [
     { ok: false, exitCode: null, notStarted: { attemptId: 'a1', state: 'granted', waitedMs: 25 } },

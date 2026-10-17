@@ -38,7 +38,10 @@ function createRemoteClient({ port, timeoutMs = 30000, pollMs = 250 }) {
       const callId = randomUUID();
       const reply = await call({ kind: 'read', callId, selectors, snapshotId, pageToken });
       if (reply.kind !== 'read') throw new Error('READ_UNAVAILABLE');
-      const manifest = p.validateReadManifest(reply.manifest);
+      // The semantic gateway binds its monotonic receipt to this exact object.
+      // Validate without replacing it with the validator's detached clone.
+      p.validateReadManifest(reply.manifest);
+      const manifest = reply.manifest;
       if (manifest.requestId !== callId) throw new Error('READ_REQUEST_IDENTITY');
       if (manifest.scope.authorityId !== before.scope.authorityId || manifest.scope.authorityEpoch !== before.scope.authorityEpoch
         || Date.now() < Date.parse(manifest.issuedAt) || Date.now() >= Date.parse(manifest.expiresAt)) throw new Error('READ_STALE');
