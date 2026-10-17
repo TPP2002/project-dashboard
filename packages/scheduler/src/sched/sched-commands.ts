@@ -50,6 +50,7 @@ export function readCommandBatch(share: string): CommandBatch {
 }
 
 interface CommandContext {
+  remote?: boolean
   share: string; at: string; dispatcherHost: string
   state: () => ProjectionState
   append: (draft: EventDraft) => LedgerEvent
@@ -131,6 +132,11 @@ function execute(context: CommandContext, command: SchedulerCommand): CommandRec
     const ticket = context.state().tickets[command.data.ticketId]
     if (!ticket) return reject('单子不存在')
     if (command.kind === 'cancel' && ['granted', 'running', 'paused', 'slow'].includes(ticket.state)) {
+      if (context.remote && ticket.request.resident !== true && !ticket.registerOnly) {
+        if (!ticket.cancelRequested) append({ at, type: 'cancel-requested', ticketId: ticket.ticketId,
+          attemptId: ticket.currentAttemptId, data: { reason: command.data.reason ?? '请求撤单' } })
+        return { ...receipt, status: 'executed' }
+      }
       if (!isLocalAttempt(ticket)) {
         const active = ticket.attempts.at(-1)!
         if ((ticket.request.execution !== 'cluster' && ticket.request.execution !== 'auto') || !active.intent) return reject('集群单子尚未写派发意图')

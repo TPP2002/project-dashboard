@@ -51,6 +51,7 @@ export function readReportBatch(share: string): ReportBatch {
 }
 
 interface ReportContext {
+  remote?: boolean
   share: string; at: string
   state: () => ProjectionState
   append: (draft: EventDraft) => LedgerEvent
@@ -75,7 +76,7 @@ function persistedEvent(state: ProjectionState, identity: ReturnType<typeof pars
     : ticket?.timeline.find(event => event.attemptId === identity.attemptId && event.type === 'finished')
 }
 
-function rejection(state: ProjectionState, report: AttemptReport): string | null {
+function rejection(state: ProjectionState, report: AttemptReport, remote = false): string | null {
   const ticket = state.tickets[report.ticketId]
   if (!ticket) return '单子不存在'
   if (TERMINAL_STATES.some(value => value === ticket.state)) return '单子已终结'
@@ -83,7 +84,8 @@ function rejection(state: ProjectionState, report: AttemptReport): string | null
   const attempt = ticket.attempts.find(value => value.attemptId === report.attemptId)
   if (!attempt?.permit || attempt.permit.token !== report.token) return '许可令牌不符'
   if (attempt.permit.machine !== report.machine) return '许可机器不符'
-  if (!isLocalAttempt(ticket)) return '集群单子回报归 T3'
+  if (!remote && !isLocalAttempt(ticket)) return '集群单子回报归 T3'
+  if (remote && report.phase === 'started' && !report.creationFileTime) return '远程开跑必须有控制端出生身份'
   if (report.phase === 'started') {
     if (ticket.state !== 'granted' || ticket.pauseReasons.length) return '开跑回报只接受已授予且未暂停的单子'
   } else if (!['running', 'paused', 'slow'].includes(ticket.state)) return '结束回报只接受正在执行的单子'
@@ -118,6 +120,14 @@ export function acceptReports(context: ReportContext, batch: ReportBatch): void 
   })
   for (const report of ordered) {
     const name = reportName(report)
+    // Cluster completion still belongs to handoff's original result/rerun
+    // reconciliation. The new native started gate does not turn a wrapper's
+    // abbreviated finished report into a replacement for that domain result.
+    const ticket = context.state().tickets[report.ticketId]
+    if (context.remote && report.phase === 'finished' && ticket && !isLocalAttempt(ticket)) {
+      deliver(context, { name, status: 'rejected', at: context.at, reason: '集群单子结束回报归交接结果对账' })
+      continue
+    }
     const previous = persistedEvent(context.state(), report)
     if (previous) {
       if (!sameEffect(context.state(), report, previous)) {
@@ -136,7 +146,7 @@ export function acceptReports(context: ReportContext, batch: ReportBatch): void 
       }
       deliver(context, { name, status: 'accepted', at: context.at }); continue
     }
-    const reason = rejection(context.state(), report)
+    const reason = rejection(context.state(), report, context.remote)
     if (reason) { deliver(context, { name, status: 'rejected', at: context.at, reason }); continue }
     const identity = { at: context.at, ticketId: report.ticketId, attemptId: report.attemptId }
     if (report.phase === 'started') context.append({ ...identity, type: 'started', data: {

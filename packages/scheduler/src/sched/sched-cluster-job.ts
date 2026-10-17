@@ -167,6 +167,7 @@ export function handoffPublication(share: string, ticket: TicketSnapshot, intent
 }
 
 export type HandoffObservation = { kind: 'absent'; identity: LifecycleIdentity }
+  | { kind: 'unknown' }
   | { kind: 'claim-only'; identity: LifecycleIdentity } | { kind: 'transition'; identity: LifecycleIdentity }
   | { kind: 'record'; identity: LifecycleIdentity; record: LifecycleStateRecord }
 

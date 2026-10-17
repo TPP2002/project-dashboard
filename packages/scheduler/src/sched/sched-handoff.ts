@@ -34,6 +34,13 @@ export type HandoffPoint = 'before-intent' | 'after-intent-ledger' | 'after-inte
   | 'after-publish' | 'before-dispatched' | 'after-dispatched' | 'before-finished' | 'after-finished'
   | 'before-requeued' | 'after-requeued'
 export interface HandoffContext {
+  remote?: boolean
+  remoteIo?: {
+    observe(ticket: TicketSnapshot, intent: DispatchIntent): ReturnType<typeof observeHandoff>
+    publish(ticket: TicketSnapshot, intent: DispatchIntent): boolean
+    quarantine(ticket: TicketSnapshot, reason: string): void
+    prepareExited(ticket: TicketSnapshot): boolean
+  }
   share: string; at: string; sources: SchedulerSources
   state: () => ProjectionState
   append: (draft: EventDraft) => LedgerEvent
@@ -262,8 +269,25 @@ function dispatched(context: HandoffContext, ticket: TicketSnapshot, intent: Dis
   context.checkpoint?.('after-dispatched', ticket.ticketId, intent.attemptId)
 }
 
-function reconcileRecord(context: HandoffContext, id: string, record: LifecycleStateRecord): void {
+export function reconcileRecord(context: HandoffContext, id: string, record: LifecycleStateRecord): void {
   let ticket = context.state().tickets[id]!
+  // Remote inbox/running are observations, never native start acknowledgements.
+  // Cloud handles quarantine requests asynchronously; only their later observations enter here.
+  if (context.remote && record.state === 'inbox') {
+    if (ticket.cancelRequested) context.remoteIo!.quarantine(ticket, '调度撤单')
+    else {
+      const active = ticket.attempts.at(-1)!
+      if (context.ciYieldRecall && ticket.request.execution === 'cluster' && ticket.state === 'granted'
+        && active.permit?.ciAware !== true && context.ciYieldRecall.activeMachines.has(record.machine)
+        && active.dispatchedAt !== null
+        && Date.parse(context.at) - Date.parse(active.dispatchedAt) >= context.ciYieldRecall.minInboxMs) {
+        context.remoteIo!.quarantine(ticket, CI_YIELD_RECALL_REASON)
+      }
+    }
+    return
+  }
+  if (context.remote && record.state !== 'running' && !ticket.attempts.at(-1)?.controller
+    && !record.result?.notStarted && !record.result?.refused && record.state !== 'quarantine') return
   if (record.state === 'inbox') {
     if (ticket.cancelRequested) {
       // 先落标记，覆盖代理在迁移前抢到 running 的窗口；竞争迁移失败则由下一实例按实物续做。
@@ -300,13 +324,14 @@ function reconcileRecord(context: HandoffContext, id: string, record: LifecycleS
   }
   if (record.state === 'running') {
     if (ticket.cancelRequested) writeTicketSnapshot(context.share, ticket)
-    if (ticket.state === 'granted') context.append({ at: context.at, type: 'started', ticketId: id,
+    if (!context.remote && ticket.state === 'granted') context.append({ at: context.at, type: 'started', ticketId: id,
       attemptId: ticket.currentAttemptId, data: { codeRef: startedCodeRef(ticket) } })
     ticket = context.state().tickets[id]!
     if (ticket.request.execution === 'auto' && !ticket.cancelRequested && ticket.state === 'running' && context.autoLaunch) {
       const active = ticket.attempts.at(-1)!
       if (active.startedAt && context.autoLaunch.effectiveLaunchAt(ticket, context.at) === undefined
         && Date.parse(context.at) - Date.parse(active.startedAt) >= AUTO_PREPARE_TIMEOUT_MS) {
+        if (context.remote && !context.remoteIo!.prepareExited(ticket)) return
         requeueAuto(context, ticket, { mode: 'pin', code: 'prepare-timeout',
           detail: `领单 ${Math.floor((Date.parse(context.at) - Date.parse(active.startedAt)) / 60_000)} 分钟仍未开跑`,
           result: 'handoff-interrupted' })
@@ -436,7 +461,7 @@ function settleSuspendedFromJobSide(context: HandoffContext, ticket: TicketSnaps
   let observation: ReturnType<typeof observeHandoff>
   // 观察不加闸(SCHED-PAYLOAD-FIELD-PROTOCOL-GATE 第三轮修正):在飞实物按发布时的读数落档,
   // 读数现在可能更低,收窄「期望」只会误判漂移;旧形状对账会认出任何更短的实物。
-  try { observation = observeHandoff(context.share, ticket, intent, context.at) }
+  try { observation = (context.remoteIo ? context.remoteIo.observe(ticket, intent) : observeHandoff(context.share, ticket, intent, context.at)) }
   catch (error) {
     // 活迁移锁只代表执行机正在搬运；本拍跳过，不接管任何租约。
     if (error instanceof ActiveTransitionLeaseError) return
@@ -523,7 +548,7 @@ export function handoffClusterTickets(context: HandoffContext): void {
     // 协议号读数随时会抖(执行机重启、心跳缺失 ⇒ 按闸保守省略);闸若也收窄观察,重建期望会比
     // 发布时的实物更短,旧形状只会往更短摘、认不出更长的实物,必判漂移把派单员整个拽退出。
     const gate = payloadProtocolGate(context.agentProtocols, intent.machine)
-    try { observation = observeHandoff(context.share, ticket, intent, context.at) }
+    try { observation = (context.remoteIo ? context.remoteIo.observe(ticket, intent) : observeHandoff(context.share, ticket, intent, context.at)) }
     catch (error) {
       if (!(error instanceof ActiveTransitionLeaseError) || error.isLiveAt(Date.parse(context.at))
         || error.lease.from !== 'inbox' || error.lease.to !== 'quarantine'
@@ -547,9 +572,9 @@ export function handoffClusterTickets(context: HandoffContext): void {
         if (abandonOnStateConflict(error, { submissionId: intent.submissionId, at: context.at, log: context.log })) continue
         throw error
       }
-      observation = observeHandoff(context.share, ticket, intent, context.at)
+      observation = (context.remoteIo ? context.remoteIo.observe(ticket, intent) : observeHandoff(context.share, ticket, intent, context.at))
     }
-    if (observation.kind === 'transition') continue
+    if (observation.kind === 'transition' || observation.kind === 'unknown') continue
     if ((observation.kind === 'absent' || observation.kind === 'claim-only') && ticket.attempts.at(-1)!.dispatchedAt !== null) {
       throw new Error('[sched] 已确认投递的工单实物消失，不能证明未开跑，禁止换号重发')
     }
@@ -566,7 +591,8 @@ export function handoffClusterTickets(context: HandoffContext): void {
         }
       }
       context.checkpoint?.('before-publish', id, intent.attemptId)
-      publishLifecycleJob({ ...handoffPublication(context.share, ticket, intent, gate), sources: context.sources })
+      if (context.remoteIo) { if (!context.remoteIo.publish(ticket, intent)) continue }
+      else publishLifecycleJob({ ...handoffPublication(context.share, ticket, intent, gate), sources: context.sources })
       context.checkpoint?.('after-publish', id, intent.attemptId)
       dispatched(context, ticket, intent)
     } else {
