@@ -1,10 +1,12 @@
 import type { Session } from './types'
+import { isOwnerOperation, operationKey, operationLedger } from './ownerOperations'
 
 let context: Session | null = null
 let generation = 0
 const pending = new Set<AbortController>()
 const expiredListeners = new Set<() => void>()
 const responseGenerations = new WeakMap<Response, number>()
+const responseOperations = new WeakMap<Response, () => void>()
 
 export function setAuthContext(session: Session | null): void {
   if (context && (context.mode !== session?.mode || context.user?.id !== session?.user?.id || context.user?.role !== session?.user?.role)) cancelAuthRequests()
@@ -50,6 +52,22 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
     throw new Error('请先登录')
   }
   const started = generation
+  let completeOperation: (() => void) | undefined
+  const method = (init?.method ?? request?.method ?? 'GET').toUpperCase()
+  if (context.user?.role === 'owner' && isOwnerOperation(url.pathname, method)) {
+    const userId = context.user.id
+    const body = init?.body ?? (request ? await request.clone().text() : '')
+    if (typeof body !== 'string') throw new Error('操作请求必须使用固定 JSON 内容')
+    const key = await operationKey(userId, url.pathname + url.search, body)
+    if (started !== generation) throw new DOMException('会话已改变', 'AbortError')
+    const ledger = operationLedger(window.sessionStorage)
+    const id = ledger.begin(key)
+    const headers = new Headers(init?.headers ?? request?.headers)
+    headers.set('X-Owner-Operation-Id', id)
+    init = { ...init, headers }
+    completeOperation = () => ledger.complete(key, id)
+  }
+  if (started !== generation) throw new DOMException('会话已改变', 'AbortError')
   const controller = new AbortController()
   const signal = init?.signal ?? request?.signal
   const abort = () => controller.abort()
@@ -64,6 +82,7 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
       for (const listener of expiredListeners) listener()
     }
     if (response.ok) responseGenerations.set(response, started)
+    if (completeOperation) responseOperations.set(response, completeOperation)
     return response
   } finally {
     pending.delete(controller)
@@ -74,6 +93,22 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
 }
+/** Called only after the caller has consumed and validated the business result. */
+export function completeOwnerOperation(response: Response): void {
+  const started = responseGenerations.get(response)
+  if (started !== undefined && started !== generation) throw new DOMException('会话已改变', 'AbortError')
+  if (response.ok) { responseOperations.get(response)?.(); responseOperations.delete(response) }
+}
+export async function responseText(response: Response): Promise<string> {
+  const text = await response.text()
+  if (!response.ok) {
+    let reason = text || `请求失败（${response.status}）`
+    try { reason = JSON.parse(text).error || reason } catch { /* Preserve non-JSON errors. */ }
+    throw new ApiError(response.status, reason)
+  }
+  completeOwnerOperation(response)
+  return text
+}
 export async function responseJson<T>(response: Response): Promise<T> {
   let data: { ok?: boolean; error?: string }
   try { data = await response.json() }
@@ -82,6 +117,8 @@ export async function responseJson<T>(response: Response): Promise<T> {
   if (started !== undefined && started !== generation) throw new DOMException('会话已改变', 'AbortError')
   if (!data || typeof data !== 'object') throw new ApiError(response.status, '服务器响应缺少有效数据')
   if (!response.ok || data?.ok === false) throw new ApiError(response.status, data?.error || `请求失败（${response.status}）`)
+  if (responseOperations.has(response) && data.ok !== true) throw new ApiError(response.status, '服务器未确认操作成功，请核对后重试')
+  completeOwnerOperation(response)
   return data as T
 }
 export async function apiJson<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
