@@ -65,7 +65,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
           if (frozen.entries.length >= 16384) throw failure('READ_LIMIT', 'read snapshot entry capacity exceeded');
           frozen.entries.push({ kind, ticketId: ticket.ticketId, attemptId: attempt.attemptId,
             snapshotId, ledgerCursor: cursor, object: { ...object, objectId: p.contentHash([snapshotId, ticket.ticketId, attempt.attemptId, kind, object.hash]) }, audience,
-            contentType: kind === 'artifact-zip' ? 'application/zip' : kind === 'log-segment' ? 'text/plain' : 'application/json',
+            contentType: kind === 'artifact-zip' ? 'application/zip' : kind === 'snapshot-bundle' ? 'application/octet-stream' : kind === 'log-segment' ? 'text/plain' : 'application/json',
             ...(kind === 'log-segment' ? { segmentId: 'complete' } : {}) });
         }
         const segments = frozen.entries.filter(e => e.kind === 'log-segment' && e.ticketId === ticket.ticketId && e.attemptId === attempt.attemptId);
@@ -147,7 +147,7 @@ function createObjects({ root, store, authority, epoch, state, now, catalog: con
   }
   function directory(frozen, selector) {
     const kinds = { 'ticket-index': ['ticket'], 'command-receipt-index': ['command-receipt'],
-      'execution-index': ['snapshot-metadata', 'artifact-manifest', 'artifact-zip', 'log-descriptor', 'log-segment', 'job-result'] };
+      'execution-index': ['snapshot-metadata', 'snapshot-bundle', 'artifact-manifest', 'artifact-zip', 'log-descriptor', 'log-segment', 'job-result'] };
     if (!kinds[selector.kind]) return;
     if (frozen.entries.some(e => Object.keys(selector).every(k => e[k] === selector[k]))) return;
     const all = frozen.entries.filter(e => kinds[selector.kind].includes(e.kind)
