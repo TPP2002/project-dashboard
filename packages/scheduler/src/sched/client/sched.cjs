@@ -2814,4 +2814,3 @@ module.exports = { CLIENT_VERSION, SCHED_FORMAT_VERSION, HOST_SMALL_JOB_POOL_COR
   // 同一张表驱动用例拿它和派单员侧 sched-usage-history.ts 逐项对一致(照 overuseCheck 先例)。
   usageKeyFor, nearestRankP90, formatCores, suggestCores, readUsagePeaks }
 if (require.main === module) main().then(code => { process.exitCode = code })
-
