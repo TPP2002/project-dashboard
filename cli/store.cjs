@@ -74,8 +74,10 @@ function mutate(proj, mutator, activityEntry) {
 function commandTransaction(proj, identity, fn) {
   if (transaction) throw new Error('禁止嵌套 commandTransaction');
   guardLocal(proj.board);
-  if (!fs.existsSync(proj.board)) throw new Error('权威账本不存在，必须由固定管理员入口初始化或主控迁移');
   return withLock(proj.lock, () => {
+    // A Windows replacement can temporarily remove the destination while its
+    // writer holds this lock. Decide whether the authority is missing only here.
+    if (!fs.existsSync(proj.board)) throw new Error('权威账本不存在，必须由固定管理员入口初始化或主控迁移');
     const board = rawBoard(proj.board);
     const { request, subject, inputHash } = identity;
     const key = require('../core/boardCommand.cjs').inputHash([subject, proj.id, request.requestId]);
