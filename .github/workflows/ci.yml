@@ -38,7 +38,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  core-tests:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -116,3 +116,21 @@ jobs:
         with:
           name: test-large-board
           path: test-large-board.log
+
+  # Preserve the existing required check name. It only passes after every
+  # partition has passed, including failed/cancelled dependency handling.
+  test:
+    needs: [core-tests, native-execution, large-board-transport]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: 全部测试分组必须通过
+        env:
+          CORE_RESULT: ${{ needs.core-tests.result }}
+          NATIVE_RESULT: ${{ needs.native-execution.result }}
+          TRANSPORT_RESULT: ${{ needs.large-board-transport.result }}
+        run: |
+          test "$CORE_RESULT" = success
+          test "$NATIVE_RESULT" = success
+          test "$TRANSPORT_RESULT" = success
