@@ -2,13 +2,15 @@
 
 [中文说明](README.md)
 
-A local project board for work carried out by AI agents. Agents report progress through a command-line protocol; you follow the work, answer decisions and send feedback from one dashboard.
+A project board for work carried out by AI agents, with a local default and an optional self-hosted collaboration mode. Agents report progress through a command-line protocol; you follow the work, answer decisions and send feedback from one dashboard.
 
 ![Project overview](docs/screenshots/overview.png)
 
 ## What it is
 
-Project Dashboard brings several repositories into one view. Each project's board records tasks, ownership, progress, dependencies and decisions. It runs on your computer and serves its interface on `127.0.0.1`.
+Project Dashboard brings several repositories into one view. Each project's board records tasks, ownership, progress, dependencies and decisions. By default, it runs on your computer and serves its interface on `127.0.0.1`.
+
+In explicitly enabled collaboration mode, the owner invites members and grants access to selected projects. Members register with an invitation, claim available tasks and update their own progress. You provide and maintain the server; see the [self-hosting guide](docs/self-hosting.md).
 
 The repository provides a Node.js command-line tool and HTTP server with no runtime package dependencies, plus a Vue interface. The Windows installer bundles its own Node.js runtime.
 
@@ -26,6 +28,8 @@ Git hooks can synchronize commits and enforce task claims across tools. The prot
 - 20 views, including dependency graphs, timelines and four optional modules.
 - Configurable navigation that keeps your saved groups and ordering.
 - Local files for project data, with the CLI as the board's write channel.
+- Optional invitation-based accounts, project permissions and member task updates on your own server.
+- Revocable trusted-browser access for the owner, enabled only when the owner chooses it.
 
 The default daily navigation contains **Overview, Decisions, Board and Daily Results**. The **Codex panel, Cost, CPU and Reader** modules are disabled by default. Enable them under **Menu settings → Extension modules**, or in `DASHBOARD_HOME/settings.json`:
 
@@ -119,7 +123,11 @@ Start with [AGENTS.md](AGENTS.md) and the [integration guide](docs/接入其它A
 
 ## Boundaries
 
-This is a local supervision and decision tool for agent-led work. It assumes a trusted local user and provides no multi-user accounts or permission system. Board edits go through the CLI; supported browser actions forward to that same channel.
+Local mode assumes a trusted local user. Collaboration mode adds invitation registration, project permissions and ownership checks for member task updates. Approval and scheduler administration remain owner-only. Board edits use the CLI's locking and transaction path.
+
+This repository does not provide a hosted SaaS service. Follow the [Docker Compose guide](docs/self-hosting.md) on your own Linux server, validate privately through an SSH tunnel, then configure the actual HTTPS origin. There is no default account or unrestricted registration. Comments, notifications and a native mobile application are outside the current collaboration scope.
+
+An optional cloud scheduler keeps Windows execution nodes connected through outbound SSH. Isolated Linux-to-Windows execution, request replay and cloud restart recovery have been validated for one real node. Real two-node load placement and production cutover are still being validated; follow the [migration contract](docs/plans/cloud-collaboration/scheduler-migration.md) before switching an existing scheduler.
 
 The four optional modules serve the maintainer's personal workflow. Their switches control availability and navigation. Enabling the Codex panel exposes its existing dispatch and resume operations; those operations require the corresponding local tooling. The main dashboard remains usable with all four modules disabled.
 
@@ -133,10 +141,10 @@ The four optional modules serve the maintainer's personal workflow. Their switch
 
 ## Privacy
 
-The server binds to localhost. The project registry, boards and settings are local files; enabled cost and Codex modules read local activity records. There is no required cloud dashboard account.
+Local mode binds to localhost. Self-hosted collaboration stores its registry, boards, settings and authentication records in the deployment's own persistent data directory. The Compose defaults publish only a loopback port; remote access requires explicit configuration. There is no required third-party dashboard account.
 
 An explicitly configured event webhook can send selected task events to your chosen endpoint. AI dispatch and resume commands use the external tools you have installed and configured. Avoid putting credentials or private logs in public issues.
 
 ## License
 
-**To be decided.** The maintainer will add the project license after choosing it; no project license file is included yet. Bundled third-party software retains its own licenses; installer notices describe those components.
+[MIT](LICENSE). You may self-host, modify and distribute the project under that license. Bundled third-party software retains its own licenses; installer notices describe those components.
