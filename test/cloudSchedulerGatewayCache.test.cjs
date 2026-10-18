@@ -250,10 +250,16 @@ test('chunk corruption and changed snapshot/cursor fail closed before atomic pub
 });
 
 test('cache mtime and rereads never refresh TTL; reconnect cannot resurrect the old manifest', async t => {
+  // Filesystem work can itself exceed 30 ms on a shared runner. Advance the
+  // monotonic clock explicitly so this tests expiry, not disk scheduling speed.
+  let now = 1000;
+  t.mock.method(require('node:perf_hooks').performance, 'now', () => now);
   const fx = fixture(t, { ttlMs: 30 }); await fx.read();
   fx.cache.chunk(fx.local(), fx.peer);
-  await new Promise(resolve => setTimeout(resolve, 45));
+  now += 29;
+  fx.cache.chunk(fx.local(), fx.peer);
   fs.utimesSync(fx.cache.file(fx.entry), new Date(), new Date());
+  now += 1;
   assert.throws(() => fx.cache.chunk(fx.local(), fx.peer), /CACHE_STALE/);
   fx.cache.disconnect(); fx.cache.connect('next-session');
   assert.throws(() => fx.cache.chunk(fx.local(), fx.peer), /CACHE_MANIFEST_UNKNOWN/);
