@@ -104,7 +104,8 @@ export function createNodeLifecycle(options: { share: string; machine: string; h
     heartbeat(load: AgentLoad, running: number, max: number) {
       return commit(() => {
         const c = control(), paths = lifecyclePaths(options.share, c.epoch, options.machine)
-        const heartbeat = { machine: options.machine, state: running ? 'running' : 'idle', at: new Date().toISOString(),
+        const heartbeat = { namespace: LIFECYCLE_NAMESPACE, lifecycleSchema: LIFECYCLE_SCHEMA, epoch: c.epoch,
+          machine: options.machine, state: running ? 'running' : 'idle', at: new Date().toISOString(),
           pid: process.pid, protocol: AGENT_PROTOCOL, head: options.head, ownerPid: process.pid, ownerToken: owner!.token,
           load, jobSlots: { max, running } }
         mkdirSync(paths.heartbeat, { recursive: true })

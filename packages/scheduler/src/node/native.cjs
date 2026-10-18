@@ -11,10 +11,11 @@ const same = (a, b) => protocol.canonicalJson(a) === protocol.canonicalJson(b);
 
 // One private anonymous pipe and one JobObject per attempt. Neither this adapter
 // nor the C# host ever attaches to an existing service or adopts a numeric PID.
-function createNativeGate({ scope, directory, executable, args, cwd, env = process.env, timeoutMs = 12000, maxLogBytes = 64 * 1024 * 1024, permitAuthorityFactory }) {
+function createNativeGate({ scope, directory, executable, args, cwd, env = process.env, timeoutMs = 12000, startupTimeoutMs = 60000, maxLogBytes = 64 * 1024 * 1024, permitAuthorityFactory }) {
   if (process.platform !== 'win32') throw new Error('WINDOWS_NATIVE_REQUIRED');
   if (!path.isAbsolute(executable) || !/\.exe$/i.test(executable)) throw new Error('ABSOLUTE_EXECUTABLE_REQUIRED');
   if (!Array.isArray(args) || args.some(x => typeof x !== 'string' || x.includes('\0'))) throw new Error('INVALID_ARGV');
+  if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs < 1 || startupTimeoutMs > 60000) throw new Error('INVALID_STARTUP_TIMEOUT');
   fs.mkdirSync(directory, { recursive: true });
   const hostEnv = {};
   for (const name of ['SystemRoot', 'windir', 'SystemDrive', 'ComSpec', 'ProgramFiles', 'ProgramFiles(x86)', 'PATH']) {
@@ -28,11 +29,19 @@ function createNativeGate({ scope, directory, executable, args, cwd, env = proce
   const pending = new Map();
   const gateId = randomUUID();
   let sequence = 0, dead, identity, preparation, closing = false, stderr = '';
+  let resolveReady, rejectReady, startupTimer, readyState = 'pending';
+  const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+  ready.catch(() => {}); // The caller may close before requesting preparation.
   const fail = error => {
     dead = Object.assign(error, { nativeHostUnavailable: true });
+    clearTimeout(startupTimer);
+    if (readyState === 'pending') { readyState = 'failed'; rejectReady(error); }
     for (const call of pending.values()) { clearTimeout(call.timer); call.reject(error); }
     pending.clear();
   };
+  // Cold PowerShell/.NET compilation precedes all workload requests. Its own
+  // bounded startup handshake does not consume or extend an execution lease.
+  startupTimer = setTimeout(() => fail(new Error('NATIVE_STARTUP_TIMEOUT')), startupTimeoutMs);
   child.on('error', fail); child.stdin.on('error', fail);
   child.stderr.on('data', bytes => { stderr = (stderr + bytes.toString()).slice(-4096); });
   const closed = new Promise(resolve => child.once('close', code => {
@@ -40,7 +49,12 @@ function createNativeGate({ scope, directory, executable, args, cwd, env = proce
   }));
   createInterface({ input: child.stdout }).on('line', line => {
     try {
-      const result = JSON.parse(line), call = pending.get(result.id);
+      const result = JSON.parse(line);
+      if (readyState === 'pending') {
+        if (!result || result.ready !== true || Object.keys(result).length !== 1) throw new Error('NATIVE_STARTUP_FRAME');
+        readyState = 'ready'; clearTimeout(startupTimer); resolveReady(); return;
+      }
+      const call = pending.get(result.id);
       if (!call) return;
       clearTimeout(call.timer); pending.delete(result.id);
       if (result.error) call.reject(Object.assign(new Error(result.error), { nativeRequestKind: call.kind })); else call.resolve(result.value);
@@ -64,6 +78,7 @@ function createNativeGate({ scope, directory, executable, args, cwd, env = proce
         return preparation.promise;
       }
       const promise = (async () => {
+        await ready;
         const before = await request('identity');
         if (before.error || before.pid !== child.pid || !before.creationFileTime) throw new Error('CONTROLLER_BIRTH_UNKNOWN');
         if (recordHost) recordHost({ pid: before.pid, creationFileTime: before.creationFileTime });

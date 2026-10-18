@@ -9,6 +9,8 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Remot
 $tree = New-Object UdqNative
 $gate = New-Object RemoteExecutionGate($tree)
 try {
+    # No workload request is sent until compilation and the private host are ready.
+    [Console]::WriteLine('{"ready":true}')
     while ($null -ne ($line = [Console]::ReadLine())) {
         $idJson = 'null'
         try {

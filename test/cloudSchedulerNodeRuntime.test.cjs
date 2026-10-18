@@ -137,6 +137,12 @@ test('fresh node initialization satisfies the original status reader and refuses
   const result = init(input);
   const status = load('bot/cluster-lifecycle-status.ts').readLifecycleStatusSnapshot(root, undefined, { tolerateMachineFaults: true });
   assert.equal(status.control.epoch, result.epoch); assert.deepEqual(status.control.configuredMachines, [f.machine]);
+  const lifecycle = load('bot/cluster-agent-node-lifecycle.ts').createNodeLifecycle({ share: root, machine: f.machine, head: input.head });
+  lifecycle.start(); onCleanup(t, () => lifecycle.close());
+  const observed = lifecycle.heartbeat({ schema: 1, ci: { state: 'idle', observedAt: new Date().toISOString() } }, 0, 1);
+  assert.equal(observed.machines[0].fault, undefined, JSON.stringify(observed.machines[0]));
+  assert.equal(observed.machines[0].heartbeat.state, 'idle');
+  assert.equal(observed.machines[0].heartbeat.ownerPid, process.pid);
   const control = load('bot/cluster-lifecycle-control.ts').activeLifecycleControlPath(root), before = await fsp.readFile(control, 'utf8');
   assert.throws(() => init(input), { code: 'EEXIST' });
   assert.equal(await fsp.readFile(control, 'utf8'), before);
