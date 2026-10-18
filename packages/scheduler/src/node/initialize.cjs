@@ -21,7 +21,7 @@ function initializeFreshNode({ root, machine, head, actor = 'node-administrator'
   for (const state of c.LIFECYCLE_STATES) fs.mkdirSync(paths[state], { recursive: true, mode: 0o700 });
   const receipts = path.join(paths.root, '_control', 'receipts');
   fs.mkdirSync(receipts, { recursive: true, mode: 0o700 });
-  const receipt = { receiptSchema: COLD_CUTOVER_RECEIPT_SCHEMA, namespace: c.LIFECYCLE_NAMESPACE,
+  const receipt = { receiptSchema: COLD_CUTOVER_RECEIPT_SCHEMA, status: 'PASS', exitCode: 0, namespace: c.LIFECYCLE_NAMESPACE,
     lifecycleSchema: c.LIFECYCLE_SCHEMA, epoch, mergeSha: head, configuredMachines: [machine],
     controlState: 'ACTIVE', coldMode: true, freshInitialization: true, createdAt: at, createdBy: actor };
   fs.writeFileSync(path.join(receipts, `cutover-${epoch}.json`), JSON.stringify({ ...receipt,

@@ -454,13 +454,10 @@ async function localRunFixture(t, settings = {}) {
   const config = { mode: 'remote', machine: f.machine, head: '1'.repeat(40), stateRoot: path.join(root, 'node'),
     lifecycleRoot: path.join(root, 'lifecycle'), artifactRoot: path.join(root, 'artifacts'), snapshotRoot: path.join(root, 'snapshots') };
   let lifecycle = { start() {}, renew() {}, close() {}, heartbeat: () => f.payloads['machine.observation'].lifecycle };
+  let lifecycleEpoch = f.payloads['handoff.publish'].lifecycleEpoch;
   if (settings.handoff) {
-    const control = load('bot/cluster-lifecycle-control.ts');
-    const paths = control.lifecyclePaths(config.lifecycleRoot, f.payloads['handoff.publish'].lifecycleEpoch, f.machine);
-    await fsp.mkdir(path.dirname(paths.control), { recursive: true });
-    await fsp.writeFile(paths.control, JSON.stringify({ namespace: 'jobs-v12', lifecycleSchema: 12,
-      epoch: f.payloads['handoff.publish'].lifecycleEpoch, state: 'ACTIVE', codeVersion: config.head,
-      configuredMachines: [f.machine], createdAt: f.at, createdBy: 'fixture' }));
+    lifecycleEpoch = load('node/initialize.cjs').initializeFreshNode({ root: config.lifecycleRoot,
+      machine: f.machine, head: config.head, actor: 'fixture' }).epoch;
     lifecycle = load('bot/cluster-agent-node-lifecycle.ts').createNodeLifecycle({ share: config.lifecycleRoot, machine: f.machine, head: config.head });
   }
   const runtime = load('node/runtime.cjs').createWindowsNode({ config, gateway, dependencies: { reader, nativeFactory,
@@ -486,7 +483,7 @@ async function localRunFixture(t, settings = {}) {
     },
     async readObject(entry) { const bytes = bodies.get(entry.object.objectId); assert.equal(createHash('sha256').update(bytes).digest('hex'), entry.object.hash); return JSON.parse(bytes); },
   };
-  return { root, projectRoot, config, runtime, gateway, client, port, peer, ticket, tickets, originals, gates, observations, reader, load, lifecycle, frame,
+  return { root, projectRoot, config, runtime, gateway, client, port, peer, ticket, tickets, originals, gates, observations, reader, load, lifecycle, lifecycleEpoch, frame,
     loseStart: () => { lostStart = true; }, loseReply: () => { lostReply = true; },
     disconnect: () => { connected = false; generation++; }, reconnect: () => { connected = true; generation++; scope = { ...scope, nodeSession: randomUUID(), gatewayInstance: randomUUID() }; } };
 }
@@ -533,7 +530,7 @@ test('published menu job imports the verified bundle, claims jobs-v12, runs a re
     commit: made.commit, base, bundle: ticketId + '.bundle', bundleBytes: bytes.length,
     object: { objectId: 'origin-object', hash: createHash('sha256').update(bytes).digest('hex'), size: bytes.length } };
   const publication = { ...structuredClone(f.payloads['handoff.publish']), submissionId: `${ticketId}--a1`,
-    submission: value.request, permit, codeRef: { kind: 'commit', value: made.commit }, snapshot: metadata, grantedCores: 1 };
+    lifecycleEpoch: x.lifecycleEpoch, submission: value.request, permit, codeRef: { kind: 'commit', value: made.commit }, snapshot: metadata, grantedCores: 1 };
   delete publication.queueRank; delete publication.rerun;
   const job = { ticketId, jobId: publication.submissionId, kind: 'fixture-menu', codeVersion: made.commit, grantedCores: 1,
     auto: { project: 'fixture-local', item: 'fixture-menu', args: [], bundle: metadata.bundle, commit: made.commit, base } };
@@ -552,7 +549,9 @@ test('published menu job imports the verified bundle, claims jobs-v12, runs a re
   let observed;
   do { observed = x.lifecycle.observe(publication); if (['done', 'failed'].includes(observed.state)) break;
     await new Promise(resolve => setTimeout(resolve, 50)); } while (Date.now() < deadline);
-  assert.equal(observed.state, 'failed', x.runtime.health().fault ?? 'job did not complete');
+  assert.equal(observed.state, 'failed', JSON.stringify({ health: x.runtime.health(), observed,
+    gates: x.gates.map(g => ({ identity: g.identity, root: g.root, fenced: g.fenced, released: g.released })),
+    lastObservations: x.observations.slice(-6) }));
   assert.equal(observed.record.result.exitCode, 7, JSON.stringify({ result: observed.record.result, health: x.runtime.health() })); assert.equal(observed.record.result.refused, undefined);
   assert.equal(observed.record.result.artifacts.state, 'zipped'); assert.equal(x.gates.length, 1);
   assert.equal(await git(['rev-parse', 'HEAD']), base, 'configured repository was not checked out or rewritten');
