@@ -46,27 +46,37 @@ function createLocalExecutions({ config, gateway, node, reader, executions, curr
     const stdoutOffset = request.stdoutOffset ?? 0, stderrOffset = request.stderrOffset ?? 0;
     const began = performance.now(), deadline = began + 1000;
     const budget = Math.min(request.maxBytes ?? 65536, 65536), end = began + Math.min(request.waitMs ?? 0, 1000);
-    let stdout, stderr;
+    let stdout, stderr, lastReply;
     do {
+      // Bind completion to the state known before reading the streams. A task
+      // which finishes during the read must be drained again before terminal.
+      const view = { state: run.state, terminal: run.terminal, reason: run.reason };
       // Reserve half for each stream so an endless stdout cannot starve stderr.
       let timeout;
       try {
         [stdout, stderr] = await Promise.race([Promise.all([
           readStream(run, 'stdout', stdoutOffset, Math.ceil(budget / 2)),
           readStream(run, 'stderr', stderrOffset, Math.ceil(budget / 2)),
-        ]), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('OUTPUT_READ_TIMEOUT')), Math.max(1, deadline - performance.now())); })]);
+        ]), new Promise((_, reject) => { timeout = setTimeout(() => reject(Object.assign(new Error('OUTPUT_READ_TIMEOUT'),
+          { code: 'OUTPUT_READ_TIMEOUT' })), Math.max(1, deadline - performance.now())); })]);
+      } catch (error) {
+        // A quiet long poll can exhaust its wait budget between two reads.
+        // Return the last complete observation at the original offsets; never
+        // turn this normal boundary into failure or invent a terminal result.
+        if (error.code === 'OUTPUT_READ_TIMEOUT' && lastReply) return lastReply;
+        throw error;
       } finally { clearTimeout(timeout); }
       const stderrBudget = budget - (stdout.nextOffset - stdoutOffset);
       if (stderr.nextOffset - stderrOffset > stderrBudget) {
         const bytes = Buffer.from(stderr.bytesBase64, 'base64').subarray(0, stderrBudget);
         stderr = { offset: stderrOffset, nextOffset: stderrOffset + bytes.length, bytesBase64: bytes.toString('base64') };
       }
-      if (stdout.nextOffset !== stdoutOffset || stderr.nextOffset !== stderrOffset || ['terminal', 'unknown'].includes(run.state)
-        || performance.now() >= end) break;
+      lastReply = p.validateLocalExecutionReply({ kind: 'execution', runId: run.runId, state: view.state,
+        stdout, stderr, terminal: view.terminal, ...(view.reason ? { reason: view.reason } : {}) });
+      if (stdout.nextOffset !== stdoutOffset || stderr.nextOffset !== stderrOffset || ['terminal', 'unknown'].includes(view.state)
+        || performance.now() >= end) return lastReply;
       await pause(Math.min(25, Math.max(0, end - performance.now())));
     } while (true);
-    return p.validateLocalExecutionReply({ kind: 'execution', runId: run.runId, state: run.state,
-      stdout, stderr, terminal: run.terminal, ...(run.reason ? { reason: run.reason } : {}) });
   }
   async function finish(run, result, entry) {
     p.validateJobResult(result);

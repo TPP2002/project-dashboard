@@ -597,6 +597,19 @@ test('disconnect fences old execution; new scope accepts a different task withou
   while (!x.observations.some(o => o.kind === 'lease.challenge') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   const beforeDisconnect = await x.runtime.handleLocalExecution(x.peer, { kind: 'local-run-read', callId: 'before-disconnect',
     runId: startedRun.runId, stdoutOffset: 0, stderrOffset: 0, maxBytes: 65536, waitMs: 0 }, { timeoutMs: 1000 });
+  // A quiet process needs repeated long polls. A final filesystem read which
+  // crosses the one-second boundary must not turn normal waiting into failure.
+  const originalLstat = fsp.lstat.bind(fsp);
+  const delayedLstat = t.mock.method(fsp, 'lstat', async (file, ...args) => {
+    if (/workload\.(stdout|stderr)\.log$/.test(String(file))) await new Promise(resolve => setTimeout(resolve, 20));
+    return originalLstat(file, ...args);
+  });
+  try {
+    const quiet = await x.runtime.handleLocalExecution(x.peer, { kind: 'local-run-read', callId: 'quiet-long-poll',
+      runId: startedRun.runId, stdoutOffset: 0, stderrOffset: 0, maxBytes: 65536, waitMs: 1000 }, { timeoutMs: 1000 });
+    assert.equal(quiet.terminal, null);
+    assert.equal(quiet.stdout.nextOffset, 0); assert.equal(quiet.stderr.nextOffset, 0);
+  } finally { delayedLstat.mock.restore(); }
   assert.equal(x.gates.length, 1, JSON.stringify({ reply: beforeDisconnect, health: x.runtime.health() })); x.disconnect();
   while (!x.gates[0].fenced && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(x.gates[0].fenced, true); x.reconnect();
