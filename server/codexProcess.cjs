@@ -9,13 +9,11 @@ const CODEX_SCRIPT = 'scripts/codex/codex-dispatch.ts';
 const DEFAULT_CODEX_BIN = path.join(process.env.LOCALAPPDATA || os.homedir(), 'OpenAI', 'Codex', 'bin');
 const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 
-/** Windows 必须经 cmd.exe 启动 npx.cmd；不能直接 spawn .cmd。 */
+/** Public TypeScript entry with literal argv; Windows imports use a file URL. */
 function spawnDispatchCli(repo, args, options = {}) {
-  const cliArgs = ['tsx', CODEX_SCRIPT, ...args];
+  const cliArgs = ['--import', require('node:url').pathToFileURL(require.resolve('tsx', { paths: [repo] })).href, path.join(repo, CODEX_SCRIPT), ...args];
   const base = { cwd: repo, windowsHide: true, shell: false, ...options };
-  return process.platform === 'win32'
-    ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npx', ...cliArgs], base)
-    : spawn('npx', cliArgs, base);
+  return spawn(process.execPath, cliArgs, base);
 }
 
 function listCodexExecutables(root = DEFAULT_CODEX_BIN) {

@@ -1,0 +1,6 @@
+ARG CADDY_BASE_IMAGE=caddy:2.11.7-alpine
+FROM ${CADDY_BASE_IMAGE}
+# The official binary carries cap_net_bind_service. We listen on unprivileged
+# container ports, so remove that file capability before dropping all runtime caps.
+RUN setcap -r /usr/bin/caddy
+USER 1000:1000

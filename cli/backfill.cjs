@@ -30,13 +30,18 @@ function setPath(obj, dotted, val) { const p = dotted.split('.'); let o = obj; f
 
 function backfill(flags) {
   const proj = resolveProj(flags);
-  if (flags.patch) {
-    const patch = JSON.parse(fs.readFileSync(path.resolve(flags.patch), 'utf8'));
+  if (flags.patch || flags._payload !== undefined) {
+    const patch = flags._payload !== undefined ? flags._payload : JSON.parse(fs.readFileSync(path.resolve(flags.patch), 'utf8'));
+    if (flags._payload !== undefined) require('../core/boardCommandTasks.cjs').patch(patch);
     let applied = 0;
     mutate(proj, (b) => {
       for (const [id, fields] of Object.entries(patch)) {
         const t = findTask(b, id);
-        for (const [k, v] of Object.entries(fields)) { setPath(t, k, v); applied++; }
+        for (const [k, v] of Object.entries(fields)) {
+          if (flags._payload !== undefined) require('../core/boardCommandTasks.cjs').setPath(t,k,v);
+          else setPath(t, k, v);
+          applied++;
+        }
       }
     }, { ts: new Date().toISOString(), author: flags.author || 'backfill', type: 'note', text: `backfill 补丁：${Object.keys(patch).length} 个任务 / ${applied} 字段`, taskId: null });
     return { ok: true, text: `✔ backfill 应用补丁：${Object.keys(patch).length} 个任务 / ${applied} 个字段` };

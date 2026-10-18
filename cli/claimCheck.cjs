@@ -53,6 +53,11 @@ function scanAll(registryPath, branch) {
     let proj;
     try { proj = resolveProject(id, { registryPath }); }
     catch (e) { skipped.push({ project: id, soft: false, why: e.message }); continue; }
+    if (proj.remote) {
+      const result = require('./remoteClient.cjs').perform('claim-check', id, { _: [], branch });
+      hits.push(...result.hits);
+      continue;
+    }
     let raw;
     try { raw = fs.readFileSync(proj.board, 'utf8'); }
     catch (e) {

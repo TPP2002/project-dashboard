@@ -66,6 +66,8 @@ const schedContract = require('../core/schedContract.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
 const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
+const { configuration, createCollaborationApi } = require('./collaborationApi.cjs');
+const { publicJson } = require('../core/collaborationPublic.cjs');
 
 // ============ 常量 ============
 
@@ -79,6 +81,11 @@ const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
 const WEBHOOK_URL = (process.env.DASHBOARD_EVENT_WEBHOOK || '').trim();
 const WEBHOOK_CONFIGURED = /^https?:\/\//.test(WEBHOOK_URL);
+// Product mode is separate from MODE (dev/release runtime identity).
+const COLLABORATION = configuration();
+const collaborationApi = COLLABORATION ? createCollaborationApi({ config: COLLABORATION, home: DASHBOARD_HOME, registryPath: REGISTRY, summarize: deriveSummary }) : null;
+const ownerExecFile = collaborationApi ? collaborationApi.ownerExecFile : execFile;
+const ownerBridge = require('./ownerNodeBridge.cjs').fromEnvironment({ collaboration: collaborationApi });
 
 // —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——
 // 负责人日常用的服务必须从【发布副本】起（mode=release）；从 git 检出起的一律算开发实例（mode=dev），
@@ -152,7 +159,7 @@ function clearBoardReadCaches() {
 // ============ 通用工具 ============
 
 function sendJson(res, status, obj) {
-  const body = JSON.stringify(obj);
+  const body = JSON.stringify(obj, publicJson);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' });
   res.end(body);
 }
@@ -368,12 +375,13 @@ function hooksInstalledMap(projects) {
 // ============ SSE ============
 
 function sseWrite(res, event, data) {
-  try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); return true; }
+  try { res.write(`event: ${event}\ndata: ${JSON.stringify(data, publicJson)}\n\n`); return true; }
   catch (_) { return false; }
 }
 
 /** 向所有 SSE 订阅者广播；写失败的连接顺手清理 */
 function broadcast(event, data) {
+  if (collaborationApi) collaborationApi.broadcast(event, data);
   for (const res of state.subscribers) {
     if (!sseWrite(res, event, data)) state.subscribers.delete(res);
   }
@@ -481,6 +489,7 @@ async function notifyWebhook(id) {
  * 首次见到某项目只记基线不广播（避免启动瞬间刷一波）。全程 try/catch，绝不让定时器崩。
  */
 function pollBoards() {
+  if (collaborationApi) collaborationApi.sweep();
   schedApi.poll(broadcast, resolveModules().cpu);
   let reg;
   try { reg = readRegistrySafe(); } catch (_) { return; }
@@ -506,7 +515,7 @@ function pollBoards() {
 
 // ============ API 处理 ============
 
-function handleHealth(req, res) {
+async function handleHealth(req, res) {
   const projects = Object.keys(readRegistrySafe().projects || {});
   const latestStamp = MODE === 'release' ? readStamp(releaseHome()) : null;
   const latestReleaseCommit = typeof latestStamp?.commit === 'string' && latestStamp.commit.trim()
@@ -522,7 +531,10 @@ function handleHealth(req, res) {
     pid: process.pid,
     uptimeMs: Date.now() - state.startedAt,
     projects,
-    hooksInstalled: hooksInstalledMap(projects),
+    hooksInstalled: ownerBridge ? Object.fromEntries(await Promise.all(projects.map(async id => {
+      try { return [id, (await ownerBridge.json(ownerBridge.node(id), 'project.facts', { projectId: id })).hookInstalled]; }
+      catch { return [id, null]; }
+    }))) : hooksInstalledMap(projects),
     sseSubscribers: state.subscribers.size,
     distBuilt: fs.existsSync(path.join(DIST_DIR, 'index.html')),
     webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(readSettings().webhookEvents) },
@@ -579,7 +591,8 @@ function handleBoard(req, res, projectId, query = {}) {
     if (!board) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
     const limit = positiveInteger(query.activityLimit, 0);
     const activity = fields === 'tasks' ? [] : limit ? board.activity.slice(-limit) : board.activity;
-    sendJson(res, 200, { ...board, tasks: fields === 'activity' ? [] : board.tasks, activity });
+    const { _commandReceipts, ...publicBoard } = board;
+    sendJson(res, 200, { ...publicBoard, tasks: fields === 'activity' ? [] : board.tasks, activity });
   } catch (e) {
     res.removeHeader('ETag');
     sendJson(res, 500, { ok: false, error: `board.json 或活动归档读取失败：${e.message}` });
@@ -658,11 +671,17 @@ function handleDoc(req, res, query) {
 /** 读 POST 体（带上限），回调 (err, string) */
 function readBody(req, maxBytes, cb) {
   let size = 0; const chunks = []; let done = false;
-  const finish = (err, data) => { if (done) return; done = true; cb(err, data); };
+  const finish = (err, data) => {
+    if (done) return;
+    done = true;
+    if (!collaborationApi) return cb(err, data);
+    collaborationApi.withOwnerBody(req, () => cb(err, data));
+  };
   req.on('data', (c) => {
     size += c.length;
     if (size > maxBytes) { finish(new Error('请求体过大')); try { req.destroy(); } catch (_) {} return; }
     chunks.push(c);
+    if (chunks.length === 1 && collaborationApi) collaborationApi.bodyChunk(req, size);
   });
   req.on('end', () => finish(null, Buffer.concat(chunks).toString('utf8')));
   req.on('error', (e) => finish(e));
@@ -724,6 +743,7 @@ const readerApi = createReaderApi({
   dashRoot: DASH_ROOT,
   dataRoot: DASHBOARD_HOME,
   cliIndex: CLI_INDEX,
+  execFile: ownerExecFile,
   registry: REGISTRY,
   registryPath: REGISTRY_PATH,
   pollBoards: () => pollBoards(),
@@ -732,6 +752,7 @@ const readerApi = createReaderApi({
 const auditionApi = createAuditionApi({
   resolveProjectSafe, sendJson, readBody, bodyMax: BODY_MAX,
   dashRoot: DASH_ROOT, dataRoot: DASHBOARD_HOME, cliIndex: CLI_INDEX,
+  execFile: ownerExecFile,
   registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards: () => pollBoards(),
 });
 
@@ -1019,12 +1040,12 @@ function handleTaskAction(req, res, pid, tid, action) {
     }
     args.push('--project', pid, '--author', '负责人', '--json');
     if (REGISTRY !== REGISTRY_PATH) args.push('--registry', REGISTRY);
-    execFile(process.execPath, args, {
+    ownerExecFile(process.execPath, args, {
       cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
     }, (e, stdout, stderr) => {
       if (e) {
         const msg = String(stderr || '').trim() || e.message || `${action} 失败`;
-        return sendJson(res, typeof e.code === 'number' ? 400 : 500, { ok: false, error: msg });
+        return sendJson(res, e.status || (typeof e.code === 'number' ? 400 : 500), { ok: false, error: msg });
       }
       let parsed;
       try { parsed = JSON.parse(stdout); }
@@ -1051,12 +1072,12 @@ function handleUndecide(req, res, projectId, taskId) {
     // 与拍板共用 CLI 唯一写入通道，参数逐个传递，不经 shell。
     const args = [CLI_INDEX, 'undecide', taskId, '--project', projectId, '--did', did, '--author', author, '--json'];
     if (REGISTRY !== REGISTRY_PATH) args.push('--registry', REGISTRY);
-    execFile(process.execPath, args, {
+    ownerExecFile(process.execPath, args, {
       cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
     }, (error, stdout, stderr) => {
       if (error) {
         const message = String(stderr || '').trim() || error.message || 'undecide 失败';
-        return sendJson(res, typeof error.code === 'number' ? 400 : 500, { ok: false, error: message });
+        return sendJson(res, error.status || (typeof error.code === 'number' ? 400 : 500), { ok: false, error: message });
       }
       let parsed;
       try { parsed = JSON.parse(stdout); }
@@ -1086,14 +1107,14 @@ function handleDecide(req, res, projectId, taskId) {
     const args = [CLI_INDEX, 'decide', '--project', projectId, taskId,
       '--did', did, '--answer', answer, '--author', author, '--json'];
     if (REGISTRY !== REGISTRY_PATH) { args.push('--registry', REGISTRY); } // 测试隔离时透传
-    execFile(process.execPath, args, {
+    ownerExecFile(process.execPath, args, {
       cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
     }, (e, stdout, stderr) => {
       if (e) {
         // 退出码是数字 → CLI 跑了但拒绝（多为答案非法等用户错）→ 400；否则（spawn 失败/超时）→ 500
         const isCliReject = typeof e.code === 'number';
         const msg = (String(stderr || '').trim()) || e.message || 'decide 失败';
-        return sendJson(res, isCliReject ? 400 : 500, { ok: false, error: msg });
+        return sendJson(res, e.status || (isCliReject ? 400 : 500), { ok: false, error: msg });
       }
       let parsed;
       try { parsed = JSON.parse(stdout); }
@@ -1141,6 +1162,9 @@ function handleDispatch(req, res) {
 
     // 生成启动指令(含"看板派单 header"让新对话认得出自己是被派来的)
     const prompt = buildDispatchPrompt(pid, proj, task, decision);
+    if (ownerBridge) return dispatchViaOwnerNode(req, res, { projectId: pid, mode: 'decision', taskId: tid, decisionId: did, text: prompt }, {
+      ok: true, dispatched: { pid, tid, did }, msg: '本机执行节点已处理派单',
+    });
 
     // 在 Windows 打开新 cmd 窗口跑 claude,cwd=项目【代码的家】,让 CLAUDE.md 协议锚生效
     const cwd = dispatchCwd(pid);
@@ -1200,6 +1224,9 @@ function handleDispatchProject(req, res) {
     const prompt = buildProjectDispatchPrompt(pid, proj, items);
     const preview = body.preview === true; // 前端可只要文本(不实际派单)
     if (preview) return sendJson(res, 200, { ok: true, prompt, count: items.length });
+    if (ownerBridge) return dispatchViaOwnerNode(req, res, { projectId: pid, mode: 'project', text: prompt }, {
+      ok: true, dispatched: { pid, count: items.length }, msg: '本机执行节点已处理派单',
+    });
 
     const cwd = dispatchCwd(pid);
     if (!cwd) return sendJson(res, 500, { ok: false, error: `派单失败:算不出项目 ${pid} 的代码目录(registry 里 codeRepo/mainRepo 都读不出)` });
@@ -1254,6 +1281,9 @@ function handleDispatchTask(req, res) {
     const trigger = shortTrigger(pid, tid);
     // preview:同时给【完整任务书】和【短触发指令】,前端用短触发做"复制接单"(可靠兜底)
     if (body.preview === true) return sendJson(res, 200, { ok: true, prompt, trigger, count: decisions.length });
+    if (ownerBridge) return dispatchViaOwnerNode(req, res, { projectId: pid, mode: 'task', taskId: tid, text: prompt }, {
+      ok: true, dispatched: { pid, tid, count: decisions.length }, trigger, msg: '本机执行节点已处理派单',
+    });
 
     // 自动开终端:只传【短触发指令】(避开命令行长度/转义炸裂),funnel through cli inbox。
     // 注意:开的是"终端里的 Claude Code",不是桌面 App——前端会同时提供"复制接单指令"兜底。
@@ -1270,6 +1300,19 @@ function handleDispatchTask(req, res) {
     }
     sendJson(res, 200, { ok: true, dispatched: { pid, tid, count: decisions.length }, trigger,
       msg: `已尝试开终端对话落地任务 ${tid}(${decisions.length} 条决策)` });
+  });
+}
+
+function dispatchViaOwnerNode(req, res, args, response) {
+  args = { ...args, text: args.text.split(displayCliCommand()).join('{{OWNER_NODE_CLI}}') };
+  ownerBridge.json(ownerBridge.node(args.projectId), 'dispatch.launch', args, {
+    operationId: req.headers['x-owner-operation-id'],
+    guard: send => new Promise((resolve, reject) => {
+      collaborationApi.withOwnerBody(req, () => { try { resolve(send()); } catch (error) { reject(error); } });
+      if (res.headersSent) reject(new Error('Owner authorization revoked'));
+    }),
+  }).then(() => sendJson(res, 200, response), error => {
+    if (!res.headersSent) sendJson(res, error.status || 503, { ok: false, error: '执行节点不可用或结果待核对；请勿重复派单' });
   });
 }
 
@@ -1401,13 +1444,13 @@ function handleMarkLanded(req, res, projectId, taskId) {
 
     const args = [CLI_INDEX, 'mark-landed', taskId, ...(all ? ['--all'] : ['--did', did]), '--project', projectId, '--author', author, '--json'];
     if (REGISTRY !== REGISTRY_PATH) { args.push('--registry', REGISTRY); }
-    execFile(process.execPath, args, {
+    ownerExecFile(process.execPath, args, {
       cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
     }, (e, stdout, stderr) => {
       if (e) {
         const isCliReject = typeof e.code === 'number';
         const msg = (String(stderr || '').trim()) || e.message || 'mark-landed 失败';
-        return sendJson(res, isCliReject ? 400 : 500, { ok: false, error: msg });
+        return sendJson(res, e.status || (isCliReject ? 400 : 500), { ok: false, error: msg });
       }
       let parsed;
       try { parsed = JSON.parse(stdout); }
@@ -1446,6 +1489,7 @@ function streamFile(res, fullPath, status) {
 
 /** dist 未构建时的占位页：让 API 先可用、并提示怎么把前端 build 出来 */
 function sendPlaceholder(res, status) {
+  if (collaborationApi) return sendText(res, status || 200, '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>项目管理看板</title><p>登录界面尚未就绪，请联系负责人。</p></html>', 'text/html; charset=utf-8');
   const buildRoot = DASH_ROOT.replace(/\\/g, '/')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
@@ -1485,14 +1529,16 @@ function serveStatic(req, res, pathname) {
 
 // ============ 主入口：路由 ============
 
-const server = http.createServer((req, res) => {
-  if (!isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
+const server = http.createServer(async (req, res) => {
+  if (!collaborationApi && !isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
   let parsed;
   try { parsed = url.parse(req.url, true); }
   catch (_) { return sendJson(res, 400, { ok: false, error: '非法 URL' }); }
   const pathname = parsed.pathname || '/';
 
   try {
+    if (collaborationApi && await collaborationApi.handle(req, res, pathname)) return;
+    if (!collaborationApi && pathname === '/api/auth/session' && req.method === 'GET') return sendJson(res, 200, { ok: true, mode: 'local', user: null });
     if (pathname.startsWith('/api/')) {
       // 拆分并逐段解码路径参数（project id / task id 可能含非 ASCII）
       const rawSegs = pathname.split('/').filter(Boolean); // ['api','board','game']
@@ -1507,6 +1553,15 @@ const server = http.createServer((req, res) => {
       if (sub === 'sched' && !modules.cpu) return sendJson(res, 404, { ok: false, error: '调度台模块未启用，请在菜单设置里打开' });
       if (sub === 'reader' && !modules.reader) return sendJson(res, 404, { ok: false, error: '审阅台模块未启用（在菜单设置里打开，或 settings.json 的 modules.reader 设为 true）' });
       if (sub === 'audition' && !modules.audition) return sendJson(res, 404, { ok: false, error: '试听台模块未启用，请在菜单设置里打开' });
+
+      // collaborationApi.handle has already consumed every anonymous/member request.
+      // POST body and the actual bridge submission re-enter the existing revocation guard.
+      if (ownerBridge && await ownerBridge.route(req, res, pathname, parsed.query || {}, {
+        readBody, sendJson, resolveProjectSafe, costCards, costBindings,
+        guard: (request, run) => collaborationApi.withOwnerBody(request, run),
+        dashRoot: DASH_ROOT, dataRoot: DASHBOARD_HOME, cliIndex: CLI_INDEX, execFile: ownerExecFile,
+        registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards,
+      })) return;
 
       if (sub === 'health' && req.method === 'GET') return handleHealth(req, res);
       if (sub === 'settings' && req.method === 'POST') return handleSettings(req, res);
@@ -1544,7 +1599,7 @@ const server = http.createServer((req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { ok: false, error: '仅支持 GET' });
     return serveStatic(req, res, pathname);
   } catch (e) {
-    return sendJson(res, 500, { ok: false, error: '服务器内部错误：' + (e && e.message) });
+    return sendJson(res, ownerBridge ? (e.status || 503) : 500, { ok: false, error: '服务器内部错误：' + (e && e.message) });
   }
 });
 
@@ -1641,14 +1696,37 @@ function openBrowser(targetUrl) {
 let schedReadClosing;
 function closeSchedReads() {
   if (!schedReadClosing) schedReadClosing = schedApi.close().catch(error => console.error('[sched-read-close]', error));
+  return schedReadClosing;
+}
+const activeConnections = new Set();
+server.on('connection', socket => { activeConnections.add(socket); socket.once('close', () => activeConnections.delete(socket)); });
+let shutdownPromise;
+let stopIntervals = () => {};
+function shutdown() {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    stopIntervals();
+    for (const res of state.subscribers) res.end();
+    state.subscribers.clear();
+    if (collaborationApi) collaborationApi.close();
+    const closed = new Promise(resolve => { if (!server.listening) resolve(); else closeServer.call(server, resolve); });
+    server.closeIdleConnections?.();
+    const timer = setTimeout(() => { for (const socket of activeConnections) socket.destroy(); }, 5000);
+    try { await Promise.all([closed, closeSchedReads(), ownerBridge?.close()]); }
+    finally { clearTimeout(timer); clearBoardReadCaches(); }
+  })();
+  return shutdownPromise;
 }
 // Stop pending reads before close waits for their HTTP connections to drain.
 const closeServer = server.close;
 server.close = function (...args) {
+  if (collaborationApi) collaborationApi.close();
   closeSchedReads();
   return closeServer.apply(this, args);
 };
 server.on('close', () => {
+  if (ownerBridge) ownerBridge.close().catch(error => console.error('[owner-close]', error.message));
+  if (collaborationApi) collaborationApi.close();
   clearBoardReadCaches();
   closeSchedReads();
 });
@@ -1660,9 +1738,10 @@ function startIntervals() {
   }, POLL_MS);
   const beat = setInterval(() => broadcast('ping', { ts: Date.now() }), HEARTBEAT_MS);
   const refreshCi = () => {
-    if (resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
+    if (!ownerBridge && resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
   };
   const ciPoll = setInterval(refreshCi, CI_POLL_MS);
+  stopIntervals = () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); };
   ciPoll.unref();
   server.once('close', () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); });
   refreshCi();
@@ -1673,7 +1752,7 @@ function tryListen(port, attemptsLeft) {
   server.removeAllListeners('error');
   // 上次端口占用留下的回调不能在下一次成功时重复宣布旧地址、启动重复轮询。
   server.removeAllListeners('listening');
-  server.listen(port, '127.0.0.1');
+  server.listen(port, COLLABORATION ? COLLABORATION.host : '127.0.0.1');
   server.once('listening', () => {
     state.actualPort = server.address().port;
     const localUrl = `http://127.0.0.1:${state.actualPort}/`;
@@ -1707,6 +1786,8 @@ function tryListen(port, attemptsLeft) {
 }
 
 async function main() {
+  // A collaboration instance never probes, reuses or terminates another service.
+  if (collaborationApi) return tryListen(PORT_BASE, 0);
   const inst = await findExistingInstance();
   if (!inst) return tryListen(PORT_BASE, PORT_RANGE);
 
@@ -1738,13 +1819,18 @@ async function main() {
 // 局部请求出错不该拖垮整个本地服务（各请求/回调已各自兜底，这里是最后一道网）
 process.on('uncaughtException', (e) => { console.error('[uncaught]', e && (e.stack || e.message || e)); });
 
-// 直接 `node server/server.cjs` 才起服务;被 require 时只暴露纯函数供单测取用
+// 直接 `node server/server.cjs` 才自动起服务；嵌入式入口可显式调用 main。
 // (派单要 spawn 真实终端窗口跑 claude,单测碰不得,只能验落脚点怎么算出来的)。
-if (require.main === module) main();
+if (require.main === module) {
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+    shutdown().then(() => { process.exitCode = 0; }, error => { console.error('[shutdown]', error.message); process.exitCode = 1; });
+  });
+  main();
+}
 
 /** 这份代码的身份与端口段（给测试与排错用；不起服务也能问出来）。 */
 function runtimeInfo() {
   return { mode: MODE, codeRoot: DASH_ROOT, releaseCommit: RELEASE_COMMIT, portBase: PORT_BASE, portRange: PORT_RANGE };
 }
 
-module.exports = { dispatchCwd, codexRepo, costPrefixes, isSameRuntime, runtimeInfo, readCiRepository };
+module.exports = { main, shutdown, dispatchCwd, codexRepo, costPrefixes, isSameRuntime, runtimeInfo, readCiRepository };

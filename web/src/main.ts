@@ -1,7 +1,5 @@
 import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import router from './router'
-import App from './App.vue'
+import CollaborationRoot from './collaboration/CollaborationRoot.vue'
 import './styles/base.css'
 
-createApp(App).use(createPinia()).use(router).mount('#app')
+createApp(CollaborationRoot).mount('#app')

@@ -1,18 +1,9 @@
+import { authFetch, responseJson } from '../collaboration/http'
 // 审阅台 REST 客户端(READER-INTO-BOARD)。契约见 server/readerApi.cjs。
 const API = '/api/reader'
 
 async function asJson<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`
-    try {
-      const body = await res.json()
-      if (body && typeof body.error === 'string') msg = body.error
-    } catch {
-      /* 非 JSON 错误体 */
-    }
-    throw new Error(msg)
-  }
-  return (await res.json()) as T
+  return responseJson<T>(res)
 }
 
 export interface ReaderNoteLayerRef { id: string; name: string; file: string; key?: string }
@@ -103,10 +94,10 @@ export interface ReaderExportResult { ok: boolean; path: string; count: number }
 const q = (o: Record<string, string>) => new URLSearchParams(o).toString()
 
 export async function fetchReaderManifest(project: string): Promise<ReaderManifestPayload> {
-  return asJson<ReaderManifestPayload>(await fetch(`${API}/manifest?${q({ project })}`))
+  return asJson<ReaderManifestPayload>(await authFetch(`${API}/manifest?${q({ project })}`))
 }
 export async function fetchReaderReport(project: string, key: string): Promise<ReaderReportPayload> {
-  return asJson<ReaderReportPayload>(await fetch(`${API}/report?${q({ project, key })}`))
+  return asJson<ReaderReportPayload>(await authFetch(`${API}/report?${q({ project, key })}`))
 }
 export async function postReaderAnno(
   project: string,
@@ -114,7 +105,7 @@ export async function postReaderAnno(
   anno: { blockId: string; anchor: string; quote: string; text: string; author?: string; start?: number; end?: number },
 ): Promise<ReaderAnnoPostResult> {
   return asJson<ReaderAnnoPostResult>(
-    await fetch(`${API}/annos`, {
+    await authFetch(`${API}/annos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key, op: 'add', anno }),
@@ -123,7 +114,7 @@ export async function postReaderAnno(
 }
 export async function deleteReaderAnno(project: string, key: string, id: string): Promise<{ ok: boolean; annos: ReaderAnno[] }> {
   return asJson(
-    await fetch(`${API}/annos`, {
+    await authFetch(`${API}/annos`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key, op: 'delete', id }),
@@ -136,7 +127,7 @@ export async function postReaderMark(
   mark: { blockId: string; anchor: string; quote: string; start: number; end: number; color: MarkColor },
 ): Promise<{ ok: boolean; mark: ReaderHighlight; highlights: ReaderHighlight[] }> {
   return asJson(
-    await fetch(`${API}/marks`, {
+    await authFetch(`${API}/marks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key, op: 'add', mark }),
@@ -145,7 +136,7 @@ export async function postReaderMark(
 }
 export async function deleteReaderMark(project: string, key: string, id: string): Promise<{ ok: boolean; highlights: ReaderHighlight[] }> {
   return asJson(
-    await fetch(`${API}/marks`, {
+    await authFetch(`${API}/marks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key, op: 'delete', id }),
@@ -154,7 +145,7 @@ export async function deleteReaderMark(project: string, key: string, id: string)
 }
 export async function postReaderReview(project: string, key: string, state: '已审阅' | '未审阅'): Promise<{ ok: boolean; review: ReaderReview | null }> {
   return asJson(
-    await fetch(`${API}/review`, {
+    await authFetch(`${API}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key, state }),
@@ -163,7 +154,7 @@ export async function postReaderReview(project: string, key: string, state: '已
 }
 export async function postReaderExport(project: string, key: string): Promise<ReaderExportResult> {
   return asJson<ReaderExportResult>(
-    await fetch(`${API}/export`, {
+    await authFetch(`${API}/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key }),
@@ -173,7 +164,7 @@ export async function postReaderExport(project: string, key: string): Promise<Re
 export interface ReaderExportReviewResult { ok: boolean; fileName: string; md: string; annoCount: number }
 /** 导出给外脑(READER-EXPORT-REVIEW):批阅意见单 + 回流对账 + 带批注的报告原文,一份 md 只回给前端不落盘 */
 export async function exportReview(project: string, key: string): Promise<ReaderExportReviewResult> {
-  return asJson<ReaderExportReviewResult>(await fetch(`${API}/export-review?${q({ project, key })}`))
+  return asJson<ReaderExportReviewResult>(await authFetch(`${API}/export-review?${q({ project, key })}`))
 }
 
 /** 本机导入(READER-IMPORT-BUTTON T3)的请求与回包;md 是 T2 浏览器端转好的,original 是原件的 base64(不带 data: 前缀) */
@@ -191,7 +182,7 @@ export interface ReaderImportResult { ok: boolean; key: string; duplicate: boole
 /** 本机导入:把转好的 markdown(可选带原件)交给 server 落本机数据目录;同内容同天 = 同 key,回 duplicate:true */
 export async function importReport(payload: ReaderImportRequest): Promise<ReaderImportResult> {
   return asJson<ReaderImportResult>(
-    await fetch(`${API}/import`, {
+    await authFetch(`${API}/import`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -202,7 +193,7 @@ export interface ReaderImportDeleteResult { ok: boolean; removedAnnos: number }
 /** 删除一份本机导入(IMP- 开头的 key,仓库报告删不了);写在这份报告上的批注一起清 */
 export async function deleteImport(project: string, key: string): Promise<ReaderImportDeleteResult> {
   return asJson<ReaderImportDeleteResult>(
-    await fetch(`${API}/import-delete`, {
+    await authFetch(`${API}/import-delete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ project, key }),

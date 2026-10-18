@@ -10,9 +10,21 @@ const { withLock } = require('../core/lock.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { assertValid, emptyBoard } = require('../core/boardSchema.cjs');
 const { diffTask } = require('../core/taskDiff.cjs');
+let transaction = null;
+function guardLocal(boardPath) {
+  require('../core/resolveProject.cjs').assertLocalBoard(boardPath);
+}
+function rawBoard(boardPath) { return JSON.parse(fs.readFileSync(boardPath, 'utf8')); }
+function sameBoard(a, b) { return path.resolve(a) === path.resolve(b); }
+function syncOnly(result) {
+  if (result && typeof result.then === 'function') throw new Error('board 事务禁止 Promise');
+  return result;
+}
 
 function readBoard(boardPath) {
-  return JSON.parse(fs.readFileSync(boardPath, 'utf8'));
+  if (transaction && sameBoard(transaction.proj.board, boardPath)) return transaction.board;
+  guardLocal(boardPath);
+  return require('../core/boardCommand.cjs').publicResult(rawBoard(boardPath));
 }
 function readBoardOrNull(boardPath) {
   try { return readBoard(boardPath); }
@@ -31,12 +43,22 @@ function readBoardOrNull(boardPath) {
  * @returns {object} 写入后的 board
  */
 function mutate(proj, mutator, activityEntry) {
+  guardLocal(proj.board);
+  if (transaction) {
+    if (!sameBoard(transaction.proj.board, proj.board)) throw new Error('禁止跨 board 嵌套事务');
+    const board = transaction.board;
+    syncOnly(mutator(board));
+    const entry = typeof activityEntry === 'function' ? syncOnly(activityEntry(board)) : activityEntry;
+    if (entry) { board.activity = board.activity || []; board.activity.push(entry); }
+    board.project.updatedAt = new Date().toISOString();
+    return board;
+  }
   fs.mkdirSync(path.dirname(proj.board), { recursive: true });
   return withLock(proj.lock, () => {
-    const board = readBoardOrNull(proj.board)
-      || emptyBoard({ id: proj.id, name: proj.name, mainRepo: proj.mainRepo });
-    mutator(board);
-    const entry = typeof activityEntry === 'function' ? activityEntry(board) : activityEntry;
+    const board = fs.existsSync(proj.board) ? rawBoard(proj.board)
+      : emptyBoard({ id: proj.id, name: proj.name, mainRepo: proj.mainRepo });
+    syncOnly(mutator(board));
+    const entry = typeof activityEntry === 'function' ? syncOnly(activityEntry(board)) : activityEntry;
     if (entry) {
       board.activity = board.activity || [];
       board.activity.push(entry);
@@ -47,6 +69,46 @@ function mutate(proj, mutator, activityEntry) {
     return board;
   });
 }
+
+/** Business mutation, revision and immutable receipt share the existing lock and one atomic write. */
+function commandTransaction(proj, identity, fn) {
+  if (transaction) throw new Error('禁止嵌套 commandTransaction');
+  guardLocal(proj.board);
+  return withLock(proj.lock, () => {
+    // A Windows replacement can temporarily remove the destination while its
+    // writer holds this lock. Decide whether the authority is missing only here.
+    if (!fs.existsSync(proj.board)) throw new Error('权威账本不存在，必须由固定管理员入口初始化或主控迁移');
+    const board = rawBoard(proj.board);
+    const { request, subject, inputHash } = identity;
+    const key = require('../core/boardCommand.cjs').inputHash([subject, proj.id, request.requestId]);
+    assertValid(board);
+    const retention = require('../core/boardCommandRetention.cjs').prepare(board, request.requestId, identity.receiptPolicy);
+    const receipts = retention.receipts;
+    const old = receipts[key];
+    if (old) {
+      if (old.inputHash !== inputHash) throw new Error('requestId 已用于不同内容');
+      return old.result;
+    }
+    retention.checkNew();
+    transaction = { proj, board, subject };
+    try {
+      const raw = syncOnly(fn()) || { ok: true };
+      const result = require('../core/boardCommand.cjs').publicResult(raw);
+      if (result.task) result.task = { id: result.task.id, status: result.task.status, percent: result.task.percent || 0 };
+      if (result.tasks) result.tasks = result.tasks.map(t => ({ id: t.id, status: t.status, percent: t.percent || 0 }));
+      delete result.board;
+      if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024) throw new Error('稳定回执超过上限');
+      board.revision = (board.revision || 0) + 1;
+      receipts[key] = { inputHash, createdAt: retention.stamp, revision: board.revision, result };
+      retention.finish();
+      assertValid(board);
+      atomicWriteJsonSync(proj.board, board);
+      return result;
+    } finally { transaction = null; }
+  });
+}
+function inCommandTransaction() { return !!transaction; }
+function commandSubject() { return transaction ? transaction.subject : null; }
 
 /**
  * mutate 的"带变更清单"版本：锁内、mutator 前后各抓一次目标卡的快照，比出 changed[]。
@@ -62,7 +124,7 @@ function mutateTask(proj, taskId, mutator, activityEntry) {
   let changed = [];
   const board = mutate(proj, (b) => {
     const before = snapshotTask(b, taskId);
-    mutator(b);
+    syncOnly(mutator(b));
     changed = diffTask(before, snapshotTask(b, taskId));
   }, activityEntry);
   return { board, changed };
@@ -125,4 +187,4 @@ function unionShas(arr) {
   return kept;
 }
 
-module.exports = { readBoard, readBoardOrNull, mutate, mutateTask, snapshotTask, findTask, unionBy, unionShas, sameCommit, hasCommit };
+module.exports = { readBoard, readBoardOrNull, mutate, mutateTask, snapshotTask, findTask, unionBy, unionShas, sameCommit, hasCommit, commandTransaction, inCommandTransaction, commandSubject };

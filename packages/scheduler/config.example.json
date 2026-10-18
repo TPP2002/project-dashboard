@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "machines": [],
+  "projects": [],
+  "jobs": {},
+  "defaultJobKind": null,
+  "legacyProjectId": null,
+  "lifecycleBundleName": null,
+  "hostMachine": null,
+  "spareMachine": null,
+  "ci": {
+    "labels": null,
+    "takeover": null,
+    "reserveCores": {},
+    "jitSlotRoot": null,
+    "ghPath": "gh"
+  }
+}

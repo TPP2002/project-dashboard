@@ -1,0 +1,13 @@
+# Optional owner services. Sockets stay inside the dashboard container; Windows
+# connects out through the configured fixed SSH entry. No additional TCP port.
+services:
+  dashboard:
+    environment:
+      DASHBOARD_OWNER_NODE_CONFIG: /run/owner-node/cloud.json
+    volumes:
+      - type: bind
+        source: ${OWNER_NODE_CONFIG_DIR:?Set OWNER_NODE_CONFIG_DIR}
+        target: /run/owner-node
+        read_only: true
+        bind:
+          create_host_path: false

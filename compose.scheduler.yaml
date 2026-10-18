@@ -1,0 +1,67 @@
+# Optional cloud authority. Combine with compose.yaml after preparing the
+# deployment catalog and protected runtime configuration described in the docs.
+services:
+  dashboard:
+    environment:
+      DASHBOARD_SCHED_SHARE: /scheduler
+    volumes:
+      # The web service can read the authority's records, but may only publish
+      # commands. It cannot rewrite tickets, heartbeat or the scheduler ledger.
+      - type: bind
+        source: ${SCHEDULER_DATA_DIR:?Set SCHEDULER_DATA_DIR}
+        target: /scheduler
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SCHEDULER_DATA_DIR:?Set SCHEDULER_DATA_DIR}/sched/commands
+        target: /scheduler/sched/commands
+        bind:
+          create_host_path: false
+  scheduler:
+    image: ${DASHBOARD_IMAGE:-dashboard-selfhost:local}
+    user: "1000:1000"
+    init: true
+    # Keep one kernel lock across Docker PID namespaces. --no-fork replaces
+    # flock with Node while retaining the FD and normal signal delivery.
+    command: ["flock", "--no-fork", "--exclusive", "--nonblock", "--conflict-exit-code", "75", "/scheduler/authority.flock", "node", "packages/scheduler/dist/cli.cjs", "cloud", "--config", "/run/scheduler/cloud.json"]
+    environment:
+      NODE_ENV: production
+    volumes:
+      - type: bind
+        source: ${SCHEDULER_DATA_DIR:?Set SCHEDULER_DATA_DIR}
+        target: /scheduler
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SCHEDULER_CONFIG_DIR:?Set SCHEDULER_CONFIG_DIR}
+        target: /run/scheduler
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=1000,gid=1000,mode=1770
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1.0
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 128
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "try { const h=JSON.parse(require('node:fs').readFileSync('/scheduler/sched/_control/dispatcher-heartbeat.json','utf8')); const age=Date.now()-Date.parse(h.at); process.exit(Number.isFinite(age)&&age>=0&&age<60000?0:1); } catch { process.exit(1); }"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
