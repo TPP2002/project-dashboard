@@ -1,3 +1,4 @@
+import { authFetch } from '../collaboration/http'
 /** 调度台只消费派单员决策快照；所有核数单位为核，四段时长单位为毫秒。 */
 export type TicketState = 'queued' | 'granted' | 'running' | 'paused' | 'slow' | 'unsatisfiable' | 'passed' | 'failed' | 'cancelled' | 'voided'
 export type ReserveCores = 0 | 5 | 10 | 15
@@ -73,7 +74,7 @@ export interface TicketPage {
 }
 
 async function request<T>(endpoint: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/sched/${endpoint}`, { signal, ...(body === undefined ? {} : {
+  const response = await authFetch(`/api/sched/${endpoint}`, { signal, ...(body === undefined ? {} : {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }) })
   const value = await response.json()
@@ -94,7 +95,7 @@ export const postCommand = (body: CommandInput) => request<{ ok: boolean; comman
 export async function exportTickets(filters: TicketFilters, signal?: AbortSignal): Promise<Blob> {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value)
-  const response = await fetch(`/api/sched/tickets.csv?${query}`, { signal })
+  const response = await authFetch(`/api/sched/tickets.csv?${query}`, { signal })
   if (!response.ok) {
     const value = await response.json()
     throw new Error([value.error || '导出失败', value.reason].filter(Boolean).join('：'))
