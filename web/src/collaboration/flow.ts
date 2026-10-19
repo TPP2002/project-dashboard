@@ -1,6 +1,6 @@
 import type { Invite, MemberTask, Session } from './types'
 
-export function sessionView(session: Session | null): 'loading' | 'local' | 'login' | 'owner' | 'member' {
+export function sessionView(session: Session | null): 'loading' | 'local' | 'login' | 'owner' | 'member' | 'viewer' {
   if (!session) return 'loading'
   if (session.mode === 'local') return 'local'
   return session.user?.role ?? 'login'

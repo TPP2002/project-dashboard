@@ -6,6 +6,7 @@ import { consumeInvite, sessionView } from './flow'
 import OwnerHost from './OwnerHost.vue'
 import AuthForm from './AuthForm.vue'
 import MemberBoard from './MemberBoard.vue'
+import AccountMenu from './AccountMenu.vue'
 import './collaboration.css'
 
 const AdminPanel = defineAsyncComponent(() => import('./AdminPanel.vue'))
@@ -21,7 +22,7 @@ let checking = false
 let timer: ReturnType<typeof setInterval> | undefined
 function accept(next: Session) {
   if (next.mode !== 'local' && next.mode !== 'collaboration') throw new Error('服务器未返回有效运行模式')
-  if (next.user && !['owner', 'member'].includes(next.user.role)) throw new Error('服务器未返回有效身份')
+  if (next.user && !['owner', 'member', 'viewer'].includes(next.user.role)) throw new Error('服务器未返回有效身份')
   setAuthContext(next)
   session.value = next
   error.value = ''
@@ -82,14 +83,15 @@ onBeforeUnmount(() => {
   </main>
   <AuthForm v-else-if="view === 'login'" :invite="invite" :session-error="error" @authenticated="authenticated" />
   <template v-else>
-    <div v-if="view !== 'local'" class="collab collab-toolbar">
-      <span>{{ session?.user?.displayName || session?.user?.username }}</span>
+    <div v-if="view === 'owner'" class="collab collab-toolbar">
       <button v-if="view === 'owner'" class="btn" @click="adminOpen = !adminOpen">{{ adminOpen ? '返回看板' : '成员与邀请' }}</button>
-      <button class="btn" :disabled="busy" @click="logout">退出登录</button>
+      <AccountMenu v-if="session?.user" :user="session.user" :busy="busy" @logout="logout" />
       <span v-if="error" role="alert">{{ error }}</span>
     </div>
     <AdminPanel v-if="view === 'owner' && adminOpen" />
     <OwnerHost v-if="view === 'local' || view === 'owner'" v-show="!adminOpen" :key="view + (session?.user?.id || '')" />
-    <MemberBoard v-else-if="view === 'member' && session?.user" :key="session.user.id" :user="session.user" />
+    <MemberBoard v-else-if="(view === 'member' || view === 'viewer') && session?.user" :key="view + session.user.id" :user="session.user">
+      <template #account><AccountMenu :user="session.user" :busy="busy" @logout="logout" /><span v-if="error" role="alert">{{ error }}</span></template>
+    </MemberBoard>
   </template>
 </template>

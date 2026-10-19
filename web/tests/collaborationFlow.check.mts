@@ -31,6 +31,7 @@ test('mode and identity routing fails closed before session and distinguishes ow
   assert.equal(sessionView(local), 'local')
   assert.equal(sessionView(guest), 'login')
   assert.equal(sessionView(member), 'member')
+  assert.equal(sessionView({ ...member, user: { ...member.user!, role: 'viewer' } }), 'viewer')
   assert.equal(sessionView({ ...member, user: { ...member.user!, role: 'owner' } }), 'owner')
 })
 
@@ -71,7 +72,7 @@ test('Request objects inherit method and headers unless init overrides them', ()
 })
 
 test('403/409 and HTTP-success failure envelopes cannot become successful mutations', async () => {
-  for (const status of [403, 409, 200]) {
+  for (const status of [403, 404, 409, 200]) {
     await assert.rejects(responseJson(new Response(JSON.stringify({ ok: false, error: '负责人已移除授权' }), { status })), /负责人已移除授权/)
   }
   await assert.rejects(responseJson(new Response('<html>proxy failure</html>', { status: 502 })), /无法读取/)
@@ -157,6 +158,53 @@ test('member write failures propagate and do not fabricate a result', async () =
   const api = memberApi(async () => { throw new Error('任务已被领取') })
   await assert.rejects(api.claim('p1', 't1'), /任务已被领取/)
   await assert.rejects(api.progress('p1', 't1', 60, ''), /任务已被领取/)
+})
+
+test('viewer boards retain only public collaboration fields including empty actions', async () => {
+  const task = {
+    id: 't', title: '共享卡', status: '施工中', actions: [], aiWork: true,
+    messages: [{ ts: null, author: null, text: '公开留言', userId: null }],
+    collaborators: [{ userId: 'u', name: '成员', joinedAt: '2026-10-19T00:00:00Z' }],
+    createdByUserId: 'u', blockReason: null, cancelReason: null, dates: { start: '2026-10-19' },
+    builder: 'private', gitBranch: ['private'], prNumbers: [1],
+  }
+  const received = (await memberApi(async <T>() => ({ tasks: [task] }) as T).tasks('p'))[0]!
+  for (const field of ['actions', 'aiWork', 'messages', 'collaborators', 'createdByUserId', 'blockReason', 'cancelReason'] as const) assert.deepEqual(received[field], task[field])
+  assert.equal(received.dates?.start, '2026-10-19')
+  for (const field of ['builder', 'gitBranch', 'prNumbers']) assert.equal(field in received, false)
+})
+
+test('password 400 preserves session; public reset uses request body and no stale CSRF', async () => {
+  const originalFetch = globalThis.fetch
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { location: new URL('https://board.example/') } })
+  let expired = 0
+  const unsubscribe = onSessionExpired(() => { expired++ })
+  try {
+    setAuthContext({ ...member, user: { ...member.user!, role: 'viewer' } })
+    globalThis.fetch = async () => new Response('{"ok":false,"error":"当前密码不对"}', { status: 400 })
+    await assert.rejects(apiJson('/api/auth/password', { currentPassword: 'wrong', newPassword: '123456' }), /当前密码不对/)
+    assert.equal(expired, 0)
+    globalThis.fetch = async (_input, init) => {
+      assert.equal(new Headers(init?.headers).get('X-Dashboard-CSRF'), member.csrfToken)
+      return new Response('{"ok":true}')
+    }
+    await apiJson('/api/auth/password', { currentPassword: 'correct', newPassword: '123456' })
+    setAuthContext(guest)
+    globalThis.fetch = async (input, init) => {
+      assert.equal(input, '/api/auth/reset-password')
+      assert.deepEqual(JSON.parse(String(init?.body)), { resetToken: 'test-code', newPassword: '123456' })
+      assert.equal(new Headers(init?.headers).has('X-Dashboard-CSRF'), false)
+      assert.equal(new Headers(init?.headers).get('X-Dashboard-Request'), '1')
+      return new Response(JSON.stringify(member))
+    }
+    assert.equal(sessionView(await apiJson<Session>('/api/auth/reset-password', { resetToken: 'test-code', newPassword: '123456' })), 'member')
+    await assert.rejects(authFetch('/api/projects'), /请先登录/)
+  } finally {
+    unsubscribe(); setAuthContext(null); globalThis.fetch = originalFetch
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
 })
 
 test('authFetch expires sessions on 401, cancels stale responses and refuses foreign origins', async () => {

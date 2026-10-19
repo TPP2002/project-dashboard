@@ -1,6 +1,8 @@
 import type { Session } from './types'
 
 let context: Session | null = null
+/** Read-only mode/identity check for the owner's optional collaboration controls. */
+export function isCollaborationOwner(): boolean { return context?.mode === 'collaboration' && context.user?.role === 'owner' }
 let generation = 0
 const pending = new Set<AbortController>()
 const expiredListeners = new Set<() => void>()
@@ -46,7 +48,7 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
   if (url.origin !== window.location.origin || !url.pathname.startsWith('/api/')) {
     throw new Error('协作请求必须使用本站接口')
   }
-  if (!context.user && !['/api/auth/session', '/api/auth/login', '/api/auth/register', '/api/auth/device-login'].includes(url.pathname)) {
+  if (!context.user && !['/api/auth/session', '/api/auth/login', '/api/auth/register', '/api/auth/device-login', '/api/auth/reset-password'].includes(url.pathname)) {
     throw new Error('请先登录')
   }
   const started = generation

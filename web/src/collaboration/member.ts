@@ -1,9 +1,10 @@
 import { apiJson } from './http'
 import { progressBody } from './flow'
-import type { MemberTask, Project } from './types'
+import { actionPath } from './board'
+import type { MemberTask, Project, TaskAction } from './types'
 
 export type MemberRequest = <T>(path: string, body?: unknown, signal?: AbortSignal) => Promise<T>
-/** Only these two read endpoints and two scoped writes belong to the member UI. */
+/** Explicit member field whitelist; owner metadata must never enter this view. */
 export function memberApi(request: MemberRequest = apiJson) {
   return {
     async projects(signal?: AbortSignal): Promise<Project[]> {
@@ -16,13 +17,24 @@ export function memberApi(request: MemberRequest = apiJson) {
       return response.tasks.map(task => ({
         id: task.id, title: task.title, plainTitle: task.plainTitle, description: task.description,
         status: task.status, percent: task.percent, assigneeUserId: task.assigneeUserId, assigneeName: task.assigneeName,
+        actions: [...(task.actions ?? [])], aiWork: task.aiWork,
+        blockReason: task.blockReason, cancelReason: task.cancelReason, createdByUserId: task.createdByUserId,
+        dates: task.dates ? { design: task.dates.design, start: task.dates.start, done: task.dates.done } : undefined,
+        messages: (task.messages ?? []).map(({ ts, author, text, userId }) => ({ ts, author, text, userId })),
+        collaborators: (task.collaborators ?? []).map(({ userId, name, joinedAt }) => ({ userId, name, joinedAt })),
       }))
     },
+    async create(projectId: string, body: { title: string; plainTitle?: string; description?: string }, signal?: AbortSignal): Promise<void> {
+      await request(`/api/collaboration/projects/${encodeURIComponent(projectId)}/tasks`, body, signal)
+    },
+    async act(projectId: string, taskId: string, action: TaskAction, body: unknown = {}, signal?: AbortSignal): Promise<void> {
+      await request(actionPath(projectId, taskId, action), body, signal)
+    },
     async claim(projectId: string, taskId: string, signal?: AbortSignal): Promise<void> {
-      await request(`/api/collaboration/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/claim`, {}, signal)
+      await request(actionPath(projectId, taskId, 'claim'), {}, signal)
     },
     async progress(projectId: string, taskId: string, percent: number, note: string, signal?: AbortSignal): Promise<void> {
-      await request(`/api/collaboration/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/progress`, progressBody(percent, note), signal)
+      await request(actionPath(projectId, taskId, 'progress'), progressBody(percent, note), signal)
     },
   }
 }

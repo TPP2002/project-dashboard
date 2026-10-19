@@ -57,6 +57,10 @@ export interface TaskCost {
 }
 
 export interface Task {
+  assigneeUserId?: string | null
+  assigneeName?: string | null
+  collaborators?: import('./collaboration/types').Collaborator[]
+  aiWork?: boolean
   /** 任务卡编号:模型用来定位,如 NUMERIC-ROUND-FACADE-UNIFY */
   id: string
   /** 任务详细说明:给模型读的技术描述 */
