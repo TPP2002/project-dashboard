@@ -180,25 +180,16 @@ test('⑧ real non-writable queue directory fails command, preserves board, next
   const f = fixture(t, null); f.seed(); f.register({ enabled: true, remoteProjectId: 'remote' });
   const dir = f.proj().syncDir; fs.mkdirSync(dir, { recursive: true });
   const before = fs.readFileSync(f.board, 'utf8');
-  let sid;
-  const cliOptions = {};
+  // 队列文件位置先占一个同名目录,追加必然失败(EISDIR/EPERM 等)。不用 ACL/chmod:
+  // 管理员或特权令牌下「禁止写」不一定生效,10-20 在主机上实测因此假红。
+  const blocker = path.join(dir, 'outbox.jsonl');
+  fs.mkdirSync(blocker);
   try {
-    if (process.platform === 'win32') {
-      sid = execFileSync('powershell.exe', ['-NoProfile', '-Command', '[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value'], { windowsHide: true, encoding: 'utf8' }).trim();
-      execFileSync('icacls.exe', [dir, '/deny', '*' + sid + ':(OI)(CI)(W)'], { windowsHide: true, stdio: 'pipe' });
-    } else {
-      for (const p of [f.dir, f.root, path.dirname(dir)]) fs.chmodSync(p, 0o777);
-      fs.chmodSync(f.board, 0o666); fs.chmodSync(dir, 0o555);
-      if (process.getuid && process.getuid() === 0) cliOptions.uid = 65534;
-    }
-    const r = f.cli(['note', 'T1', '--text', 'must fail'], cliOptions);
+    const r = f.cli(['note', 'T1', '--text', 'must fail']);
     assert.equal(r.status, 1, r.stderr || r.error?.message);
-    assert.match(r.stderr, /EACCES|EPERM|permission|拒绝/i);
+    assert.match(r.stderr, /EISDIR|EACCES|EPERM|permission|拒绝/i);
     assert.equal(fs.readFileSync(f.board, 'utf8'), before);
-  } finally {
-    if (sid) execFileSync('icacls.exe', [dir, '/remove:d', '*' + sid], { windowsHide: true, stdio: 'pipe' });
-    else fs.chmodSync(dir, 0o755);
-  }
+  } finally { fs.rmSync(blocker, { recursive: true, force: true }); }
   assert.deepEqual(f.ops(), []);
   f.ok(['note', 'T1', '--text', 'after repair']); assert.equal(f.ops()[0].seq, 1);
 });
