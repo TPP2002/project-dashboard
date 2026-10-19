@@ -237,6 +237,37 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
     const persisted = fs.readFileSync(path.join(home, 'private', 'collaboration-auth.json'), 'utf8');
     for (const secret of [code, PASSWORD, 'Viewer-new-password-12345', viewer.token, owner.token, member.token, recovered.headers.get('set-cookie').match(/^dashboard_session=([^;]+)/)[1]]) assert.equal(persisted.includes(secret), false);
   });
+  await t.test('HTTP task transport accepts maximum multibyte fields and returns bounded newest messages', async () => {
+    const root = '/api/collaboration/projects/alpha/tasks';
+    const data = { title: '😀'.repeat(200), plainTitle: '😀'.repeat(200), description: '😀'.repeat(4000) };
+    assert.ok(Buffer.byteLength(JSON.stringify(data), 'utf8') > 16384);
+    const created = await request(root, { session: member, data });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    for (const key of Object.keys(data)) assert.equal(created.body.task[key], data[key]);
+    const id = created.body.task.id;
+    const boardFile = path.join(home, 'alpha.json');
+    const board = JSON.parse(fs.readFileSync(boardFile));
+    const messages = Array.from({ length: 60 }, (_, i) => ({ taskId: id, kind: 'message', type: 'note',
+      ts: new Date(Date.UTC(2026, 9, 19, 0, 0, i)).toISOString(), author: member.user.displayName, userId: member.user.id, text: '汉'.repeat(2000) }));
+    board.activity.push(...messages); fs.writeFileSync(boardFile, JSON.stringify(board));
+    const claimed = await request(root + '/' + id + '/claim', { session: member, data: {} });
+    assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+    const returned = claimed.body.task.messages;
+    assert.ok(returned.length > 0 && returned.length < 50);
+    assert.ok(Buffer.byteLength(JSON.stringify(returned), 'utf8') <= 65536);
+    assert.deepEqual(returned.map(m => m.ts), messages.slice(-returned.length).map(m => m.ts));
+    assert.ok(Buffer.byteLength(JSON.stringify(claimed.body), 'utf8') > 65536, 'receipt exercises the raised child-process output buffer');
+    const view = await request('/api/board/alpha', { session: member });
+    assert.deepEqual(view.body.tasks.find(t => t.id === id).messages, returned);
+    const oversized = { title: 'Oversized', description: 'x'.repeat(65536) };
+    assert.ok(Buffer.byteLength(JSON.stringify(oversized), 'utf8') > 65536);
+    const before = fs.readFileSync(boardFile, 'utf8');
+    assert.equal((await request(root, { session: member, data: oversized })).status, 413);
+    assert.equal((await request(root + '/' + id + '/note', { session: member, data: { text: 'x'.repeat(65536) } })).status, 413);
+    assert.equal(fs.readFileSync(boardFile, 'utf8'), before);
+    // Authentication endpoints retain their original 16 KiB transport limit.
+    assert.equal((await request('/api/auth/login', { data: { username: 'x'.repeat(17000), password: 'oversized' } })).status, 413);
+  });
   await t.test('member claim/progress run through CLI and reject body identity and other owners', async () => {
     const route = '/api/collaboration/projects/alpha/tasks/ONE';
     assert.equal((await request(route + '/claim', { session: member, data: { userId: owner.user.id } })).status, 400);

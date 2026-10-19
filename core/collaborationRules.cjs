@@ -13,7 +13,7 @@ function memberActions(task, user) {
   if (!owner && aiWork(task)) return actions;
   const assigned = owner || task.assigneeUserId === user.id;
   const createdOrAssigned = assigned || task.createdByUserId === user.id;
-  if (!task.assigneeUserId && ['未开工', '待开工', '可复工', '已拍板'].includes(task.status) && !pending(task)) actions.push('claim');
+  if ((!task.assigneeUserId || assigned) && ['未开工', '待开工', '可复工', '已拍板'].includes(task.status) && !pending(task)) actions.push('claim');
   if (assigned && task.status === '施工中' && !task.blockReason && !(task.deps?.blockedBy || []).length) actions.push('progress');
   if (assigned && task.status === '施工中') actions.push('unclaim');
   if (assigned && !terminal(task) && task.status !== '暂缓') actions.push('park');

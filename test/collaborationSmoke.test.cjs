@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const { configuration, boardView } = require('../server/collaborationApi.cjs');
 const { username } = require('../core/collaborationAuth.cjs');
 const { readPassword } = require('../cli/collaboration.cjs');
+const { text, taskView } = require('../core/collaborationPublic.cjs');
 
 test('explicit collaboration origin, trusted TLS and separate local mode', () => {
   assert.equal(configuration({}), null);
@@ -29,6 +30,34 @@ test('stable username normalization and protected password file validation', () 
   assert.equal(username(' ＯＷＮＥＲ '), 'owner');
   for (const bad of ['a', '../owner', 'x'.repeat(65), null]) assert.throws(() => username(bad));
   assert.throws(() => readPassword(undefined));
+});
+
+test('Unix path redaction recognizes non-ASCII punctuation without touching URLs or relative paths', () => {
+  assert.equal(text('路径：/home/alice/secret'), '路径：[private path]');
+  assert.equal(text('（/srv/data）'), '（[private path]');
+  assert.equal(text('路径，/srv/data'), '路径，[private path]');
+  assert.equal(text('/srv/data'), '[private path]');
+  assert.equal(text('路径：C:\\path\\to\\private-file'), '路径：[private path]');
+  for (const unchanged of ['https://host/path', '网址：https://host/path', 'src/app', '路径：src/app',
+    '//host/path', '路径：//host/path', './src/app', '../src/app', '~/src/app', '_/src/app', '-/src/app']) {
+    assert.equal(text(unchanged), unchanged);
+  }
+});
+
+test('message JSON has a byte budget and retains a contiguous newest suffix', () => {
+  const task = { id: 'BUDGET', status: '施工中' };
+  const activity = Array.from({ length: 60 }, (_, i) => ({ taskId: task.id, kind: 'message',
+    ts: String(i), author: 'Person', userId: 'member', text: '汉'.repeat(2000) }));
+  const view = taskView(task, { id: 'member', role: 'member' }, activity);
+  assert.ok(view.messages.length > 0 && view.messages.length < 50);
+  assert.ok(Buffer.byteLength(JSON.stringify(view.messages), 'utf8') <= 65536);
+  const expected = activity.slice(-view.messages.length).map(({ ts, author, userId, text }) => ({ ts, author, text, userId }));
+  assert.deepEqual(view.messages, expected);
+  const previous = activity[activity.length - view.messages.length - 1];
+  const previousMessage = { ts: previous.ts, author: previous.author, text: previous.text, userId: previous.userId };
+  assert.ok(Buffer.byteLength(JSON.stringify([previousMessage, ...view.messages]), 'utf8') > 65536);
+  const oversized = [...activity, { ...activity.at(-1), text: '汉'.repeat(22000) }];
+  assert.deepEqual(taskView(task, null, oversized).messages, []);
 });
 
 test('role-aware board views expose actions and only the latest fifty scrubbed messages', () => {

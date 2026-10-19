@@ -8,8 +8,8 @@ function publicJson(key, value) {
 // Field whitelist and text scrubber shared by HTTP boards and CLI receipts.
 function text(value) {
   if (typeof value !== 'string') return undefined;
-  return value.replace(/(?:[A-Za-z]:[\\/]|\\\\)[^\s<>"']+/g, '[private path]')
-    .replace(/(^|[\s("'=])\/(?!\/)[\w.~-]+(?:\/[^\s<>"']*)?/g, '$1[private path]');
+  return value.replace(/(?:(?<![A-Za-z0-9_])[A-Za-z]:[\\/]|\\\\)[^\s<>"']+/g, '[private path]')
+    .replace(/(^|[^A-Za-z0-9_./:~-])\/(?!\/)[\w.~-]+(?:\/[^\s<>"']*)?/g, '$1[private path]');
 }
 function taskView(t, user, activity = []) {
   const out = {};
@@ -24,8 +24,17 @@ function taskView(t, user, activity = []) {
   }
   out.actions = memberActions(t, user);
   out.aiWork = aiWork(t);
-  out.messages = activity.filter(a => a.taskId === t.id && a.kind === 'message').slice(-50)
-    .map(a => ({ ts: text(a.ts) ?? null, author: text(a.author) ?? null, text: text(a.text) ?? '', userId: text(a.userId) ?? null }));
+  out.messages = [];
+  let messageBytes = 2; // Include the JSON array brackets and inter-message commas.
+  for (let i = activity.length - 1; i >= 0 && out.messages.length < 50; i--) {
+    const a = activity[i];
+    if (a.taskId !== t.id || a.kind !== 'message') continue;
+    const message = { ts: text(a.ts) ?? null, author: text(a.author) ?? null, text: text(a.text) ?? '', userId: text(a.userId) ?? null };
+    const bytes = Buffer.byteLength(JSON.stringify(message), 'utf8') + (out.messages.length ? 1 : 0);
+    if (messageBytes + bytes > 65536) break;
+    out.messages.push(message); messageBytes += bytes;
+  }
+  out.messages.reverse();
   return out;
 }
 module.exports = { publicJson, taskView, text };

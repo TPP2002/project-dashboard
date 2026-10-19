@@ -105,8 +105,8 @@ function taskOperation(command, input, auth = createAuth()) {
       if (!t) fail(404, 'Not found');
       if (!memberActions(t, user).includes(command)) fail(409, 'Task operation is not available');
       if (command === 'claim') {
-        if (t.assigneeUserId || !['未开工', '待开工', '可复工', '已拍板'].includes(t.status) ||
-            (t.decisions || []).some(d => d.answer === null || d.answer === undefined)) fail(409, 'Task is not available');
+        // The shared rule above covers state, retained ownership, owner takeover
+        // and unresolved decisions in the same locked snapshot as this write.
         t.assigneeUserId = user.id; t.assigneeName = user.displayName;
         t.status = '施工中';
         t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = now.slice(0, 10);
@@ -169,7 +169,7 @@ async function main(args = process.argv.slice(2)) {
   }
   if (['create', 'note', 'claim', 'progress', 'unclaim', 'park', 'unpark', 'done', 'cancel', 'reopen'].includes(command)) {
     if (args.length) fail(400, 'Internal task commands accept stdin only');
-    console.log(JSON.stringify(taskOperation(command, await readInternalInput()))); return;
+    console.log(JSON.stringify(taskOperation(command, await readInternalInput(65536)))); return;
   }
   const options = {};
   for (let i = 0; i < args.length; i++) {

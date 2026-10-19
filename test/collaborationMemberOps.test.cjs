@@ -72,6 +72,53 @@ test('member operations authorize and mutate in real CLI children', async t => {
     for (const text of ['', ' ', 'x'.repeat(2001)]) await unchanged('note', a, 'OTHER', { text }, 400);
     await unchanged('note', a, 'OTHER', { text: 'hello', projectId: 'beta' }, 404);
   });
+  await t.test('retained assignees can resume and reopen their work; other members cannot take it over', async () => {
+    seed('RESUME');
+    for (const [command, data, status] of [
+      ['park', { reason: 'pause' }, '暂缓'], ['unpark', { reason: 'resume' }, '可复工'],
+      ['claim', {}, '施工中'], ['progress', { percent: 60 }, '施工中'], ['done', {}, '已完工'],
+      ['reopen', { reason: 'more work' }, '待开工'], ['claim', {}, '施工中'],
+    ]) {
+      const result = await call(command, a, 'RESUME', data);
+      assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.task.status, status);
+      assert.equal(result.task.assigneeUserId, a.user.id);
+      if (['可复工', '待开工'].includes(status)) {
+        assert.ok(result.task.actions.includes('claim'));
+        await unchanged('claim', b, 'RESUME', {}, 409);
+      }
+    }
+    for (const status of ['未开工', '待开工', '可复工', '已拍板']) {
+      const task = seed('TAKEOVER', { status });
+      assert.ok(memberActions(task, a.user).includes('claim'));
+      assert.equal(memberActions(task, b.user).includes('claim'), false);
+      assert.ok(memberActions(task, owner.user).includes('claim'));
+      await unchanged('claim', b, 'TAKEOVER', {}, 409);
+      const result = await call('claim', owner, 'TAKEOVER');
+      assert.equal(result.ok, true); assert.equal(result.task.status, '施工中');
+      assert.equal(result.task.assigneeUserId, owner.user.id); assert.equal(result.task.assigneeName, owner.user.displayName);
+    }
+    seed('RETAINED-AI', { status: '可复工', builder: '派单器' });
+    await unchanged('claim', a, 'RETAINED-AI', {}, 409);
+    seed('RETAINED-PENDING', { status: '待开工', decisions: [{ id: 'd1', question: 'Choose', options: ['yes'], recommended: 'yes', answer: null }] });
+    for (const session of [a, owner]) await unchanged('claim', session, 'RETAINED-PENDING', {}, 409);
+  });
+  await t.test('real CLI accepts multibyte creation and bounds large message receipts', async () => {
+    const data = { title: '😀'.repeat(200), plainTitle: '😀'.repeat(200), description: '😀'.repeat(4000) };
+    const created = await call('create', a, null, data); assert.equal(created.ok, true, JSON.stringify(created));
+    for (const key of Object.keys(data)) assert.equal(created.task[key], data[key]);
+    const id = created.task.id;
+    const board = read();
+    const messages = Array.from({ length: 60 }, (_, i) => ({ taskId: id, kind: 'message', type: 'note',
+      ts: new Date(Date.UTC(2026, 9, 19, 0, 0, i)).toISOString(), author: a.user.displayName, userId: a.user.id, text: '汉'.repeat(2000) }));
+    board.activity.push(...messages); fs.writeFileSync(file, JSON.stringify(board));
+    const claimed = await call('claim', a, id); assert.equal(claimed.ok, true, JSON.stringify(claimed));
+    const returned = claimed.task.messages;
+    assert.ok(returned.length > 0 && returned.length < 50);
+    assert.ok(Buffer.byteLength(JSON.stringify(returned), 'utf8') <= 65536);
+    assert.deepEqual(returned.map(m => m.ts), messages.slice(-returned.length).map(m => m.ts));
+    assert.ok(Buffer.byteLength(JSON.stringify(claimed), 'utf8') > 65536);
+    await unchanged('create', a, null, { title: 'Too large', description: 'x'.repeat(65536) }, 413);
+  });
   const operations = [
     ['unclaim', '施工中', '待开工', '未开工'], ['park', '施工中', '暂缓', '已完工'], ['unpark', '暂缓', '可复工', '施工中'],
     ['done', '施工中', '已完工', '已完工'], ['cancel', '施工中', '已作废', '已作废'], ['reopen', '已完工', '待开工', '施工中'],

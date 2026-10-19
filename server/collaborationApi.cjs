@@ -29,11 +29,11 @@ function json(res, status, data) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, no-store', vary: 'Cookie', 'x-content-type-options': 'nosniff' });
   res.end(JSON.stringify(data, publicJson));
 }
-async function body(req) {
+async function body(req, maxBytes = 16384) {
   let bytes = 0; const chunks = [];
   for await (const chunk of req) {
     bytes += chunk.length;
-    if (bytes > 16384) fail(413, 'Request too large');
+    if (bytes > maxBytes) fail(413, 'Request too large');
     chunks.push(chunk);
   }
   let value;
@@ -53,7 +53,7 @@ function boardView(board, user) {
 }
 function runTask(command, payload, env) {
   return new Promise((resolve, reject) => {
-    const child = execFile(process.execPath, [CLI, command], { env, windowsHide: true, timeout: 15000, maxBuffer: 65536 }, (err, stdout) => {
+    const child = execFile(process.execPath, [CLI, command], { env, windowsHide: true, timeout: 15000, maxBuffer: 1048576 }, (err, stdout) => {
       let result;
       try { result = JSON.parse(stdout); } catch { return reject(Object.assign(new Error('Task operation failed'), { status: 500 })); }
       if (err || !result.ok) return reject(Object.assign(new Error(result.error || 'Task operation failed'), { status: result.status || 500 }));
@@ -240,7 +240,7 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
       if (create && req.method === 'POST') {
         const projectId = decodeURIComponent(create[1]);
         authorizedProject(session.user, projectId);
-        const b = only(await body(req), ['title', 'plainTitle', 'description']);
+        const b = only(await body(req, 65536), ['title', 'plainTitle', 'description']);
         const result = await runTask('create', { ...b, projectId, sessionToken: raw, actorId: session.user.id }, env);
         json(res, 200, result); return true;
       }
@@ -249,7 +249,7 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
         const projectId = decodeURIComponent(task[1]); const taskId = decodeURIComponent(task[2]);
         authorizedProject(session.user, projectId);
         const fields = { claim: [], progress: ['percent', 'note'], note: ['text'], unclaim: ['reason'], park: ['reason'], unpark: ['reason'], done: [], cancel: ['reason'], reopen: ['reason'] };
-        const b = only(await body(req), fields[task[3]]);
+        const b = only(await body(req, 65536), fields[task[3]]);
         const result = await runTask(task[3], { ...b, projectId, taskId, sessionToken: raw, actorId: session.user.id }, env);
         json(res, 200, result); return true;
       }
