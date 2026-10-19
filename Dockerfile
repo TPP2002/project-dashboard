@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# Uses Docker's bundled Dockerfile frontend; no additional frontend image pull.
 # Deployers may pin the official Node 24 Debian slim image to @sha256:...
 ARG NODE_IMAGE=node:24-bookworm-slim
 FROM ${NODE_IMAGE} AS web-build
@@ -13,10 +13,13 @@ COPY web/ /app/web/
 RUN node node_modules/vite/bin/vite.js build
 
 FROM ${NODE_IMAGE} AS runtime
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision="${VCS_REF}"
 ENV NODE_ENV=production \
     DASHBOARD_HOME=/data \
     DASHBOARD_NO_OPEN=1
 WORKDIR /app
+COPY package.json ./package.json
 COPY core/ ./core/
 COPY server/ ./server/
 COPY cli/ ./cli/
