@@ -167,6 +167,7 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
     const viewer = await auth.register({ inviteToken: invitation.token, username: 'matrix-viewer', password: PASSWORD });
     const root = '/api/collaboration/projects/alpha/tasks';
     const routes = [[root, { title: 'Matrix task' }], ...Object.entries({ note: { text: 'Hello' }, claim: {}, progress: { percent: 1 },
+      join: {}, leave: {}, 'remove-collaborator': { userId: other.user.id },
       unclaim: { reason: 'reason' }, park: { reason: 'reason' }, unpark: { reason: 'reason' }, done: {}, cancel: { reason: 'reason' }, reopen: { reason: 'reason' } })
       .map(([action, data]) => [root + '/ONE/' + action, data])];
     for (const [route, data] of routes) {
@@ -283,6 +284,31 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
     const route = '/api/collaboration/projects/alpha/tasks/RACE/claim';
     const results = await Promise.all([member, other].map(session => request(route, { session, data: {} })));
     assert.deepEqual(results.map(r => r.status).sort(), [200, 409]);
+  });
+  await t.test('HTTP join, leave and removal share CLI permissions and public board projections', async () => {
+    const route = '/api/collaboration/projects/alpha/tasks/ONE';
+    assert.equal((await request(route + '/join', { session: other, data: { userId: owner.user.id } })).status, 400);
+    const joined = await request(route + '/join', { session: other, data: {} });
+    assert.equal(joined.status, 200); assert.equal(joined.body.task.collaborators[0].userId, other.user.id);
+    assert.ok(joined.body.task.actions.includes('leave')); assert.ok(joined.body.task.actions.includes('progress'));
+    assert.equal((await request(route + '/join', { session: other, data: {} })).status, 409);
+    for (const session of [member, owner]) {
+      const board = await request('/api/board/alpha', { session });
+      assert.equal(board.body.tasks.find(t => t.id === 'ONE').collaborators[0].userId, other.user.id);
+    }
+    assert.equal((await request(route + '/progress', { session: other, data: { percent: 100 } })).status, 200);
+    assert.equal((await request(route + '/done', { session: other, data: {} })).status, 409);
+    assert.equal((await request(route + '/remove-collaborator', { session: other, data: { userId: other.user.id } })).status, 409);
+    assert.equal((await request(route + '/leave', { session: other, data: {} })).status, 200);
+    assert.equal((await request(route + '/leave', { session: other, data: {} })).status, 409);
+    for (const session of [member, owner]) {
+      assert.equal((await request(route + '/join', { session: other, data: {} })).status, 200);
+      assert.equal((await request(route + '/remove-collaborator', { session, data: { userId: other.user.id } })).status, 200);
+    }
+    const board = JSON.parse(fs.readFileSync(path.join(home, 'alpha.json')));
+    const event = board.activity.at(-1);
+    assert.equal(event.type, 'collaboration:remove-collaborator');
+    assert.equal(event.userId, owner.user.id); assert.equal(event.targetUserId, other.user.id);
   });
   await t.test('session, authorization and task ownership survive an actual server restart', async () => {
     await stop(srv); srv = await start(home);

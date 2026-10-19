@@ -19,6 +19,8 @@
 
 凭据采用随机令牌、持久化仅保存令牌哈希；密码用 Node 内置异步 scrypt（N=131072、r=8、p=1），限制并发及等待数量。HTTPS 会话使用 HttpOnly、Secure、SameSite Cookie，写操作验证来源和 CSRF。回环 HTTP 仅供明确的本机验证场景。
 
+密码统一为 6–128 个字符，不要求字符混合，适用于初始化负责人、注册、登录、改密码、重置码设新密码和本机重置负责人。既有登录与重置限流、哈希参数保持不变。
+
 ## HTTP 契约
 
 所有响应不得包含密码哈希、令牌哈希、认证数据库路径。普通失败使用 `{ok:false,error:string}`。
@@ -41,7 +43,7 @@
 | POST `/api/auth/device-login` | `{token}` → 同 session 响应并设置 Cookie；不得将令牌放 URL 或日志 |
 | POST `/api/auth/remember-device` | 负责人已登录并通过 CSRF 后，`{label}` → `{ok:true,device:Device}`；用 HttpOnly Cookie 保存本浏览器的设备凭据，不向脚本返回令牌 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/claim` | 登录且项目授权，原子领取空闲任务；已经被其他用户或 AI 认领时拒绝 |
-| POST `/api/collaboration/projects/:projectId/tasks/:taskId/progress` | `{percent,note?}`，仅更新本人任务；到 100% 不会自动完工，完工须显式调用 done |
+| POST `/api/collaboration/projects/:projectId/tasks/:taskId/progress` | `{percent,note?}`，主负责人、负责人或协作人可更新施工中且未阻塞的任务；到 100% 不会自动完工，完工须显式调用 done |
 | POST `/api/collaboration/projects/:projectId/tasks` | 成员或负责人，`{title,plainTitle?,description?}`；标题必填且至多 200 字，可选人话标题至多 200 字、描述至多 4000 字；拒收其他字段。服务端锁内生成不重复的 `Myyyymmdd-XXXXXX`（六位大写字母数字），状态固定未开工，记 createdByUserId |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/note` | `{text}`，1–2000 字；授权项目任何卡均可留言，记录 type:note、kind:message、userId 和显示名 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/unclaim` | `{reason}`，本人施工中卡退回待开工或可复工，释放成员归属 |
@@ -50,6 +52,9 @@
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/done` | `{}`，本人非终态卡转已完工，100%，写完工日期；不需审批，存在未拍板决策返回 409 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/cancel` | `{reason}`，自己建的或领的卡转已作废；已作废或存在未拍板决策返回 409；负责人可作废他人卡 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/reopen` | `{reason}`，自己建的或领的已完工/已作废卡转待开工，清除完工日期并归零进度 |
+| POST `/api/collaboration/projects/:projectId/tasks/:taskId/join` | `{}`，授权成员或负责人加入已有主负责人或 AI 施工的卡；已完工、收官、已作废、自己已是主负责人或协作人、已有 5 位协作人、未领取且非 AI 卡均返回 409 |
+| POST `/api/collaboration/projects/:projectId/tasks/:taskId/leave` | `{}`，仅协作人本人退出，否则 409 |
+| POST `/api/collaboration/projects/:projectId/tasks/:taskId/remove-collaborator` | `{userId}`，主负责人或负责人移出指定协作人；无权或目标不在名单返回 409 |
 
 Invite 公共字段为 `{id,role,projectIds,expiresAt,maxUses,uses,revoked}`；Device 为 `{id,label,createdAt,expiresAt,revoked}`；Reset 为 `{id,userId,expiresAt,used}`。前端所有认证写请求带正确 Origin、`Content-Type: application/json` 和 `X-Dashboard-Request: 1`；登录、注册、设备登录、重置密码以外的协作写请求还带 `/api/auth/session` 返回的 `X-Dashboard-CSRF`。访客已登录时仅可写改自己密码和退出；要使用公开重置入口须先退出。
 
@@ -65,7 +70,13 @@ User 增加明确的 `disabled:boolean`，供负责人管理列表显示真实�
 
 成员操作通过 CLI 所属的协作命令模块，复用 `cli/store.cjs` 的锁、schema 校验、原子写入和活动流水；服务端不得另写 `board.json`。使用独立 `assigneeUserId` 与 `assigneeName` 标识成员，不能伪造 AI 施工方式。抢单、更新和归属检查必须在同一锁内完成。
 
-认证锁先于看板锁；CLI 子进程在锁内重验会话与角色，mutate 内使用共享 memberActions 判权后调用 cli/commands.cjs 导出的纯状态迁移函数。旧命令保持输出和活动记录，成员操作的同类活动额外带 userId 和显示名。reason 必须为 1–500 字。自动施工卡（builder 有值或 gitBranch/prNumbers/commitShas 非空）对成员仅允许留言，负责人可操作；访客在 HTTP 和 CLI 均拒绝卡片写入。成员不写任何 AI 元数据，不开放拍板、撤销拍板、挂待拍板、edit/set、mark-landed、request-info、block、await-collect 或派单。全部后台子进程显式 windowsHide:true。
+认证锁先于看板锁；CLI 子进程在锁内重验会话与角色，mutate 内使用共享 memberActions 判权后调用 cli/commands.cjs 导出的纯状态迁移函数。旧命令保持输出和活动记录，成员操作的同类活动额外带 userId 和显示名。reason 必须为 1–500 字。自动施工卡（builder 有值或 gitBranch/prNumbers/commitShas 非空）可加入协作并更新进度，成员的既有 AI 卡生命周期限制保持；访客在 HTTP 和 CLI 均拒绝卡片写入。成员不写任何 AI 元数据，不开放拍板、撤销拍板、挂待拍板、edit/set、mark-landed、request-info、block、await-collect 或派单。全部后台子进程显式 windowsHide:true。
+
+卡片可选 collaborators 数组，每项为 `{userId,name,joinedAt}`（ISO 时刻），最多 5 人，userId 不重复且不含主负责人。旧卡缺字段照常读取，不迁移；成员与访客任务视图始终返回 collaborators 数组，userId、name 经 text() 脱敏。actions 使用同一判权规则，新增 join、leave、removeCollaborator。
+
+协作人可留言并在施工中且未被阻塞时更新进度；协作身份不额外授予收官、暂缓、复工、放弃认领、作废、重开的权限。建卡人的既有作废、重开权限原样保留，兼任协作人时按身份权限取并集。领取时从协作人中移除领取者；放弃认领、完工、作废时保留名单。加入或退出 AI 卡不会改变 builder、分支、PR、提交号等元数据。
+
+加入、退出、移出均通过现有成员子进程通道，在同一次看板锁中判权、检查名额和写入。活动 type 分别为 collaboration:join、collaboration:leave、collaboration:remove-collaborator，均带操作人 userId、author；移出另带 targetUserId。协作人的进度活动沿用 collaboration:progress 并记录本人 userId。
 
 ## 调度迁移判别点
 

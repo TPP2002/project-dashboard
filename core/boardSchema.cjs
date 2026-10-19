@@ -73,6 +73,25 @@ function validateTask(t, p, errs, ids) {
   if (t.percent !== undefined && (!Number.isInteger(t.percent) || t.percent < 0 || t.percent > 100)) {
     errs.push(`${p}.percent: 应为 0–100 的整数`);
   }
+  if (t.collaborators !== undefined) {
+    if (!Array.isArray(t.collaborators)) errs.push(`${p}.collaborators: 应为数组`);
+    else {
+      if (t.collaborators.length > 5) errs.push(`${p}.collaborators: 最多 5 人`);
+      const users = new Set();
+      t.collaborators.forEach((c, i) => {
+        const cp = `${p}.collaborators[${i}]`;
+        if (!isType(c, 'object')) { errs.push(`${cp}: 应为对象`); return; }
+        if (typeof c.userId !== 'string' || !c.userId || users.has(c.userId) || c.userId === t.assigneeUserId) {
+          errs.push(`${cp}.userId: 应为不重复且不同于主负责人的非空字符串`);
+        }
+        users.add(c.userId);
+        if (typeof c.name !== 'string' || !c.name.trim()) errs.push(`${cp}.name: 应为非空显示名`);
+        if (typeof c.joinedAt !== 'string' || !DATETIME.test(c.joinedAt) || !Number.isFinite(Date.parse(c.joinedAt))) {
+          errs.push(`${cp}.joinedAt: 应为 ISO 时刻`);
+        }
+      });
+    }
+  }
   if (t.dates !== undefined) {
     if (!isType(t.dates, 'object')) errs.push(`${p}.dates: 应为对象`);
     else for (const k of ['design', 'start', 'done']) {

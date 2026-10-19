@@ -24,7 +24,7 @@ function username(value) {
   return name;
 }
 function password(value) {
-  if (typeof value !== 'string' || [...value].length < 12 || [...value].length > 128) fail(400, 'Password must be 12-128 characters');
+  if (typeof value !== 'string' || [...value].length < 6 || [...value].length > 128) fail(400, 'Password must be 6-128 characters');
   return value;
 }
 // One expensive hash in flight, at most eight waiting; never block the event loop.
