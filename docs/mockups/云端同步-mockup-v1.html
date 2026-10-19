@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>云端同步 · 样图 v1</title>
+<style>
+/* 变量照抄 web/src/styles/base.css(浅色)与其深色档,只新增 --cloud 一个角色色 */
+:root {
+  --bg: #fbfbfa; --surface: #ffffff; --surface-2: #f6f6f5; --surface-3: #eeeeed;
+  --line: #e4e4e2; --line-strong: #d2d2cf;
+  --text: #1a1a19; --text-2: #5c5c58; --text-3: #75756f;
+  --ok: #2c7a45; --ok-bg: #e8f4ec; --warn: #9a6b12; --warn-bg: #fdf3e0;
+  --bad: #b3382f; --bad-bg: #fdecea; --info: #2b5fa8; --info-bg: #e8f0fb;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 1px 3px rgba(0,0,0,.04);
+  --r-sm: 4px; --r: 6px; --r-lg: 8px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --fs-xs: .786rem; --fs-sm: .893rem; --fs-base: 1rem; --fs-md: 1.071rem; --fs-lg: 1.286rem;
+  --cn: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --spec-cool: #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4;
+  --cloud: var(--info);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141413; --surface: #1c1c1b; --surface-2: #232322; --surface-3: #2c2c2a;
+    --line: #333331; --line-strong: #44443f;
+    --text: #ececea; --text-2: #b4b4ae; --text-3: #94948d;
+    --ok: #6fbf82; --ok-bg: #1d3324; --warn: #e0b45a; --warn-bg: #3a2e14;
+    --bad: #ec8a80; --bad-bg: #3d1f1c; --info: #86b2f0; --info-bg: #1b2b44;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+html { font-size: 14px; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: var(--fs-base)/1.55 var(--cn); }
+.note { max-width: 1120px; margin: var(--s5) auto var(--s3); padding: 0 var(--s4); color: var(--text-2); font-size: var(--fs-sm); }
+.note b { color: var(--text); }
+.frame { max-width: 1120px; margin: 0 auto var(--s6); padding: 0 var(--s4); }
+.shell { display: grid; grid-template-columns: 184px minmax(0, 1fr); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; min-height: 620px; }
+nav { background: var(--surface-2); border-right: 1px solid var(--line); padding: var(--s3) var(--s2); display: flex; flex-direction: column; gap: 2px; }
+nav a { display: flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 0 var(--s3); border-radius: var(--r); color: var(--text-2); text-decoration: none; font-size: var(--fs-sm); }
+nav a.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }
+nav a .dot { margin-left: auto; min-width: 18px; height: 18px; border-radius: 9px; background: var(--bad); color: #fff; font-size: var(--fs-xs); display: grid; place-items: center; padding: 0 5px; }
+main { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s5); min-width: 0; }
+h1 { font-size: var(--fs-lg); margin: 0; }
+h2 { font-size: var(--fs-md); margin: 0 0 var(--s3); }
+.sub { color: var(--text-3); font-size: var(--fs-sm); }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 连接状态条:唯一的动效记忆点。同步中顶边走流光,空闲静止 */
+.conn { position: relative; border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s4); display: grid; grid-template-columns: auto 1fr auto; gap: var(--s4); align-items: center; overflow: hidden; }
+.conn::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: var(--line-strong); }
+.conn.busy::before { background: linear-gradient(90deg, var(--spec-cool)); background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .conn.busy::before { animation: flow 3.4s linear infinite; }
+  .spin { animation: rot 1.2s linear infinite; transform-origin: 50% 50%; }
+}
+@keyframes flow { to { background-position: -200% 0; } }
+@keyframes rot { to { transform: rotate(360deg); } }
+.badge { width: 40px; height: 40px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--info-bg); color: var(--cloud); }
+.badge svg.i { width: 22px; height: 22px; }
+.conn .state { font-weight: 600; display: flex; align-items: center; gap: var(--s2); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); } .pill.n { background: var(--surface-3); color: var(--text-2); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
+.kv { min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); color: var(--text-2); font-size: var(--fs-sm); margin-top: var(--s1); }
+.kv code { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text); }
+.btn { min-height: 32px; padding: 0 var(--s3); border-radius: var(--r); border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-sm); cursor: pointer; touch-action: manipulation; }
+.btn.primary { background: var(--text); color: var(--surface); border-color: var(--text); }
+@media (hover: hover) { .btn:hover { background: var(--surface-2); } .btn.primary:hover { opacity: .88; background: var(--text); } }
+.btn:focus-visible, .sw:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.tablewrap { border: 1px solid var(--line); border-radius: var(--r-lg); overflow-x: auto; }
+th, td { text-align: left; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--text-3); font-weight: 500; background: var(--surface-2); font-size: var(--fs-xs); }
+tr:last-child td { border-bottom: 0; }
+td .proj { font-weight: 600; } td .pid { color: var(--text-3); font-family: var(--mono); font-size: var(--fs-xs); margin-left: 6px; }
+.sw { position: relative; width: 36px; height: 20px; border-radius: 10px; border: 0; background: var(--line-strong); cursor: pointer; vertical-align: middle; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; box-shadow: var(--shadow); transition: transform .12s ease; }
+.sw[aria-checked="true"] { background: var(--ok); }
+.sw[aria-checked="true"]::after { transform: translateX(16px); }
+
+.reject { border: 1px solid var(--line); border-left: 3px solid var(--bad); border-radius: var(--r); padding: var(--s3); display: grid; grid-template-columns: 1fr auto; gap: var(--s1) var(--s4); align-items: start; }
+.reject + .reject { margin-top: var(--s2); }
+.reject .what { font-weight: 600; }
+.reject .why { color: var(--text-2); font-size: var(--fs-sm); }
+.reject .cmd { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3); grid-column: 1 / -1; }
+
+/* 看板上的样子 */
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); }
+.card { border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s3) var(--s4); background: var(--surface); box-shadow: var(--shadow); position: relative; }
+.card .t { font-weight: 600; display: flex; align-items: center; gap: var(--s2); }
+.card .t .cl { color: var(--cloud); }
+.card .m { color: var(--text-3); font-size: var(--fs-xs); margin-top: 2px; }
+.card .flag { position: absolute; top: -8px; right: var(--s3); }
+.bar { height: 4px; border-radius: 2px; background: var(--surface-3); margin-top: var(--s2); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--ok); }
+
+.login { max-width: 400px; border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); }
+.login label { font-size: var(--fs-sm); color: var(--text-2); display: flex; flex-direction: column; gap: var(--s1); }
+.login input { min-height: 36px; border: 1px solid var(--line-strong); border-radius: var(--r); padding: 0 var(--s3); font: inherit; font-size: 16px; background: var(--surface); color: var(--text); }
+.login .hint { font-size: var(--fs-sm); color: var(--text-3); }
+
+@media (max-width: 760px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .conn > div, .reject > div { min-width: 0; }
+  .reject .cmd { white-space: normal; word-break: break-all; }
+  .card .flag { right: var(--s2); }
+  nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  nav a { white-space: nowrap; min-height: 44px; }
+  main { padding: var(--s4); }
+  .conn { grid-template-columns: auto 1fr; } .conn .acts { grid-column: 1 / -1; }
+  .row { grid-template-columns: 1fr; }
+  .btn { min-height: 44px; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18z"/></symbol>
+  <symbol id="sync" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></symbol>
+  <symbol id="board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+  <symbol id="coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9.5 10h5M9.5 14h5M12 7v10"/></symbol>
+  <symbol id="back" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+</svg>
+
+<p class="note"><b>状态一:已连接,正在送 3 条改动。</b>左侧导航新增「云端」一项,红点是被退回的条数。连接状态条顶边那道流光只在同步进行时走,空闲时是一条静止的灰线;系统开了「减少动效」时流光和转圈都不动。</p>
+<div class="frame">
+<div class="shell">
+  <nav>
+    <a href="#"><svg class="i"><use href="#board"/></svg>看板</a>
+    <a href="#"><svg class="i"><use href="#coin"/></svg>成本</a>
+    <a href="#" class="on"><svg class="i"><use href="#cloud"/></svg>云端<span class="dot">1</span></a>
+  </nav>
+  <main>
+    <div><h1>云端同步</h1><div class="sub">打开同步的项目,本机改动自动送上云,协作成员的改动自动拉回;两边冲突以云上为准。</div></div>
+
+    <section class="conn busy" aria-live="polite">
+      <div class="badge"><svg class="i spin"><use href="#sync"/></svg></div>
+      <div>
+        <div class="state">已连接<span class="pill warn">正在送 3 条</span></div>
+        <div class="kv"><span>云端 <code>tx-shanghai</code>(经加密通道)</span><span>本机 <code>本机同步·主机A</code></span><span>上次拉取 21:42:05</span><span>凭据还有 83 天到期</span></div>
+      </div>
+      <div class="acts"><button class="btn">立即同步</button></div>
+    </section>
+
+    <section>
+      <h2>哪些项目同步</h2>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>同步</th><th>项目</th><th>状态</th><th>云端编号</th><th>接入方式</th></tr></thead>
+        <tbody>
+          <tr><td><button class="sw" role="switch" aria-checked="true" aria-label="看板 同步"></button></td><td><span class="proj">看板</span><span class="pid">dashboard</span></td><td><span class="pill warn">待发 3 条</span></td><td>dashboard</td><td>上传本机这本 · 10-20</td></tr>
+          <tr><td><button class="sw" role="switch" aria-checked="true" aria-label="妈妈方法 同步"></button></td><td><span class="proj">妈妈方法</span><span class="pid">mama</span></td><td><span class="pill bad">1 条被退回</span></td><td>mama</td><td>采用云上那本 · 10-20</td></tr>
+          <tr><td><button class="sw" role="switch" aria-checked="true" aria-label="面试 同步"></button></td><td><span class="proj">面试</span><span class="pid">interview</span></td><td><span class="pill ok">一致</span></td><td>interview</td><td>上传本机这本 · 10-21</td></tr>
+          <tr><td><button class="sw" role="switch" aria-checked="false" aria-label="十倍人生 同步"></button></td><td><span class="proj">十倍人生</span><span class="pid">rogue</span></td><td><span class="pill n">只在本机</span></td><td>—</td><td>—</td></tr>
+          <tr><td><button class="sw" role="switch" aria-checked="false" aria-label="集群 同步"></button></td><td><span class="proj">集群</span><span class="pid">cluster</span></td><td><span class="pill n">只在本机</span></td><td>—</td><td>—</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>被云端退回的改动</h2>
+      <div class="reject">
+        <div><div class="what">妈妈方法 · 认领「题库导出加分页」没成</div><div class="why">云上这张卡 21:38 已被成员 小周 认领。本机这张卡已换回云上的样子。</div></div>
+        <button class="btn">知道了</button>
+        <div class="cmd">claim M20261020-K7Q2ZD --builder 派单器 · 本机 21:39:12 发起</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>看板上的样子</h2>
+      <div class="row">
+        <div class="card">
+          <div class="t"><svg class="i cl" aria-label="云端项目"><use href="#cloud"/></svg>本地看板云同步</div>
+          <div class="m">施工中 · AI 施工 · 协作人 1 位</div>
+          <div class="bar"><i style="width:35%"></i></div>
+        </div>
+        <div class="card">
+          <span class="flag pill bad"><svg class="i" style="width:12px;height:12px"><use href="#back"/></svg>云端退回</span>
+          <div class="t"><svg class="i cl" aria-label="云端项目"><use href="#cloud"/></svg>题库导出加分页</div>
+          <div class="m">施工中 · 小周 · 点开看退回原因</div>
+          <div class="bar"><i style="width:10%"></i></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</div>
+
+<p class="note"><b>状态二:还没登录云端(或凭据到期)。</b>只问一次账号密码;本机换成一张这台电脑专用的凭据存起来,密码不留。没登录期间本机命令照常用,改动在队列里排着。</p>
+<div class="frame">
+<div class="shell" style="min-height:0">
+  <nav>
+    <a href="#"><svg class="i"><use href="#board"/></svg>看板</a>
+    <a href="#"><svg class="i"><use href="#coin"/></svg>成本</a>
+    <a href="#" class="on"><svg class="i"><use href="#cloud"/></svg>云端</a>
+  </nav>
+  <main>
+    <section class="conn">
+      <div class="badge"><svg class="i"><use href="#cloud"/></svg></div>
+      <div><div class="state">未登录云端<span class="pill n">本机已攒 12 条待发</span></div>
+      <div class="kv"><span>加密通道已通</span><span>登录后自动补发</span></div></div>
+    </section>
+    <form class="login" onsubmit="return false">
+      <label>云端负责人账号<input autocomplete="username" value="tianpu"></label>
+      <label>密码<input type="password" autocomplete="current-password"></label>
+      <button class="btn primary">登录并记住这台电脑</button>
+      <div class="hint">这台电脑会出现在云端「设备」列表里,随时可以在那里撤销。</div>
+    </form>
+  </main>
+</div>
+</div>
+
+<script>
+document.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => b.setAttribute('aria-checked', b.getAttribute('aria-checked') !== 'true')));
+</script>
+</body>
+</html>
