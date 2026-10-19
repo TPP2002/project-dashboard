@@ -14,6 +14,7 @@ const fs = require('node:fs');
 const { sleepMs } = require('./atomicWrite.cjs');
 
 const STALE_MS = 30_000; // 锁超过此时长且持有进程不在 → 视为陈旧可抢占
+const PERM_RETRIES = 10; // Windows 待删除窗口通常毫秒级；连续这么多次权限错误就当真没权限
 
 /** 进程是否存活（signal 0 只探测不发信号） */
 function pidAlive(pid) {
@@ -43,8 +44,9 @@ function isStaleLock(lockPath) {
  * @returns fn 的返回值
  */
 function withLock(lockPath, fn, opts = {}) {
-  const { retries = 100, baseMs = 20 } = opts;
+  const { retries = 100, baseMs = 20, platform = process.platform } = opts;
   let fd;
+  let permErrors = 0; // 连续几次权限类错误
   for (let i = 0; i < retries; i++) {
     try {
       fd = fs.openSync(lockPath, 'wx'); // 原子排他创建
@@ -52,8 +54,12 @@ function withLock(lockPath, fn, opts = {}) {
     } catch (err) {
       // Windows：上一个持锁者刚 unlink、文件还处在「待删除」状态时，'wx' 新建会报 EPERM/EACCES
       // 而不是 EEXIST。这同样是「有人刚用完」，退避重试即可，不能当成致命错误把整条命令打挂。
-      const transient = err.code === 'EPERM' || err.code === 'EACCES';
+      // 只在 Windows 认这条；连续超过 PERM_RETRIES 次或重试用尽仍是权限错误 → 真没权限，抛原错误，
+      // 不把它伪装成「获取锁超时」，也不白等满整轮退避。
+      const transient = platform === 'win32' && (err.code === 'EPERM' || err.code === 'EACCES');
       if (err.code !== 'EEXIST' && !transient) throw err;
+      permErrors = transient ? permErrors + 1 : 0;
+      if (transient && (permErrors > PERM_RETRIES || i === retries - 1)) throw err;
       if (!transient && isStaleLock(lockPath)) {
         try { fs.unlinkSync(lockPath); } catch { /* 别人抢先删了，继续 */ }
         continue; // 立刻再试
