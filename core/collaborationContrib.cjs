@@ -14,10 +14,21 @@ function mondayAtUtc(timestamp) {
 function activityTime(ts) {
   if (typeof ts === 'number') return new Date(ts).getTime();
   if (typeof ts !== 'string' || !ts.trim()) return NaN;
-  // Interpret zone-less ISO date-times as UTC, independently of the host timezone.
-  const value = ts.trim();
-  const isoWithoutZone = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
-  return Date.parse(isoWithoutZone.test(value) ? `${value}Z` : value);
+  // Only explicit formats reach the parser; zone-less values always use UTC.
+  let value = ts.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return Date.parse(`${value}T00:00:00Z`);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value)) {
+    value = value.replace(' ', 'T');
+  }
+  const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/;
+  const match = iso.exec(value);
+  if (!match) return NaN;
+  return Date.parse(match[1] ? value : `${value}Z`);
+}
+
+function isCompletion(activity) {
+  return activity.type === 'done' && activity.collect !== true
+    && !(typeof activity.text === 'string' && activity.text.startsWith('收官'));
 }
 
 function compareText(a, b) {
@@ -31,19 +42,21 @@ function compareText(a, b) {
  * lastActiveAt preserves the source ts. Invalid activity timestamps count only
  * toward skipped. Unknown members have role null; task-only identities fall back
  * to their stored name / ID until a valid activity supplies an author.
+ * 未署名完工按卡的当前主负责人归属，卡转手后会记到新主负责人名下。
  */
 function memberContributions(board, { users = [], now, weeks = 8 } = {}) {
   if (typeof now !== 'number' || !Number.isFinite(new Date(now).getTime())) {
     throw new TypeError('now must be a valid millisecond timestamp');
   }
-  if (!Number.isSafeInteger(weeks) || weeks < 1) {
-    throw new RangeError('weeks must be a positive integer');
+  if (!Number.isInteger(weeks) || weeks < 1 || weeks > 520) {
+    throw new RangeError('weeks must be an integer from 1 to 520');
   }
   const from = mondayAtUtc(now) - (weeks - 1) * WEEK_MS;
   const weekStarts = Array.from({ length: weeks }, (_, i) => new Date(from + i * WEEK_MS).toISOString());
   const weekly = () => weekStarts.map(weekStart => ({ weekStart, completed: 0, messages: 0, ops: 0 }));
   const membersById = new Map();
   const latestTimes = new Map();
+  const tasksById = new Map();
 
   function member(userId, name = userId) {
     if (!membersById.has(userId)) {
@@ -56,7 +69,9 @@ function memberContributions(board, { users = [], now, weeks = 8 } = {}) {
         ops: 0, lastActiveAt: null, weekly: weekly(),
       });
     }
-    return membersById.get(userId);
+    const row = membersById.get(userId);
+    if (row.unknownUser && row.name === userId && !latestTimes.has(userId)) row.name = name;
+    return row;
   }
 
   for (const user of users) {
@@ -67,6 +82,7 @@ function memberContributions(board, { users = [], now, weeks = 8 } = {}) {
   };
 
   for (const task of board.tasks || []) {
+    if (task.id) tasksById.set(task.id, task);
     if (task.createdByUserId) member(task.createdByUserId).created++;
     const completed = task.status === '已完工';
     const inProgress = task.status === '施工中';
@@ -110,9 +126,15 @@ function memberContributions(board, { users = [], now, weeks = 8 } = {}) {
       }
     }
     if (time >= from && time <= now) {
-      const bucket = target.weekly[Math.floor((time - from) / WEEK_MS)];
+      const weekIndex = Math.floor((time - from) / WEEK_MS);
+      const bucket = target.weekly[weekIndex];
       bucket.ops++;
-      if (activity.type === 'done') bucket.completed++;
+      if (isCompletion(activity)) {
+        const task = !activity.userId ? tasksById.get(activity.taskId) : undefined;
+        const completionTarget = task?.assigneeUserId
+          ? member(task.assigneeUserId, task.assigneeName || task.assigneeUserId) : target;
+        completionTarget.weekly[weekIndex].completed++;
+      }
       if (activity.kind === 'message') bucket.messages++;
     }
   }

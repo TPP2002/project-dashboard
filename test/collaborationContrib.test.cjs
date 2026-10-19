@@ -253,6 +253,121 @@ test('callers must supply a valid now and a positive integer week count', () => 
   assert.throws(() => memberContributions({}), /now/);
 });
 
+test('collect operations remain status changes but only genuine completion enters weekly completed', () => {
+  const events = [
+    { type: 'done', collect: true, text: '完工 ONE' },
+    { type: 'done', text: '收官 TWO' },
+    { type: 'done', collect: false, text: '收官THREE' },
+    { type: 'done', collect: false, text: '完工 FOUR' },
+    { type: 'done' },
+    { type: 'park', text: '完工 FIVE' },
+  ];
+  const result = calculate({ activity: events.flatMap(event => [
+    activity(event.type, event), activity(event.type, { ...event, userId: undefined }),
+  ]) });
+  for (const row of [byId(result, 'a'), result.unattributed]) {
+    assert.equal(row.statusChanges, 6);
+    assert.equal(row.ops, 6);
+    assert.deepEqual(row.weekly.at(-1), {
+      weekStart: '2026-10-19T00:00:00.000Z', completed: 2, messages: 0, ops: 6,
+    });
+  }
+});
+
+test('unsigned completion credits the current card owner only for weekly completed', () => {
+  const board = { tasks: [
+    { id: 'OWNED', status: '已完工', assigneeUserId: 'b', collaborators: [{ userId: 'c' }] },
+    { id: 'NO-OWNER', status: '已完工' },
+    { id: 'REOPENED', status: '待开工', assigneeUserId: 'deleted', assigneeName: 'Former member' },
+  ], activity: [
+    activity('done', { userId: undefined, taskId: 'OWNED', text: '完工 OWNED', kind: 'message', via: 'ai' }),
+    activity('done', { userId: null, taskId: 'OWNED', text: '收官 OWNED' }),
+    activity('done', { userId: '', taskId: 'OWNED', collect: true }),
+    activity('done', { userId: undefined, taskId: 'NO-OWNER' }),
+    activity('done', { userId: undefined, taskId: 'MISSING' }),
+    activity('done', { userId: undefined }),
+    activity('done', { userId: undefined, taskId: 'REOPENED' }),
+    activity('done', { userId: undefined, taskId: 'OWNED', ts: '2026-10-18T23:59:59.999Z' }),
+    activity('done', { taskId: 'OWNED' }),
+  ] };
+  const result = calculate(board, { weeks: 2 });
+  const owner = byId(result, 'b');
+  assert.deepEqual(owner.weekly.map(w => w.completed), [1, 1]);
+  assert.equal(owner.ops, 0);
+  assert.equal(owner.messages, 0);
+  assert.equal(owner.statusChanges, 0);
+  assert.equal(owner.aiOps, 0);
+  assert.equal(owner.lastActiveAt, null);
+  assert.ok(owner.weekly.every(w => w.ops === 0 && w.messages === 0));
+  assert.deepEqual(result.unattributed.weekly, [
+    { weekStart: '2026-10-12T00:00:00.000Z', completed: 0, messages: 0, ops: 1 },
+    { weekStart: '2026-10-19T00:00:00.000Z', completed: 3, messages: 1, ops: 7 },
+  ]);
+  assert.equal(result.unattributed.ops, 8);
+  assert.equal(result.unattributed.statusChanges, 8);
+  assert.equal(result.unattributed.messages, 1);
+  assert.equal(byId(result, 'a').weekly.at(-1).completed, 1, 'signed activity stays with its actor');
+  assert.equal(byId(result, 'c').weekly.at(-1).completed, 0);
+  assert.equal(byId(result, 'deleted').weekly.at(-1).completed, 1);
+  assert.equal(byId(result, 'deleted').name, 'Former member');
+  assert.equal(byId(result, 'deleted').lastActiveAt, null);
+  const transferred = structuredClone(board);
+  transferred.tasks[0].assigneeUserId = 'c';
+  const reassigned = calculate(transferred, { weeks: 2 });
+  assert.deepEqual(byId(reassigned, 'c').weekly.map(w => w.completed), [1, 1]);
+  assert.deepEqual(byId(reassigned, 'b').weekly.map(w => w.completed), [0, 0]);
+});
+
+test('space-separated UTC timestamps use Monday boundaries and non-explicit formats are skipped', () => {
+  const accepted = [
+    '2026-10-18 23:59', '2026-10-18 23:59:59', '2026-10-18 23:59:59.999',
+    '2026-10-19 00:00', '2026-10-19 00:00:00', '2026-10-19 00:00:00.001',
+    '2026-10-19T00:00Z', '2026-10-18T20:00:00-04:00',
+  ];
+  const rejected = [
+    '2026/10/19 00:00:00', 'October 19, 2026 00:00:00', 'Mon, 19 Oct 2026 00:00:00 GMT',
+    '2026-10-19 00:00:00Z', '2026-10-19T00:00:00+0800', '2026-10-19T00:00:00 UTC',
+    '2026-10-19t00:00:00z', '2026-10-19T25:00:00Z',
+  ];
+  const result = calculate({ activity: [...accepted, ...rejected].map(ts => activity('done', { ts })) }, { weeks: 2 });
+  assert.deepEqual(byId(result, 'a').weekly.map(w => w.completed), [3, 5]);
+  assert.equal(byId(result, 'a').ops, accepted.length);
+  assert.equal(result.skipped, rejected.length);
+});
+
+test('deleted members upgrade ID placeholders from card names while registered names and latest authors win', () => {
+  const tasks = [
+    { status: '待开工', createdByUserId: 'deleted-owner' },
+    { status: '待开工', createdByUserId: 'deleted-helper' },
+    { id: 'DONE', status: '已完工', assigneeUserId: 'deleted-owner', assigneeName: 'Stored owner', collaborators: [{ userId: 'deleted-helper', name: 'Stored helper' }] },
+    { status: '施工中', assigneeUserId: 'a', assigneeName: 'Stale Alice', collaborators: [{ userId: 'b', name: 'Stale Bob' }] },
+  ];
+  const withoutActivity = calculate({ tasks });
+  assert.equal(byId(withoutActivity, 'deleted-owner').name, 'Stored owner');
+  assert.equal(byId(withoutActivity, 'deleted-helper').name, 'Stored helper');
+  assert.equal(byId(withoutActivity, 'a').name, 'Alice');
+  assert.equal(byId(withoutActivity, 'b').name, 'Bob');
+  const events = [
+    activity('note', { userId: 'deleted-owner', author: 'Latest author', ts: '2026-10-21T00:00:00Z' }),
+    activity('note', { userId: 'deleted-owner', author: 'Older author' }),
+    activity('note', { userId: 'deleted-owner', author: 'Invalid author', ts: 'bad' }),
+    activity('note', { userId: 'a', author: 'Activity Alice' }),
+    activity('done', { userId: undefined, taskId: 'DONE' }),
+  ];
+  assert.equal(byId(calculate({ tasks, activity: events }), 'deleted-owner').name, 'Latest author');
+  assert.equal(byId(calculate({ tasks, activity: events }), 'a').name, 'Alice');
+  events[0].author = 'deleted-owner';
+  assert.equal(byId(calculate({ tasks, activity: events }), 'deleted-owner').name, 'deleted-owner', 'an author equal to the ID still takes precedence over the card name');
+});
+
+test('weeks accepts 520 and rejects 521 with a weeks RangeError', () => {
+  const result = calculate({}, { weeks: 520 });
+  assert.equal(result.range.weeks, 520);
+  assert.equal(result.unattributed.weekly.length, 520);
+  assert.ok(result.members.every(row => row.weekly.length === 520));
+  assert.throws(() => calculate({}, { weeks: 521 }), { name: 'RangeError', message: /weeks/ });
+});
+
 test('5000 cards and 50000 activities are aggregated within one second', t => {
   const users = Array.from({ length: 100 }, (_, i) => ({ id: `u${i}`, displayName: `Member ${i}`, role: 'member' }));
   const tasks = Array.from({ length: 5000 }, (_, i) => ({
