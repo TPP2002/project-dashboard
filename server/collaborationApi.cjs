@@ -134,7 +134,7 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
   function ownerExecFile(executable, args, options, callback) {
     const context = ownerContext.getStore();
     if (!context) fail(401, 'Login required');
-    const child = execFile(process.execPath, [CLI, 'owner-command'], { ...options, env }, (error, stdout, stderr) => {
+    const child = execFile(process.execPath, [CLI, 'owner-command'], { ...options, env, windowsHide: true }, (error, stdout, stderr) => {
       if (error) {
         let result;
         try { result = JSON.parse(stdout); } catch {}
