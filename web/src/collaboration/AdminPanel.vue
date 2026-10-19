@@ -12,8 +12,9 @@ const projects = ref<Project[]>([])
 const selected = ref<string[]>([])
 const hours = ref(24)
 const maxUses = ref(1)
+const inviteRole = ref<'member' | 'viewer'>('member')
 const label = ref('')
-const secret = ref<{ token: string; kind: 'invite' | 'device' } | null>(null)
+const secret = ref<{ token: string; kind: 'invite' | 'device' | 'reset' } | null>(null)
 const busy = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -41,7 +42,7 @@ async function run(action: () => Promise<void>) {
 function refresh() { return run(load) }
 function createInvite() {
   return run(async () => {
-    const result = await apiJson<{ invite: Invite; token: string }>('/api/auth/invites', { projectIds: selected.value, expiresInHours: hours.value, maxUses: maxUses.value }, controller.signal)
+    const result = await apiJson<{ invite: Invite; token: string }>('/api/auth/invites', { projectIds: selected.value, expiresInHours: hours.value, maxUses: maxUses.value, role: inviteRole.value }, controller.signal)
     if (controller.signal.aborted) return
     secret.value = { token: result.token, kind: 'invite' }
     await load()
@@ -66,10 +67,18 @@ function revoke(kind: 'invites' | 'devices', id: string) {
     await load(); notice.value = '已撤销'
   })
 }
-function saveUser(id: string, projectIds: string[], disabled: boolean) {
+function saveUser(id: string, projectIds: string[], disabled: boolean, role: 'member' | 'viewer') {
   return run(async () => {
-    await apiJson(`/api/auth/users/${encodeURIComponent(id)}/access`, { projectIds, disabled }, controller.signal)
+    await apiJson(`/api/auth/users/${encodeURIComponent(id)}/access`, { projectIds, disabled, role }, controller.signal)
     await load(); notice.value = '授权已保存'
+  })
+}
+function createReset(id: string) {
+  return run(async () => {
+    const result = await apiJson<{ resetToken: string }>(`/api/auth/users/${encodeURIComponent(id)}/reset`, {}, controller.signal)
+    if (controller.signal.aborted) return
+    secret.value = { token: result.resetToken, kind: 'reset' }
+    await load()
   })
 }
 onMounted(refresh)
@@ -85,6 +94,7 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
     <template v-else>
       <h2>邀请新成员</h2>
       <form class="collab-card collab-form" @submit.prevent="createInvite">
+        <fieldset class="invite-roles" :disabled="busy"><legend>邀请角色</legend><button type="button" class="btn" :aria-pressed="inviteRole === 'member'" @click="inviteRole = 'member'">成员</button><button type="button" class="btn" :aria-pressed="inviteRole === 'viewer'" @click="inviteRole = 'viewer'">只读访客</button></fieldset>
         <ProjectChoices v-model="selected" :projects="projects" :disabled="busy" />
         <label>有效时长（小时）<input v-model.number="hours" type="number" required min="1" step="1" :disabled="busy" /></label>
         <label>最多使用次数<input v-model.number="maxUses" type="number" required min="1" step="1" :disabled="busy" /></label>
@@ -93,6 +103,7 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
       <div class="collab-grid">
         <article v-for="item in data.invites" :key="item.id" class="collab-card">
           <h3>邀请 {{ item.id }}</h3>
+          <span class="badge info">{{ item.role === 'viewer' ? '只读访客' : '成员' }}</span>
           <p>{{ inviteState(item) }} · 已使用 {{ item.uses }} / {{ item.maxUses }} 次</p>
           <p>到期：{{ new Date(item.expiresAt).toLocaleString() }}</p>
           <p>项目：{{ item.projectIds.map(id => projects.find(project => project.id === id)?.name || id).join('、') || '未授权项目' }}</p>
@@ -101,7 +112,7 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
       </div>
       <p v-if="!data.invites.length">尚未创建邀请。</p>
       <h2>用户授权</h2>
-      <div class="collab-grid"><UserAccess v-for="user in data.users" :key="user.id" :user="user" :projects="projects" :busy="busy" @save="saveUser" /></div>
+      <div class="collab-grid"><UserAccess v-for="user in data.users" :key="user.id" :user="user" :projects="projects" :busy="busy" :resets="data.resets" @save="saveUser" @reset="createReset" /></div>
       <h2>负责人设备</h2>
       <p>设备凭据可用于登录；撤销设备会同时撤销它建立的会话。</p>
       <p>仅在自己的常用浏览器中主动开启信任，之后可减少重复登录。主动退出会取消此浏览器信任；其他设备可在下方列表撤销。</p>
@@ -122,3 +133,6 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
     </template>
   </main>
 </template>
+<style scoped>
+.invite-roles { border: 0; padding: 0; }.invite-roles legend { margin-bottom: var(--s2); }.invite-roles button { border-radius: 0; }.invite-roles button:first-of-type { border-radius: var(--r) 0 0 var(--r); }.invite-roles button:last-child { border-radius: 0 var(--r) var(--r) 0; }.invite-roles [aria-pressed=true] { background: var(--text); color: var(--bg); }
+</style>

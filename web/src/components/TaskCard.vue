@@ -11,8 +11,10 @@ import { cardAgeMs, formatAge } from '@/utils/kanbanFlow'
 import { isSettled } from 'virtual:task-signal'
 import Icon from './Icon.vue'
 import StatusTile from './StatusTile.vue'
+import AvatarStack from '@/collaboration/AvatarStack.vue'
 
 const props = defineProps<{ task: Task; projectId: string }>()
+const collaborationTask = computed(() => ({ ...props.task, aiWork: props.task.aiWork ?? !!(props.task.builder || props.task.gitBranch?.length || props.task.prNumbers?.length || props.task.commitShas?.length) }))
 const projectColor = computed(() => projectColorCss(props.projectId))
 const root = ref<HTMLElement | null>(null)
 let registeredKey = ''
@@ -90,6 +92,7 @@ const progressAge = computed(() => {
         <Icon name="bot" :size="14" />{{ task.modelHint }}
       </span>
     </div>
+    <AvatarStack v-if="task.collaborators || task.assigneeName" :task="collaborationTask" />
   </article>
 </template>
 
