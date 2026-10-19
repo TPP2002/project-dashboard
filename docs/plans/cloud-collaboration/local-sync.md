@@ -3,6 +3,60 @@
 状态:设计稿,待负责人拍板(见第 11 节);日期 2026-10-19;看板卡 CLOUD-BOARD-REMOTE-1018。
 上位契约:`docs/plans/cloud-collaboration/contract.md`(协作版服务端)。本文只管「本机看板 ↔ 云端看板」这一段,不改协作版已定的角色、判权和成员接口。
 
+### S1 施工交接（2026-10-19，工作区实现，验收结果见派单回执）
+
+本次仅实现本地操作队列与同步重放函数，不含网络、接口、同步进程、界面或部署。
+
+文件职责：
+
+- `core/resolveProject.cjs`：新增规范化的 `cloud` 和实际 registry 所在目录下的 `syncDir`，保留既有返回字段。
+- `core/syncOutbox.cjs`：进程内操作上下文、板锁内序号分配/追加/fsync、读取队列、补丁与未跟踪记录；失败向调用方抛出。
+- `cli/store.cjs`：仅云端项目在锁内保存改前快照，校验通过后先记队列再写板；未启用项目不复制看板、不加载队列模块、不建目录。
+- `core/syncReplay.cjs`：命令分类、入口参数与文件快照、原文机器闸、`applyOp(op, {registryPath, projectId, author})`；返回 `{ok:true,result}`，`result` 使用 CLI 的 `slimJson` 摘要。
+- `cli/index.cjs`：复用入口闸，限定命令执行上下文，并导出同一摘要函数。
+- `cli/commands.cjs`：以不可从命令行传入的 Symbol 保存已捕获的文件/标准输入/分支/会话环境默认值；未捕获时沿用原来的推导。重放不绑定本机会话。
+- `test/cloudSyncOutbox.test.cjs`：关闭兼容、逐条记录、批量、拒收、双进程并发、真实 Git 补丁、进程内写入、不可写目录等。
+- `test/cloudSyncReplay.test.cjs`：除 set 外所有声明命令逐个对照，文件删除/标准输入/分支缺省、机器闸、错误状态、并集、输入隔离与禁二次入队。
+
+记录协议：`OUTBOX_VERSION = 1`；文件为 `<syncDir>/outbox.jsonl` 与 `outbox.seq`。示例：
+
+```json
+{"v":1,"kind":"op","opId":"ea06ac89-4918-4f71-a616-b3feaf7da96f","seq":1,"project":"local","remoteProjectId":"remote","command":"note","flags":{"_":["T1"],"text":"已核对","author":"cli"},"files":{},"author":"cli","clientTs":"2026-10-19T12:00:00.000Z","device":"device-one"}
+{"v":1,"kind":"untracked","seq":2,"project":"local","remoteProjectId":"remote","clientTs":"2026-10-19T12:01:00.000Z","device":"device-one","taskIds":["T1"],"source":"unknown"}
+```
+
+标准输入保存为 `files.stdin`，重放时映射为临时 `json-file`，因此队列 flags 不保留本地 `json` 开关。文件参数仅有建卡/待拍板的 `json-file` 与收单说明的 `file`；当前 edit 不支持 `desc-file`，request-info 与 undecide 无文件输入。批量回填的 `patch` 文件只在本地使用，其结果按三个元数据数组形成补丁，不重放原文件。
+
+分支口径以现有代码为准：claim 不给 branch 就是空数组，不自动查询 Git；unclaim 缺省才取当前分支，并记录实际结果（包括空数组）。collect-brief 缺省不写卡片的可选 author 字段，记录顶层 author 为 activity 实际署名 cli，flags 保留缺省状态，避免重放凭空增加卡片字段。
+
+重放只接受声明的命令或 patch-ai-meta。set 本单照记照重放，云端入口下一单另行拒绝。重放使用显式绝对 registry 路径及其中的绝对项目路径，原始输入路径不得代替内联内容；临时文件执行后删除，三道入口闸共用原文。400 表示参数/入口拒收，403 表示非白名单命令，404 表示项目/任务不存在，409 表示状态冲突。重放在独立禁记录作用域内执行，不建立、覆盖或继承可写操作上下文。
+
+CLI 直接调用 store.mutate/mutateTask 的写入点清单：
+
+| 路径 | 经 CLI 入口 | 进程内直接调用 |
+|---|---|---|
+| `cli/commands.cjs`（add/addBatch、claim、unclaim、progress、awaitCollect、collectBrief、pending、decide、markLanded、park、unpark、block、done、cancel、reopen、note、edit、set、cost） | 可重放 op；一次命令只记首次 mutate | 卡片变化记 untracked；仅活动流变化不满足卡片变化条件 |
+| `cli/commands.cjs`（syncProgress） | 元数据新增补丁；进度等变化 untracked | 卡片变化记 untracked |
+| `cli/gitSync.cjs`（syncFromGit、doctor 修复） | 三数组新增记 patch-ai-meta；其余卡片变更记 untracked | 卡片变化记 untracked |
+| `cli/backfill.cjs` | 同上补丁规则 | 卡片变化记 untracked |
+| `cli/requestInfo.cjs`、`cli/undecide.cjs` | 可重放 op | 卡片变化记 untracked |
+| `cli/archiveActivity.cjs` | 排除，不记录 | 仅归档活动流，不改卡时不记录 |
+| `cli/collaboration.cjs` | 不在 CLI 注册表 | 卡片变化记 untracked（云端 applyOp 自身禁记录） |
+| `cli/store.cjs` | mutateTask 转调 mutate，使用所属入口上下文 | 直接 mutate 同样按卡片变化记 untracked |
+
+2026-10-19 派单方第 1 次答复已纠正原施工单第 10 步：`server/auditionApi.cjs`、`server/readerApi.cjs` 的 mutate 是回调形参，写独立试听/审阅批注账本，不调用 cli/store，不属于看板同步；本单不修改、不为其生成记录。import/register 等独立写盘命令仍按排除表处理。
+
+新模块无子进程调用；新增测试中的所有子进程调用均显式 `windowsHide: true`。原子写板在队列成功后失败的极端情况仍按 §4.1 的既定云端裁判语义处理，CLI 会报告写板错误。
+
+自测记录（仅经派单方 mailbox；未直接运行 Node 或测试）：
+
+- 第 1 次 `20261019T212701-0c49b700`：OUTBOX 通过；REPLAY 29/30，通过真实未提交分支发现夹具缺初始提交，保留失败回执。
+- 第 2 次 `20261019T212827-048f1a04`：补齐临时 Git 仓的初始提交，原断言不变；OUTBOX、REPLAY、LEGACY-CMD 全部通过。
+- 第 3 次 `20261019T212919-782418f5`：GATE-MODEL、GATE-TITLE 通过；GATE-COST 回执显示台账非终局 running，被标为未验，入口明确要求不重试、直接交活。按此停止自测，未将该项记绿。
+- 其余指定回归、NOWINDOW 和 FAST 未自测，交派单方统一验收；FAST 按工单要求登记为 heavyRequests，不由施工方执行。
+
+改动仅留工作区，没有 Git 写操作，没有修改禁区文件，没有安装依赖；看板/成本登记由派单器代办。
+
 ## 1. 要解决什么
 
 负责人原话:「不需要令牌吧?不能像我现在本地这样直接用吗?」「升级一下本地看板,支持云同步,这样我本地也能同时掌控云端版本的内容。」

@@ -30,6 +30,13 @@ const today = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 const nowIso = () => new Date().toISOString();
+// Entry-captured environment/input defaults. The symbol cannot be supplied as a CLI flag.
+// Without a capture all original readers/defaults run unchanged.
+const COMMAND_DEFAULTS = Symbol('command defaults');
+function commandDefault(flags, key, fallback) {
+  const defaults = flags[COMMAND_DEFAULTS];
+  return defaults && Object.hasOwn(defaults, key) ? defaults[key] : fallback();
+}
 function need(v, usage) { if (v === undefined || v === true || v === '') throw new Error('缺参数。用法: ' + usage); return v; }
 function asArray(v) { return v === undefined ? [] : Array.isArray(v) ? v : [v]; }
 /**
@@ -163,13 +170,13 @@ function readJsonInput(flags, what) {
   if (file !== undefined) {
     const abs = path.resolve(String(file));
     let raw;
-    try { raw = fs.readFileSync(abs, 'utf8'); }
+    try { raw = commandDefault(flags, 'json-file', () => fs.readFileSync(abs, 'utf8')); }
     catch (e) { throw new Error(`--json-file 读不到 ${abs}：${e.message}`); }
     if (!raw.trim()) throw new Error(`--json-file ${abs} 是空文件`);
     try { return JSON.parse(strip(raw)); }
     catch (e) { throw new Error(`--json-file ${abs} 解析失败：${e.message}`); }
   }
-  const raw = readStdinSync();
+  const raw = commandDefault(flags, 'stdin', readStdinSync);
   if (!raw.trim()) {
     throw new Error(`--json 需从 stdin 读${what}，但 stdin 为空。\n  （PowerShell 下 heredoc 不好使，改用 --json-file <路径> 更省事）`);
   }
@@ -352,7 +359,7 @@ function claim(flags) {
     if (branches.length) t.gitBranch = unionBy([...(t.gitBranch || []), ...branches], String);
     if (scopes.length) t.fileScope = unionBy([...(t.fileScope || []), ...scopes], String);
   }, claimAct);
-  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'claim' }); }
+  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'claim', env: commandDefault(flags, 'bindingEnv', () => process.env) }); }
   catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   warnGeneratedScopes(scopes);
   const res = okTask(board, id, changed);
@@ -430,7 +437,7 @@ function collectBrief(flags) {
   if (hasText === hasFile) {
     throw new Error('collect-brief 的 --text 与 --file 必须二选一:只给一个(长文本首选 --file,免命令行转义)');
   }
-  const raw = hasText ? String(flags.text) : fs.readFileSync(path.resolve(String(flags.file)), 'utf8');
+  const raw = hasText ? String(flags.text) : commandDefault(flags, 'file', () => fs.readFileSync(path.resolve(String(flags.file)), 'utf8'));
   const text = raw.trim();
   if (!text) throw new Error('collect-brief 的指令文本去掉首尾空白后不能为空');
   if (text.length > COLLECT_BRIEF_MAX) {
@@ -513,7 +520,7 @@ function unclaim(flags) {
   const branches = asArray(flags.branch).filter((x) => x !== true).map(String);
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
-    const result = taskTransition(t, 'unclaim', { reason, branches: branches.length ? branches : [currentBranch()].filter(Boolean), date: today(), now: nowIso() });
+    const result = taskTransition(t, 'unclaim', { reason, branches: branches.length ? branches : commandDefault(flags, 'branches', () => [currentBranch()].filter(Boolean)), date: today(), now: nowIso() });
     replaceTask(t, result.task);
   }, act('unclaim', flags.author, `放弃认领 ${id}：${reason}`, id));
   return okTask(board, id, changed);
@@ -852,7 +859,7 @@ function done(flags) {
     replaceTask(t, result.task);
     landed.length = 0; landed.push(...result.landed);
   }, act('done', flags.author, `${collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
-  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'done' }); }
+  try { recordBinding({ boardPath: proj.board, taskId: id, via: 'done', env: commandDefault(flags, 'bindingEnv', () => process.env) }); }
   catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
   const res = okTask(board, id, changed);
   res.landed = landed;
@@ -1163,6 +1170,7 @@ function cost(flags) {
 }
 
 module.exports = {
+  COMMAND_DEFAULTS, currentBranch, readStdinSync,
   taskTransition,
   register, add, addBatch, isBatchAdd, claim, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
