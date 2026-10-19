@@ -74,8 +74,14 @@ const attempts = createAttemptLimiter();
 // Unknown device guesses have a separate bounded budget, so neither a proxy
 // address nor guessed bearer strings can exhaust legitimate account buckets.
 const invalidDevices = createAttemptLimiter();
+const invalidResets = createAttemptLimiter();
+function grantRole(role = 'member') {
+  if (!['member', 'viewer'].includes(role)) fail(400, 'Invalid role');
+  return role;
+}
 function publicUser(u) { return { id: u.id, username: u.username, displayName: u.displayName, role: u.role, projectIds: [...u.projectIds], disabled: u.disabled }; }
-function publicInvite(i) { return { id: i.id, projectIds: [...i.projectIds], expiresAt: i.expiresAt, maxUses: i.maxUses, uses: i.uses, revoked: i.revoked }; }
+function publicInvite(i) { return { id: i.id, role: i.role || 'member', projectIds: [...i.projectIds], expiresAt: i.expiresAt, maxUses: i.maxUses, uses: i.uses, revoked: i.revoked }; }
+function publicReset(r) { return { id: r.id, userId: r.userId, expiresAt: r.expiresAt, used: r.used }; }
 // Pre-remember-device ledgers had no expiresAt. Their fixed deadline is derived
 // from creation, never from their next use; no implicit migration or renewal.
 function deviceExpiry(d) { return d.expiresAt || new Date(Date.parse(d.createdAt) + DEVICE_LIFETIME).toISOString(); }
@@ -88,9 +94,12 @@ function validLedger(db) {
   if (!obj(db) || db.version !== 1 || !['users', 'sessions', 'invites', 'devices'].every(k => Array.isArray(db[k]))) return false;
   for (const k of ['users', 'sessions', 'invites', 'devices']) if (!db[k].every(obj) || !ids(db[k].map(v => v.id))) return false;
   if (!db.users.length || !db.users.some(u => u.role === 'owner' && u.disabled === false)) return false;
-  if (!db.users.every(u => str(u.id) && str(u.username) && str(u.displayName) && ['owner', 'member'].includes(u.role) && typeof u.disabled === 'boolean' && ids(u.projectIds) && /^[a-f0-9]{32}$/.test(u.salt) && /^[a-f0-9]{128}$/.test(u.passwordHash))) return false;
+  if (!db.users.every(u => str(u.id) && str(u.username) && str(u.displayName) && ['owner', 'member', 'viewer'].includes(u.role) && typeof u.disabled === 'boolean' && ids(u.projectIds) && /^[a-f0-9]{32}$/.test(u.salt) && /^[a-f0-9]{128}$/.test(u.passwordHash))) return false;
   if (new Set(db.users.map(u => u.username)).size !== db.users.length) return false;
   const userExists = id => db.users.some(u => u.id === id);
+  if (db.resets !== undefined && (!Array.isArray(db.resets) || !db.resets.every(obj) || !ids(db.resets.map(r => r.id)) ||
+      !db.resets.every(r => userExists(r.userId) && typeof r.tokenHash === 'string' && HEX.test(r.tokenHash) && date(r.expiresAt) && typeof r.used === 'boolean'))) return false;
+  if (!db.invites.every(i => i.role === undefined || ['member', 'viewer'].includes(i.role))) return false;
   if (!db.devices.every(d => str(d.label) && userExists(d.userId) && HEX.test(d.tokenHash) && date(d.createdAt) && (d.expiresAt === undefined || date(d.expiresAt)) && typeof d.revoked === 'boolean')) return false;
   if (!db.sessions.every(s => userExists(s.userId) && HEX.test(s.tokenHash) && date(s.expiresAt) && (s.deviceId === null || db.devices.some(d => d.id === s.deviceId && d.userId === s.userId)))) return false;
   if (!db.invites.every(i => HEX.test(i.tokenHash) && ids(i.projectIds) && date(i.expiresAt) && Number.isSafeInteger(i.maxUses) && i.maxUses > 0 && Number.isSafeInteger(i.uses) && i.uses >= 0 && i.uses <= i.maxUses && typeof i.revoked === 'boolean')) return false;
@@ -133,6 +142,8 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
   }
   function save(db) {
     if (!validLedger(db)) fail(503, 'Authentication unavailable');
+    db.resets ??= [];
+    db.invites.forEach(i => { i.role ??= 'member'; });
     // Keep the previous validated state for explicit, offline operator recovery.
     if (fs.existsSync(file)) secureWrite(backup, JSON.stringify(read()));
     secureWrite(file, JSON.stringify(db));
@@ -244,7 +255,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       const result = transaction(db => {
         const i = validInvite(db, body.inviteToken);
         if (db.users.some(u => u.username === name)) fail(409, 'Username unavailable');
-        const u = { id: crypto.randomUUID(), username: name, displayName: displayName.trim(), role: 'member', projectIds: [...i.projectIds], disabled: false, salt, passwordHash };
+        const u = { id: crypto.randomUUID(), username: name, displayName: displayName.trim(), role: i.role || 'member', projectIds: [...i.projectIds], disabled: false, salt, passwordHash };
         db.users.push(u); i.uses++;
         return issue(db, u.id);
       });
@@ -261,7 +272,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       const ids = projectIds(body.projectIds);
       if (!Number.isFinite(body.expiresInHours) || body.expiresInHours <= 0 || body.expiresInHours > 8760 || !Number.isSafeInteger(body.maxUses) || body.maxUses < 1 || body.maxUses > 100000) fail(400, 'Invalid invitation limits');
       const rawToken = token();
-      const i = { id: crypto.randomUUID(), tokenHash: digest(rawToken), projectIds: ids, expiresAt: new Date(Date.now() + body.expiresInHours * 3600000).toISOString(), maxUses: body.maxUses, uses: 0, revoked: false };
+      const i = { id: crypto.randomUUID(), role: grantRole(body.role), tokenHash: digest(rawToken), projectIds: ids, expiresAt: new Date(Date.now() + body.expiresInHours * 3600000).toISOString(), maxUses: body.maxUses, uses: 0, revoked: false };
       db.invites.push(i); return { invite: publicInvite(i), token: rawToken };
     });
   }
@@ -316,6 +327,11 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       if (!u) fail(404, 'Not found');
       const ids = projectIds(body.projectIds);
       if (typeof body.disabled !== 'boolean') fail(400, 'Invalid disabled');
+      if (body.role !== undefined) {
+        grantRole(body.role);
+        if (u.role === 'owner') fail(403, 'Cannot change owner role');
+        u.role = body.role;
+      }
       if (u.role === 'owner' && body.disabled && db.users.filter(x => x.role === 'owner' && !x.disabled).length <= 1) fail(409, 'Cannot disable last owner');
       u.projectIds = ids; u.disabled = body.disabled;
       if (u.disabled) db.sessions = db.sessions.filter(s => s.userId !== id);
@@ -347,6 +363,73 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     attempts.clear(key);
     return result;
   }
+  async function changePassword(raw, body) {
+    const pre = read();
+    const current = requireSession(pre, raw);
+    const previous = pre.users.find(u => u.id === current.user.id);
+    const key = 'password:' + previous.id;
+    attempts.take(key);
+    password(body.newPassword);
+    if (typeof body.currentPassword !== 'string' || body.currentPassword.length > 256) fail(400, 'Invalid current password');
+    const computed = await hashPassword(body.currentPassword, previous.salt);
+    if (!crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(previous.passwordHash, 'hex'))) fail(400, 'Invalid current password');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = await hashPassword(body.newPassword, salt);
+    transaction(db => {
+      const session = requireSession(db, raw);
+      const u = db.users.find(u => u.id === session.user.id);
+      if (u.passwordHash !== previous.passwordHash) fail(400, 'Current password changed');
+      Object.assign(u, { salt, passwordHash });
+      db.sessions = db.sessions.filter(s => s.userId !== u.id || s.id === session.sessionId);
+      db.devices.filter(d => d.userId === u.id && d.id !== session.deviceId).forEach(d => { d.revoked = true; });
+    });
+    return {};
+  }
+  function createReset(raw, id) {
+    return ownerMutation(raw, db => {
+      const u = db.users.find(u => u.id === id);
+      if (!u) fail(404, 'Not found');
+      if (!['member', 'viewer'].includes(u.role)) fail(403, 'Cannot reset owner');
+      db.resets ??= [];
+      db.resets.filter(r => r.userId === id && !r.used).forEach(r => { r.used = true; });
+      const resetToken = token();
+      const r = { id: crypto.randomUUID(), userId: id, tokenHash: digest(resetToken), expiresAt: new Date(Date.now() + 86400000).toISOString(), used: false };
+      db.resets.push(r);
+      return { reset: publicReset(r), resetToken };
+    });
+  }
+  function resetIn(db, raw) {
+    const r = typeof raw === 'string' && TOKEN.test(raw) && (db.resets || []).find(r => r.tokenHash === digest(raw));
+    return r && !r.used && Date.parse(r.expiresAt) > Date.now() ? r : null;
+  }
+  async function resetPassword(body) {
+    const pre = read();
+    const record = resetIn(pre, body.resetToken);
+    if (!record) {
+      invalidResets.take(digest(typeof body.resetToken === 'string' ? body.resetToken : ''));
+      fail(400, 'Invalid reset code');
+    }
+    attempts.take('reset:' + record.id);
+    const eligible = (db, r) => {
+      const u = db.users.find(u => u.id === r.userId && !u.disabled && ['member', 'viewer'].includes(u.role));
+      if (!u) fail(403, 'Reset unavailable');
+      return u;
+    };
+    eligible(pre, record);
+    password(body.newPassword);
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = await hashPassword(body.newPassword, salt);
+    return transaction(db => {
+      const r = resetIn(db, body.resetToken);
+      if (!r || r.id !== record.id) fail(400, 'Invalid reset code');
+      const u = eligible(db, r);
+      Object.assign(u, { salt, passwordHash });
+      r.used = true;
+      db.sessions = db.sessions.filter(s => s.userId !== u.id);
+      db.devices.filter(d => d.userId === u.id).forEach(d => { d.revoked = true; });
+      return issue(db, u.id);
+    });
+  }
   async function resetOwner(name, secret) {
     name = username(name); password(secret);
     const previous = read().users.find(u => u.username === name && u.role === 'owner');
@@ -363,6 +446,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
   }
   return {
     bootstrap, login, register, access, createInvite, deviceLogin, resetOwner, rememberDevice, restoreSession, logout,
+    changePassword, createReset, resetPassword,
     session: raw => sessionIn(read(), raw),
     // Hold auth before board, consistently. Revocation cannot race the board commit.
     withSession: (raw, fn) => withLock(lock, () => fn(requireSession(read(), raw))),
@@ -370,8 +454,9 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       db.sessions = [];
       db.devices.forEach(d => { d.revoked = true; });
       db.invites.forEach(i => { i.revoked = true; });
+      (db.resets || []).forEach(r => { r.used = true; });
     }),
-    admin: raw => { const db = read(); requireSession(db, raw, true); return { users: db.users.map(publicUser), invites: db.invites.map(publicInvite), devices: db.devices.map(publicDevice) }; },
+    admin: raw => { const db = read(); requireSession(db, raw, true); return { users: db.users.map(publicUser), invites: db.invites.map(publicInvite), devices: db.devices.map(publicDevice), resets: (db.resets || []).map(publicReset) }; },
     createDevice: (raw, label) => ownerMutation(raw, (db, u) => addDevice(db, u, label)),
     revokeInvite: (raw, id) => revoke(raw, 'invites', id),
     revokeDevice: (raw, id) => revoke(raw, 'devices', id),
@@ -379,11 +464,13 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     restoreBackup: () => { prepare(); return withLock(lock, () => {
       const db = read(backup);
       // Recovery never resurrects an old bearer credential.
-      db.sessions = []; db.invites.forEach(i => { i.revoked = true; }); db.devices.forEach(d => { d.revoked = true; });
+      db.sessions = []; db.invites.forEach(i => { i.revoked = true; i.role ??= 'member'; }); db.devices.forEach(d => { d.revoked = true; });
+      db.resets ??= [];
+      db.resets.forEach(r => { r.used = true; });
       secureWrite(file, JSON.stringify(db));
     }); },
   };
 }
 module.exports = { createAuth, fail, username, publicUser, csrf, createAttemptLimiter,
   authenticationCapacity: () => ({ active: Number(hashing), queued: hashQueue.length, queueLimit: HASH_QUEUE_LIMIT,
-    attemptEntries: attempts.size, invalidDeviceEntries: invalidDevices.size }) };
+    attemptEntries: attempts.size, invalidDeviceEntries: invalidDevices.size, invalidResetEntries: invalidResets.size }) };

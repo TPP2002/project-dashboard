@@ -60,7 +60,7 @@ function landDecision(d, commit) { d.landed = true; d.landedAt = today(); if (co
 /** 当前 git 分支（不在仓库里 / 处于游离 HEAD 时返回空串）。unclaim 不给 --branch 时用它猜。 */
 function currentBranch() {
   try {
-    const b = require('node:child_process').execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const b = require('node:child_process').execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }).trim();
     return b === 'HEAD' ? '' : b;
   } catch (_) { return ''; }
 }
@@ -455,6 +455,52 @@ function collectBrief(flags) {
 // 终态 = 这张卡的一生已经结账。要再动它，只有 reopen 一条路。
 const TERMINAL_STATUSES = ['已完工', '已作废'];
 
+// Pure lifecycle transformations: all clock/branch inputs are supplied by the
+// caller. CLI output, activity, binding and locks remain in the old commands.
+// Collaboration calls the same transformation after authorization under its lock.
+function taskTransition(task, command, { reason, note, branches = [], collect = false, prs = [], commits = [], date, now } = {}) {
+  const t = JSON.parse(JSON.stringify(task));
+  const id = t.id;
+  const landed = [];
+  if (command === 'unclaim') {
+    if (t.status !== '施工中') throw new Error(`unclaim 非法迁移：${t.status} → 待开工（只能从 施工中）`);
+    t.status = t.unparkReason ? '可复工' : '待开工';
+    if (branches.length) t.gitBranch = (t.gitBranch || []).filter(x => !branches.includes(String(x)));
+    t.unclaimReason = reason; t.unclaimedAt = date; t.lastProgressAt = now;
+  } else if (command === 'park') {
+    t.status = '暂缓'; t.blockReason = reason;
+    if (note) t.parkedNote = String(note);
+    delete t.unparkReason; delete t.unparkedAt;
+  } else if (command === 'unpark') {
+    if (t.status !== '暂缓') throw new Error(`unpark 非法迁移：${t.status} → 可复工（只能从 暂缓）`);
+    t.status = '可复工'; delete t.blockReason; delete t.parkedNote;
+    t.unparkReason = reason; t.unparkedAt = date;
+  } else if (command === 'done') {
+    t.status = collect ? '收官' : '已完工'; t.dates = t.dates || {};
+    if (!collect) { t.dates.done = date; t.percent = 100; delete t.nextMilestone; }
+    if (prs.length) t.prNumbers = unionBy([...(t.prNumbers || []), ...prs], String);
+    if (commits.length) t.commitShas = unionShas([...(t.commitShas || []), ...commits]);
+    if (!collect) for (const d of (t.decisions || []).filter(isDecidedNotLanded)) {
+      d.landed = true; d.landedAt = date; if (commits[0]) d.landedCommit = String(commits[0]); landed.push(d.id);
+    }
+  } else if (command === 'cancel') {
+    t.status = '已作废'; t.cancelReason = reason; t.cancelledAt = date;
+    delete t.blockReason; delete t.parkedNote; delete t.unparkReason; delete t.unparkedAt;
+    delete t.unclaimReason; delete t.unclaimedAt; delete t.nextMilestone; t.lastProgressAt = now;
+  } else if (command === 'reopen') {
+    if (!TERMINAL_STATUSES.includes(t.status)) throw new Error(`reopen 非法迁移：${t.status} → 待开工（只能从 ${TERMINAL_STATUSES.join('/')}）`);
+    t.status = '待开工'; t.percent = 0; t.dates = t.dates || {}; t.dates.done = null;
+    delete t.cancelReason; delete t.cancelledAt; delete t.unclaimReason; delete t.unclaimedAt;
+    delete t.unparkReason; delete t.unparkedAt;
+    t.reopenReason = reason; t.reopenedAt = date; t.lastProgressAt = now;
+  } else throw new Error('Unknown lifecycle command');
+  return { task: t, landed };
+}
+function replaceTask(target, next) {
+  for (const k of Object.keys(target)) delete target[k];
+  Object.assign(target, next);
+}
+
 // ---------- unclaim（放弃认领 → 退回可派状态） ----------
 // 病根：CLI 只有往前走的命令。对话一中断、任务一转手，卡就永远挂着「施工中」——
 // 看板上显示有人在干、实际没人；别人以为被占了不敢接，负责人也看不出这活其实停了（审计 §4-A5）。
@@ -467,17 +513,8 @@ function unclaim(flags) {
   const branches = asArray(flags.branch).filter((x) => x !== true).map(String);
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
-    if (t.status !== '施工中') throw new Error(`unclaim 非法迁移：${t.status} → 待开工（只能从 施工中）`);
-    // 退回哪一档看这张卡「这一轮是不是解冻来的」：解除暂缓留下的 unparkReason 还挂着，就说明是，
-    // 回「可复工」；一律退成「待开工」会把它跟从没开工过的卡混为一谈。
-    // （park / cancel / reopen 都会抹掉 unparkReason，所以它只在当前这一轮有效，不会串味。）
-    t.status = t.unparkReason ? '可复工' : '待开工';
-    // 分支给了就摘给的那几条；没给就摘当前 git 分支（在自己工位上跑时最省事）。
-    // 一条都没摘也不报错：别人代为释放一张卡时，本来就未必知道对方用的哪个分支。
-    const drop = branches.length ? branches : [currentBranch()].filter(Boolean);
-    if (drop.length) t.gitBranch = (t.gitBranch || []).filter((x) => !drop.includes(String(x)));
-    t.unclaimReason = reason; t.unclaimedAt = today();
-    t.lastProgressAt = nowIso();
+    const result = taskTransition(t, 'unclaim', { reason, branches: branches.length ? branches : [currentBranch()].filter(Boolean), date: today(), now: nowIso() });
+    replaceTask(t, result.task);
   }, act('unclaim', flags.author, `放弃认领 ${id}：${reason}`, id));
   return okTask(board, id, changed);
 }
@@ -708,11 +745,9 @@ function park(flags) {
   const id = need(flags._[0], 'park <taskId> --reason <理由> [--note <遗留>]');
   const reason = need(flags.reason, '--reason <理由>');
   const { board, changed } = mutateTask(proj, id, (b) => {
-    const t = findTask(b, id); t.status = '暂缓'; t.blockReason = reason;
-    if (flags.note) t.parkedNote = String(flags.note);
-    // 再次暂缓要抹掉上一轮的解除依据：否则卡挂着「暂缓」却还带着上次的复工理由与日期，
-    // show 出来两套说法并存，读的人分不清哪条是当下的（与 unpark 删 blockReason 同一道理）。
-    delete t.unparkReason; delete t.unparkedAt;
+    const t = findTask(b, id);
+    const result = taskTransition(t, 'park', { reason, note: flags.note, date: today(), now: nowIso() });
+    replaceTask(t, result.task);
   }, act('park', flags.author, `暂缓 ${id}：${reason}`, id));
   return okTask(board, id, changed);
 }
@@ -724,9 +759,8 @@ function unpark(flags) {
   const reason = String(need(flags.reason, '--reason <解除依据>'));
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
-    if (t.status !== '暂缓') throw new Error(`unpark 非法迁移：${t.status} → 可复工（只能从 暂缓）`);
-    t.status = '可复工'; delete t.blockReason; delete t.parkedNote;
-    t.unparkReason = reason; t.unparkedAt = today();
+    const result = taskTransition(t, 'unpark', { reason, date: today(), now: nowIso() });
+    replaceTask(t, result.task);
   }, act('unpark', flags.author, `复工 ${id}：${reason}`, id));
   return okTask(board, id, changed);
 }
@@ -814,19 +848,9 @@ function done(flags) {
   const landed = [];
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
-    landed.length = 0; // mutate 可能重试
-    t.status = collect ? '收官' : '已完工';
-    t.dates = t.dates || {};
-    // 收官 ≠ 完工。给「收官」也写完工日期 + 100%，等于让一张还在收尾的卡在统计和每日成果里
-    // 冒充成果，完工日那栏也从此对不上账（审计 §4-A7）。进度照旧由 progress 报。
-    if (!collect) { t.dates.done = today(); t.percent = 100; delete t.nextMilestone; }
-    if (prs.length) t.prNumbers = unionBy([...(t.prNumbers || []), ...prs], String);
-    if (commits.length) t.commitShas = unionShas([...(t.commitShas || []), ...commits]);
-    // 卡都完工了，本卡那些「已拍板却没人标落地」的决策，落地的就是这次施工。逐条标是纪律活、
-    // 必失守（审计 §4-A6），这里顺手结掉；已经标过的不碰，免得覆盖掉更准的那个提交号。
-    if (!collect) {
-      for (const d of (t.decisions || []).filter(isDecidedNotLanded)) { landDecision(d, commits[0]); landed.push(d.id); }
-    }
+    const result = taskTransition(t, 'done', { collect, prs, commits, date: today(), now: nowIso() });
+    replaceTask(t, result.task);
+    landed.length = 0; landed.push(...result.landed);
   }, act('done', flags.author, `${collect ? '收官' : '完工'} ${id}${prs.length ? '·PR ' + prs.join(',') : ''}`, id));
   try { recordBinding({ boardPath: proj.board, taskId: id, via: 'done' }); }
   catch (e) { process.stderr.write('⚠ 会话绑定没记上:' + e.message + '(认领/收官本身已成功,不受影响)\n'); }
@@ -854,13 +878,8 @@ function cancel(flags) {
   const reason = String(need(flags.reason, '--reason <理由>'));
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
-    t.status = '已作废';
-    t.cancelReason = reason; t.cancelledAt = today();
-    // 作废是终局，之前那些「为什么停着 / 为什么放手 / 下一步干嘛」的说法全过期了，一起抹掉，
-    // 免得 show 出来两套说法并存、读的人分不清哪条是当下的（同 park/unpark 的道理）。
-    delete t.blockReason; delete t.parkedNote; delete t.unparkReason; delete t.unparkedAt;
-    delete t.unclaimReason; delete t.unclaimedAt; delete t.nextMilestone;
-    t.lastProgressAt = nowIso();
+    const result = taskTransition(t, 'cancel', { reason, date: today(), now: nowIso() });
+    replaceTask(t, result.task);
   }, act('cancel', flags.author, `作废 ${id}：${reason}`, id));
   return okTask(board, id, changed);
 }
@@ -875,20 +894,8 @@ function reopen(flags) {
   const reason = String(need(flags.reason, '--reason <理由>'));
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
-    if (!TERMINAL_STATUSES.includes(t.status)) {
-      throw new Error(`reopen 非法迁移：${t.status} → 待开工（只能从 ${TERMINAL_STATUSES.join('/')}）`);
-    }
-    t.status = '待开工';
-    t.percent = 0;
-    t.dates = t.dates || {}; t.dates.done = null;
-    // 上一轮的说法全清掉（同 cancel）：作废理由、放弃认领理由，以及「这卡是解冻来的」那条
-    // 解除依据 —— 重开之后是全新一轮，unclaim 不该再把它退回「可复工」。
-    // PR / 提交 / 拍板记录全留 —— 重开不是重建。
-    delete t.cancelReason; delete t.cancelledAt;
-    delete t.unclaimReason; delete t.unclaimedAt;
-    delete t.unparkReason; delete t.unparkedAt;
-    t.reopenReason = reason; t.reopenedAt = today();
-    t.lastProgressAt = nowIso();
+    const result = taskTransition(t, 'reopen', { reason, date: today(), now: nowIso() });
+    replaceTask(t, result.task);
   }, act('reopen', flags.author, `重开 ${id}：${reason}`, id));
   return okTask(board, id, changed);
 }
@@ -1156,6 +1163,7 @@ function cost(flags) {
 }
 
 module.exports = {
+  taskTransition,
   register, add, addBatch, isBatchAdd, claim, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
   hasCostQuantity, hasCostLedger, costGateRefusal,
