@@ -50,8 +50,11 @@ function withLock(lockPath, fn, opts = {}) {
       fd = fs.openSync(lockPath, 'wx'); // 原子排他创建
       break;
     } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
-      if (isStaleLock(lockPath)) {
+      // Windows：上一个持锁者刚 unlink、文件还处在「待删除」状态时，'wx' 新建会报 EPERM/EACCES
+      // 而不是 EEXIST。这同样是「有人刚用完」，退避重试即可，不能当成致命错误把整条命令打挂。
+      const transient = err.code === 'EPERM' || err.code === 'EACCES';
+      if (err.code !== 'EEXIST' && !transient) throw err;
+      if (!transient && isStaleLock(lockPath)) {
         try { fs.unlinkSync(lockPath); } catch { /* 别人抢先删了，继续 */ }
         continue; // 立刻再试
       }
