@@ -24,6 +24,7 @@ After restoring a whole historical data backup, while still offline, run
 This revokes sessions/devices/invites in the CURRENT valid ledger and preserves
 users, password hashes and project access. It never rebuilds or rolls back the ledger.
 Password files must be regular, non-symlink, owner-only files (0600 on POSIX).
+Passwords must be 6-128 characters; no character mixing is required.
 On Windows protect the file and DASHBOARD_HOME with a private user/service account ACL.
 Exactly one trailing newline is removed from password files; passwords never go in argv.
 Device tokens go only to a newly created 0600 file, never stdout.
@@ -34,7 +35,9 @@ preserve Origin and strip Forwarded/X-Forwarded-* on writes (these are never tru
 HTTP routes and response fields implement docs/plans/cloud-collaboration/contract.md;
 no alternate endpoint, open registration, member administration or owner-by-body.
 Internal HTTP task commands: create / note / claim / progress / unclaim / park /
-unpark / done / cancel / reopen. JSON on stdin includes sessionToken, actorId,
+unpark / done / cancel / reopen / join / leave / remove-collaborator.
+join and leave accept no extra fields; remove-collaborator requires userId.
+JSON on stdin includes sessionToken, actorId,
 projectId and taskId (except create), plus only the documented command fields.
 Members act only in granted projects; viewers cannot write tasks. No credential argv flags.
 All signed-in roles may POST /api/auth/password. Owners issue 24-hour single-use
@@ -64,7 +67,8 @@ async function readInternalInput(maxBytes = 16384) {
 function taskOperation(command, input, auth = createAuth()) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail(400, 'Invalid input');
   const fields = { create: ['title', 'plainTitle', 'description'], note: ['text'], claim: [], progress: ['percent', 'note'],
-    unclaim: ['reason'], park: ['reason'], unpark: ['reason'], done: [], cancel: ['reason'], reopen: ['reason'] };
+    unclaim: ['reason'], park: ['reason'], unpark: ['reason'], done: [], cancel: ['reason'], reopen: ['reason'],
+    join: [], leave: [], 'remove-collaborator': ['userId'] };
   if (!Object.hasOwn(fields, command)) fail(403, 'Forbidden command');
   const keys = ['sessionToken', 'actorId', 'projectId', ...(command === 'create' ? [] : ['taskId']), ...fields[command]];
   if (Object.keys(input).some(k => !keys.includes(k))) fail(400, 'Unexpected field');
@@ -75,6 +79,7 @@ function taskOperation(command, input, auth = createAuth()) {
   };
   if (command === 'create') { bounded(input.title, 200, true); bounded(input.plainTitle, 200, false); bounded(input.description, 4000, false); }
   if (command === 'note') bounded(input.text, 2000, true);
+  if (command === 'remove-collaborator') bounded(input.userId, 128, true);
   if (fields[command].includes('reason')) bounded(input.reason, 500, true);
   if (command === 'progress' && (!Number.isInteger(input.percent) || input.percent < 0 || input.percent > 100 ||
       (input.note !== undefined && (typeof input.note !== 'string' || input.note.length > 2000)))) fail(400, 'Invalid progress');
@@ -103,16 +108,24 @@ function taskOperation(command, input, auth = createAuth()) {
       }
       let t = board.tasks.find(t => t.id === input.taskId);
       if (!t) fail(404, 'Not found');
-      if (!memberActions(t, user).includes(command)) fail(409, 'Task operation is not available');
-      if (command === 'claim') {
+      const action = command === 'remove-collaborator' ? 'removeCollaborator' : command;
+      if (!memberActions(t, user).includes(action)) fail(409, 'Task operation is not available');
+      if (command === 'join') {
+        t.collaborators = [...(t.collaborators || []), { userId: user.id, name: user.displayName, joinedAt: now }];
+      } else if (command === 'leave' || command === 'remove-collaborator') {
+        const target = command === 'leave' ? user.id : input.userId;
+        if (!(t.collaborators || []).some(c => c.userId === target)) fail(409, 'Collaborator not found');
+        t.collaborators = t.collaborators.filter(c => c.userId !== target);
+      } else if (command === 'claim') {
         // The shared rule above covers state, retained ownership, owner takeover
         // and unresolved decisions in the same locked snapshot as this write.
         t.assigneeUserId = user.id; t.assigneeName = user.displayName;
+        if (t.collaborators) t.collaborators = t.collaborators.filter(c => c.userId !== user.id);
         t.status = '施工中';
         t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = now.slice(0, 10);
         // builder and all AI dispatch/branch metadata remain exactly as recorded.
       } else if (command === 'progress') {
-        if (user.role !== 'owner' && t.assigneeUserId !== user.id) fail(409, 'Task is not assigned to you');
+        if (user.role !== 'owner' && t.assigneeUserId !== user.id && !(t.collaborators || []).some(c => c.userId === user.id)) fail(409, 'Task is not assigned to you');
         if (t.status !== '施工中' || t.blockReason || (t.deps?.blockedBy || []).length) fail(409, 'Task is not active member work');
         t.percent = input.percent;
         if (input.note !== undefined) t.nextMilestone = input.note;
@@ -126,10 +139,12 @@ function taskOperation(command, input, auth = createAuth()) {
       result = { ok: true, task: t };
     }, () => {
       const descriptions = { create: `新建任务 ${taskId}：${input.title}`, note: input.text, claim: 'Member claimed task', progress: 'Member updated progress',
+        join: 'Member joined collaboration', leave: 'Member left collaboration', 'remove-collaborator': 'Removed collaborator',
         unclaim: `放弃认领 ${taskId}：${input.reason}`, park: `暂缓 ${taskId}：${input.reason}`, unpark: `复工 ${taskId}：${input.reason}`,
         done: `完工 ${taskId}`, cancel: `作废 ${taskId}：${input.reason}`, reopen: `重开 ${taskId}：${input.reason}` };
-      return { ts: now, type: ['claim', 'progress'].includes(command) ? 'collaboration:' + command : ['create', 'note'].includes(command) ? 'note' : command,
+      return { ts: now, type: ['claim', 'progress', 'join', 'leave', 'remove-collaborator'].includes(command) ? 'collaboration:' + command : ['create', 'note'].includes(command) ? 'note' : command,
         taskId, userId: user.id, author: user.displayName, text: descriptions[command],
+        ...(command === 'remove-collaborator' ? { targetUserId: input.userId } : {}),
         ...(command === 'note' ? { kind: 'message' } : {}), ...(command === 'progress' ? { percent: input.percent, note: input.note } : {}) };
     });
     result.task = require('../core/collaborationPublic.cjs').taskView(result.task, user, updatedBoard.activity || []);
@@ -167,7 +182,7 @@ async function main(args = process.argv.slice(2)) {
     if (args.length) fail(400, 'Internal owner commands accept stdin only');
     console.log(JSON.stringify(ownerOperation(await readInternalInput(2 * 1024 * 1024)), publicJson)); return;
   }
-  if (['create', 'note', 'claim', 'progress', 'unclaim', 'park', 'unpark', 'done', 'cancel', 'reopen'].includes(command)) {
+  if (['create', 'note', 'claim', 'progress', 'unclaim', 'park', 'unpark', 'done', 'cancel', 'reopen', 'join', 'leave', 'remove-collaborator'].includes(command)) {
     if (args.length) fail(400, 'Internal task commands accept stdin only');
     console.log(JSON.stringify(taskOperation(command, await readInternalInput(65536)))); return;
   }

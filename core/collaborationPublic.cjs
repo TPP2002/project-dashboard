@@ -23,6 +23,7 @@ function taskView(t, user, activity = []) {
     for (const k of ['start', 'done', 'design']) if (typeof t.dates[k] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.dates[k])) out.dates[k] = t.dates[k];
   }
   out.actions = memberActions(t, user);
+  out.collaborators = (t.collaborators || []).map(c => ({ userId: text(c.userId), name: text(c.name), joinedAt: c.joinedAt }));
   out.aiWork = aiWork(t);
   out.messages = [];
   let messageBytes = 2; // Include the JSON array brackets and inter-message commas.

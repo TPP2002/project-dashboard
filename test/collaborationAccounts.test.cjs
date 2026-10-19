@@ -10,6 +10,55 @@ const PASSWORD = 'Original-password-12345';
 const NEXT = 'Changed-password-12345';
 const rejects = (fn, status) => assert.rejects(async () => fn(), e => e.status === status);
 
+test('six-character simple passwords pass every entrypoint; five and 129 are rejected', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'collaboration-password-boundaries-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const registryPath = path.join(home, 'registry.json');
+  fs.writeFileSync(registryPath, JSON.stringify({ projects: { alpha: { mainRepo: home } } }));
+  const passFile = path.join(home, 'password');
+  const local = (command, password) => {
+    fs.writeFileSync(passFile, password + '\n', { mode: 0o600 });
+    return new Promise((resolve, reject) => {
+      require('node:child_process').execFile(process.execPath, [path.resolve(__dirname, '../cli/collaboration.cjs'), command,
+        '--username', 'owner', '--password-file', passFile], { windowsHide: true, timeout: 20000,
+        env: { ...process.env, DASHBOARD_HOME: home, DASHBOARD_REGISTRY: registryPath } }, (err, stdout, stderr) => {
+        try { resolve(JSON.parse(stdout)); } catch { reject(new Error(stderr || stdout || String(err))); }
+      });
+    });
+  };
+  const auth = createAuth({ home, registryPath });
+  for (const bad of ['12345', 'a'.repeat(129)]) assert.equal((await local('init-owner', bad)).status, 400);
+  assert.equal((await local('init-owner', '123456')).ok, true);
+  for (const bad of ['12345', 'a'.repeat(129)]) await rejects(() => auth.login('owner', bad), 400);
+  const owner = await auth.login('owner', '123456');
+  const invite = auth.createInvite(owner.token, { projectIds: ['alpha'], maxUses: 1, expiresInHours: 1 });
+  for (const bad of ['12345', 'a'.repeat(129)]) {
+    await rejects(() => auth.register({ inviteToken: invite.token, username: 'member', password: bad }), 400);
+    assert.equal(auth.admin(owner.token).invites.find(i => i.id === invite.invite.id).uses, 0);
+  }
+  const member = await auth.register({ inviteToken: invite.token, username: 'member', password: 'aaaaaa' });
+  assert.ok((await auth.login('member', 'aaaaaa')).token);
+  for (const bad of ['12345', 'a'.repeat(129)]) {
+    await rejects(() => auth.changePassword(member.token, { currentPassword: 'aaaaaa', newPassword: bad }), 400);
+    assert.ok(auth.session(member.token));
+  }
+  await auth.changePassword(member.token, { currentPassword: 'aaaaaa', newPassword: '111111' });
+  assert.ok((await auth.login('member', '111111')).token);
+  const reset = auth.createReset(owner.token, member.user.id);
+  for (const bad of ['12345', 'a'.repeat(129)]) {
+    await rejects(() => auth.resetPassword({ resetToken: reset.resetToken, newPassword: bad }), 400);
+    assert.equal(auth.admin(owner.token).resets.find(r => r.id === reset.reset.id).used, false);
+  }
+  const recovered = await auth.resetPassword({ resetToken: reset.resetToken, newPassword: '222222' });
+  assert.ok(recovered.token); assert.ok((await auth.login('member', '222222')).token);
+  await auth.changePassword(recovered.token, { currentPassword: '222222', newPassword: 'a'.repeat(128) });
+  assert.ok((await auth.login('member', 'a'.repeat(128))).token);
+  for (const bad of ['12345', 'a'.repeat(129)]) assert.equal((await local('reset-owner-password', bad)).status, 400);
+  assert.ok(auth.session(owner.token));
+  assert.equal((await local('reset-owner-password', '333333')).ok, true);
+  assert.equal(auth.session(owner.token), null); assert.ok((await auth.login('owner', '333333')).token);
+});
+
 test('account roles, password changes and one-time recovery use the real ledger', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'collaboration-accounts-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));

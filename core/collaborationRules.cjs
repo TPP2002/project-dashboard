@@ -10,11 +10,21 @@ function memberActions(task, user) {
   if (!user || user.disabled || !['owner', 'member'].includes(user.role)) return [];
   const owner = user.role === 'owner';
   const actions = ['note'];
+  const collaborators = task.collaborators || [];
+  const collaborating = collaborators.some(c => c.userId === user.id);
+  if (!collaborating && task.assigneeUserId !== user.id && collaborators.length < 5 &&
+      (task.assigneeUserId || aiWork(task)) && !terminal(task) && task.status !== '收官') actions.push('join');
+  if (collaborating) actions.push('leave');
+  if (collaborators.length && (owner || task.assigneeUserId === user.id)) actions.push('removeCollaborator');
+  // Collaboration grants progress even on AI work, without granting lifecycle
+  // operations or changing the existing creator/assignee rules below.
+  const active = task.status === '施工中' && !task.blockReason && !(task.deps?.blockedBy || []).length;
+  if (collaborating && active) actions.push('progress');
   if (!owner && aiWork(task)) return actions;
   const assigned = owner || task.assigneeUserId === user.id;
   const createdOrAssigned = assigned || task.createdByUserId === user.id;
   if ((!task.assigneeUserId || assigned) && ['未开工', '待开工', '可复工', '已拍板'].includes(task.status) && !pending(task)) actions.push('claim');
-  if (assigned && task.status === '施工中' && !task.blockReason && !(task.deps?.blockedBy || []).length) actions.push('progress');
+  if (assigned && active && !collaborating) actions.push('progress');
   if (assigned && task.status === '施工中') actions.push('unclaim');
   if (assigned && !terminal(task) && task.status !== '暂缓') actions.push('park');
   if (assigned && task.status === '暂缓') actions.push('unpark');
