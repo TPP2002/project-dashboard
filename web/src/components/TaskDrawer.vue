@@ -12,6 +12,7 @@ import { collectInstructionOf, hasCollectBrief, OUTCOME_TEXT } from '@/utils/col
 import { appearance } from '@/utils/appearance'
 import { ageLevel, ageTone } from '@/utils/ageLevel'
 import type { DocRef, Status } from '@/types'
+import OwnerCollaborators from '@/collaboration/OwnerCollaborators.vue'
 
 /**
  * docked = 宽屏内嵌模式(由 App.vue 按 ≥1600 的断点决定)。
@@ -232,6 +233,7 @@ watch([task, () => props.docked], ([t, docked]) => {
 })
 
 function onKey(e: KeyboardEvent) {
+  if (document.querySelector('dialog[open]')) return
   if (e.key === 'Escape' && store.selectedTask) store.closeTask()
 }
 onMounted(() => {
@@ -259,6 +261,7 @@ onUnmounted(() => {
           </header>
 
           <div class="d-body">
+            <OwnerCollaborators v-if="task.collaborators" :key="pid + ':' + task.id" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
             <div class="d-title-row">
               <h2 class="d-title">{{ humanTitle(task) }}</h2>
               <button

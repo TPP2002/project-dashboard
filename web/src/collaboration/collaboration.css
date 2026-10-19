@@ -20,4 +20,7 @@
 .collab-error { color: var(--bad); background: var(--bad-bg); padding: var(--s3); border-radius: var(--r); }
 .collab-description { white-space: pre-wrap; overflow-wrap: anywhere; }
 .collab-secret { border-color: var(--warn); }
+.collab .btn.danger { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); }
+.collab-dialog-foot { display: flex; justify-content: flex-end; gap: var(--s2); }
+.collab-form small { color: var(--text-2); }
 @media (max-width: 600px) { .collab-page { padding: var(--s3); } .collab-toolbar { justify-content: flex-start; } }

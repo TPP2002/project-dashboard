@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多人协作界面 v2 · 待负责人点头</title>
+<style>
+/* 令牌镜像:与 v1 / 图标体系 v3 同一套 :root/.light/.dark,颜色字面量只在这一块。 */
+:root,.light{--bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;--line:#e4e4e2;--line-strong:#d2d2cf;--text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;--ok:#2c7a45;--ok-bg:#e8f4ec;--warn:#9a6b12;--warn-bg:#fdf3e0;--bad:#b3382f;--bad-bg:#fdecea;--info:#2b5fa8;--info-bg:#e8f0fb;--n:#8e8e89;--n-bg:#eeeeed;
+ --r-sm:4px;--r:6px;--r-lg:8px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+ --fs-xs:11px;--fs-sm:12.5px;--fs-base:14px;--fs-md:15px;--fs-lg:18px;--fs-xl:22px;
+ --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace;--cn:"PingFang SC","Microsoft YaHei","Hiragino Sans GB","Source Han Sans SC",system-ui,sans-serif;
+ --spec-active:#4ad9c4,#4a9eff,#8b7bf7,#c96bd8,#4ad9c4;
+ --m1:#4a9eff;--m2:#e8619d;--m3:#a86fd8;--m4:#3ddc97;--m5:#f0b429;--m-none:#c9c9c6}
+.dark{--bg:#0d0d0e;--surface:#151516;--surface-2:#1b1b1d;--surface-3:#232326;--line:#242426;--line-strong:#343437;--text:#e7e7e8;--text-2:#9a9a9e;--text-3:#6a6a6f;--ok:#6fbf82;--ok-bg:#17251b;--warn:#d9a441;--warn-bg:#241d10;--bad:#e0736a;--bad-bg:#2a1715;--info:#6d9eea;--info-bg:#141d2b;--n:#8e8e8e;--n-bg:#232326;--m-none:#4a4a4e}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--surface-3);color:var(--text);font-family:var(--cn);font-size:var(--fs-base);line-height:1.6;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}h1,h2,h3,h4{font-weight:600}button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface);padding:5px 11px;font-size:var(--fs-sm);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+button:hover{background:var(--surface-3)}button.primary{background:var(--text);color:var(--bg);border-color:var(--text)}button.primary:hover{opacity:.88}
+button.danger{color:var(--bad);border-color:var(--bad)}button.ghost{border-color:transparent;background:transparent;color:var(--text-2)}
+button[disabled]{opacity:.45;cursor:not-allowed}
+button[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}.muted{color:var(--text-2)}.small{font-size:var(--fs-sm)}.xs{font-size:var(--fs-xs)}
+.ic{width:15px;height:15px;display:inline-block;vertical-align:-.2em;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;overflow:visible}
+.ic .tint{fill:currentColor;stroke:none;opacity:.18}
+.doc{max-width:2300px;margin:0 auto;padding:var(--s6) var(--s5) 80px}
+.doc-head{padding:var(--s5);border:1px solid var(--line-strong);border-radius:var(--r-lg);background:var(--bg);display:grid;gap:var(--s3)}
+.doc-head h1{font-size:30px;letter-spacing:-.03em}.doc-head p{color:var(--text-2);max-width:1100px}
+.eyebrow{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.1em;color:var(--text-2)}
+.changes{margin:0;padding-left:20px;color:var(--text-2);font-size:var(--fs-sm);display:grid;gap:2px}.changes b{color:var(--text)}
+.toolbar{position:sticky;top:0;z-index:30;display:flex;gap:var(--s3);align-items:center;justify-content:space-between;margin-top:var(--s4);padding:var(--s2) var(--s3);background:var(--bg);border:1px solid var(--line-strong);border-radius:var(--r)}
+.toolbar nav{display:flex;gap:var(--s4);flex-wrap:wrap;font-size:var(--fs-sm)}.toolbar a{color:var(--text-2);text-decoration:none}.toolbar a:hover{color:var(--text)}
+.modes{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r);overflow:hidden}.modes button{border:0;border-radius:0;border-right:1px solid var(--line)}.modes button:last-child{border-right:0}
+.sec{margin-top:44px}.sec>h2{font-size:var(--fs-xl)}.sec>h2 .no{font-family:var(--mono);color:var(--text-2);font-size:var(--fs-md);margin-right:var(--s3)}
+.sec>p{margin:var(--s2) 0 var(--s4);color:var(--text-2);max-width:1200px}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s4)}
+body:not([data-mode="pair"]) .pair{grid-template-columns:minmax(0,1fr)}body[data-mode="light"] .pane.dark,body[data-mode="dark"] .pane.light{display:none}
+.pane{background:var(--bg);color:var(--text);border:1px solid var(--line-strong);border-radius:var(--r-lg);padding:34px var(--s4) var(--s4);position:relative;min-width:0;overflow-x:auto}
+.pane::before{content:attr(data-label);position:absolute;top:9px;right:14px;color:var(--text-2);font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.08em}
+.note{margin-top:var(--s3);border-left:2px solid var(--info);padding:var(--s2) var(--s3);font-size:var(--fs-sm);color:var(--text-2);background:var(--surface-2);border-radius:0 var(--r) var(--r) 0}
+.note b{color:var(--text)}
+/* 头像 */
+.av{width:20px;height:20px;border-radius:50%;display:inline-grid;place-items:center;font-size:10.5px;color:#fff;background:var(--m1);font-weight:600;flex:none;line-height:1}
+.av.m2{background:var(--m2)}.av.m3{background:var(--m3)}.av.m4{background:var(--m4);color:#0d0d0e}.av.m5{background:var(--m5);color:#0d0d0e}.av.ai{background:var(--text-2);color:var(--bg)}.av.own{background:var(--warn)}
+.av.lg{width:26px;height:26px;font-size:12px}
+.av.more{background:var(--surface-3);color:var(--text-2);border:1px solid var(--line-strong);font-family:var(--mono);font-size:9.5px}
+/* 叠放:主负责人在最前,带一圈流光;协作人往后叠、半压;悬停整排摊开 */
+.stack{display:inline-flex;align-items:center;padding-left:2px}
+.stack .av{box-shadow:0 0 0 2px var(--surface);margin-left:-6px;transition:margin .22s cubic-bezier(.2,.8,.2,1),transform .22s}
+.stack .av:first-child{margin-left:0}
+.stack:hover .av{margin-left:2px}.stack:hover .av:first-child{margin-left:0}
+.stack .lead{position:relative;z-index:2}
+.stack .lead::after{content:"";position:absolute;inset:-3.5px;border-radius:50%;padding:1.5px;background:conic-gradient(from var(--a,0deg),var(--spec-active));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spinring 4s linear infinite}
+@property --a{syntax:"<angle>";inherits:false;initial-value:0deg}
+@keyframes spinring{to{--a:360deg}}
+.stack .co:nth-child(2){z-index:1}.stack .co{opacity:.96}
+.stack-lab{font-size:var(--fs-xs);color:var(--text-2);margin-left:6px}
+/* 应用壳(同 v1) */
+.app{min-width:900px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden;display:grid;grid-template-rows:auto 1fr;height:600px}
+.bar{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);background:var(--bg)}
+.brand{font-weight:600;white-space:nowrap}.bar select{width:auto;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface);padding:4px 8px}.spacer{flex:1}
+.who{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 4px;border:1px solid var(--line);border-radius:999px;font-size:var(--fs-sm);background:var(--surface);white-space:nowrap}
+.role-tag{font-size:var(--fs-xs);padding:2px 7px;border-radius:var(--r-sm);background:var(--info-bg);color:var(--info);white-space:nowrap}.role-tag.view{background:var(--n-bg);color:var(--text-2)}.role-tag.own{background:var(--warn-bg);color:var(--warn)}
+.body{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:0}
+.lanes{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(190px,1fr);gap:var(--s2);padding:var(--s3);min-height:0;overflow-x:auto}
+.lane{display:grid;grid-template-rows:auto 1fr;min-height:0;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r)}
+.lane-h{display:flex;align-items:center;gap:6px;padding:7px 9px;font-size:var(--fs-sm);font-weight:600;border-bottom:1px solid var(--line);white-space:nowrap}
+.lane-h .n{margin-left:auto;font-family:var(--mono);font-weight:400;color:var(--text-2);font-size:var(--fs-xs)}
+.dot{width:8px;height:8px;border-radius:2px;background:var(--n)}.dot.info{background:var(--info)}.dot.warn{background:var(--warn)}.dot.ok{background:var(--ok)}
+.lane-b{overflow-y:auto;padding:7px;display:grid;gap:7px;align-content:start}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 9px;display:grid;gap:6px;cursor:pointer;position:relative}
+.card:hover{border-color:var(--line-strong)}.card.sel{border-color:var(--info);box-shadow:0 0 0 1px var(--info)}
+.card.mine::before,.card.co-mine::before{content:"";position:absolute;left:-1px;top:8px;bottom:8px;width:3px;border-radius:2px;background:linear-gradient(180deg,var(--spec-active))}
+.card.co-mine::before{opacity:.45}
+.card .id{font-family:var(--mono);font-size:var(--fs-xs);color:var(--text-3)}.card .t{font-size:var(--fs-sm);font-weight:600;line-height:1.45}
+.card .meta{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);color:var(--text-2);flex-wrap:wrap}
+.card .foot{display:flex;align-items:center;gap:6px}.card .foot .pct{margin-left:auto;font-family:var(--mono);font-size:var(--fs-xs);color:var(--text-2)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border-radius:var(--r-sm);background:var(--surface-3);font-size:var(--fs-xs);color:var(--text-2);white-space:nowrap}
+.chip.me{background:var(--info-bg);color:var(--info)}.chip.pend{background:var(--warn-bg);color:var(--warn)}
+.bar-p{height:4px;border-radius:2px;background:var(--surface-3);overflow:hidden}.bar-p i{display:block;height:100%;background-image:linear-gradient(90deg,var(--spec-active));background-size:200% 100%;animation:slide 3.4s linear infinite}
+@keyframes slide{to{background-position:-200% 0}}
+.card .acts{display:flex;gap:5px}.card .acts button{padding:2px 8px;font-size:var(--fs-xs)}
+/* 抽屉 */
+.drawer{border-left:1px solid var(--line);background:var(--bg);display:grid;grid-template-rows:auto auto auto 1fr auto;min-height:0}
+.dh{padding:var(--s3);border-bottom:1px solid var(--line);display:grid;gap:4px}.dh .t{font-weight:600;font-size:var(--fs-md);line-height:1.45}
+.dh .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:var(--fs-xs);color:var(--text-2)}
+.dacts{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);display:flex;gap:6px;flex-wrap:wrap}.dacts button{font-size:var(--fs-xs);padding:3px 9px}
+.team{padding:var(--s2) var(--s3) var(--s3);border-bottom:1px solid var(--line);display:grid;gap:6px}
+.team-h{display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);color:var(--text-2);letter-spacing:.04em}
+.team-h .cnt{font-family:var(--mono)}.team-h .spacer{flex:1}
+.team-h button{font-size:var(--fs-xs);padding:2px 8px}
+.person{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:var(--r);font-size:var(--fs-sm)}
+.person:hover{background:var(--surface-2)}
+.person .r{font-size:var(--fs-xs);color:var(--text-3)}
+.person .when{margin-left:auto;font-size:var(--fs-xs);color:var(--text-3);font-family:var(--mono)}
+.person .x{border:0;background:transparent;padding:2px;color:var(--text-3);border-radius:var(--r-sm);opacity:0;transition:opacity .14s}
+.person:hover .x{opacity:1}.person .x:hover{color:var(--bad);background:var(--bad-bg)}
+.person.lead .r{color:var(--warn)}
+.slots{display:flex;gap:3px;align-items:center}.slots i{width:10px;height:4px;border-radius:2px;background:var(--surface-3)}.slots i.on{background:var(--info)}
+.thread{overflow-y:auto;padding:var(--s3);display:grid;gap:var(--s3);align-content:start}
+.msg{display:grid;grid-template-columns:22px 1fr;gap:8px}.msg .h{font-size:var(--fs-xs);color:var(--text-2)}.msg .h b{color:var(--text);font-weight:600}
+.msg .x{font-size:var(--fs-sm)}.msg.sys .x{color:var(--text-2);font-size:var(--fs-xs)}
+.compose{border-top:1px solid var(--line);padding:var(--s2) var(--s3);display:flex;gap:6px;align-items:center}.compose input{flex:1;border:1px solid var(--line-strong);border-radius:var(--r);background:var(--surface);padding:6px 9px}
+/* 四种视角并排 */
+.views{display:grid;grid-template-columns:repeat(4,minmax(250px,1fr));gap:var(--s3)}
+.view{border:1px solid var(--line);border-radius:var(--r);background:var(--bg);display:grid;align-content:start;overflow:hidden}
+.view-h{padding:6px var(--s3);font-size:var(--fs-xs);color:var(--text-2);background:var(--surface-2);border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}
+.view-h b{color:var(--text)}
+.view .dacts{border-bottom:1px solid var(--line)}
+.why{padding:var(--s2) var(--s3);font-size:var(--fs-xs);color:var(--text-2)}
+.toast{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border-radius:var(--r);background:var(--text);color:var(--bg);font-size:var(--fs-xs);animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+@keyframes rise{from{transform:translateY(6px);opacity:0}}
+.dialog{background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r-lg);box-shadow:0 8px 30px #0003;padding:var(--s4);display:grid;gap:var(--s3);max-width:360px}
+.dialog h3{font-size:var(--fs-md)}.dialog .foot{display:flex;justify-content:flex-end;gap:var(--s2)}.hint{font-size:var(--fs-xs);color:var(--text-2)}
+/* 权限表 */
+table.rules{border-collapse:collapse;width:100%;font-size:var(--fs-sm);background:var(--surface)}table.rules th,table.rules td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+table.rules th{background:var(--surface-2);font-weight:600;white-space:nowrap}.y{color:var(--ok);font-weight:600}.no{color:var(--text-3)}
+tr.new td:first-child{position:relative;padding-left:20px}tr.new td:first-child::before{content:"";position:absolute;left:8px;top:12px;width:6px;height:6px;border-radius:50%;background:var(--info)}
+tr.chg td:first-child{position:relative;padding-left:20px}tr.chg td:first-child::before{content:"";position:absolute;left:8px;top:12px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.legend{display:flex;gap:var(--s4);font-size:var(--fs-xs);color:var(--text-2);margin-bottom:var(--s2)}.legend span{display:inline-flex;gap:5px;align-items:center}.legend i{width:6px;height:6px;border-radius:50%;background:var(--info)}.legend i.w{background:var(--warn)}
+/* 洞察页:成员贡献 */
+.ins{min-width:980px;display:grid;gap:var(--s4)}
+.ins-head{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}.ins-head h3{font-size:var(--fs-lg);display:flex;gap:8px;align-items:center}
+.seg{padding:3px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);color:var(--text-2);font-size:var(--fs-sm)}
+.seg.on{background:var(--info-bg);color:var(--info);font-weight:600;border-color:var(--info)}
+.segs{display:flex;gap:4px}
+.blk{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s3) var(--s4);display:grid;gap:var(--s3)}
+.blk-t{display:flex;align-items:center;gap:var(--s3);font-weight:600;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-3);color:var(--text-2);font-family:var(--mono);font-size:var(--fs-xs);font-weight:400}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--s3)}
+.kpi{border:1px solid var(--line);border-radius:var(--r);padding:var(--s2) var(--s3);background:var(--surface-2);display:grid;gap:2px}
+.kpi .v{font-family:var(--mono);font-size:22px;font-weight:600;letter-spacing:-.02em}.kpi .l{font-size:var(--fs-xs);color:var(--text-2)}
+.kpi .s{font-size:var(--fs-xs);color:var(--text-3)}
+table.mt{border-collapse:collapse;width:100%;font-size:var(--fs-sm)}
+table.mt th{font-size:var(--fs-xs);color:var(--text-2);font-weight:500;text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.mt th:first-child,table.mt td:first-child{text-align:left}
+table.mt td{padding:8px;border-bottom:1px solid var(--line);text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+table.mt td.nm{font-family:var(--cn)}
+table.mt tr:hover td{background:var(--surface-2)}
+table.mt tr.una td{color:var(--text-3)}
+.nmcell{display:flex;align-items:center;gap:8px}.nmcell .role-tag{font-size:10px;padding:1px 5px}
+.donebar{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.db{display:flex;height:8px;width:120px;border-radius:4px;background:var(--surface-3);overflow:hidden}
+.db .o{background:var(--c,var(--m1))}.db .c{background:repeating-linear-gradient(135deg,var(--c,var(--m1)) 0 3px,transparent 3px 5px);opacity:.75}
+.db .o,.db .c{transform-origin:left;animation:grow .9s cubic-bezier(.2,.8,.2,1) both}
+@keyframes grow{from{transform:scaleX(0)}}
+.spark{width:96px;height:24px;overflow:visible}.spark polyline{fill:none;stroke:var(--c,var(--m1));stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:200;animation:drawl 1.6s ease-out both}
+.spark circle{fill:var(--c,var(--m1))}
+@keyframes drawl{from{stroke-dashoffset:200}to{stroke-dashoffset:0}}
+.trend{width:100%;height:220px;overflow:visible}
+.trend .ax{stroke:var(--line);stroke-width:1}.trend text{fill:var(--text-3);font-size:10.5px;font-family:var(--mono)}
+.trend rect{transform-box:fill-box;transform-origin:bottom;animation:rise2 .8s cubic-bezier(.2,.8,.2,1) both}
+@keyframes rise2{from{transform:scaleY(0)}}
+.lg2{display:flex;gap:var(--s3);flex-wrap:wrap;font-size:var(--fs-xs);color:var(--text-2)}.lg2 span{display:inline-flex;gap:5px;align-items:center}.lg2 i{width:10px;height:10px;border-radius:3px;background:var(--c)}
+.two{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:var(--s4)}
+.feed{display:grid;gap:6px;font-size:var(--fs-sm)}.feed .it{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center}
+.feed .when{font-family:var(--mono);font-size:var(--fs-xs);color:var(--text-3)}
+.via{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--text-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 5px;margin-left:4px}
+/* 可见范围三方案 */
+.opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3)}
+.opt{border:1px solid var(--line);border-radius:var(--r);padding:var(--s3);background:var(--surface);display:grid;gap:6px;align-content:start}
+.opt h4{font-size:var(--fs-md);display:flex;gap:8px;align-items:center}.opt.rec{border-color:var(--info);box-shadow:0 0 0 1px var(--info)}
+.opt .tag{font-size:var(--fs-xs);padding:1px 6px;border-radius:var(--r-sm);background:var(--info-bg);color:var(--info);font-weight:400}
+.opt table{border-collapse:collapse;font-size:var(--fs-xs);width:100%}.opt td{padding:3px 4px;border-bottom:1px dashed var(--line)}.opt td:last-child{text-align:right}
+.opt p{font-size:var(--fs-xs);color:var(--text-2)}
+.mini{border:1px dashed var(--line-strong);border-radius:var(--r);padding:var(--s2) var(--s3);display:grid;gap:4px;font-size:var(--fs-xs);color:var(--text-2)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-mode="pair">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-users" viewBox="0 0 16 16"><circle cx="6" cy="5.5" r="2.4"/><path d="M1.8 13.5c.5-2.5 2.2-3.8 4.2-3.8s3.7 1.3 4.2 3.8"/><path d="M10.4 3.4a2.3 2.3 0 0 1 0 4.3M12 9.9c1.3.5 2 1.7 2.3 3.6"/></symbol>
+  <symbol id="i-join" viewBox="0 0 16 16"><circle cx="6.5" cy="5.5" r="2.5"/><path d="M1.8 13.8c.6-2.7 2.4-4.1 4.7-4.1 1.2 0 2.2.3 3 .9"/><path d="M12.5 8.5v5M10 11h5"/></symbol>
+  <symbol id="i-leave" viewBox="0 0 16 16"><circle cx="6.5" cy="5.5" r="2.5"/><path d="M1.8 13.8c.6-2.7 2.4-4.1 4.7-4.1 1.2 0 2.2.3 3 .9"/><path d="M10 11h5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 16 16"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 16 16"><path class="tint" d="M2.5 11.5 1.8 5l3.6 2.6L8 3l2.6 4.6L14.2 5l-.7 6.5z"/><path d="M2.5 11.5 1.8 5l3.6 2.6L8 3l2.6 4.6L14.2 5l-.7 6.5zM3 13.5h10"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 16 16"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8s-2.4 4.5-6.5 4.5S1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 16 16"><path d="M2.5 13.5h11"/><path d="M4.5 11V8M8 11V4.5M11.5 11V6.5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 16 16"><path class="tint" d="M8 2.2 9.3 6.7 13.8 8 9.3 9.3 8 13.8 6.7 9.3 2.2 8 6.7 6.7z"/><path d="M8 2.2 9.3 6.7 13.8 8 9.3 9.3 8 13.8 6.7 9.3 2.2 8 6.7 6.7z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+</svg>
+<div class="doc">
+  <header class="doc-head">
+    <div class="eyebrow">CLOUD-COLLAB-UI-1018 · AD-20261019-COLLAB-MULTI-ASSIGNEE · AD-20261019-COLLAB-CONTRIB · 多人协作界面 v2 · 待负责人点头</div>
+    <h1>多人协作 v2:一张卡几个人一起做,以及谁推进了多少</h1>
+    <p>在 v1(成员看板、只读访客、建卡与理由弹窗、改密码与重置码、负责人管理成员、权限一览)基础上加两块:<b>一张卡「主负责人加协作人」</b>,和<b>洞察页里的成员贡献</b>。服务端这两块已经做完并合进主干,这份图只定「长什么样」。按钮照旧只按服务端告诉前端「这个人此刻能做什么」来显示。</p>
+    <ul class="changes">
+      <li><b>v1 一处改动:</b>改密码、重置码设新密码、邀请注册三处的提示从「至少 12 位」改成「至少 6 位」(你 10-19 拍板,服务端已改)。v1 其余部分不变。</li>
+      <li><b>新增 07~10 节:</b>卡片上的头像叠放、抽屉里的协作人区、权限表新增的行、洞察页的成员贡献。</li>
+      <li><b>有一件要你定:</b>成员和只读访客在洞察页能看到多少(第 10 节末尾三个方案)。</li>
+    </ul>
+  </header>
+  <div class="toolbar">
+    <nav><a href="#s7">07 卡片上的头像</a><a href="#s8">08 抽屉里的协作人</a><a href="#s9">09 权限表新增</a><a href="#s10">10 成员贡献</a></nav>
+    <div class="modes"><button data-mode="light" aria-pressed="false">浅</button><button data-mode="dark" aria-pressed="false">深</button><button data-mode="pair" aria-pressed="true">并排</button></div>
+  </div>
+
+  <section class="sec" id="s7">
+    <h2><span class="no">07</span>卡片上:主负责人在前,协作人叠在后面</h2>
+    <p>卡片底部一排头像:最前面是主负责人(带一圈慢慢转的流光边),协作人往后半压着叠;超过 3 个头像显示「+2」。鼠标移上去整排摊开,悬停单个头像出名字。我是主负责人的卡左边是实色流光竖条,我只是协作人的卡竖条淡一半。AI 施工的卡,主位是灰色「AI」头像,成员可以作为协作人加入(比如做测试、写文案)。</p>
+    <div class="pair">
+      <div class="pane light" data-label="浅色">
+        <div class="app" style="height:440px">
+          <div class="bar"><span class="brand">看板</span><select><option>Alpha 产品改版</option></select><span class="role-tag">成员</span><span class="spacer"></span><button class="primary"><svg class="ic"><use href="#i-plus"/></svg>新建卡片</button><span class="who"><span class="av">李</span>李雷</span></div>
+          <div class="body" style="grid-template-columns:minmax(0,1fr)">
+            <div class="lanes">
+              <div class="lane"><div class="lane-h"><span class="dot"></span>待开工<span class="n">2</span></div><div class="lane-b">
+                <div class="card"><span class="id">M20261019-7KQ2PX</span><span class="t">首页加载慢,首屏图片压缩</span><div class="meta"><span class="chip">未领取</span></div><div class="acts"><button>领取</button></div></div>
+                <div class="card"><span class="id">ALPHA-AUTH-03</span><span class="t">登录页记住账号</span><div class="meta"><span class="chip">未领取</span></div><div class="acts"><button>领取</button></div></div>
+              </div></div>
+              <div class="lane"><div class="lane-h"><span class="dot info"></span>施工中<span class="n">4</span></div><div class="lane-b">
+                <div class="card mine"><span class="id">M20261017-HN3D9A</span><span class="t">订单列表加筛选</span><div class="bar-p"><i style="width:60%"></i></div><div class="foot"><span class="stack"><span class="av lead" title="李雷 · 主负责人">李</span><span class="av m2 co" title="韩梅梅 · 协作">韩</span><span class="av m4 co" title="周杰 · 协作">周</span></span><span class="stack-lab">我 + 2 人协作</span><span class="pct">60%</span></div></div>
+                <div class="card co-mine sel"><span class="id">ALPHA-UI-11</span><span class="t">深色模式对比度</span><div class="bar-p"><i style="width:30%"></i></div><div class="foot"><span class="stack"><span class="av m2 lead" title="韩梅梅 · 主负责人">韩</span><span class="av co" title="李雷(我) · 协作">李</span></span><span class="stack-lab">韩梅梅 · 我协作</span><span class="pct">30%</span></div></div>
+                <div class="card"><span class="id">ALPHA-API-05</span><span class="t">接口限流</span><div class="bar-p"><i style="width:45%"></i></div><div class="foot"><span class="stack"><span class="av ai lead" title="AI 施工">AI</span><span class="av m3 co" title="王芳 · 协作(测试)">王</span></span><span class="stack-lab">AI 施工 · 王芳协作</span><span class="pct">45%</span></div></div>
+                <div class="card"><span class="id">ALPHA-OPS-02</span><span class="t">上线前全链路演练</span><div class="bar-p"><i style="width:20%"></i></div><div class="foot"><span class="stack"><span class="av m3 lead">王</span><span class="av m2 co">韩</span><span class="av m4 co">周</span><span class="av more">+2</span></span><span class="stack-lab">王芳 + 4 人</span><span class="pct">20%</span></div></div>
+              </div></div>
+              <div class="lane"><div class="lane-h"><span class="dot"></span>暂缓<span class="n">1</span></div><div class="lane-b">
+                <div class="card"><span class="id">M20261015-ZP4R6C</span><span class="t">导出表格</span><div class="meta"><span class="chip">等设计稿</span></div><div class="foot"><span class="stack"><span class="av m4 lead">周</span></span><span class="stack-lab">周杰</span></div></div>
+              </div></div>
+              <div class="lane"><div class="lane-h"><span class="dot ok"></span>已完工<span class="n">5</span></div><div class="lane-b">
+                <div class="card"><span class="id">M20261016-LM2K8B</span><span class="t">注册页校验提示</span><div class="foot"><span class="stack"><span class="av m3 lead">王</span><span class="av co">李</span></span><span class="stack-lab">王芳 · 李雷协作</span><span class="pct">10-18</span></div></div>
+                <div class="card"><span class="id">ALPHA-UI-09</span><span class="t">按钮圆角统一</span><div class="foot"><span class="stack"><span class="av lead">李</span></span><span class="stack-lab">我</span><span class="pct">10-17</span></div></div>
+              </div></div>
+            </div>
+          </div>
+        </div>
+        <div class="note"><b>为什么头像旁还写一行字:</b>头像只有一个字,同姓的人分不清;「我 + 2 人协作」「韩梅梅 · 我协作」一眼能看出自己在这张卡里是什么身份。只读访客看到的头像和文字一样,只是没有按钮。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="s8">
+    <h2><span class="no">08</span>抽屉里的协作人区,和四种人点开同一张卡看到的按钮</h2>
+    <p>抽屉在标题下面新加一块「一起做的人」:第一行是主负责人(带小皇冠),下面是协作人和加入时间,右上角是 5 格名额条。按钮是谁能按就出现谁的,下面把同一张卡「订单列表加筛选」在四种人眼里的样子并排画出来。</p>
+    <div class="pair">
+      <div class="pane light" data-label="浅色">
+        <div class="views">
+          <div class="view">
+            <div class="view-h"><span class="av" style="width:16px;height:16px;font-size:9px">李</span><b>主负责人李雷</b>看到</div>
+            <div class="dh"><span class="mono xs muted">M20261017-HN3D9A</span><span class="t">订单列表加筛选</span><div class="row"><span class="dot info"></span>施工中 · 60%</div></div>
+            <div class="dacts"><button class="primary">更新进度</button><button>收官</button><button>暂缓</button><button>放弃认领</button><button class="danger">作废</button></div>
+            <div class="team">
+              <div class="team-h"><svg class="ic"><use href="#i-users"/></svg>一起做的人<span class="cnt">1 + 2</span><span class="spacer"></span><span class="slots" title="协作名额 2/5"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></div>
+              <div class="person lead"><span class="av">李</span>李雷 <span class="r"><svg class="ic" style="width:12px;height:12px"><use href="#i-crown"/></svg> 主负责人</span><span class="when">10-17</span></div>
+              <div class="person"><span class="av m2">韩</span>韩梅梅 <span class="r">协作</span><span class="when">10-18</span><button class="x" title="把韩梅梅移出协作" style="opacity:1"><svg class="ic"><use href="#i-x"/></svg></button></div>
+              <div class="person"><span class="av m4">周</span>周杰 <span class="r">协作</span><span class="when">10-19</span><button class="x" title="把周杰移出协作"><svg class="ic"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="why">每个协作人右边有「移出」小叉(悬停才亮,上面韩梅梅那行是亮着的样子)。</div>
+          </div>
+          <div class="view">
+            <div class="view-h"><span class="av m2" style="width:16px;height:16px;font-size:9px">韩</span><b>协作人韩梅梅</b>看到</div>
+            <div class="dh"><span class="mono xs muted">M20261017-HN3D9A</span><span class="t">订单列表加筛选</span><div class="row"><span class="dot info"></span>施工中 · 60%</div></div>
+            <div class="dacts"><button class="primary">更新进度</button><button><svg class="ic"><use href="#i-leave"/></svg>退出协作</button></div>
+            <div class="team">
+              <div class="team-h"><svg class="ic"><use href="#i-users"/></svg>一起做的人<span class="cnt">1 + 2</span><span class="spacer"></span><span class="slots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></div>
+              <div class="person lead"><span class="av">李</span>李雷 <span class="r"><svg class="ic" style="width:12px;height:12px"><use href="#i-crown"/></svg> 主负责人</span><span class="when">10-17</span></div>
+              <div class="person"><span class="av m2">韩</span>韩梅梅 <span class="chip me">我</span><span class="r">协作</span><span class="when">10-18</span></div>
+              <div class="person"><span class="av m4">周</span>周杰 <span class="r">协作</span><span class="when">10-19</span></div>
+            </div>
+            <div class="why">协作人能更新进度、留言、自己退出;收官、暂缓、放弃认领、作废归主负责人,所以没有这几个按钮。也不能移出别人。</div>
+          </div>
+          <div class="view">
+            <div class="view-h"><span class="av m3" style="width:16px;height:16px;font-size:9px">王</span><b>别的成员王芳</b>看到</div>
+            <div class="dh"><span class="mono xs muted">M20261017-HN3D9A</span><span class="t">订单列表加筛选</span><div class="row"><span class="dot info"></span>施工中 · 60%</div></div>
+            <div class="dacts"><button class="primary"><svg class="ic"><use href="#i-join"/></svg>加入协作</button></div>
+            <div class="team">
+              <div class="team-h"><svg class="ic"><use href="#i-users"/></svg>一起做的人<span class="cnt">1 + 2</span><span class="spacer"></span><span class="slots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></div>
+              <div class="person lead"><span class="av">李</span>李雷 <span class="r"><svg class="ic" style="width:12px;height:12px"><use href="#i-crown"/></svg> 主负责人</span><span class="when">10-17</span></div>
+              <div class="person"><span class="av m2">韩</span>韩梅梅 <span class="r">协作</span><span class="when">10-18</span></div>
+              <div class="person"><span class="av m4">周</span>周杰 <span class="r">协作</span><span class="when">10-19</span></div>
+            </div>
+            <div class="why">点「加入协作」直接进,不用主负责人同意;进来后抽屉里出现一条「王芳加入了协作」。名额满 5 人时按钮变灰,写「协作名额已满」。</div>
+            <div style="padding:0 var(--s3) var(--s3)"><span class="toast"><svg class="ic"><use href="#i-join"/></svg>已加入协作,可以更新进度和留言了</span></div>
+          </div>
+          <div class="view">
+            <div class="view-h"><svg class="ic"><use href="#i-eye"/></svg><b>只读访客赵敏</b>看到</div>
+            <div class="dh"><span class="mono xs muted">M20261017-HN3D9A</span><span class="t">订单列表加筛选</span><div class="row"><span class="dot info"></span>施工中 · 60%</div></div>
+            <div class="dacts" style="color:var(--text-3);font-size:var(--fs-xs)">没有操作按钮</div>
+            <div class="team">
+              <div class="team-h"><svg class="ic"><use href="#i-users"/></svg>一起做的人<span class="cnt">1 + 2</span></div>
+              <div class="person lead"><span class="av">李</span>李雷 <span class="r"><svg class="ic" style="width:12px;height:12px"><use href="#i-crown"/></svg> 主负责人</span></div>
+              <div class="person"><span class="av m2">韩</span>韩梅梅 <span class="r">协作</span></div>
+              <div class="person"><span class="av m4">周</span>周杰 <span class="r">协作</span></div>
+            </div>
+            <div class="why">能看到谁在做,看不到名额条和任何按钮。</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s4);margin-top:var(--s4)">
+          <div class="dialog"><h3>把韩梅梅移出协作?</h3><p class="small">M20261017-HN3D9A · 订单列表加筛选</p><p class="hint">她做过的进度更新和留言都还在,贡献统计照算;移出后她可以再自己加入。</p><div class="foot"><button class="ghost">取消</button><button class="danger">移出</button></div></div>
+          <div class="mini">
+            <b style="color:var(--text)">什么时候「加入协作」不出现</b>
+            <span>卡还没人领(应该先「领取」当主负责人);卡已完工、已作废;自己已经在卡上;访客。</span>
+            <b style="color:var(--text)">领取一张自己正在协作的卡</b>
+            <span>主负责人放弃认领后,协作人可以领取,领了就从协作人升成主负责人,名单里自动去掉自己。</span>
+            <b style="color:var(--text)">主负责人收官、放弃认领、作废后</b>
+            <span>协作人名单保留,用来算贡献;头像照旧显示在已完工卡上。</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="s9">
+    <h2><span class="no">09</span>权限一览:新增与改动的行</h2>
+    <p>完整表见 v1 第 06 节,这里只列变化。蓝点是新增行,黄点是改了说法的行。</p>
+    <div class="pair">
+      <div class="pane light" data-label="浅色">
+        <div class="legend"><span><i></i>新增</span><span><i class="w"></i>改了说法</span></div>
+        <table class="rules">
+          <tr><th>操作</th><th>负责人</th><th>主负责人(领取人)</th><th>协作人</th><th>其他成员</th><th>只读访客</th></tr>
+          <tr class="new"><td>加入协作(有人在做、没完工没作废、不满 5 人)</td><td class="y">可以</td><td class="no">本来就在</td><td class="no">本来就在</td><td class="y">可以,不用审批</td><td class="no">不行</td></tr>
+          <tr class="new"><td>退出协作</td><td class="no">—</td><td class="no">用「放弃认领」</td><td class="y">自己退出</td><td class="no">—</td><td class="no">不行</td></tr>
+          <tr class="new"><td>移出协作人</td><td class="y">任何卡</td><td class="y">自己的卡</td><td class="no">不行</td><td class="no">不行</td><td class="no">不行</td></tr>
+          <tr class="chg"><td>更新进度</td><td class="y">任何卡</td><td class="y">可以</td><td class="y">可以</td><td class="no">不行</td><td class="no">不行</td></tr>
+          <tr class="chg"><td>收官 / 暂缓 / 复工 / 放弃认领</td><td class="y">任何卡</td><td class="y">可以</td><td class="no">不行</td><td class="no">不行</td><td class="no">不行</td></tr>
+          <tr class="chg"><td>作废 / 重开</td><td class="y">任何卡</td><td class="y">可以(自己建的卡也行)</td><td class="no">不行</td><td class="no">只限自己建的卡</td><td class="no">不行</td></tr>
+          <tr class="chg"><td>留言</td><td class="y">可以</td><td class="y">可以</td><td class="y">可以</td><td class="y">可以</td><td class="no">不行</td></tr>
+          <tr class="new"><td>AI 施工的卡</td><td class="y">照旧</td><td class="no">—</td><td class="y">能加入、更新进度、留言,AI 的分支和提交一个字不动</td><td class="y">能加入</td><td class="no">不行</td></tr>
+          <tr class="chg"><td>密码长度</td><td colspan="5">所有人最短 6 位、最长 128 位,不要求混合字母数字</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="s10">
+    <h2><span class="no">10</span>洞察页:成员贡献</h2>
+    <p>放在现有「洞察」页四张图下面,新加一块「成员贡献」,范围跟着页面顶上的项目切换走,时间默认最近 8 周。上面五个总数,中间一张按人列的表,下面左边是按周趋势(每根柱子按人分色叠起来),右边是最近的推进动态。经 AI 代办的操作(成员让 AI 帮他点的)在表里单独一列,动态里带「经 AI」小标。命令行和本机 AI 写的旧记录没有署名,归在表格最后一行「未署名」,不丢。</p>
+    <div class="pair">
+      <div class="pane light" data-label="浅色">
+        <div class="ins">
+          <div class="ins-head">
+            <h3><svg class="ic" style="width:18px;height:18px"><use href="#i-users"/></svg>成员贡献</h3>
+            <span class="muted small">Alpha 产品改版 · 最近 8 周 · 现算不落盘</span>
+            <span class="spacer"></span>
+            <div class="segs"><button class="seg">4 周</button><button class="seg on">8 周</button><button class="seg">12 周</button></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><span class="l">完成卡数</span><span class="v">27</span><span class="s">其中有协作人的 9 张</span></div>
+            <div class="kpi"><span class="l">进行中</span><span class="v">8</span><span class="s">5 人在推进</span></div>
+            <div class="kpi"><span class="l">成员建卡</span><span class="v">19</span><span class="s">另有 11 张来自命令行</span></div>
+            <div class="kpi"><span class="l">留言</span><span class="v">142</span><span class="s">每张卡平均 3.1 条</span></div>
+            <div class="kpi"><span class="l">经 AI 的操作</span><span class="v">38</span><span class="s">占全部操作 14%</span></div>
+          </div>
+          <div class="blk">
+            <div class="blk-t">按人看<span class="pill">实色 = 作为主负责人完成 · 斜纹 = 作为协作人完成</span></div>
+            <table class="mt">
+              <tr><th>成员</th><th>完成(主负责 + 协作)</th><th>进行中</th><th>建卡</th><th>留言</th><th>进度更新</th><th>经 AI</th><th>最近活跃</th><th>8 周趋势</th></tr>
+              <tr style="--c:var(--m1)"><td class="nm"><div class="nmcell"><span class="av">李</span>李雷 <span class="role-tag">成员</span></div></td><td><div class="donebar"><span>9 + 3</span><span class="db"><span class="o" style="width:60%"></span><span class="c" style="width:20%"></span></span></div></td><td>2 + 1</td><td>6</td><td>41</td><td>33</td><td>12</td><td>今天 09:12</td><td><svg class="spark" viewBox="0 0 96 24"><polyline points="2,18 15,16 28,19 41,12 54,14 67,8 80,9 94,4"/><circle cx="94" cy="4" r="2"/></svg></td></tr>
+              <tr style="--c:var(--m2)"><td class="nm"><div class="nmcell"><span class="av m2">韩</span>韩梅梅 <span class="role-tag">成员</span></div></td><td><div class="donebar"><span>6 + 4</span><span class="db"><span class="o" style="width:40%"></span><span class="c" style="width:27%"></span></span></div></td><td>1 + 2</td><td>5</td><td>38</td><td>21</td><td>4</td><td>今天 08:40</td><td><svg class="spark" viewBox="0 0 96 24"><polyline points="2,14 15,12 28,14 41,15 54,10 67,11 80,7 94,8"/><circle cx="94" cy="8" r="2"/></svg></td></tr>
+              <tr style="--c:var(--m3)"><td class="nm"><div class="nmcell"><span class="av m3">王</span>王芳 <span class="role-tag">成员</span></div></td><td><div class="donebar"><span>5 + 2</span><span class="db"><span class="o" style="width:33%"></span><span class="c" style="width:13%"></span></span></div></td><td>1 + 1</td><td>4</td><td>27</td><td>18</td><td>19</td><td>昨天 21:05</td><td><svg class="spark" viewBox="0 0 96 24"><polyline points="2,20 15,18 28,12 41,10 54,13 67,15 80,12 94,11"/><circle cx="94" cy="11" r="2"/></svg></td></tr>
+              <tr style="--c:var(--m4)"><td class="nm"><div class="nmcell"><span class="av m4">周</span>周杰 <span class="role-tag">成员</span></div></td><td><div class="donebar"><span>2 + 0</span><span class="db"><span class="o" style="width:13%"></span></span></div></td><td>1 + 2</td><td>4</td><td>19</td><td>9</td><td>3</td><td>10-16</td><td><svg class="spark" viewBox="0 0 96 24"><polyline points="2,8 15,10 28,12 41,16 54,18 67,20 80,21 94,21"/><circle cx="94" cy="21" r="2"/></svg></td></tr>
+              <tr style="--c:var(--m5)"><td class="nm"><div class="nmcell"><span class="av m5">赵</span>赵敏 <span class="role-tag view">访客</span></div></td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>—</td><td class="muted">没有活动</td></tr>
+              <tr class="una"><td class="nm"><div class="nmcell"><span class="av more">?</span>未署名(命令行 / 本机 AI)</div></td><td>3 张完工卡没有领取人</td><td>—</td><td>11</td><td>17</td><td>—</td><td>—</td><td>今天 07:30</td><td>—</td></tr>
+            </table>
+          </div>
+          <div class="two">
+            <div class="blk">
+              <div class="blk-t">按周完成 · 按人分色<span class="segs" style="margin-left:auto"><button class="seg on">完成</button><button class="seg">留言</button><button class="seg">全部操作</button></span></div>
+              <svg class="trend" viewBox="0 0 560 220" preserveAspectRatio="none">
+                <line class="ax" x1="30" y1="190" x2="556" y2="190"/><line class="ax" x1="30" y1="130" x2="556" y2="130" stroke-dasharray="2 4"/><line class="ax" x1="30" y1="70" x2="556" y2="70" stroke-dasharray="2 4"/>
+                <text x="4" y="194">0</text><text x="4" y="134">3</text><text x="4" y="74">6</text>
+                <g id="bars"></g>
+              </svg>
+              <div class="lg2"><span style="--c:var(--m1)"><i></i>李雷</span><span style="--c:var(--m2)"><i></i>韩梅梅</span><span style="--c:var(--m3)"><i></i>王芳</span><span style="--c:var(--m4)"><i></i>周杰</span><span style="--c:var(--m-none)"><i></i>未署名</span></div>
+            </div>
+            <div class="blk">
+              <div class="blk-t">最近推进</div>
+              <div class="feed">
+                <div class="it"><span class="av">李</span><span>李雷 收官 <b>注册页校验提示</b><span class="via"><svg class="ic" style="width:11px;height:11px"><use href="#i-spark"/></svg>经 AI</span></span><span class="when">09:12</span></div>
+                <div class="it"><span class="av m2">韩</span><span>韩梅梅 留言于 <b>订单列表加筛选</b></span><span class="when">08:40</span></div>
+                <div class="it"><span class="av m3">王</span><span>王芳 加入协作 <b>接口限流</b></span><span class="when">昨天</span></div>
+                <div class="it"><span class="av m4">周</span><span>周杰 把进度改到 60% <b>订单列表加筛选</b></span><span class="when">昨天</span></div>
+                <div class="it"><span class="av more">?</span><span class="muted">未署名 收官 ALPHA-API-03</span><span class="when">昨天</span></div>
+                <div class="it"><span class="av">李</span><span>李雷 建卡 <b>首页加载慢,首屏图片压缩</b></span><span class="when">10-17</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin:var(--s5) 0 var(--s2);font-size:var(--fs-lg)">要你定:成员和只读访客能看到多少</h3>
+    <p class="muted" style="max-width:1200px;margin-bottom:var(--s3)">这是一张「谁推进了多少」的表,摆出来对团队有激励,也可能让人有被比较的压力。负责人自己永远看全部。下面三档只管成员和访客。</p>
+    <div class="pair">
+      <div class="pane light" data-label="浅色">
+        <div class="opts">
+          <div class="opt rec">
+            <h4>甲 · 成员看全员,访客只看总数 <span class="tag">推荐</span></h4>
+            <table><tr><td>负责人</td><td>全部</td></tr><tr><td>成员</td><td>全部(五个总数 + 按人表 + 趋势 + 动态)</td></tr><tr><td>只读访客</td><td>只看五个总数和按周趋势(不分人)</td></tr></table>
+            <p>好处:团队里谁在推进一目了然,协作人的功劳看得见,大家自己会补位。访客多半是外部看进度的人,只给总数,不暴露谁干得多谁干得少。</p>
+            <p>代价:成员之间能互相看到数字,个别人可能觉得被比较。</p>
+          </div>
+          <div class="opt">
+            <h4>乙 · 成员只看自己,访客只看总数</h4>
+            <table><tr><td>负责人</td><td>全部</td></tr><tr><td>成员</td><td>五个总数 + 自己那一行 + 自己的趋势</td></tr><tr><td>只读访客</td><td>只看五个总数和按周趋势(不分人)</td></tr></table>
+            <p>好处:没有互相比较的压力,每个人只对照自己的节奏。</p>
+            <p>代价:成员看不到别人在推进什么,「谁在帮谁」的协作信息只有你看得到;要多做一套「只看自己」的界面。</p>
+          </div>
+          <div class="opt">
+            <h4>丙 · 全员都看全部</h4>
+            <table><tr><td>负责人</td><td>全部</td></tr><tr><td>成员</td><td>全部</td></tr><tr><td>只读访客</td><td>全部</td></tr></table>
+            <p>好处:最简单,一套界面,一份接口。</p>
+            <p>代价:外部访客也能看到每个人的数字;邀请外部人员前得先想清楚。</p>
+          </div>
+        </div>
+        <div class="note"><b>无论选哪档:</b>数字都是从卡片和活动记录现算的,不另存;访客自己也会出现在表里(数字是 0),如果你觉得没必要,前端可以只列成员。限制在服务端做,不是前端藏起来。</div>
+      </div>
+    </div>
+  </section>
+</div>
+<script>
+// 按周趋势柱:8 周 × 5 人(含未署名),逐层叠起
+(function(){
+  var data=[[1,1,0,1,1],[2,1,1,0,0],[1,2,1,0,1],[2,1,1,1,0],[1,1,2,0,0],[2,2,1,0,1],[1,1,0,0,0],[2,1,1,0,0]];
+  var colors=['var(--m1)','var(--m2)','var(--m3)','var(--m4)','var(--m-none)'];
+  var labels=['08-25','09-01','09-08','09-15','09-22','09-29','10-06','10-13'];
+  var g=document.getElementById('bars'),ns='http://www.w3.org/2000/svg',bw=40,gap=26,x0=48,unit=20;
+  data.forEach(function(w,i){var y=190,x=x0+i*(bw+gap);w.forEach(function(v,k){if(!v)return;var h=v*unit;y-=h;var r=document.createElementNS(ns,'rect');r.setAttribute('x',x);r.setAttribute('y',y);r.setAttribute('width',bw);r.setAttribute('height',h-1.5);r.setAttribute('rx',2.5);r.setAttribute('fill',colors[k]);r.style.animationDelay=(i*60+k*30)+'ms';g.appendChild(r)});
+    var t=document.createElementNS(ns,'text');t.setAttribute('x',x+4);t.setAttribute('y',207);t.textContent=labels[i];g.appendChild(t)});
+})();
+// 浅色面板克隆成深色面板,两边内容永远一致
+document.querySelectorAll('.pane.light').forEach(function(p){var d=p.cloneNode(true);d.classList.remove('light');d.classList.add('dark');d.dataset.label='深色';p.after(d)});
+document.querySelectorAll('.modes button').forEach(function(b){b.addEventListener('click',function(){document.body.dataset.mode=b.dataset.mode;document.querySelectorAll('.modes button').forEach(function(x){x.setAttribute('aria-pressed',String(x===b))})})});
+</script>
+</body>
+</html>
