@@ -4,7 +4,7 @@ const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const bodyChannel = require('node:diagnostics_channel').channel('dashboard.owner-body');
-const { publicJson } = require('../core/collaborationPublic.cjs');
+const { publicJson, taskView, text } = require('../core/collaborationPublic.cjs');
 const { createAuth, fail } = require('../core/collaborationAuth.cjs');
 const { readRegistry, resolveProject } = require('../core/resolveProject.cjs');
 const COOKIE = 'dashboard_session';
@@ -42,30 +42,11 @@ async function body(req) {
   return value;
 }
 function only(value, keys) { if (Object.keys(value).some(k => !keys.includes(k))) fail(400, 'Unexpected field'); return value; }
-// All member-visible strings are scrubbed as well as field-whitelisted: task titles
-// and descriptions can themselves contain paths copied from an operator's machine.
-function text(value) {
-  if (typeof value !== 'string') return undefined;
-  return value.replace(/(?:[A-Za-z]:[\\/]|\\\\)[^\s<>"']+/g, '[private path]')
-    .replace(/(^|[\s("'=])\/(?!\/)[\w.~-]+(?:\/[^\s<>"']*)?/g, '$1[private path]');
-}
-function taskView(t) {
-  const out = {};
-  for (const k of ['id', 'title', 'plainTitle', 'description', 'status', 'assigneeUserId', 'assigneeName', 'lastProgressAt']) {
-    if (typeof t[k] === 'string') out[k] = text(t[k]);
-  }
-  for (const k of ['percent', 'wave']) if (Number.isInteger(t[k])) out[k] = t[k];
-  if (t.dates && typeof t.dates === 'object') {
-    out.dates = {};
-    for (const k of ['start', 'done', 'design']) if (typeof t.dates[k] === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.dates[k])) out.dates[k] = t.dates[k];
-  }
-  return out;
-}
-function boardView(board) {
+function boardView(board, user) {
   return {
     schemaVersion: board.schemaVersion,
     project: { id: text(board.project.id), name: text(board.project.name), createdAt: text(board.project.createdAt), updatedAt: text(board.project.updatedAt) },
-    tasks: board.tasks.map(taskView),
+    tasks: board.tasks.map(t => taskView(t, user, board.activity || [])),
     activity: (board.activity || []).filter(a => ['collaboration:claim', 'collaboration:progress'].includes(a.type) && typeof a.userId === 'string')
       .map(a => ({ ts: text(a.ts), type: a.type, taskId: text(a.taskId), userId: text(a.userId), author: text(a.author) })),
   };
@@ -215,9 +196,10 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
         setCookie(res, '', true); setCookie(res, '', true, DEVICE_COOKIE);
         fail(401, 'Login required');
       }
-      const publicWrite = ['/api/auth/login', '/api/auth/register', '/api/auth/device-login'].includes(pathname) && req.method === 'POST';
+      const publicWrite = ['/api/auth/login', '/api/auth/register', '/api/auth/device-login', '/api/auth/reset-password'].includes(pathname) && req.method === 'POST';
       if (!session && !publicWrite) fail(401, 'Login required');
       if (!['GET', 'HEAD'].includes(req.method)) writeGuard(req, session, publicWrite);
+      if (session?.user.role === 'viewer' && req.method !== 'GET' && !['/api/auth/password', '/api/auth/logout'].includes(pathname)) fail(403, 'Forbidden');
       if (pathname.startsWith('/api/auth/')) {
         if (req.method === 'GET' && pathname === '/api/auth/admin') { json(res, 200, { ok: true, ...auth.admin(raw) }); return true; }
         if (req.method !== 'POST') fail(404, 'Not found');
@@ -227,34 +209,49 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
         if (pathname === '/api/auth/login') result = await auth.login(only(b, ['username', 'password']).username, b.password, client, deviceCookie);
         else if (pathname === '/api/auth/register') result = await auth.register(only(b, ['inviteToken', 'username', 'password', 'displayName']), client);
         else if (pathname === '/api/auth/device-login') result = auth.deviceLogin(only(b, ['token']).token, client);
-        if (result) { setCookie(res, result.token); json(res, 200, sessionResult(result)); return true; }
+        else if (pathname === '/api/auth/reset-password') result = await auth.resetPassword(only(b, ['resetToken', 'newPassword']));
+        if (result) { setCookie(res, result.token); json(res, 200, sessionResult(result)); sweep(); return true; }
         if (!session) fail(401, 'Login required');
         if (pathname === '/api/auth/logout') { only(b, []); auth.logout(raw, deviceCookie); setCookie(res, '', true); setCookie(res, '', true, DEVICE_COOKIE); json(res, 200, { ok: true }); sweep(); return true; }
+        if (pathname === '/api/auth/password') {
+          await auth.changePassword(raw, only(b, ['currentPassword', 'newPassword']));
+          json(res, 200, { ok: true }); sweep(); return true;
+        }
         if (session.user.role !== 'owner') fail(403, 'Forbidden');
         if (pathname === '/api/auth/remember-device') {
           const remembered = auth.rememberDevice(raw, only(b, ['label']).label);
           setCookie(res, remembered.token, false, DEVICE_COOKIE);
           json(res, 200, { ok: true, device: remembered.device }); sweep(); return true;
         }
-        if (pathname === '/api/auth/invites') result = auth.createInvite(raw, only(b, ['projectIds', 'expiresInHours', 'maxUses']));
+        if (pathname === '/api/auth/invites') result = auth.createInvite(raw, only(b, ['projectIds', 'expiresInHours', 'maxUses', 'role']));
         else if (pathname === '/api/auth/devices') result = auth.createDevice(raw, only(b, ['label']).label);
         else {
-          const m = pathname.match(/^\/api\/auth\/(invites|devices|users)\/([^/]+)\/(revoke|access)$/);
+          const m = pathname.match(/^\/api\/auth\/(invites|devices|users)\/([^/]+)\/(revoke|access|reset)$/);
           if (!m) fail(404, 'Not found');
-          if (m[1] === 'users' && m[3] === 'access') result = auth.access(raw, decodeURIComponent(m[2]), only(b, ['projectIds', 'disabled']));
+          if (m[1] === 'users' && m[3] === 'access') result = auth.access(raw, decodeURIComponent(m[2]), only(b, ['projectIds', 'disabled', 'role']));
+          else if (m[1] === 'users' && m[3] === 'reset') { only(b, []); result = auth.createReset(raw, decodeURIComponent(m[2])); }
           else if (m[1] === 'invites' && m[3] === 'revoke') { only(b, []); result = auth.revokeInvite(raw, decodeURIComponent(m[2])); }
           else if (m[1] === 'devices' && m[3] === 'revoke') { only(b, []); result = auth.revokeDevice(raw, decodeURIComponent(m[2])); }
           else fail(404, 'Not found');
         }
         json(res, 200, { ok: true, ...result }); sweep(); return true;
       }
-      const task = pathname.match(/^\/api\/collaboration\/projects\/([^/]+)\/tasks\/([^/]+)\/(claim|progress)$/);
+      const create = pathname.match(/^\/api\/collaboration\/projects\/([^/]+)\/tasks$/);
+      if (create && req.method === 'POST') {
+        const projectId = decodeURIComponent(create[1]);
+        authorizedProject(session.user, projectId);
+        const b = only(await body(req), ['title', 'plainTitle', 'description']);
+        const result = await runTask('create', { ...b, projectId, sessionToken: raw, actorId: session.user.id }, env);
+        json(res, 200, result); return true;
+      }
+      const task = pathname.match(/^\/api\/collaboration\/projects\/([^/]+)\/tasks\/([^/]+)\/(claim|progress|note|unclaim|park|unpark|done|cancel|reopen)$/);
       if (task && req.method === 'POST') {
         const projectId = decodeURIComponent(task[1]); const taskId = decodeURIComponent(task[2]);
         authorizedProject(session.user, projectId);
-        const b = only(await body(req), task[3] === 'claim' ? [] : ['percent', 'note']);
+        const fields = { claim: [], progress: ['percent', 'note'], note: ['text'], unclaim: ['reason'], park: ['reason'], unpark: ['reason'], done: [], cancel: ['reason'], reopen: ['reason'] };
+        const b = only(await body(req), fields[task[3]]);
         const result = await runTask(task[3], { ...b, projectId, taskId, sessionToken: raw, actorId: session.user.id }, env);
-        json(res, 200, { ok: true, task: taskView(result.task) }); return true;
+        json(res, 200, result); return true;
       }
       if (req.method === 'GET' && pathname === '/api/stream') {
         const allowed = projects(session.user);
@@ -282,7 +279,7 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
       const board = pathname.match(/^\/api\/board\/([^/]+)$/);
       if (req.method === 'GET' && board) {
         const proj = authorizedProject(session.user, decodeURIComponent(board[1]));
-        json(res, 200, boardView(JSON.parse(fs.readFileSync(proj.board, 'utf8')))); return true;
+        json(res, 200, boardView(JSON.parse(fs.readFileSync(proj.board, 'utf8')), session.user)); return true;
       }
       fail(403, 'Forbidden');
     } catch (e) {

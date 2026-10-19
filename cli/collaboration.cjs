@@ -1,10 +1,13 @@
 'use strict';
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const { createAuth, fail } = require('../core/collaborationAuth.cjs');
 const { resolveProject, REGISTRY_PATH } = require('../core/resolveProject.cjs');
 const { mutate } = require('./store.cjs');
 const { TASKID } = require('../core/boardSchema.cjs');
 const { publicJson } = require('../core/collaborationPublic.cjs');
+const { memberActions } = require('../core/collaborationRules.cjs');
+const { taskTransition } = require('./commands.cjs');
 const inputChannel = require('node:diagnostics_channel').channel('dashboard.collaboration-input');
 
 const USAGE = `Collaboration local administration (DASHBOARD_HOME selects the data directory):
@@ -30,8 +33,13 @@ defaults to 127.0.0.1; explicitly use 0.0.0.0 for containers. A reverse proxy mu
 preserve Origin and strip Forwarded/X-Forwarded-* on writes (these are never trusted).
 HTTP routes and response fields implement docs/plans/cloud-collaboration/contract.md;
 no alternate endpoint, open registration, member administration or owner-by-body.
-Internal HTTP task commands: claim / progress; JSON on stdin includes sessionToken,
-actorId, projectId, taskId and (progress only) percent/note. No credential argv flags.
+Internal HTTP task commands: create / note / claim / progress / unclaim / park /
+unpark / done / cancel / reopen. JSON on stdin includes sessionToken, actorId,
+projectId and taskId (except create), plus only the documented command fields.
+Members act only in granted projects; viewers cannot write tasks. No credential argv flags.
+All signed-in roles may POST /api/auth/password. Owners issue 24-hour single-use
+reset codes with POST /api/auth/users/:id/reset for members/viewers; redeem with
+POST /api/auth/reset-password. Invitations and access accept member/viewer roles.
 Internal owner-command accepts only stdin {sessionToken,args}; args are an allowlisted
 legacy board command. It revalidates the owner under the auth lock before the
 synchronous CLI board transaction. Never pass credentials as command arguments.`;
@@ -55,24 +63,47 @@ async function readInternalInput(maxBytes = 16384) {
 }
 function taskOperation(command, input, auth = createAuth()) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail(400, 'Invalid input');
-  const keys = ['sessionToken', 'actorId', 'projectId', 'taskId', ...(command === 'progress' ? ['percent', 'note'] : [])];
+  const fields = { create: ['title', 'plainTitle', 'description'], note: ['text'], claim: [], progress: ['percent', 'note'],
+    unclaim: ['reason'], park: ['reason'], unpark: ['reason'], done: [], cancel: ['reason'], reopen: ['reason'] };
+  if (!Object.hasOwn(fields, command)) fail(403, 'Forbidden command');
+  const keys = ['sessionToken', 'actorId', 'projectId', ...(command === 'create' ? [] : ['taskId']), ...fields[command]];
   if (Object.keys(input).some(k => !keys.includes(k))) fail(400, 'Unexpected field');
-  if (typeof input.taskId !== 'string' || !TASKID.test(input.taskId) || typeof input.projectId !== 'string' || !input.projectId || input.projectId.length > 128) fail(400, 'Invalid task or project');
+  if ((command !== 'create' && (typeof input.taskId !== 'string' || !TASKID.test(input.taskId))) || typeof input.projectId !== 'string' || !input.projectId || input.projectId.length > 128) fail(400, 'Invalid task or project');
+  const bounded = (value, max, required) => {
+    if (value === undefined && !required) return;
+    if (typeof value !== 'string' || (required && !value.trim()) || [...value].length > max) fail(400, 'Invalid text');
+  };
+  if (command === 'create') { bounded(input.title, 200, true); bounded(input.plainTitle, 200, false); bounded(input.description, 4000, false); }
+  if (command === 'note') bounded(input.text, 2000, true);
+  if (fields[command].includes('reason')) bounded(input.reason, 500, true);
   if (command === 'progress' && (!Number.isInteger(input.percent) || input.percent < 0 || input.percent > 100 ||
       (input.note !== undefined && (typeof input.note !== 'string' || input.note.length > 2000)))) fail(400, 'Invalid progress');
   return auth.withSession(input.sessionToken, ({ user }) => {
     if (input.actorId !== user.id) fail(403, 'Actor mismatch');
+    if (user.role === 'viewer') fail(403, 'Forbidden');
     if (user.role !== 'owner' && !user.projectIds.includes(input.projectId)) fail(404, 'Not found');
     let proj;
     try { proj = resolveProject(input.projectId, { registryPath: process.env.DASHBOARD_REGISTRY || REGISTRY_PATH }); }
     catch { fail(404, 'Not found'); }
     let result;
-    const now = new Date().toISOString();
+    const clock = new Date(); const now = clock.toISOString();
+    const date = `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, '0')}-${String(clock.getDate()).padStart(2, '0')}`;
+    let taskId = input.taskId;
     // Auth lock -> board lock, same order for every task. mutate re-reads the
     // board and applies schema validation and atomicWrite under its existing lock.
-    mutate(proj, board => {
-      const t = board.tasks.find(t => t.id === input.taskId);
+    const updatedBoard = mutate(proj, board => {
+      if (command === 'create') {
+        do { taskId = 'M' + date.replaceAll('-', '') + '-' + Array.from({ length: 6 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[crypto.randomInt(36)]).join(''); }
+        while (board.tasks.some(t => t.id === taskId));
+        const created = { id: taskId, title: input.title, status: '未开工', percent: 0, wave: 0, createdByUserId: user.id };
+        for (const k of ['plainTitle', 'description']) if (input[k] !== undefined) created[k] = input[k];
+        board.tasks.push(created);
+        result = { ok: true, task: created };
+        return;
+      }
+      let t = board.tasks.find(t => t.id === input.taskId);
       if (!t) fail(404, 'Not found');
+      if (!memberActions(t, user).includes(command)) fail(409, 'Task operation is not available');
       if (command === 'claim') {
         if (t.assigneeUserId || !['未开工', '待开工', '可复工', '已拍板'].includes(t.status) ||
             (t.decisions || []).some(d => d.answer === null || d.answer === undefined)) fail(409, 'Task is not available');
@@ -80,16 +111,28 @@ function taskOperation(command, input, auth = createAuth()) {
         t.status = '施工中';
         t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = now.slice(0, 10);
         // builder and all AI dispatch/branch metadata remain exactly as recorded.
-      } else {
-        if (t.assigneeUserId !== user.id) fail(409, 'Task is not assigned to you');
+      } else if (command === 'progress') {
+        if (user.role !== 'owner' && t.assigneeUserId !== user.id) fail(409, 'Task is not assigned to you');
         if (t.status !== '施工中' || t.blockReason || (t.deps?.blockedBy || []).length) fail(409, 'Task is not active member work');
         t.percent = input.percent;
         if (input.note !== undefined) t.nextMilestone = input.note;
+      } else if (command !== 'note') {
+        const next = taskTransition(t, command, { reason: input.reason, date, now }).task;
+        // Human ownership is separate from legacy AI branch ownership.
+        if (command === 'unclaim') { delete next.assigneeUserId; delete next.assigneeName; }
+        board.tasks[board.tasks.indexOf(t)] = next; t = next;
       }
-      t.lastProgressAt = now;
-      result = { ok: true, task: { id: t.id, status: t.status, percent: t.percent || 0, assigneeUserId: t.assigneeUserId, assigneeName: t.assigneeName } };
-    }, { ts: now, type: 'collaboration:' + command, taskId: input.taskId, userId: user.id, author: user.displayName,
-      text: command === 'claim' ? 'Member claimed task' : 'Member updated progress', ...(command === 'progress' ? { percent: input.percent, note: input.note } : {}) });
+      if (['claim', 'progress'].includes(command)) t.lastProgressAt = now;
+      result = { ok: true, task: t };
+    }, () => {
+      const descriptions = { create: `新建任务 ${taskId}：${input.title}`, note: input.text, claim: 'Member claimed task', progress: 'Member updated progress',
+        unclaim: `放弃认领 ${taskId}：${input.reason}`, park: `暂缓 ${taskId}：${input.reason}`, unpark: `复工 ${taskId}：${input.reason}`,
+        done: `完工 ${taskId}`, cancel: `作废 ${taskId}：${input.reason}`, reopen: `重开 ${taskId}：${input.reason}` };
+      return { ts: now, type: ['claim', 'progress'].includes(command) ? 'collaboration:' + command : ['create', 'note'].includes(command) ? 'note' : command,
+        taskId, userId: user.id, author: user.displayName, text: descriptions[command],
+        ...(command === 'note' ? { kind: 'message' } : {}), ...(command === 'progress' ? { percent: input.percent, note: input.note } : {}) };
+    });
+    result.task = require('../core/collaborationPublic.cjs').taskView(result.task, user, updatedBoard.activity || []);
     return result;
   });
 }
@@ -124,7 +167,7 @@ async function main(args = process.argv.slice(2)) {
     if (args.length) fail(400, 'Internal owner commands accept stdin only');
     console.log(JSON.stringify(ownerOperation(await readInternalInput(2 * 1024 * 1024)), publicJson)); return;
   }
-  if (['claim', 'progress'].includes(command)) {
+  if (['create', 'note', 'claim', 'progress', 'unclaim', 'park', 'unpark', 'done', 'cancel', 'reopen'].includes(command)) {
     if (args.length) fail(400, 'Internal task commands accept stdin only');
     console.log(JSON.stringify(taskOperation(command, await readInternalInput()))); return;
   }

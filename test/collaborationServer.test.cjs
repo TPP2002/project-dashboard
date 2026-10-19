@@ -91,7 +91,11 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
       Origin: ORIGIN, 'Content-Type': 'application/json', 'X-Dashboard-Request': '1', ...(session ? { 'X-Dashboard-CSRF': session.csrfToken } : {}),
     } : {}), ...headers };
     const res = await fetch(base + route, { method, headers: h, body: data === undefined ? undefined : JSON.stringify(data) });
-    return { status: res.status, body: await res.json(), headers: res.headers };
+    const response = await res.json(); const serialized = JSON.stringify(response);
+    assert.doesNotMatch(serialized, /passwordHash|tokenHash|"salt"/);
+    assert.equal(serialized.includes(PASSWORD), false);
+    if (session?.token) assert.equal(serialized.includes(session.token), false);
+    return { status: res.status, body: response, headers: res.headers };
   }
   await t.test('public health/session expose no local identity, other anonymous APIs return 401', async () => {
     const page = await fetch(srv.base + '/');
@@ -146,12 +150,92 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
   });
   await t.test('HTTP invitation issuance, registration and revoke follow the exact public contract', async () => {
     const created = await request('/api/auth/invites', { session: owner, data: { projectIds: [], expiresInHours: 1, maxUses: 1 } });
-    assert.equal(created.status, 200); assert.deepEqual(Object.keys(created.body.invite).sort(), ['expiresAt', 'id', 'maxUses', 'projectIds', 'revoked', 'uses']);
+    assert.equal(created.status, 200); assert.deepEqual(Object.keys(created.body.invite).sort(), ['expiresAt', 'id', 'maxUses', 'projectIds', 'revoked', 'role', 'uses']);
+    assert.equal(created.body.invite.role, 'member');
+    const viewerInvite = await request('/api/auth/invites', { session: owner, data: { projectIds: ['alpha'], expiresInHours: 1, maxUses: 1, role: 'viewer' } });
+    assert.equal(viewerInvite.status, 200);
+    assert.deepEqual(Object.keys(viewerInvite.body.invite).sort(), ['expiresAt', 'id', 'maxUses', 'projectIds', 'revoked', 'role', 'uses']);
+    assert.equal(viewerInvite.body.invite.role, 'viewer');
     const registered = await request('/api/auth/register', { data: { inviteToken: created.body.token, username: 'http-created', password: PASSWORD, displayName: 'New member' } });
     assert.equal(registered.status, 200); assert.equal(registered.body.user.role, 'member');
     assert.equal((await request(`/api/auth/invites/${created.body.invite.id}/revoke`, { session: owner, data: {} })).status, 200);
     const admin = await request('/api/auth/admin', { session: owner }); assert.equal(admin.status, 200);
     assert.doesNotMatch(JSON.stringify(admin.body), /tokenHash|passwordHash|salt/);
+  });
+  await t.test('new routes enforce three-role permissions, CSRF, origin and project boundaries', async () => {
+    const invitation = auth.createInvite(owner.token, { projectIds: ['alpha'], expiresInHours: 1, maxUses: 1, role: 'viewer' });
+    const viewer = await auth.register({ inviteToken: invitation.token, username: 'matrix-viewer', password: PASSWORD });
+    const root = '/api/collaboration/projects/alpha/tasks';
+    const routes = [[root, { title: 'Matrix task' }], ...Object.entries({ note: { text: 'Hello' }, claim: {}, progress: { percent: 1 },
+      unclaim: { reason: 'reason' }, park: { reason: 'reason' }, unpark: { reason: 'reason' }, done: {}, cancel: { reason: 'reason' }, reopen: { reason: 'reason' } })
+      .map(([action, data]) => [root + '/ONE/' + action, data])];
+    for (const [route, data] of routes) {
+      const before = fs.readFileSync(path.join(home, 'alpha.json'), 'utf8');
+      assert.equal((await request(route, { session: viewer, data })).status, 403, route);
+      assert.equal(fs.readFileSync(path.join(home, 'alpha.json'), 'utf8'), before);
+      assert.equal((await request(route.replace('/alpha/', '/beta/'), { session: member, data })).status, 404, route);
+      for (const session of [owner, member, viewer]) for (const headers of [{ 'X-Dashboard-CSRF': '' }, { Origin: 'https://evil.example' }]) {
+        assert.equal((await request(route, { session, data, headers })).status, 403, route);
+      }
+    }
+    const resetRoute = `/api/auth/users/${viewer.user.id}/reset`;
+    for (const session of [member, viewer]) {
+      assert.equal((await request(resetRoute, { session, data: {} })).status, 403);
+      assert.equal((await request('/api/auth/admin', { session })).status, 403);
+      for (const route of ['/api/auth/invites', `/api/auth/users/${viewer.user.id}/access`]) assert.equal((await request(route, { session, data: {} })).status, 403);
+    }
+    for (const session of [owner, member, viewer]) for (const headers of [{ 'X-Dashboard-CSRF': '' }, { Origin: 'https://evil.example' }]) {
+      assert.equal((await request('/api/auth/password', { session, data: { currentPassword: PASSWORD, newPassword: PASSWORD }, headers })).status, 403);
+      assert.equal((await request(resetRoute, { session, data: {}, headers })).status, 403);
+    }
+    assert.equal((await request(`/api/auth/users/${owner.user.id}/reset`, { session: owner, data: {} })).status, 403);
+    assert.equal((await request('/api/auth/users/missing/reset', { session: owner, data: {} })).status, 404);
+    assert.equal((await request('/api/board/beta', { session: viewer })).status, 404);
+    assert.equal((await request('/api/board/alpha', { session: viewer })).status, 200);
+    const events = await stream(srv.base, viewer); t.after(() => events.close());
+    assert.deepEqual((await events.wait('hello')).data.projects, ['alpha']);
+    const created = await request(root, { session: member, data: { title: 'Member created', description: 'C:\\path\\to\\private-file' } });
+    assert.equal(created.status, 200); const id = created.body.task.id;
+    assert.match(id, /^M\d{8}-[A-Z0-9]{6}$/); assert.equal(created.body.task.createdByUserId, member.user.id);
+    assert.equal(created.body.task.blockReason, null); assert.equal(created.body.task.cancelReason, null);
+    assert.equal((await request(root, { session: member, data: { title: 'Injected', builder: '派单器' } })).status, 400);
+    assert.equal((await request(root + '/' + id + '/note', { session: other, data: { text: 'Member message /home/private/file' } })).status, 200);
+    const shared = (await request('/api/board/alpha', { session: viewer })).body.tasks.find(t => t.id === id);
+    assert.deepEqual(shared.actions, []); assert.equal(shared.aiWork, false); assert.equal(shared.createdByUserId, member.user.id);
+    assert.equal(shared.messages[0].text, 'Member message [private path]'); assert.equal(shared.messages[0].userId, other.user.id);
+    assert.doesNotMatch(JSON.stringify(shared), /builder|gitBranch|prNumbers|commitShas|C:\\|\/home\/private/);
+    for (const action of ['claim', 'park', 'unpark', 'done', 'reopen', 'cancel']) {
+      const data = ['claim', 'done'].includes(action) ? {} : { reason: action + ' reason' };
+      assert.equal((await request(root + '/' + id + '/' + action, { session: member, data })).status, 200, action);
+    }
+    const cancelled = (await request('/api/board/alpha', { session: member })).body.tasks.find(t => t.id === id);
+    assert.equal(cancelled.cancelReason, 'cancel reason'); assert.ok(cancelled.actions.includes('reopen'));
+    const access = await request(`/api/auth/users/${viewer.user.id}/access`, { session: owner, data: { projectIds: ['alpha'], disabled: false, role: 'member' } });
+    assert.equal(access.status, 200); assert.equal(access.body.user.role, 'member'); await events.untilClosed();
+    assert.equal((await request(root + '/' + id + '/note', { session: viewer, data: { text: 'Promoted' } })).status, 200);
+    auth.access(owner.token, viewer.user.id, { projectIds: ['alpha'], disabled: false, role: 'viewer' });
+    assert.equal((await request(root + '/' + id + '/note', { session: viewer, data: { text: 'Demoted' } })).status, 403);
+    for (const role of ['owner', 'invalid']) assert.equal((await request(`/api/auth/users/${viewer.user.id}/access`, { session: owner, data: { projectIds: ['alpha'], disabled: false, role } })).status, 400);
+    const wrong = await request('/api/auth/password', { session: viewer, data: { currentPassword: 'Wrong-password-12345', newPassword: PASSWORD } });
+    assert.equal(wrong.status, 400); assert.equal((await request('/api/auth/session', { session: viewer })).body.user.id, viewer.user.id);
+    assert.equal((await request('/api/auth/password', { session: viewer, data: { currentPassword: PASSWORD, newPassword: 'Viewer-new-password-12345' } })).status, 200);
+    assert.equal((await request('/api/auth/session', { session: viewer })).body.user.id, viewer.user.id);
+    const reset = await request(resetRoute, { session: owner, data: {} }); assert.equal(reset.status, 200);
+    assert.deepEqual(Object.keys(reset.body).sort(), ['ok', 'reset', 'resetToken']);
+    const code = reset.body.resetToken;
+    assert.equal(JSON.stringify((await request('/api/auth/admin', { session: owner })).body).includes(code), false);
+    const data = { resetToken: code, newPassword: PASSWORD };
+    for (const headers of [{ Origin: 'https://evil.example' }, { 'X-Dashboard-Request': '' }, { 'Content-Type': 'text/plain' }]) {
+      assert.equal((await request('/api/auth/reset-password', { data, headers })).status, 403);
+    }
+    assert.equal((await request('/api/auth/reset-password', { session: viewer, data })).status, 403);
+    assert.equal((await request('/api/auth/reset-password?resetToken=' + code, { data: { newPassword: PASSWORD } })).status, 400);
+    const recovered = await request('/api/auth/reset-password', { data }); assert.equal(recovered.status, 200);
+    assert.equal(recovered.body.user.id, viewer.user.id); assert.equal(JSON.stringify(recovered.body).includes(code), false);
+    assert.equal((await request('/api/auth/reset-password', { data })).status, 400);
+    assert.equal((await request('/api/projects', { session: viewer })).status, 401);
+    const persisted = fs.readFileSync(path.join(home, 'private', 'collaboration-auth.json'), 'utf8');
+    for (const secret of [code, PASSWORD, 'Viewer-new-password-12345', viewer.token, owner.token, member.token, recovered.headers.get('set-cookie').match(/^dashboard_session=([^;]+)/)[1]]) assert.equal(persisted.includes(secret), false);
   });
   await t.test('member claim/progress run through CLI and reject body identity and other owners', async () => {
     const route = '/api/collaboration/projects/alpha/tasks/ONE';
