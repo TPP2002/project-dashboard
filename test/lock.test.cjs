@@ -37,3 +37,47 @@ test('活着的持有者未超时时不算陈旧', () => {
   assert.strictEqual(isStaleLock(lock), false);
   fs.rmSync(d, { recursive: true, force: true });
 });
+
+test('Windows 待删除锁文件报 EPERM/EACCES 时退避重试而不是报错', () => {
+  const d = tmpDir(); const lock = path.join(d, 'w.lock');
+  const real = fs.openSync;
+  let calls = 0;
+  fs.openSync = (p, flags, ...rest) => {
+    if (p === lock && calls++ < 2) throw Object.assign(new Error('EPERM: operation not permitted'), { code: calls === 1 ? 'EPERM' : 'EACCES' });
+    return real.call(fs, p, flags, ...rest);
+  };
+  try {
+    assert.strictEqual(withLock(lock, () => 'ok', { retries: 5, baseMs: 1, platform: 'win32' }), 'ok');
+    assert.strictEqual(calls, 3, '前两次瞬时错误后第三次拿到锁');
+  } finally { fs.openSync = real; fs.rmSync(d, { recursive: true, force: true }); }
+});
+
+test('其他打开错误照旧立即抛出', () => {
+  const d = tmpDir(); const lock = path.join(d, 'v.lock');
+  const real = fs.openSync;
+  fs.openSync = (p, ...rest) => { if (p === lock) throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }); return real.call(fs, p, ...rest); };
+  try { assert.throws(() => withLock(lock, () => 'x', { retries: 5, baseMs: 1 }), /ENOSPC/); }
+  finally { fs.openSync = real; fs.rmSync(d, { recursive: true, force: true }); }
+});
+
+test('非 Windows 上的权限错误立即抛出,不当成抢锁', () => {
+  const d = tmpDir(); const lock = path.join(d, 'u.lock');
+  const real = fs.openSync;
+  let calls = 0;
+  fs.openSync = (p, ...rest) => { if (p === lock) { calls++; throw Object.assign(new Error('EACCES'), { code: 'EACCES' }); } return real.call(fs, p, ...rest); };
+  try {
+    assert.throws(() => withLock(lock, () => 'x', { retries: 5, baseMs: 1, platform: 'linux' }), (e) => e.code === 'EACCES');
+    assert.strictEqual(calls, 1);
+  } finally { fs.openSync = real; fs.rmSync(d, { recursive: true, force: true }); }
+});
+
+test('Windows 上一直没权限:有限次重试后抛原权限错误,不伪装成获取锁超时', () => {
+  const d = tmpDir(); const lock = path.join(d, 't.lock');
+  const real = fs.openSync;
+  let calls = 0;
+  fs.openSync = (p, ...rest) => { if (p === lock) { calls++; throw Object.assign(new Error('EPERM'), { code: 'EPERM' }); } return real.call(fs, p, ...rest); };
+  try {
+    assert.throws(() => withLock(lock, () => 'x', { baseMs: 1, platform: 'win32' }), (e) => e.code === 'EPERM' && !/获取锁超时/.test(e.message));
+    assert.ok(calls <= 11, `重试次数应有上限,实际 ${calls}`);
+  } finally { fs.openSync = real; fs.rmSync(d, { recursive: true, force: true }); }
+});
