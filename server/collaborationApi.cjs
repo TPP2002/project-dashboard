@@ -7,6 +7,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const bodyChannel = require('node:diagnostics_channel').channel('dashboard.owner-body');
 const { publicJson, taskView, text } = require('../core/collaborationPublic.cjs');
 const { createAuth, fail } = require('../core/collaborationAuth.cjs');
+const { contributionView } = require('../core/collaborationContribView.cjs');
 const { readRegistry, resolveProject } = require('../core/resolveProject.cjs');
 const COOKIE = 'dashboard_session';
 const DEVICE_COOKIE = 'dashboard_device';
@@ -202,6 +203,18 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
       }
       const publicWrite = ['/api/auth/login', '/api/auth/register', '/api/auth/device-login', '/api/auth/reset-password'].includes(pathname) && req.method === 'POST';
       if (!session && !publicWrite) fail(401, 'Login required');
+      const contributions = pathname.match(/^\/api\/collaboration\/projects\/([^/]+)\/contributions$/);
+      if (contributions) {
+        const projectId = decodeURIComponent(contributions[1]);
+        const project = authorizedProject(session.user, projectId);
+        if (req.method !== 'GET') fail(405, 'Method not allowed');
+        const values = new URL(req.url, config.origin).searchParams.getAll('weeks');
+        if (values.length > 1 || (values.length === 1 && !['4', '8', '12'].includes(values[0]))) fail(400, 'Invalid weeks');
+        const weeks = values.length ? Number(values[0]) : 8;
+        const board = JSON.parse(fs.readFileSync(project.board, 'utf8'));
+        json(res, 200, contributionView(board, { users: auth.projectDirectory(projectId), now: Date.now(), weeks, role: session.user.role }));
+        return true;
+      }
       if (!['GET', 'HEAD'].includes(req.method)) writeGuard(req, session, publicWrite);
       if (session?.user.role === 'viewer' && req.method !== 'GET' && !['/api/auth/password', '/api/auth/logout'].includes(pathname)) fail(403, 'Forbidden');
       if (pathname.startsWith('/api/auth/')) {

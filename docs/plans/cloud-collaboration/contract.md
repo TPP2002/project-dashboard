@@ -42,6 +42,7 @@
 | POST `/api/auth/devices/:id/revoke` | 仅负责人，撤销设备及其衍生会话 |
 | POST `/api/auth/device-login` | `{token}` → 同 session 响应并设置 Cookie；不得将令牌放 URL 或日志 |
 | POST `/api/auth/remember-device` | 负责人已登录并通过 CSRF 后，`{label}` → `{ok:true,device:Device}`；用 HttpOnly Cookie 保存本浏览器的设备凭据，不向脚本返回令牌 |
+| GET `/api/collaboration/projects/:projectId/contributions?weeks=4\|8\|12` | 已登录且项目授权；缺省 8 周，非法值或重复 weeks 返回 400，跨项目/不存在项目 404，未登录 401，非 GET 405；负责人和成员返回 full，访客只返回 summary；不缓存 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/claim` | 登录且项目授权，原子领取空闲任务；已经被其他用户或 AI 认领时拒绝 |
 | POST `/api/collaboration/projects/:projectId/tasks/:taskId/progress` | `{percent,note?}`，主负责人、负责人或协作人可更新施工中且未阻塞的任务；到 100% 不会自动完工，完工须显式调用 done |
 | POST `/api/collaboration/projects/:projectId/tasks` | 成员或负责人，`{title,plainTitle?,description?}`；标题必填且至多 200 字，可选人话标题至多 200 字、描述至多 4000 字；拒收其他字段。服务端锁内生成不重复的 `Myyyymmdd-XXXXXX`（六位大写字母数字），状态固定未开工，记 createdByUserId |
@@ -62,7 +63,35 @@ Invite 公共字段为 `{id,role,projectIds,expiresAt,maxUses,uses,revoked}`；D
 
 User 增加明确的 `disabled:boolean`，供负责人管理列表显示真实状态。负责人可主动信任本浏览器 90 天；设备凭据只放 HttpOnly、SameSite=Strict Cookie，HTTPS 时必须 Secure。普通会话过期时，session 接口可凭有效设备 Cookie 恢复负责人会话，但不得延长设备原到期日。撤销设备、重置负责人密码及主动退出都阻止该凭据再次恢复。默认不自动信任设备，不以 IP 或本机地址识别负责人。恢复历史备份后提供显式 CLI 撤销全部会话、设备和邀请的能力，保留用户与账本。
 
-成员与访客只可读授权 `/api/projects`、`/api/board/:id` 和 `/api/stream`，以及公开健康/会话查询。其余既有 API 默认拒绝，包括文件读取、审批、派单、设置、成本、审阅、试听。任务视图增加 actions（同一 memberActions 规则计算）、messages（kind:message 的最近 50 条，ts/author/text/userId）、blockReason、cancelReason、createdByUserId 和 aiWork。所有文本照旧脱敏，不暴露 builder 原值、分支、PR、提交号、路径、成本。事件订阅在每次推送时复核会话、角色和项目授权。
+成员与访客只可读授权 `/api/projects`、`/api/board/:id`、`/api/stream` 和上述 contributions 路由，以及公开健康/会话查询。其余既有 API 默认拒绝，包括文件读取、审批、派单、设置、成本、审阅、试听。任务视图增加 actions（同一 memberActions 规则计算）、messages（kind:message 的最近 50 条，ts/author/text/userId）、blockReason、cancelReason、createdByUserId 和 aiWork。所有文本照旧脱敏，不暴露 builder 原值、分支、PR、提交号、路径、成本。事件订阅在每次推送时复核会话、角色和项目授权。
+
+### 成员贡献（2026-10-19，方案甲）
+
+负责人及成员：`{scope:'full',range,totals,members,unattributed,weekly,membersWeekly,recent,skipped}`。
+只读访客：严格只给 `{scope:'summary',range,totals,weekly}`，不含任何用户标识、姓名或按人数据；不发送 members、unattributed、recent、membersWeekly。裁剪在服务端完成，不能靠界面隐藏。认证目录只读，返回项目内用户的 id/displayName/role/disabled；负责人总在内，成员和访客按 projectIds 筛选，保留停用用户的历史身份；账本损坏仍拒绝服务。
+
+`range` 和按人数据沿用 `memberContributions` 原口径，不改变核心。`weekly` 是成员与未署名各周按 weekStart 合并的 `{weekStart,completed,messages,ops}[]`；`membersWeekly` 为 `{userId,weekly}[]`。周起点与窗口均为 UTC，包含当前未结束的一周。完成趋势是完成活动数，按人完成列是当前快照，两者不混用。
+
+`totals` 中 completed 为已完工卡数，completedWithCollaborators 为其中 collaborators 非空卡数，inProgress 为施工中卡数；activeMembers 为主负责或协作进行中数量大于零的人数。createdByMembers 为有 createdByUserId 的卡数，createdOther 为其余卡数。messages 计全部 kind:message 活动，aiOps 计全部 via:ai 活动，attributedOps 计全部带 userId 的活动；这三个全量总数不受周窗口或无效时间影响。按人活动和周趋势仍由核心跳过无效时间，并通过 skipped 提示。
+
+`recent` 为最近 20 条已署名活动，时间倒序，同刻按记录顺序倒序；时间无效者排末尾且 ts 为 null。字段仅 ts/userId/name/action/taskId/taskTitle，可选 viaAi:true；name 与 taskTitle 经 text() 脱敏。不输出活动原文、理由、分支、提交、路径、成本等存储字段。action 只允许 create/message/claim/progress/join/leave/removeCollaborator/unclaim/park/unpark/done/cancel/reopen/other；建卡须 type:note、无 kind 且 text 以“新建任务”开头，未知类型为 other。
+
+洞察页加载时查询一次 session，确认 collaboration 且已登录才挂载成员贡献；本机模式或查询失败不显示、不请求贡献接口。“全部项目”只提示选择项目，不合并数据。可复用 MemberContributions 组件默认 8 周，可选 4/8/12 周；完整视图提供五个总数、按人表、按人叠柱趋势与最近推进，访客只显示五个总数和合计趋势。成员界面入口由下一单挂载。
+
+实现职责与交付文件：
+
+| 文件 | 改动目的 |
+| --- | --- |
+| `core/collaborationContribView.cjs` | 纯视图组装、周数据合计、最近活动白名单、访客服务端裁剪；不改贡献核心 |
+| `core/collaborationAuth.cjs` | 仅增加 projectDirectory，只读提供项目内身份，不返回认证秘密 |
+| `server/collaborationApi.cjs` | 在旧负责人路由前统一鉴权并提供只读贡献接口、周数校验与禁止缓存 |
+| `web/src/collaboration/contrib.ts` | 响应类型及路径、动作文案、完成条比例和颜色令牌的可复用纯函数 |
+| `web/src/components/insights/MemberContributions.vue` | 自带请求及周数切换的完整/汇总展示，处理加载、失败、空态及过期请求 |
+| `web/src/views/Insights.vue` | 检测会话后仅在协作模式挂载组件，保持本机模式和全部项目边界 |
+| `test/collaborationContribView.test.cjs` | 锁定每项总数、角色裁剪、动作推断、脱敏、确定性和不变性 |
+| `test/collaborationContribApi.test.cjs` | 真实起服验证三种角色、跨项目/匿名拒绝、参数、秘密隔离及目录损坏拒绝服务 |
+| `web/tests/memberContributions.check.mts` | 覆盖全部前端辅助函数，保证编码、中文动作、双色条和五色循环 |
+| `docs/plans/cloud-collaboration/contract.md` | 同步路由、角色可见范围、统计口径和实现职责 |
 
 本单只提供服务端能力；改密码、重置入口、访客界面和成员操作按钮由后续界面单实现。本机模式不改变现有操作。
 

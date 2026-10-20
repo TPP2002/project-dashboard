@@ -5,7 +5,10 @@
 // 3) 周内节奏：周一~周日的完工分布——自己哪天效率最高
 // 4) 周转时长分布：从开工到完工用了几天——发现拖尾任务
 import Icon from '@/components/Icon.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import MemberContributions from '@/components/insights/MemberContributions.vue'
+import { authFetch, responseJson } from '@/collaboration/http'
+import type { Session } from '@/collaboration/types'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { cssVar, useEchart } from '@/charts/useEcharts'
@@ -13,6 +16,16 @@ import type { Board } from '@/types'
 
 const store = useBoardStore()
 const selectedPid = ref<string>('all')
+const collaborationMode = ref(false)
+const sessionRequest = new AbortController()
+onMounted(async () => {
+  try {
+    const session = await responseJson<Session>(await authFetch('/api/auth/session', { signal: sessionRequest.signal, cache: 'no-store' }))
+    collaborationMode.value = session.mode === 'collaboration' && !!session.user
+  } catch { collaborationMode.value = false }
+})
+onBeforeUnmount(() => sessionRequest.abort())
+const selectedProjectName = computed(() => store.projectList.find(p => p.id === selectedPid.value)?.name || selectedPid.value)
 watch(() => store.loading ? [] : (selectedPid.value === 'all' ? store.projectList.map((p) => p.id) : [selectedPid.value])
   .filter((pid) => !store.activityComplete[pid]), (pids) => {
   for (const pid of pids) store.ensureFullActivity(pid).catch((e) => {
@@ -256,6 +269,10 @@ watch([boards], () => { updCfd(); updWeekly(); updWeekday(); updCycle() })
         </div>
       </div>
     </div>
+    <template v-if="collaborationMode">
+      <p v-if="selectedPid === 'all'" class="card block muted">在上面选一个项目看成员贡献</p>
+      <MemberContributions v-else :key="selectedPid" :project-id="selectedPid" :project-name="selectedProjectName" />
+    </template>
   </div>
 </template>
 
