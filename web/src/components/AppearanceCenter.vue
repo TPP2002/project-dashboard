@@ -14,7 +14,6 @@ import AppearanceProjects from './AppearanceProjects.vue'
 import AppearanceSound from './AppearanceSound.vue'
 import AppearanceKanban from './AppearanceKanban.vue'
 import AppearanceWire from './AppearanceWire.vue'
-import AppearanceWorkfloor from './AppearanceWorkfloor.vue'
 
 const props = defineProps<{ open: boolean; projects: ProjectSummary[] }>()
 const emit = defineEmits<{ close: [] }>()
@@ -23,7 +22,7 @@ const categories = [
   { id: 'celebrate', label: '完工庆祝' }, { id: 'projects', label: '项目颜色' },
   { id: 'density', label: '密度与字号' }, { id: 'sound', label: '提示音与通知' },
   { id: 'kanban', label: '看板泳道' },
-  { id: 'wire', label: '灯带与推送' }, { id: 'workfloor', label: '施工现场' },
+  { id: 'wire', label: '灯带与推送' },
 ] as const
 const active = ref<(typeof categories)[number]['id']>('color')
 const panel = ref<HTMLElement | null>(null)
@@ -128,7 +127,6 @@ onBeforeUnmount(() => {
             <AppearanceSound v-else-if="active === 'sound'" />
             <AppearanceKanban v-else-if="active === 'kanban'" />
             <AppearanceWire v-else-if="active === 'wire'" />
-            <AppearanceWorkfloor v-else-if="active === 'workfloor'" />
           </div>
         </div>
         <footer class="settings-actions">

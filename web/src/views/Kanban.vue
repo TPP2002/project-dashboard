@@ -10,7 +10,6 @@ import { sortStalestFirst, isOverLimit } from '@/utils/kanbanFlow'
 import { DONE_STATUSES } from '@/api/schema'
 import TaskCard from '@/components/TaskCard.vue'
 import DoneToggle from '@/components/DoneToggle.vue'
-import WorkFloor from '@/components/WorkFloor.vue'
 
 const store = useBoardStore()
 const board = computed(() => store.currentBoard)
@@ -54,8 +53,6 @@ function statusTone(status: string) {
       </div>
     </header>
 
-    <WorkFloor v-if="board" :board="board" :project-id="pid" :class="{ 'wf-bottom': appearance.workfloor.position === 'bottom' }" />
-
     <div v-if="store.loading && !board" class="loading-board" aria-label="正在加载看板">
       <div v-for="index in 3" :key="index" class="card loading-column">
         <div class="skel medium" />
@@ -94,7 +91,6 @@ function statusTone(status: string) {
 
 <style scoped>
 .page { width: 100%; height: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
-.page > .wf-bottom { order: 10; }
 .page-head { position: relative; display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); padding-bottom: var(--s3); }
 .title-group p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
