@@ -110,6 +110,9 @@ function resolveProject(projectId, opts = {}) {
   const board = entry.board ? normalizeReal(entry.board) : path.join(mainRepo, '.dashboard', 'board.json');
   return {
     id: projectId,
+    cloud: entry.cloud && entry.cloud.enabled === true
+      ? { enabled: true, remoteProjectId: String(entry.cloud.remoteProjectId || '') } : null,
+    syncDir: path.join(path.dirname(path.resolve(opts.registryPath || REGISTRY_PATH)), 'sync', projectId),
     name: entry.name || projectId,
     mainRepo,
     // codeRepo：跑 git / 找正本的消费方读这个（缺省 = mainRepo，见文件头注）。

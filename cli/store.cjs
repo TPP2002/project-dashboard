@@ -35,6 +35,7 @@ function mutate(proj, mutator, activityEntry) {
   return withLock(proj.lock, () => {
     const board = readBoardOrNull(proj.board)
       || emptyBoard({ id: proj.id, name: proj.name, mainRepo: proj.mainRepo });
+    const beforeBoard = proj.cloud ? JSON.parse(JSON.stringify(board)) : null;
     mutator(board);
     const entry = typeof activityEntry === 'function' ? activityEntry(board) : activityEntry;
     if (entry) {
@@ -43,6 +44,7 @@ function mutate(proj, mutator, activityEntry) {
     }
     board.project.updatedAt = new Date().toISOString();
     assertValid(board); // 写前校验，坏数据绝不落盘
+    if (proj.cloud) require('../core/syncOutbox.cjs').recordInLock(proj, beforeBoard, board);
     atomicWriteJsonSync(proj.board, board);
     return board;
   });
