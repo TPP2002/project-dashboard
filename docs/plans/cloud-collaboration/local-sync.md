@@ -296,3 +296,71 @@ AI 对话 ──board.cmd──▶ 本机命令(照旧写本机 board.json)
 | S5 常驻与开机自启 | `hold` 登记、计划任务 + `.vbs` 启动器、安装与卸载命令 | `packaging/` 或 `scripts/` | 登录后自启、调度台可见长期占用单、闪窗监测为零 |
 
 S2 复用 S1 的重放函数,S1 落地后再派;S3 依赖两者;S4 依赖 S3 的状态文件格式;S5 最后。
+
+## S3 甲施工交接
+
+本单新增本机后台同步程序，不改既有 CLI 写入路径、服务端、界面、部署和启动任务。
+
+- `core/syncCredential.cjs`：连接配置校验、当前 Windows 用户 DPAPI 加解密、设备登记及密码会话注销。设备凭据只通过隐藏 PowerShell 的标准输入输出传递，提供 protector 注入供跨平台测试使用。
+- `core/syncClient.cjs`：内存中的设备会话、一次认证重试、写请求保护头、读写超时、四个同步接口及 SSE 事件解析。
+- `core/syncAgent.cjs`：与 mutate 相同的板锁、连续确认、分批发送、退回记录、整本拉回、待发卡保留、每日归档、单实例、SSH 隧道及后台循环。
+- `cli/cloudSync.cjs`：`run`、`once`、`status`；不接受凭据类参数。第二个常驻实例退出码为 3，单轮失败为 1。
+- 两份新增测试：真实协作服务端与真 CLI 的断网/恢复、冲突/重发、事件流/撤销、归档与隔离；真实 Windows DPAPI、隐藏子进程和真实登记流程。
+
+所有目录均以显式 registryPath、DASHBOARD_REGISTRY 或 REGISTRY_PATH 的所在目录为准，根目录为其下 `sync/`：
+
+| 文件 | 字段与职责 |
+|---|---|
+| `config.json` | `v:1, mode, origin`；ssh 模式另有 `sshHost, remotePort, localPort`，direct 模式有 `baseUrl` |
+| `device.cred` | `v:1, scheme:'dpapi-user', origin, label, deviceId, expiresAt, blob`；blob 为密文，原文不落盘 |
+| `agent.lock` | 排他锁及持有进程号；正常退出释放，已死亡进程遗留锁可回收，不按运行时长抢活进程的锁 |
+| `reconnect.request` | 后续界面写入，程序读到后删除并立即重连同步 |
+| `logs/agent-YYYYMMDD.log` | 仅时间、级别、事件名、项目 id、条数、HTTP 状态，按天滚动保留十四天 |
+| `<localId>/state.json` | `v:1, ackedSeq, etag, lastPullAt, lastPushAt, lastArchiveDay, untracked, lastError`；untracked 最近五十条 `{seq,taskIds,source,clientTs}` |
+| `<localId>/base.json` | 上次写回所用的云端整本，project.id 已换成本机 id |
+| `<localId>/outbox-archive-YYYYMM.jsonl` | 每天第一次成功同步归档已确认行，原 outbox.seq 不变 |
+
+后续命令行提示与界面**只读以下两份公共状态**，不自行推断队列进度：
+
+```text
+status.json = {
+  v:1, updatedAt,
+  agent:{pid,startedAt,state,nextRetryAt,lastError,origin,deviceLabel,deviceExpiresAt},
+  projects:{<localId>:{remoteProjectId,pending,oldestPendingAt,ackedSeq,
+    rejectedUnseen,untracked,lastPushAt,lastPullAt,lastError}}
+}
+<localId>/rejected.json = {
+  v:1, items:[{seq,opId,command,taskIds,httpStatus,error,at,seen:false}]
+}
+```
+
+agent.state 为 `connected | reconnecting | login-required | stopped`。pending 只数未确认 op，不计 untracked；untracked 为保留提醒条数。退回项按 opId 去重，最多二百条，优先删除最旧已读项。错误只存固定人话原因与 HTTP 状态，不复制可能含卡片正文或凭据的任意服务器错误字符串。所有状态 JSON 以仓库原子写函数落盘。
+
+与设计正文的区别：退回记录只保存在 rejected.json，不往卡片流水写 `sync:rejected`，因为下次拉回会整本替换流水，写入也会冲掉。每批确认后清除条件读取版本，确保云上没有发生变化的拒收也能撤回本机草稿；普通无变化拉取仍保持 board.json 内容和 mtime 不变。拉回直接原子写板，不经 mutate，不追加 outbox。SSH 登记临时隧道及常驻隧道都使用固定参数和隐藏窗口，不连接任何真实云端进行本单测试。
+
+自测记录（仅经指定 mailbox，未直接运行 Node、安装依赖或执行全量测试）：
+
+- 第 1 次申请 `20261020T084023-e4e71358`：凭据测试原始日志为 4/4 通过、0 跳过，Windows DPAPI 往返实跑通过；但运行期间追加修复导致受测内容漂移，最终回执将 AGENT、CRED 自动项作废，**不能作为本次交付的通过证据**。NOWINDOW 最终为绿，输出「本单涉及文件的子进程调用都带 windowsHide: true」。
+- AGENT 首项在服务重启就绪等待处失败，后续联网项连带失败。已定位：服务端只在随机端口模式发送 IPC 就绪消息，固定端口重启需读取实际监听地址；退出清理也必须识别 signalCode，不能再等待已退出的进程。辅助逻辑已修正，原断网、五十条写入和数据一致性断言不变。最终回执另报「调度撤单未确认:等待超时」，AGENT 票据 `tk-2e968a967637e204b58a` 仍显示 running；请派单器核实回收状态，本施工方未手工强杀。
+- 同步引擎自审另外修正了多项目中后续成功掩盖先前失败的状态，并补充坏快照拒写、运行中重载凭据、队列变化和重连请求测试；这些最终改动尚待重新实跑，不能以首轮旧代码结果冒记通过。
+- 正式入口结论为「这次没验成」「直接交活」，依工单停止自测，不另行重试。最终 AGENT、CRED 及其余回归仍待派单器统一验收，FAST 通过 heavyRequests 申请。看板与成本登记由派单器代办。本单为部分完成，未冒记验收通过。
+
+### 自动复核第 1 轮后的恢复记录（2026-10-20）
+
+派单方明确恢复施工后，已补齐退回场景真 CLI 的必填 `--builder 派单器`，不修改生产闸门。第 2 次自测 `20261020T085723-a574e1e9` 中 CRED、NOWINDOW 取得有效通过结果，AGENT 的退回文件仍未生成。随后只增加对真实云端回执的直接断言，保留原退回与脱敏断言，不通过制造拒收记录让测试变绿。
+
+第 3 次自测 `20261020T085821-caa44060` 确认：成员已认领 T1 后，本机 claim 的云端回执实际为 `applied`，契约要求 `rejected`；AGENT 为 19 项中 16 通过、3 失败（含父用例），无取消、无跳过。隐私检查的 rejected.json 缺失是该场景未被拒收的连带结果，不是凭据泄漏证据。
+
+源码链路：`cli/collaboration.cjs` 的 syncOperations 直接调用 `core/syncReplay.cjs` 的 applyOp，再调用 `cli/commands.cjs` 的 claim；后者允许「施工中」状态，没有成员 assigneeUserId 冲突检查。这三个文件均在本单禁区。本机同步程序不能把云端 applied 擅自改成 rejected，也不能用本机检查代替云端板锁内判权。
+
+当前状态为 blocked，暂停继续测试与修改，等待派单方决定：推荐另派上游单补齐云端冲突规则后恢复本单；另一选项为明确扩大本单施工面，在同一工位修复禁区文件（代价是扩大职责与旧命令回归风险）。不建议修改原验收要求。无需重复运行已定位的失败；看板和成本仍由派单器代办。
+
+### 上游修复接入后的验收（2026-10-20）
+
+派单方选择另派上游修复，PR #128 已合入；本工位基线核对为 `d8b8acd`。原成员归属冲突阻碍已解除，本单没有修改任何禁区文件或放宽断言。以下三批测试运行期间未修改受测文件：
+
+- 第 4 次 `20261020T222421-2eea4cb9`：AGENT、CRED、NOWINDOW 全绿；成员认领回执拒收、退回文件与敏感信息检查全部通过，Windows DPAPI 实跑且未跳过。
+- 第 5 次 `20261020T222504-5678a2f9`：SYNCOPS、OUTBOX、REPLAY 全绿。
+- 第 6 次 `20261020T222542-382bfb53`：HTTP、LEGACY-CMD 全绿；同批已申请 FAST，但正式回执明确为「本次没跑:FAST(这类检查不能自测,交活后派单器统一重跑)」。该批退出码 0 不代表 FAST 通过。
+
+当前剩余阻碍仅为 FAST 执行入口：已获授权要求全部跑完，但施工方 mailbox 不开放这一项，且禁止绕过入口直接起测试。通过 heavyRequests 申请派单方正式排队执行 `test:fast`；或由派单方开放本工单 FAST 自测资格后恢复。八项通过证据保留，FAST 仍为 ran=false，未冒记整单完成；不重复申请已明确排除的自测项。
