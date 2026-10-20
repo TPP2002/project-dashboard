@@ -352,6 +352,10 @@ function claim(flags) {
       throw new Error(`claim 非法迁移：${t.status} → 施工中（只能从 ${ALLOWED.join('/')}）` +
         `。已完工 / 已作废的卡要接着做，先 reopen ${id} --reason "<为什么重开>"`);
     }
+    const actorUserId = commandDefault(flags, 'actorUserId', () => undefined);
+    if (actorUserId && t.assigneeUserId && t.assigneeUserId !== actorUserId) {
+      throw Object.assign(new Error(`这张卡已被成员 ${t.assigneeName || t.assigneeUserId} 认领(主负责人),云端退回本次认领;要一起干请在网页上改用「加入协作」,或请对方先放弃认领`), { status: 409 });
+    }
     t.status = '施工中';
     t.builder = builder; // 施工方式落卡;老卡没这字段照样读,只有新认领才强制写
     t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = today();

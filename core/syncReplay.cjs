@@ -133,12 +133,13 @@ function applyPatch(flags) {
 
 /** Replay is synchronous, uses the supplied registry and embedded input only,
  * and never goes through CLI main (auto-project, context creation or output). */
-function applyOp(op, { registryPath, projectId, author } = {}) {
+function applyOp(op, { registryPath, projectId, author, actorUserId, actorName } = {}) {
   if (!object(op) || op.kind !== 'op') fail(400, '只接受 kind:op 操作');
   if (!REPLAY_COMMANDS.includes(op.command) && op.command !== 'patch-ai-meta') fail(403, '不允许重放该命令');
   if (!object(op.flags) || !object(op.files || {})) fail(400, '操作参数或文件内容格式无效');
   if (typeof registryPath !== 'string' || !path.isAbsolute(registryPath)) fail(400, 'registryPath 必须是绝对路径');
   if (typeof projectId !== 'string' || !projectId) fail(400, '必须指定 projectId');
+  if (actorUserId !== undefined && (typeof actorUserId !== 'string' || !actorUserId.trim())) fail(400, 'actorUserId 必须是非空字符串');
   const { readRegistry } = require('./resolveProject.cjs');
   let tempDir;
   try {
@@ -173,7 +174,8 @@ function applyOp(op, { registryPath, projectId, author } = {}) {
     }
     const cmds = require('../cli/commands.cjs');
     // An empty branch snapshot is meaningful: never fall back to git on replay.
-    Object.defineProperty(flags, cmds.COMMAND_DEFAULTS, { value: { branches: array(flags.branch), bindingEnv: {} } });
+    Object.defineProperty(flags, cmds.COMMAND_DEFAULTS, { value: { branches: array(flags.branch), bindingEnv: {},
+      ...(actorUserId === undefined ? {} : { actorUserId, actorName }) } });
     const refusal = entryGateRefusal(op.command, flags);
     if (refusal) fail(400, refusal);
     const index = require('../cli/index.cjs');
