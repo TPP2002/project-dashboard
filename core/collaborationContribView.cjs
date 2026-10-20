@@ -4,6 +4,7 @@ const { memberContributions } = require('./collaborationContrib.cjs');
 const { text } = require('./collaborationPublic.cjs');
 
 const ACTIONS = {
+  claim: 'claim', progress: 'progress',
   'collaboration:claim': 'claim', 'collaboration:progress': 'progress',
   'collaboration:join': 'join', 'collaboration:leave': 'leave',
   'collaboration:remove-collaborator': 'removeCollaborator',
@@ -28,9 +29,13 @@ function activityTime(ts) {
 
 function contributionView(board, { users = [], now, weeks = 8, role } = {}) {
   if (!['owner', 'member', 'viewer'].includes(role)) throw new TypeError('Invalid contribution role');
-  const raw = memberContributions(board, { users, now, weeks });
   const tasks = board.tasks || [];
   const activities = board.activity || [];
+  // Cloud replay uses CLI activity types. Normalize only signed events in a
+  // separate view; the merged board may be shared with other cached readers.
+  const normalized = activities.map(a => a.userId && ['claim', 'progress'].includes(a.type)
+    ? { ...a, type: `collaboration:${a.type}` } : a);
+  const raw = memberContributions({ ...board, activity: normalized }, { users, now, weeks });
   const totals = {
     completed: tasks.filter(t => t.status === '已完工').length,
     completedWithCollaborators: tasks.filter(t => t.status === '已完工' && t.collaborators?.length > 0).length,
@@ -51,8 +56,9 @@ function contributionView(board, { users = [], now, weeks = 8, role } = {}) {
   // Explicit allowlist: summary never acquires any person-shaped fields.
   if (role === 'viewer') return { scope: 'summary', range: raw.range, totals, weekly };
 
-  const members = raw.members.map(m => ({ ...m, name: text(m.name) ?? '' }));
-  const names = new Map(members.map(m => [m.userId, m.name]));
+  // Keep raw IDs as lookup keys: distinct identities may scrub to the same text.
+  const names = new Map(raw.members.map(m => [m.userId, m.name]));
+  const members = raw.members.map(m => ({ ...m, userId: text(m.userId) ?? '', name: text(m.name) ?? '' }));
   const tasksById = new Map(tasks.map(t => [t.id, t]));
   const recent = activities.map((a, index) => ({ a, index, time: activityTime(a.ts) }))
     .filter(({ a }) => a.userId)
@@ -61,7 +67,7 @@ function contributionView(board, { users = [], now, weeks = 8, role } = {}) {
       const task = tasksById.get(a.taskId);
       return {
         ts: Number.isFinite(time) ? a.ts : null,
-        userId: a.userId, name: text(names.get(a.userId) || a.author || a.userId) ?? '',
+        userId: text(a.userId) ?? '', name: text(names.get(a.userId) || a.author || a.userId) ?? '',
         action: action(a), taskId: text(a.taskId) ?? null,
         taskTitle: text(task?.plainTitle || task?.title) ?? '',
         ...(a.via === 'ai' ? { viaAi: true } : {}),

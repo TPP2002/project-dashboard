@@ -38,9 +38,11 @@ test('contributions HTTP roles, confidentiality, authorization and read-only dir
   const registryPath = path.join(home, 'registry.json');
   const registry = { projects: {} };
   for (const id of ['alpha', 'beta']) {
-    const board = path.join(home, id + '.json');
-    registry.projects[id] = { mainRepo: home, board, name: id };
-    fs.writeFileSync(board, JSON.stringify(emptyBoard({ id, name: id, mainRepo: home })));
+    const mainRepo = path.join(home, id);
+    fs.mkdirSync(mainRepo);
+    const board = path.join(mainRepo, 'board.json');
+    registry.projects[id] = { mainRepo, board, name: id };
+    fs.writeFileSync(board, JSON.stringify(emptyBoard({ id, name: id, mainRepo })));
   }
   fs.writeFileSync(registryPath, JSON.stringify(registry));
   const auth = createAuth({ home, registryPath });
@@ -130,6 +132,52 @@ test('contributions HTTP roles, confidentiality, authorization and read-only dir
     directory[0].displayName = 'changed only returned data';
     assert.equal(auth.projectDirectory('alpha')[0].displayName, owner.user.displayName);
     assert.equal(fs.readFileSync(ledgerPath, 'utf8'), before);
+  });
+  await t.test('contributions include real monthly archives, deduplicate and refresh them like the board route', async () => {
+    // archive-activity stores a JSON array next to board.json, named by local month.
+    const old = new Date(Date.now() - 8 * 86400000);
+    const stamp = `${old.getFullYear()}${String(old.getMonth() + 1).padStart(2, '0')}`;
+    const file = path.join(path.dirname(registry.projects.alpha.board), `activity-${stamp}.json`);
+    const archived = [
+      { ts: old.toISOString(), type: 'note', kind: 'message', userId: member.user.id,
+        author: member.user.displayName, taskId: 'ONE', via: 'ai', text: 'Archived message' },
+      { ts: new Date(old.getTime() + 1000).toISOString(), type: 'note', kind: 'message', taskId: 'ONE', text: 'Unsigned archived message' },
+      board.activity[0], // A board/archive overlap must count only once.
+    ];
+    const boardBefore = fs.readFileSync(registry.projects.alpha.board, 'utf8');
+    fs.writeFileSync(file, JSON.stringify(archived));
+    for (const session of [owner, member, viewer]) {
+      const { status, body } = await request(session, '?weeks=4');
+      assert.equal(status, 200);
+      assert.equal(body.totals.messages, 2);
+      assert.equal(body.totals.attributedOps, 2);
+      assert.equal(body.totals.aiOps, 2);
+      assert.equal(body.weekly.reduce((n, w) => n + w.messages, 0), 2);
+      assert.equal(body.weekly.reduce((n, w) => n + w.ops, 0), 3);
+      assert.equal(body.weekly.reduce((n, w) => n + w.completed, 0), 1);
+      const bucket = body.weekly.find(w => Date.parse(w.weekStart) <= old.getTime()
+        && old.getTime() < Date.parse(w.weekStart) + 7 * 86400000);
+      assert.equal(bucket.messages, 2);
+      if (body.scope === 'full') {
+        assert.equal(body.members.find(m => m.userId === member.user.id).messages, 1);
+        assert.equal(body.unattributed.messages, 1);
+        assert.equal(body.recent.length, 2);
+        assert.equal(body.recent[1].action, 'message');
+        assert.equal(body.recent[1].viaAi, true);
+      }
+    }
+    const merged = await fetch(srv.base + '/api/board/alpha?fields=activity', { headers: { Cookie: `dashboard_session=${owner.token}` } });
+    assert.equal(merged.status, 200);
+    assert.equal((await merged.json()).activity.length, 3);
+    assert.equal((await request(owner, '', 'beta')).body.totals.messages, 0, 'archives stay in their project directory');
+    archived.push({ ...archived[0], text: 'Another archived message' });
+    fs.writeFileSync(file, JSON.stringify(archived));
+    const refreshed = (await request(member)).body;
+    assert.equal(refreshed.totals.messages, 3);
+    assert.equal(refreshed.totals.attributedOps, 3);
+    assert.equal(refreshed.weekly.reduce((n, w) => n + w.messages, 0), 3);
+    assert.equal(fs.readFileSync(registry.projects.alpha.board, 'utf8'), boardBefore);
+    assert.equal(fs.readFileSync(file, 'utf8'), JSON.stringify(archived), 'contributions do not mutate archives');
   });
   await t.test('corrupt authentication ledger fails closed for directory and HTTP', async () => {
     fs.writeFileSync(ledgerPath, '{broken');

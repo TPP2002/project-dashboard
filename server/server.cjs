@@ -83,7 +83,12 @@ const WEBHOOK_URL = (process.env.DASHBOARD_EVENT_WEBHOOK || '').trim();
 const WEBHOOK_CONFIGURED = /^https?:\/\//.test(WEBHOOK_URL);
 // Product mode is separate from MODE (dev/release runtime identity).
 const COLLABORATION = configuration();
-const collaborationApi = COLLABORATION ? createCollaborationApi({ config: COLLABORATION, home: DASHBOARD_HOME, registryPath: REGISTRY, summarize: deriveSummary }) : null;
+const collaborationApi = COLLABORATION ? createCollaborationApi({ config: COLLABORATION, home: DASHBOARD_HOME, registryPath: REGISTRY, summarize: deriveSummary,
+  readBoard: boardPath => {
+    const snapshot = activitySnapshot(boardPath);
+    return snapshot ? readMergedBoard(boardPath, snapshot) : null;
+  },
+}) : null;
 const ownerExecFile = collaborationApi ? collaborationApi.ownerExecFile : execFile;
 
 // —— 我是哪份代码（SERVER-RUNS-ON-LIVE-CHECKOUT）——

@@ -113,6 +113,63 @@ test('same inputs produce byte-identical outputs without mutating frozen inputs'
   assert.equal(JSON.stringify({ board, options }), before);
 });
 
+test('signed CLI replay claim/progress count as member actions without changing unsigned history or inputs', () => {
+  const board = { activity: [
+    event('claim', { via: 'ai' }), event('progress', { via: 'ai' }),
+    event('collaboration:claim'), event('collaboration:progress'),
+    event('claim', { userId: undefined }), event('progress', { userId: undefined }),
+  ] };
+  const before = JSON.stringify(board);
+  board.activity.forEach(Object.freeze);
+  Object.freeze(board.activity); Object.freeze(board);
+  const result = view(board);
+  const member = result.members.find(m => m.userId === users[0].id);
+  assert.equal(member.claimed, 2);
+  assert.equal(member.progressUpdates, 2);
+  assert.equal(member.ops, 4);
+  assert.equal(member.aiOps, 2);
+  assert.equal(result.unattributed.ops, 2);
+  assert.equal(result.unattributed.weekly.at(-1).ops, 2);
+  assert.ok(result.members.filter(m => m.userId !== member.userId).every(m => m.claimed === 0 && m.progressUpdates === 0));
+  assert.deepEqual(result.recent.map(r => r.action), ['progress', 'claim', 'progress', 'claim']);
+  assert.deepEqual(result.recent.map(r => !!r.viaAi), [false, false, true, true]);
+  assert.equal(result.totals.attributedOps, 4);
+  assert.equal(result.weekly.at(-1).ops, 6);
+  assert.equal(JSON.stringify(board), before);
+  assert.equal(JSON.stringify(view(board)), JSON.stringify(result));
+  assert.deepEqual(memberContributions(board, { users, now: NOW }).members.find(m => m.userId === member.userId).claimed, 1,
+    'the frozen source and original core still distinguish ordinary CLI types');
+});
+
+test('unknown path-shaped IDs are scrubbed in every full output while raw identities remain separate internally', () => {
+  const ownerId = 'C:\\path\\to\\owner';
+  const helperId = 'C:\\path\\to\\helper';
+  const activityId = 'C:\\path\\to\\user';
+  const board = {
+    tasks: [{ id: 'ONE', status: '已完工', assigneeUserId: ownerId, assigneeName: 'Former owner',
+      collaborators: [{ userId: helperId, name: 'Former helper' }] }],
+    activity: [
+      event('claim', { userId: ownerId, author: 'Owner author' }),
+      event('progress', { userId: helperId, author: 'Helper author' }),
+      event('progress', { userId: activityId, author: 'Activity author' }),
+    ],
+  };
+  const before = JSON.stringify(board);
+  const result = view(board, { users: [] });
+  assert.equal(result.members.length, 3);
+  assert.equal(result.membersWeekly.length, 3);
+  assert.equal(result.recent.length, 3);
+  for (const rows of [result.members, result.membersWeekly, result.recent]) {
+    assert.ok(rows.every(row => row.userId === '[private path]'));
+  }
+  assert.deepEqual(result.recent.map(r => r.name), ['Activity author', 'Helper author', 'Owner author']);
+  assert.equal(result.members.find(m => m.name === 'Owner author').completedAsOwner, 1);
+  assert.equal(result.members.find(m => m.name === 'Helper author').completedAsCollaborator, 1);
+  assert.equal(result.members.find(m => m.name === 'Activity author').progressUpdates, 1);
+  for (const id of [ownerId, helperId, activityId]) assert.ok(!JSON.stringify(result).includes(JSON.stringify(id).slice(1, -1)));
+  assert.equal(JSON.stringify(board), before);
+});
+
 test('empty board has zero totals and requested empty buckets; unknown roles fail closed', () => {
   const result = view({}, { role: 'viewer', weeks: 12 });
   assert.ok(Object.values(result.totals).every(n => n === 0));

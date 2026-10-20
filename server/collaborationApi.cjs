@@ -65,7 +65,9 @@ function runTask(command, payload, env) {
     child.stdin.end(JSON.stringify(payload));
   });
 }
-function createCollaborationApi({ config, home, registryPath, summarize }) {
+function createCollaborationApi({ config, home, registryPath, summarize,
+  readBoard = boardPath => JSON.parse(fs.readFileSync(boardPath, 'utf8')),
+}) {
   const auth = createAuth({ home, registryPath });
   const streams = new Map();
   const ownerRequests = new WeakMap();
@@ -211,7 +213,8 @@ function createCollaborationApi({ config, home, registryPath, summarize }) {
         const values = new URL(req.url, config.origin).searchParams.getAll('weeks');
         if (values.length > 1 || (values.length === 1 && !['4', '8', '12'].includes(values[0]))) fail(400, 'Invalid weeks');
         const weeks = values.length ? Number(values[0]) : 8;
-        const board = JSON.parse(fs.readFileSync(project.board, 'utf8'));
+        const board = readBoard(project.board);
+        if (!board) fail(404, 'Not found');
         json(res, 200, contributionView(board, { users: auth.projectDirectory(projectId), now: Date.now(), weeks, role: session.user.role }));
         return true;
       }
