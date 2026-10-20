@@ -16,6 +16,7 @@ const error = ref('')
 const busy = ref(false)
 const adminOpen = ref(false)
 const invite = ref(consumeInvite(window.location, window.history))
+const inviteRevision = ref(0)
 const view = computed(() => sessionView(session.value))
 let epoch = 0
 let checking = false
@@ -63,12 +64,21 @@ async function logout() {
 }
 function authenticated(next: Session) { epoch++; accept(next) }
 function onVisible() { if (!document.hidden && session.value?.mode === 'collaboration') void checkSession() }
+function onHashChange() {
+  const token = consumeInvite(window.location, window.history)
+  if (token && !session.value?.user) {
+    invite.value = token
+    inviteRevision.value++
+  }
+}
 onMounted(() => {
+  window.addEventListener('hashchange', onHashChange)
   void checkSession()
   timer = setInterval(onVisible, 30_000)
   document.addEventListener('visibilitychange', onVisible)
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', onHashChange)
   epoch++
   clearInterval(timer)
   unsubscribe()
@@ -81,7 +91,7 @@ onBeforeUnmount(() => {
     <p>{{ error || '正在检查登录状态…' }}</p>
     <button v-if="error" class="btn" @click="checkSession">重试</button>
   </main>
-  <AuthForm v-else-if="view === 'login'" :invite="invite" :session-error="error" @authenticated="authenticated" />
+  <AuthForm v-else-if="view === 'login'" :key="inviteRevision" :invite="invite" :session-error="error" @authenticated="authenticated" />
   <template v-else>
     <div v-if="view === 'owner'" class="collab collab-toolbar">
       <button v-if="view === 'owner'" class="btn" @click="adminOpen = !adminOpen">{{ adminOpen ? '返回看板' : '成员与邀请' }}</button>

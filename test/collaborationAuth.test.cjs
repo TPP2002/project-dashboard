@@ -58,10 +58,10 @@ test('persistent authentication and atomic invitation lifecycle (production scry
   });
   await t.test('exhausted, revoked and expired invites fail without consuming another hash', async () => {
     await rejects(() => auth.register({ inviteToken: invite.token, username: 'exhausted', password: PASSWORD }), 400);
-    const revoked = auth.createInvite(owner.token, { projectIds: [], expiresInHours: 1, maxUses: 1 });
+    const revoked = auth.createInvite(owner.token, { projectIds: ['alpha'], expiresInHours: 1, maxUses: 1 });
     auth.revokeInvite(owner.token, revoked.invite.id);
     await rejects(() => auth.register({ inviteToken: revoked.token, username: 'revoked', password: PASSWORD }), 400);
-    const expired = auth.createInvite(owner.token, { projectIds: [], expiresInHours: 1, maxUses: 1 });
+    const expired = auth.createInvite(owner.token, { projectIds: ['alpha'], expiresInHours: 1, maxUses: 1 });
     const db = JSON.parse(fs.readFileSync(file));
     db.invites.find(i => i.id === expired.invite.id).expiresAt = '2000-01-01T00:00:00.000Z';
     fs.writeFileSync(file, JSON.stringify(db));

@@ -9,7 +9,7 @@ export function sessionView(session: Session | null): 'loading' | 'local' | 'log
 /** Called before the owner hash router is imported. The secret never enters router history. */
 export function consumeInvite(location: Pick<Location, 'href'>, history: Pick<History, 'replaceState' | 'state'>): string {
   const url = new URL(location.href)
-  const fragment = new URLSearchParams(url.hash.slice(1))
+  const fragment = new URLSearchParams(url.hash.slice(1).replace(/^\//, ''))
   const key = fragment.has('invite') ? 'invite' : url.pathname === '/invite' && fragment.has('token') ? 'token' : null
   if (!key) return ''
   const token = fragment.get(key) ?? ''

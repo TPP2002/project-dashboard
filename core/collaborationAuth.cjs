@@ -270,6 +270,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
   function createInvite(raw, body) {
     return ownerMutation(raw, db => {
       const ids = projectIds(body.projectIds);
+      if (!ids.length) fail(400, 'Invalid projectIds');
       if (!Number.isFinite(body.expiresInHours) || body.expiresInHours <= 0 || body.expiresInHours > 8760 || !Number.isSafeInteger(body.maxUses) || body.maxUses < 1 || body.maxUses > 100000) fail(400, 'Invalid invitation limits');
       const rawToken = token();
       const i = { id: crypto.randomUUID(), role: grantRole(body.role), tokenHash: digest(rawToken), projectIds: ids, expiresAt: new Date(Date.now() + body.expiresInHours * 3600000).toISOString(), maxUses: body.maxUses, uses: 0, revoked: false };
