@@ -447,6 +447,9 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
   return {
     bootstrap, login, register, access, createInvite, deviceLogin, resetOwner, rememberDevice, restoreSession, logout,
     changePassword, createReset, resetPassword,
+    projectDirectory: projectId => read().users
+      .filter(u => u.role === 'owner' || u.projectIds.includes(projectId))
+      .map(u => ({ id: u.id, displayName: u.displayName, role: u.role, disabled: u.disabled })),
     session: raw => sessionIn(read(), raw),
     // Hold auth before board, consistently. Revocation cannot race the board commit.
     withSession: (raw, fn) => withLock(lock, () => fn(requireSession(read(), raw))),
