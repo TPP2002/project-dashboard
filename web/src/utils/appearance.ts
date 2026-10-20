@@ -1,6 +1,5 @@
 // 外观中心的本机设置。后续效果只读存档；本模块此阶段只落地灯条、密度和字号。
 import { reactive } from 'vue'
-import type { WorkfloorSettings } from '../workfloor/types'
 import { DEFAULT_AGE_THRESHOLDS } from './ageLevel'
 
 export const SPEEDS = [
@@ -61,7 +60,6 @@ export interface AppearanceConfig {
   quietStart: string
   quietEnd: string
   wireEvents: Record<(typeof WIRE_EVENTS)[number]['id'], boolean>
-  workfloor: WorkfloorSettings
 }
 
 const CONFIG_KEY = 'board-appearance-config'
@@ -79,7 +77,6 @@ export function defaultAppearance(): AppearanceConfig {
     ageThresholds: [...DEFAULT_AGE_THRESHOLDS],
     wipLimits: { 施工中: 5 },
     wireEvents: { done: true, pending: true, block: true },
-    workfloor: { world: 'launch', dayNight: 'theme', detail: 'ultra', height: 'standard', position: 'bottom', zoom: 1.5, camera: 'fixed', soundLink: true },
   }
 }
 
@@ -122,7 +119,6 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
   const defaults = defaultAppearance()
   const events = record(raw.wireEvents)
   const notifyEvents = record(raw.notifyEvents)
-  const workfloor = record(raw.workfloor)
   const wipLimits: Record<string, number> = Object.assign(Object.create(null), defaults.wipLimits)
   for (const [key, limit] of Object.entries(record(raw.wipLimits))) {
     if (key.trim().length > 0 && key.length <= 32
@@ -163,16 +159,6 @@ export function normalizeAppearance(value: unknown): AppearanceConfig {
       done: bool(events.done, defaults.wireEvents.done),
       pending: bool(events.pending, defaults.wireEvents.pending),
       block: bool(events.block, defaults.wireEvents.block),
-    },
-    workfloor: {
-      world: oneOf(workfloor.world, ['off', 'launch', 'mech'] as const, defaults.workfloor.world),
-      dayNight: oneOf(workfloor.dayNight, ['theme', 'night', 'clock'] as const, defaults.workfloor.dayNight),
-      detail: oneOf(workfloor.detail, ['standard', 'ultra'] as const, defaults.workfloor.detail),
-      height: oneOf(workfloor.height, ['standard', 'compact'] as const, defaults.workfloor.height),
-      position: oneOf(workfloor.position, ['top', 'bottom'] as const, defaults.workfloor.position),
-      zoom: oneOf(workfloor.zoom, [1, 1.25, 1.5, 1.75, 2] as const, defaults.workfloor.zoom),
-      camera: oneOf(workfloor.camera, ['fixed', 'pan'] as const, defaults.workfloor.camera),
-      soundLink: bool(workfloor.soundLink, defaults.workfloor.soundLink),
     },
   }
 }

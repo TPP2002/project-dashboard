@@ -1,10 +1,9 @@
 import { appearance } from '@/utils/appearance'
-import type { SoundCue } from '@/workfloor/types'
 import { inQuietHours, shouldThrottle, toGain } from './soundRules'
 
-type Cue = SoundCue | 'ding' | 'dong' | 'low'
+type Cue = 'ding' | 'dong' | 'low'
 type Tone = { type: OscillatorType; frequency: number; level: number; drop?: number }
-type Filter = { type: BiquadFilterType; frequency: number; sweepTo?: number }
+type Filter = { type: BiquadFilterType; frequency: number }
 let audio: AudioContext | undefined
 let master: GainNode | undefined
 const lastPlayed = new Map<Cue, number>()
@@ -44,7 +43,6 @@ function voice(context: AudioContext, output: GainNode, source: AudioScheduledSo
     filtered = context.createBiquadFilter()
     filtered.type = filter.type
     filtered.frequency.setValueAtTime(filter.frequency, at)
-    if (filter.sweepTo !== undefined) filtered.frequency.linearRampToValueAtTime(filter.sweepTo, end)
     source.connect(filtered)
     filtered.connect(envelope)
   } else source.connect(envelope)
@@ -71,17 +69,6 @@ function tones(context: AudioContext, output: GainNode, at: number, duration: nu
   }
 }
 
-function noise(context: AudioContext, output: GainNode, at: number, duration: number,
-  attack: number, filter: Filter) {
-  const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * duration), context.sampleRate)
-  const data = buffer.getChannelData(0)
-  // 白噪声只影响听感，不参与看板状态与事件判断。
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
-  const source = context.createBufferSource()
-  source.buffer = buffer
-  voice(context, output, source, at, duration, attack, 0.8, filter, true)
-}
-
 function synthesize(context: AudioContext, output: GainNode, cue: Cue) {
   const at = context.currentTime
   const ding = (time: number) => tones(context, output, time, 0.38, [
@@ -95,30 +82,8 @@ function synthesize(context: AudioContext, output: GainNode, cue: Cue) {
   ], duration * 0.25, { type: 'lowpass', frequency: 260 }, true)
   switch (cue) {
     case 'ding': ding(at); break
-    case 'dong': case 'done': dong(0.65); break
+    case 'dong': dong(0.65); break
     case 'low': low(at, 0.52); break
-    case 'stamp': dong(0.22); break
-    case 'hold': low(at, 0.3); break
-    case 'alarm':
-      low(at, 0.18)
-      low(at + 0.3, 0.18) // 两声之间留出 120ms。
-      break
-    case 'weld':
-      for (let i = 0; i < 3; i++) {
-        noise(context, output, at + i * 0.1, 0.04, 0.005, { type: 'bandpass', frequency: 2500 })
-      }
-      break
-    case 'ignition':
-      noise(context, output, at, 0.6, 0.08, { type: 'lowpass', frequency: 180 })
-      break
-    case 'liftoff':
-      noise(context, output, at, 1.2, 0.08, { type: 'lowpass', frequency: 180, sweepTo: 900 })
-      break
-    case 'complete':
-      for (const [i, frequency] of [1046, 1318, 1568].entries()) {
-        tones(context, output, at + i * 0.11, 0.38, [{ type: 'sine', frequency, level: 0.65 }])
-      }
-      break
   }
 }
 
