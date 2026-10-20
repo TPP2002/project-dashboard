@@ -223,7 +223,7 @@ function syncOperations(input, auth = createAuth()) {
             const applied = require('./store.cjs').withActivityContext({ userId: user.id,
               via: [user.username, user.displayName].includes(op.author) ? 'owner-device' : 'ai',
               clientTs: op.clientTs, device: op.device, opId: op.opId },
-            () => require('../core/syncReplay.cjs').applyOp(op, { registryPath, projectId: input.projectId, author: op.author }));
+            () => require('../core/syncReplay.cjs').applyOp(op, { registryPath, projectId: input.projectId, author: op.author, actorUserId: user.id, actorName: user.displayName }));
             outcome = { ...base, status: 'applied', result: applied.result };
           } catch (e) {
             // S1 maps board-lock timeout to 409: it is transient, not a receipt.
