@@ -59,6 +59,56 @@ CLI 直接调用 store.mutate/mutateTask 的写入点清单：
 
 ## 1. 要解决什么
 
+### S2 施工交接：云端同步接口（2026-10-20）
+
+本次实现仅在协作模式启用。四条路由均要求当前有效的 owner 设备会话；密码登录会话不够，设备撤销立即失效。POST 沿用 Origin、JSON、固定请求头、CSRF 与拒绝转发头的检查。凭据只从 Cookie / 子进程标准输入传递，不进入命令参数、回执或日志。
+
+文件职责：
+
+- `core/syncLedger.cjs`：每项目独立回执账、规范化内容摘要（仅排除顶层 seq）、独立锁和原子写、损坏拒收、已确认回执清理。
+- `cli/collaboration.cjs`：内部 `sync-ops` 只读标准输入；认证锁 → 回执账锁 → 原有看板锁，逐条调用 S1 `applyOp`，逐条保存成功/拒收结果。既有 owner-command 白名单不变。
+- `cli/store.cjs`：进程内活动附加字段作用域；补齐本次新增流水的 userId/via/clientTs/device/opId，finally 恢复上下文；未设置上下文时原行为不变。
+- `server/collaborationApi.cjs`：四条路由、设备会话判权、批量请求上限、60 秒隐藏子进程、整本读取与条件响应、锁内首次上传及登记。
+- `test/cloudSyncOps.test.cjs`：真实服务/设备登录、与本机命令执行对照、重发、闸门、权限矩阵、并发、锁超时、上传与事件流、清理及坏账拒收。
+- `test/collaborationServer.test.cjs`：原 HTTP 越权矩阵和设备撤销检查补入四条同步路由。
+- 本文与 `contract.md`：补充交付说明及请求响应契约。
+
+`core/boardSchema.cjs` 的活动记录校验允许这些附加字段，无需放宽校验。`server/server.cjs` 的 `pollBoards()` 每轮调用 `readRegistrySafe()`，新登记项目自动进入 mtime 扫描；第一次观察建立基线，之后变更走既有 `board:changed` 广播，故无需修改轮询。新增项目会使已有 SSE 的项目集合改变，沿用现有关闭旧流、客户端重连的行为。
+
+回执文件：`<DASHBOARD_HOME>/sync-ledger/<projectId>.json`，`v:1`，包含 receipts 与按设备记录的 acks。ackSeq 单调递增；seq ≤ ack 的回执在超过七天后清理；超额时仅淘汰最旧已确认回执。为新回执预留容量时也只淘汰已确认项；若两万项均未确认，新操作返回 retry，待客户端确认后重发，不静默丢回执。JSON 损坏或结构无效返回服务不可用并保留原文件。
+
+四条请求/响应样例（省略 Cookie 和写请求保护头，不包含任何真实凭据）：
+
+```text
+POST /api/sync/projects/demo/ops
+{"ackSeq":0,"ops":[{"v":1,"kind":"op","opId":"example-op-1","seq":1,"project":"local-demo","remoteProjectId":"demo","command":"note","flags":{"_":["T1"],"text":"已核对"},"files":{},"author":"owner","clientTs":"2026-10-20T00:00:00.000Z","device":"主机甲"}]}
+→ {"ok":true,"results":[{"opId":"example-op-1","seq":1,"status":"applied","result":{"ok":true}}],"etag":"<文件内容的 sha256>"}
+
+GET /api/sync/projects/demo/snapshot
+→ {"ok":true,"etag":"<文件内容的 sha256>","board":{"schemaVersion":"1.0","project":{"id":"demo","name":"示例项目","createdAt":"2026-10-20T00:00:00.000Z","updatedAt":"2026-10-20T00:00:00.000Z"},"tasks":[],"activity":[]}}
+相同 If-None-Match → 304，无正文；每次先认证，不复用其他角色的缓存。
+
+GET /api/sync/projects
+→ {"ok":true,"projects":[{"id":"demo","name":"示例项目","etag":"<文件内容的 sha256>"}]}
+
+POST /api/sync/projects/new-project/upload
+{"name":"新项目","board":{"schemaVersion":"1.0","project":{"id":"local-name","name":"新项目","createdAt":"2026-10-20T00:00:00.000Z","updatedAt":"2026-10-20T00:00:00.000Z"},"tasks":[],"activity":[]}}
+→ {"ok":true,"etag":"<文件内容的 sha256>"}
+```
+
+`result` 原样采用 S1 的命令摘要，字段随命令变化。永久拒收条目包含 `status:"rejected"`、`httpStatus` 和原文 `error`；set 明确提示「云端项目不接受 set,请改用专门命令」。同 opId 同内容返回原回执（含原 seq），改内容返回 409；看板锁超时即使被 S1 映射为 409，仍返回 retry 且不记永久回执。一批某条失败不阻断后续。批量 1–20 条、正文至多 2 MiB；上传也使用 2 MiB 正文界限。上传会改写 project.id、先校验整本，然后在注册表锁和看板锁内落盘、登记；重复上传返回 409，坏看板返回 400。整本响应保留原始解析字段，不使用成员脱敏视图。
+
+所有新增/修改的子进程调用显式 `windowsHide:true`。没有改本机同步程序、界面、部署或依赖；成果只留工作区，验收及看板/费用登记由派单器收单时执行。
+
+S2 自测记录（仅经指定 mailbox，共 5 次，未直接启动 Node 或测试）：
+
+- 第 1 次 `20261020T081354-c38ce619`：HTTP 20/20、TASK 8/8；SYNCOPS 失败原文为本机对照的 pending 被 `--json` 切换到标准输入，随后回执对照受前项中止影响。失败日志保留。
+- 第 2 次 `20261020T081609-c9d04ef4`：删除对照命令误加的输出参数，原等价断言不变；SYNCOPS 13/13、MEMBEROPS 15/15、BOUND 8/8。
+- 第 3 次 `20261020T081647-6cc353d9`：REVOKE 27/27、COLLABS 10/10、REPLAY 33/33。
+- 第 4 次 `20261020T081742-ac27a9bf`：OUTBOX 15/15、SCHEMA 12/12、LEGACY-CMD 74/74。
+- 第 5 次 `20261020T081812-4742a8ee`：NOWINDOW 通过。最新有效定向测试合计 235/235；完整日志由派单器保存在本工单 selftest/run-N 下。
+- FAST 未执行，依施工单通过 heavyRequests 申请 `test:fast`，由派单器统一排队；旧代码反证也由派单器收单时执行，本轮未冒记通过。以上自测不替代收单统一复核。
+
 负责人原话:「不需要令牌吧?不能像我现在本地这样直接用吗?」「升级一下本地看板,支持云同步,这样我本地也能同时掌控云端版本的内容。」
 
 - 本机的 AI 对话照旧敲 `~/.claude/dashboard-release/board.cmd <命令>`,命令、参数、输出、退出码一个字不变,不需要令牌,不等网络。

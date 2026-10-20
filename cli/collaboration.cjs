@@ -175,9 +175,82 @@ function ownerOperation(input, auth = createAuth()) {
     return t ? { ok: result.ok !== false, id: t.id, status: t.status, percent: t.percent || 0, changed: result.changed || [] } : result;
   });
 }
+function syncOperations(input, auth = createAuth()) {
+  const { withLedger, opDigest, pruneReceipts, validateProjectId, MAX_RECEIPTS } = require('../core/syncLedger.cjs');
+  const { DASHBOARD_HOME } = require('../core/resolveProject.cjs');
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+      || Object.keys(input).some(k => !['sessionToken', 'projectId', 'ackSeq', 'ops'].includes(k))
+      || !Number.isSafeInteger(input.ackSeq) || input.ackSeq < 0
+      || !Array.isArray(input.ops) || input.ops.length < 1 || input.ops.length > 20) fail(400, 'Invalid sync batch');
+  validateProjectId(input.projectId);
+  const registryPath = process.env.DASHBOARD_REGISTRY || REGISTRY_PATH;
+  return auth.withSession(input.sessionToken, ({ user, deviceId }) => {
+    if (user.role !== 'owner' || !deviceId) fail(403, 'Owner device session required');
+    let proj;
+    try { proj = resolveProject(input.projectId, { registryPath }); } catch { fail(404, 'Not found'); }
+    // Fixed lock ordering: auth -> receipt ledger -> applyOp's board lock.
+    return withLedger(DASHBOARD_HOME, input.projectId, (ledger, save) => {
+      const results = [];
+      for (const op of input.ops) {
+        const base = { opId: typeof op?.opId === 'string' ? op.opId : null, seq: Number.isSafeInteger(op?.seq) ? op.seq : null };
+        const reject = (httpStatus, error) => ({ ...base, status: 'rejected', httpStatus, error });
+        if (!op || typeof op !== 'object' || Array.isArray(op) || typeof op.opId !== 'string' || !op.opId || op.opId.length > 200
+            || !Number.isSafeInteger(op.seq) || op.seq < 1) {
+          results.push(reject(400, 'Invalid operation id or sequence')); continue;
+        }
+        const digest = opDigest(op);
+        const prior = Object.hasOwn(ledger.receipts, op.opId) ? ledger.receipts[op.opId] : null;
+        if (prior) {
+          if (prior.digest !== digest) results.push(reject(409, '同一操作编号的内容不同'));
+          else {
+            const { status, result, error, httpStatus, seq } = prior;
+            results.push({ opId: op.opId, seq, status, ...(result === undefined ? {} : { result }),
+              ...(error === undefined ? {} : { error }), ...(httpStatus === undefined ? {} : { httpStatus }) });
+          }
+          continue;
+        }
+        pruneReceipts(ledger, Date.now(), 1);
+        if (Object.keys(ledger.receipts).length >= MAX_RECEIPTS) {
+          results.push({ ...base, status: 'retry', httpStatus: 503, error: '回执账已满，请确认已有回执后重发' }); continue;
+        }
+        let outcome;
+        if (op.kind !== 'op' || op.remoteProjectId !== input.projectId) outcome = reject(400, '操作类型或云端项目不匹配');
+        else if (op.command === 'set') outcome = reject(403, '云端项目不接受 set,请改用专门命令');
+        else if (typeof op.author !== 'string' || !op.author || typeof op.device !== 'string' || !op.device
+            || typeof op.clientTs !== 'string' || !Number.isFinite(Date.parse(op.clientTs))) outcome = reject(400, 'Invalid operation attribution');
+        else {
+          try {
+            const applied = require('./store.cjs').withActivityContext({ userId: user.id,
+              via: [user.username, user.displayName].includes(op.author) ? 'owner-device' : 'ai',
+              clientTs: op.clientTs, device: op.device, opId: op.opId },
+            () => require('../core/syncReplay.cjs').applyOp(op, { registryPath, projectId: input.projectId, author: op.author }));
+            outcome = { ...base, status: 'applied', result: applied.result };
+          } catch (e) {
+            // S1 maps board-lock timeout to 409: it is transient, not a receipt.
+            if (/获取锁超时/.test(e.message) || [429, 503, 504].includes(e.status)) {
+              results.push({ ...base, status: 'retry', httpStatus: 503, error: '云端暂时忙，请稍后重发' }); continue;
+            }
+            outcome = reject(e.status || 500, e.status ? e.message : 'Operation failed');
+          }
+        }
+        const { opId, ...receipt } = outcome;
+        Object.defineProperty(ledger.receipts, opId, { value: { ...receipt, deviceId, digest, at: new Date().toISOString() }, enumerable: true, configurable: true, writable: true });
+        save(); // Persist each result before attempting the next operation.
+        results.push(outcome);
+      }
+      ledger.acks[deviceId] = Math.max(ledger.acks[deviceId] || 0, input.ackSeq);
+      save();
+      return { ok: true, results, etag: crypto.createHash('sha256').update(fs.readFileSync(proj.board)).digest('hex') };
+    });
+  });
+}
 async function main(args = process.argv.slice(2)) {
   if (!args.length || args[0] === '--help') { console.log(USAGE); return; }
   const command = args.shift();
+  if (command === 'sync-ops') {
+    if (args.length) fail(400, 'Internal sync commands accept stdin only');
+    console.log(JSON.stringify(syncOperations(await readInternalInput(2 * 1024 * 1024 + 4096)))); return;
+  }
   if (command === 'owner-command') {
     if (args.length) fail(400, 'Internal owner commands accept stdin only');
     console.log(JSON.stringify(ownerOperation(await readInternalInput(2 * 1024 * 1024)), publicJson)); return;
@@ -207,4 +280,4 @@ async function main(args = process.argv.slice(2)) {
   console.log(JSON.stringify({ ok: true }));
 }
 if (require.main === module) main().catch(e => { console.log(JSON.stringify({ ok: false, status: e.status || 500, error: e.status ? e.message : 'Operation failed' })); process.exitCode = 1; });
-module.exports = { main, readPassword, taskOperation, ownerOperation };
+module.exports = { main, readPassword, taskOperation, ownerOperation, syncOperations };

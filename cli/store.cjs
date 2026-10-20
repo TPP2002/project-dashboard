@@ -10,6 +10,12 @@ const { withLock } = require('../core/lock.cjs');
 const { atomicWriteJsonSync } = require('../core/atomicWrite.cjs');
 const { assertValid, emptyBoard } = require('../core/boardSchema.cjs');
 const { diffTask } = require('../core/taskDiff.cjs');
+let activityContext = null;
+function withActivityContext(fields, fn) {
+  const previous = activityContext;
+  activityContext = fields;
+  try { return fn(); } finally { activityContext = previous; }
+}
 
 function readBoard(boardPath) {
   return JSON.parse(fs.readFileSync(boardPath, 'utf8'));
@@ -36,11 +42,17 @@ function mutate(proj, mutator, activityEntry) {
     const board = readBoardOrNull(proj.board)
       || emptyBoard({ id: proj.id, name: proj.name, mainRepo: proj.mainRepo });
     const beforeBoard = proj.cloud ? JSON.parse(JSON.stringify(board)) : null;
+    const oldActivity = activityContext ? new Set(board.activity || []) : null;
     mutator(board);
     const entry = typeof activityEntry === 'function' ? activityEntry(board) : activityEntry;
     if (entry) {
       board.activity = board.activity || [];
       board.activity.push(entry);
+    }
+    if (activityContext) {
+      for (const activity of board.activity || []) {
+        if (!oldActivity.has(activity)) Object.assign(activity, activityContext);
+      }
     }
     board.project.updatedAt = new Date().toISOString();
     assertValid(board); // 写前校验，坏数据绝不落盘
@@ -127,4 +139,4 @@ function unionShas(arr) {
   return kept;
 }
 
-module.exports = { readBoard, readBoardOrNull, mutate, mutateTask, snapshotTask, findTask, unionBy, unionShas, sameCommit, hasCommit };
+module.exports = { readBoard, readBoardOrNull, mutate, mutateTask, snapshotTask, findTask, unionBy, unionShas, sameCommit, hasCommit, withActivityContext };

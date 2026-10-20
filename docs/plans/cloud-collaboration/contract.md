@@ -68,6 +68,21 @@ User 增加明确的 `disabled:boolean`，供负责人管理列表显示真实�
 
 ## 任务写入
 
+### 负责人设备云同步
+
+仅协作模式存在下列路由，要求有效 owner 会话且 deviceId 非空；未登录 401，成员、访客和无设备绑定的负责人会话 403。POST 沿用既有写请求保护和 CSRF，拒绝所有转发头。设备撤销同时阻断同步访问。凭据不进参数、流水、回执或日志。
+
+| 方法与路径 | 请求与响应摘要 |
+| --- | --- |
+| POST `/api/sync/projects/:projectId/ops` | `{ackSeq,ops}`，1–20 条、正文 ≤2 MiB；返回 `{ok:true,results:[{opId,seq,status,httpStatus?,error?,result?}],etag}`，status 为 applied/rejected/retry |
+| GET `/api/sync/projects/:projectId/snapshot` | `{ok:true,etag,board}`，原始整本不脱敏；If-None-Match 与当前文件内容 sha256 相等时认证后返回无正文的 304 |
+| GET `/api/sync/projects` | `{ok:true,projects:[{id,name,etag}]}` |
+| POST `/api/sync/projects/:projectId/upload` | `{board,name?}`，正文 ≤2 MiB；仅创建未登记项目，改写 project.id 并校验，锁内落盘及登记；成功 `{ok:true,etag}`，已存在 409，坏看板 400 |
+
+同步复用 S1 applyOp 与原命令闸门，set 仍在云端拒绝。固定认证锁 → 每项目回执账锁 → 看板锁；回执按 opId 和除 seq 外全部内容的规范化 sha256 去重。同编号改内容拒收，锁超时返回 retry 且不保存拒收回执。逐条执行，失败不阻断余项。每次写回执清理七天以上的已确认项，最多保留两万项，仅淘汰已确认项；容量全被未确认项占用时暂停接收新操作并返回 retry，确认后可继续。
+
+同步产生的所有新活动带负责人 userId、via（作者为负责人的用户名或显示名时 owner-device，其余 ai）、clientTs、device、opId。细节、四接口完整样例和施工说明见 `local-sync.md` 的 S2 交接节。本机模式和现有成员规则保持不变。
+
 成员操作通过 CLI 所属的协作命令模块，复用 `cli/store.cjs` 的锁、schema 校验、原子写入和活动流水；服务端不得另写 `board.json`。使用独立 `assigneeUserId` 与 `assigneeName` 标识成员，不能伪造 AI 施工方式。抢单、更新和归属检查必须在同一锁内完成。
 
 认证锁先于看板锁；CLI 子进程在锁内重验会话与角色，mutate 内使用共享 memberActions 判权后调用 cli/commands.cjs 导出的纯状态迁移函数。旧命令保持输出和活动记录，成员操作的同类活动额外带 userId 和显示名。reason 必须为 1–500 字。自动施工卡（builder 有值或 gitBranch/prNumbers/commitShas 非空）可加入协作并更新进度，成员的既有 AI 卡生命周期限制保持；访客在 HTTP 和 CLI 均拒绝卡片写入。成员不写任何 AI 元数据，不开放拍板、撤销拍板、挂待拍板、edit/set、mark-landed、request-info、block、await-collect 或派单。全部后台子进程显式 windowsHide:true。
