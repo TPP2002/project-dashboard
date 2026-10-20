@@ -32,11 +32,28 @@ const GROUPS = [
   ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
-    'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit']],
+    'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud']],
   ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot', 'archive-activity']],
 ];
 
 const COMMANDS = {
+  cloud: {
+    summary: '配置、登录和管理本机项目的云同步，查看并确认云端退回',
+    usage: 'cloud <config|login|logout|reconnect|status|ack|attach|detach> [参数]',
+    args: [
+      ['config [--ssh-host <别名> --remote-port <n> --local-port <n> --origin <地址>]', '配置隧道；不带参数查看配置'],
+      ['config --direct --base-url <地址> --origin <地址>', '配置直连'],
+      ['login --username <账号> [--label <设备名>]', '密码只从标准输入读，终端输入不回显'],
+      ['logout', '退出登录，保留队列'],
+      ['reconnect', '请求同步程序立即重连'],
+      ['status [--project <id>]', '查看连接、待发数和未读退回'],
+      ['ack --project <id> (--all | --seq <n> [--seq <n>…])', '把退回标为知道了'],
+      ['attach <本机id> --remote <云端id> (--upload | --adopt)', '上传本机或备份本机后采用云端'],
+      ['detach <本机id> [--drop-pending]', '退出同步；丢弃待发前留存原始记录'],
+    ],
+    examples: ['cloud status --json', 'cloud login --username owner'],
+    notes: ['所有子命令支持 --registry 与 --json。未知子命令退出 2；status 读不到状态文件仍退出 0。'],
+  },
   // ——— 开工与同步 ———
   protocol: {
     summary: '生成看板协议卡（与帮助同源的用法、状态行为、硬规则与正确示例）',

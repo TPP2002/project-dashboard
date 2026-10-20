@@ -95,34 +95,46 @@ function clearDeviceCredential(registryPath) {
   try { fs.unlinkSync(path.join(syncRoot(registryPath), 'device.cred')); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
 }
-async function enrollDevice({ registryPath, username, password, label, protector }) {
+// Share only connection lifetime and tunnel startup retries. The callback owns
+// authentication; enrollment uses a password session, attach a device session.
+async function withCloudClient(registryPath, fn, { spawn: launch = spawn, fetch, credential } = {}) {
   const config = readConfig(registryPath);
   const { createSyncClient } = require('./syncClient.cjs');
-  const client = createSyncClient({ config });
+  const client = createSyncClient({ config, fetch, credential });
   let tunnel, tunnelFailed = false;
   try {
     if (config.mode === 'ssh') {
-      tunnel = spawn('ssh', require('./syncAgent.cjs').buildSshArgs(config), { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+      tunnel = launch('ssh', require('./syncAgent.cjs').buildSshArgs(config), { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
       tunnel.stderr.resume();
       tunnel.once('error', () => { tunnelFailed = true; });
       tunnel.once('exit', () => { tunnelFailed = true; });
     }
-    const deadline = Date.now() + 15000;
-    while (true) {
-      try { await client.passwordLogin(username, password); break; }
-      catch (error) {
-        if (!tunnel || tunnelFailed || error.code !== 'NETWORK_ERROR' || Date.now() >= deadline) throw error;
-        await new Promise(resolve => setTimeout(resolve, 200));
+    const ready = async authenticate => {
+      const deadline = Date.now() + 15000;
+      while (true) {
+        try { return await authenticate(); }
+        catch (error) {
+          if (!tunnel || tunnelFailed || error.code !== 'NETWORK_ERROR' || Date.now() >= deadline) throw error;
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
       }
-    }
-    password = undefined;
-    const result = await client.request('/api/auth/devices', { label });
-    return await saveDeviceCredential({ registryPath, token: result.token, origin: config.origin,
-      label: result.device.label, deviceId: result.device.id, expiresAt: result.device.expiresAt, protector });
+    };
+    return await fn(client, { config, ready });
   } finally {
-    password = undefined;
-    try { await client.logout(); } finally { tunnel?.kill(); client.close(); }
+    try { await client.logout(); } catch { /* Cleanup must preserve the callback result or error. */ }
+    finally { try { tunnel?.kill(); } finally { client.close(); } }
   }
 }
+async function enrollDevice({ registryPath, username, password, label, protector }) {
+  try {
+    return await withCloudClient(registryPath, async (client, { config, ready }) => {
+      await ready(() => client.passwordLogin(username, password));
+      password = undefined;
+      const result = await client.request('/api/auth/devices', { label });
+      return saveDeviceCredential({ registryPath, token: result.token, origin: config.origin,
+        label: result.device.label, deviceId: result.device.id, expiresAt: result.device.expiresAt, protector });
+    });
+  } finally { password = undefined; }
+}
 module.exports = { registryFile, syncRoot, validateConfig, readConfig, writeConfig, baseUrl,
-  protect, unprotect, saveDeviceCredential, loadDeviceCredential, clearDeviceCredential, enrollDevice };
+  protect, unprotect, saveDeviceCredential, loadDeviceCredential, clearDeviceCredential, enrollDevice, withCloudClient };

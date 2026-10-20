@@ -23,6 +23,80 @@ const ORIGIN = 'http://127.0.0.1:47123';
 const PASSWORD = 'Agent-only-test-password';
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+function syncFiles(root) {
+  if (!fs.existsSync(root)) return {};
+  return Object.fromEntries(fs.readdirSync(root, { recursive: true }).filter(name => fs.statSync(path.join(root, name)).isFile())
+    .sort().map(name => [name, fs.readFileSync(path.join(root, name)).toString('base64')]));
+}
+
+test('R1 pending pull/receipt cannot write after detach or remote replacement', async t => {
+  for (const operation of ['pull', 'sendPending', 'syncOnce']) for (const replacement of [false, true]) {
+    await t.test(operation + (replacement ? ' replaced' : ' detached'), async t => {
+      const f = localFixture(t); await add(f, 'T1');
+      const waiting = deferred(), started = deferred();
+      const client = {
+        snapshot: async () => { started.resolve(); await waiting.promise; return { etag: 'old', board: emptyBoard({ id: 'remote' }) }; },
+        sendOps: async (_id, _ack, rows) => { started.resolve(); await waiting.promise;
+          return { results: rows.map(row => ({ opId: row.opId, seq: row.seq, status: 'rejected', httpStatus: 409 })) }; },
+      };
+      const agent = createSyncAgent({ registryPath: f.registryPath, client });
+      const work = operation === 'syncOnce' ? agent.syncOnce() : agent[operation]('local');
+      await started.promise;
+      await require('../cli/cloudCmd.cjs').cloud({ _: ['detach', 'local'], registry: f.registryPath, 'drop-pending': true });
+      if (replacement) {
+        const reg = read(f.registryPath); reg.projects.local.cloud = { enabled: true, remoteProjectId: 'replacement' };
+        write(f.registryPath, reg);
+      }
+      const before = syncFiles(syncRoot(f.registryPath)), board = fs.readFileSync(f.boardFile);
+      waiting.resolve(); await work;
+      assert.deepEqual(fs.readFileSync(f.boardFile), board);
+      assert.deepEqual(syncFiles(syncRoot(f.registryPath)), before, 'Discarded round must write no state, receipts, archives or logs');
+    });
+  }
+});
+
+test('R1 pending connection must re-read enabled binding and ackedSeq before sending', async t => {
+  for (const change of ['detach', 'replace', 'ack']) await t.test(change, async t => {
+    const f = localFixture(t); await add(f, 'T1');
+    const waiting = deferred(), started = deferred(), sent = [];
+    const real = { sendOps: async (_id, _ack, rows) => { sent.push(...rows); return { results: [] }; },
+      snapshot: async () => ({ etag: 'e', board: emptyBoard({ id: 'remote' }) }) };
+    const client = { then(resolve) { started.resolve(); waiting.promise.then(() => resolve(real)); } };
+    const agent = createSyncAgent({ registryPath: f.registryPath, client });
+    const work = agent.sendPending('local');
+    await started.promise;
+    if (change === 'ack') write(path.join(f.proj.syncDir, 'state.json'), {
+      v: 1, ackedSeq: 1, etag: null, untracked: [], lastPullAt: null, lastPushAt: null, lastArchiveDay: null,
+    });
+    else {
+      await require('../cli/cloudCmd.cjs').cloud({ _: ['detach', 'local'], registry: f.registryPath, 'drop-pending': true });
+      if (change === 'replace') {
+        const reg = read(f.registryPath); reg.projects.local.cloud = { enabled: true, remoteProjectId: 'replacement' };
+        write(f.registryPath, reg);
+      }
+    }
+    waiting.resolve();
+    await work.catch(error => { if (!sent.length) throw error; });
+    assert.deepEqual(sent, [], 'Dropped or acknowledged operations must never be sent');
+  });
+});
+
+test('R5 claim reason strips terminal controls before persisting member name', async t => {
+  const f = localFixture(t); await add(f, 'T1');
+  await cli(f, 'claim', 'T1', '--branch', 'review', '--builder', '派单器');
+  const client = { sendOps: async (_id, _ack, rows) => ({ results: rows.map(row => ({
+    opId: row.opId, seq: row.seq, status: row.command === 'claim' ? 'rejected' : 'applied', httpStatus: 409,
+    error: '这张卡已被成员 小王\u001b[2J\r\u007f\u0085 认领(主负责人)',
+  })) }), snapshot: async () => ({ etag: 'e', board: emptyBoard({ id: 'remote' }) }) };
+  await createSyncAgent({ registryPath: f.registryPath, client }).sendPending('local');
+  const item = read(path.join(f.proj.syncDir, 'rejected.json')).items[0];
+  assert.equal(item.reason, '已被成员 小王[2J 认领,要一起干请在网页上改用「加入协作」');
+});
 async function until(predicate, message, timeout = 8000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) { if (await predicate()) return; await delay(25); }
@@ -144,6 +218,8 @@ test('agent real collaboration service: offline, receipts, reconciliation, sessi
     const rejected = read(path.join(f.proj.syncDir, 'rejected.json')).items;
     assert.equal(rejected.length, 1); assert.equal(rejected[0].seen, false);
     assert.equal(rejected[0].command, 'claim'); assert.deepEqual(rejected[0].taskIds, ['T1']);
+    assert.ok(rejected[0].reason.includes(member.user.displayName));
+    assert.match(rejected[0].reason, /加入协作/);
     assert.deepEqual(read(f.boardFile).tasks.find(t => t.id === 'T1'), read(cloudBoard).tasks.find(t => t.id === 'T1'));
   });
   await t.test('③ pending local card survives while other cards update, confirmation reconciles', async () => {
