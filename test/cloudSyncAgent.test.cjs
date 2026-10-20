@@ -144,6 +144,8 @@ test('agent real collaboration service: offline, receipts, reconciliation, sessi
     const rejected = read(path.join(f.proj.syncDir, 'rejected.json')).items;
     assert.equal(rejected.length, 1); assert.equal(rejected[0].seen, false);
     assert.equal(rejected[0].command, 'claim'); assert.deepEqual(rejected[0].taskIds, ['T1']);
+    assert.ok(rejected[0].reason.includes(member.user.displayName));
+    assert.match(rejected[0].reason, /加入协作/);
     assert.deepEqual(read(f.boardFile).tasks.find(t => t.id === 'T1'), read(cloudBoard).tasks.find(t => t.id === 'T1'));
   });
   await t.test('③ pending local card survives while other cards update, confirmation reconciles', async () => {

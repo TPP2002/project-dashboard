@@ -33,6 +33,7 @@ function parseFlags(argv) {
 
 // 命令 → [模块相对路径, 导出名]
 const REGISTRY = {
+  cloud: ['./cloudCmd.cjs', 'cloud'],
   // —— 已实现（core+cli 承重墙）——
   register: ['./commands.cjs', 'register'], add: ['./commands.cjs', 'add'],
   claim: ['./commands.cjs', 'claim'], unclaim: ['./commands.cjs', 'unclaim'],
@@ -81,6 +82,7 @@ const REGISTRY = {
  * 给这些命令做反查纯属白跑一个 git 子进程，而 claim-check 挂在每次 commit 上，那点开销是要还的（审计 A9）。
  */
 const NO_AUTO_PROJECT = new Set([
+  'cloud',
   'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol',
 ]);
 
@@ -143,6 +145,27 @@ function slimJson(res) {
   };
 }
 
+function rejectedNotice(cmd, flags, res) {
+  const { REPLAY_COMMANDS, PATCH_COMMANDS } = require('../core/syncReplay.cjs');
+  const writing = REPLAY_COMMANDS.includes(cmd) || PATCH_COMMANDS.includes(cmd);
+  if (!writing && cmd !== 'show' && cmd !== 'brief') return;
+  let proj;
+  try {
+    proj = require('../core/resolveProject.cjs').resolveProject(flags.project,
+      { registryPath: flags.registry ? require('node:path').resolve(flags.registry) : undefined });
+  } catch { return; }
+  // No sync module or sync file is touched for a local-only project.
+  if (!proj.cloud) return;
+  const { unseenRejected, noticeLine } = require('../core/syncNotice.cjs');
+  const items = unseenRejected(proj);
+  if (writing) { if (items.length) console.error(noticeLine(items)); return; }
+  const matching = items.filter(item => item.taskIds?.includes(flags._[0]));
+  if (res && matching.length) {
+    if (flags.json) res.cloudRejected = matching;
+    else res.text = noticeLine(matching) + '\n' + res.text;
+  }
+}
+
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   // `help <命令>` / 裸 help / 无参数：全局一览或单条用法。
@@ -171,17 +194,33 @@ function main() {
 
   const flags = parseFlags(rest);
   autoFillProject(cmd, flags);
+  // Cloud management is asynchronous and never enters the board mutation/
+  // replay context. Keep the existing synchronous path for all old commands.
+  if (cmd === 'cloud') {
+    return fn(flags).then(res => {
+      if (flags.json) {
+        const { text, ...data } = res;
+        console.log(JSON.stringify(data));
+      } else console.log(res.text);
+    }, error => {
+      console.error('✖ ' + error.message);
+      process.exitCode = error.exitCode === 2 ? 2 : 1;
+    });
+  }
   const { entryGateRefusal, runCliOperation } = require('../core/syncReplay.cjs');
   const refusal = entryGateRefusal(cmd, flags);
-  if (refusal) { console.error('✖ ' + refusal); process.exit(1); }
+  if (refusal) { console.error('✖ ' + refusal); rejectedNotice(cmd, flags); process.exit(1); }
   try {
     const res = runCliOperation(cmd, flags, fn) || { ok: true };
-    if (res.silent) return;
+    if (cmd === 'show' || cmd === 'brief') rejectedNotice(cmd, flags, res);
+    if (res.silent) { rejectedNotice(cmd, flags); return; }
     if (flags.json) console.log(JSON.stringify(slimJson(res)));
     else if (res.text) console.log(res.text);
     else console.log(`✔ ${cmd}` + (res.task ? ` ${res.task.id} → ${res.task.status}` : ''));
+    if (cmd !== 'show' && cmd !== 'brief') rejectedNotice(cmd, flags);
   } catch (e) {
     console.error('✖ ' + e.message);
+    rejectedNotice(cmd, flags);
     process.exit(1);
   }
 }

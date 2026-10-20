@@ -211,8 +211,13 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
             if (receipt.status === 'rejected' && !rejected.items.some(r => r.opId === row.opId)) {
               const reason = { 400: '操作参数不符合云端规则', 403: '云端不允许此操作',
                 404: '云端项目或任务不存在', 409: '任务归属或状态冲突' }[receipt.httpStatus] || '云端拒绝此改动';
+              const member = row.command === 'claim' && receipt.httpStatus === 409 && typeof receipt.error === 'string'
+                ? /^这张卡已被成员 ([^\n]{1,64}?) 认领\(主负责人\)/.exec(receipt.error) : null;
+              const detail = member ? `已被成员 ${member[1]} 认领,要一起干请在网页上改用「加入协作」`
+                : row.command === 'set' && receipt.httpStatus === 403 ? '云端项目不接受 set,请改用专门命令' : null;
               rejected.items.push({ seq: row.seq, opId: row.opId, command: row.command, taskIds: taskIds(row),
                 httpStatus: receipt.httpStatus, error: `${reason}${receipt.httpStatus ? `（HTTP ${receipt.httpStatus}）` : ''}`,
+                ...(detail ? { reason: detail } : {}),
                 at: timestamp(), seen: false });
             }
           }
