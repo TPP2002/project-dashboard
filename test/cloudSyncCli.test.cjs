@@ -345,7 +345,7 @@ test('⑦ status only consumes public reports, handles missing/stale/missing-pro
     rejectedUnseen: 1, untracked: 2, lastPullAt: report.projects.local.lastPullAt, rejected: [items[0]] });
   report.updatedAt = new Date(Date.now() - 120000).toISOString(); write(statusFile, report);
   assert.match((await cloud(f, 'status')).stdout, /可能已退出/);
-  for (const [state, expected] of [['reconnecting', /正在重连\(下次重试 \d\d:\d\d:\d\d\)/],
+  for (const [state, expected] of [['reconnecting', /正在重连\(下次重试 [0-9]{2}:[0-9]{2}:[0-9]{2}\)/],
     ['login-required', /请重新登录云端/], ['stopped', /^已停止/]]) {
     report.agent = { state, nextRetryAt: new Date().toISOString() }; write(statusFile, report);
     const output = (await cloud(f, 'status')).stdout; assert.match(output, expected);
