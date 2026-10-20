@@ -149,7 +149,7 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
     }
   });
   await t.test('HTTP invitation issuance, registration and revoke follow the exact public contract', async () => {
-    const created = await request('/api/auth/invites', { session: owner, data: { projectIds: [], expiresInHours: 1, maxUses: 1 } });
+    const created = await request('/api/auth/invites', { session: owner, data: { projectIds: ['alpha'], expiresInHours: 1, maxUses: 1 } });
     assert.equal(created.status, 200); assert.deepEqual(Object.keys(created.body.invite).sort(), ['expiresAt', 'id', 'maxUses', 'projectIds', 'revoked', 'role', 'uses']);
     assert.equal(created.body.invite.role, 'member');
     const viewerInvite = await request('/api/auth/invites', { session: owner, data: { projectIds: ['alpha'], expiresInHours: 1, maxUses: 1, role: 'viewer' } });

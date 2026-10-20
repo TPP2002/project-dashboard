@@ -1706,14 +1706,19 @@ function tryListen(port, attemptsLeft) {
     const localUrl = `http://127.0.0.1:${state.actualPort}/`;
     console.log('\n================================================');
     console.log('项目管理看板 · 已启动');
-    console.log(`  本地地址：${localUrl}`);
+    if (COLLABORATION) {
+      console.log(`  协作模式 · 对外地址:${COLLABORATION.origin}`);
+      console.log(`  容器内监听:${COLLABORATION.host}:${state.actualPort}`);
+    } else console.log(`  本地地址：${localUrl}`);
     console.log(`  PID：${process.pid}`);
     console.log(`  代码来自：${DASH_ROOT}`);
     console.log(`  身份：${MODE}${RELEASE_COMMIT ? `（发布副本 @ ${RELEASE_COMMIT.slice(0, 12)}，发布于 ${RELEASED_AT}）` : ''}`);
     if (MODE === 'dev') console.log('  ⚠ 这是开发实例（代码根是 git 检出）——负责人日常用的那份应该从发布副本起（启动看板.bat）');
     console.log(`  registry：${REGISTRY}`);
     console.log('================================================');
-    console.log('浏览器应已自动打开；未打开请手动访问上面地址。按 Ctrl+C 关闭。\n');
+    console.log(COLLABORATION
+      ? '协作模式不自动打开浏览器;请从对外地址访问。按 Ctrl+C 关闭。\n'
+      : '浏览器应已自动打开；未打开请手动访问上面地址。按 Ctrl+C 关闭。\n');
     pollBoards();       // 立即建立 mtime 基线
     startIntervals();   // 启动轮询 + 心跳
     if (PORT_BASE === 0 && process.connected && typeof process.send === 'function') {

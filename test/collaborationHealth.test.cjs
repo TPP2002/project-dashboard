@@ -54,11 +54,18 @@ test('owner settings survive health reload without exposing owner health to othe
   const login = await request('/api/auth/login', { data: { username: 'owner', password: PASSWORD } });
   assert.equal(login.status, 200);
   const owner = { cookie: login.headers.get('set-cookie').split(';')[0], csrfToken: login.body.csrfToken };
-  const invitation = await request('/api/auth/invites', { session: owner, data: { projectIds: [], maxUses: 1, expiresInHours: 1 } });
+  const invitation = await request('/api/auth/invites', { session: owner, data: { projectIds: ['privateProject'], maxUses: 1, expiresInHours: 1 } });
   assert.equal(invitation.status, 200);
   const registration = await request('/api/auth/register', { data: { inviteToken: invitation.body.token, username: 'member', password: PASSWORD } });
   assert.equal(registration.status, 200);
   const member = { cookie: registration.headers.get('set-cookie').split(';')[0], csrfToken: registration.body.csrfToken };
+  // Preserve the original fixture: an authenticated member with no project access.
+  const access = await request(`/api/auth/users/${registration.body.user.id}/access`, {
+    session: owner, data: { projectIds: [], disabled: false },
+  });
+  assert.equal(access.status, 200);
+  assert.deepEqual(access.body.user.projectIds, []);
+  assert.equal(access.body.user.role, registration.body.user.role);
   function noCache(response) {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'private, no-store');

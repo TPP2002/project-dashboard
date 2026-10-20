@@ -11,6 +11,6 @@ function toggle(id: string, event: Event) {
   <fieldset :disabled="disabled" class="collab-choices">
     <legend>可访问的项目</legend>
     <p v-if="!projects.length">暂无项目</p>
-    <label v-for="project in projects" :key="project.id"><input type="checkbox" :checked="modelValue.includes(project.id)" @change="toggle(project.id, $event)" />{{ project.name }}</label>
+    <label v-for="project in projects" :key="project.id"><input type="checkbox" :aria-label="project.name" :checked="modelValue.includes(project.id)" @change="toggle(project.id, $event)" />{{ project.name }}</label>
   </fieldset>
 </template>

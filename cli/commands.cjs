@@ -95,7 +95,12 @@ function register(flags) {
     const reg = fs.existsSync(registryPath) ? readRegistry(registryPath) : { schemaVersion: '1.0', projects: {} };
     reg.projects = reg.projects || {};
     reg.projects[id] = { name, mainRepo, board };
+    const mode = fs.existsSync(registryPath) ? fs.statSync(registryPath).mode & 0o7777 : undefined;
     atomicWriteJsonSync(registryPath, reg);
+    if (mode !== undefined) {
+      try { fs.chmodSync(registryPath, mode); }
+      catch (err) { if (process.platform !== 'win32') throw err; }
+    }
   });
   fs.mkdirSync(path.dirname(board), { recursive: true });
   if (!fs.existsSync(board)) atomicWriteJsonSync(board, emptyBoard({ id, name, mainRepo }));

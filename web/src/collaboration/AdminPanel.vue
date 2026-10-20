@@ -41,6 +41,7 @@ async function run(action: () => Promise<void>) {
 }
 function refresh() { return run(load) }
 function createInvite() {
+  if (!selected.value.length) return
   return run(async () => {
     const result = await apiJson<{ invite: Invite; token: string }>('/api/auth/invites', { projectIds: selected.value, expiresInHours: hours.value, maxUses: maxUses.value, role: inviteRole.value }, controller.signal)
     if (controller.signal.aborted) return
@@ -98,7 +99,8 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
         <ProjectChoices v-model="selected" :projects="projects" :disabled="busy" />
         <label>有效时长（小时）<input v-model.number="hours" type="number" required min="1" step="1" :disabled="busy" /></label>
         <label>最多使用次数<input v-model.number="maxUses" type="number" required min="1" step="1" :disabled="busy" /></label>
-        <button class="btn" :disabled="busy">生成邀请码</button>
+        <small v-if="!selected.length">至少选一个项目</small>
+        <button class="btn" :disabled="busy || !selected.length">生成邀请码</button>
       </form>
       <div class="collab-grid">
         <article v-for="item in data.invites" :key="item.id" class="collab-card">

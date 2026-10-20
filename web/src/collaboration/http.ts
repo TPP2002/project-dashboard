@@ -1,4 +1,5 @@
 import type { Session } from './types'
+import { toChineseError } from './errorText'
 
 let context: Session | null = null
 /** Read-only mode/identity check for the owner's optional collaboration controls. */
@@ -74,7 +75,7 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
 }
 
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) { super(message) }
+  constructor(public readonly status: number, message: string) { super(toChineseError(status, message)) }
 }
 export async function responseJson<T>(response: Response): Promise<T> {
   let data: { ok?: boolean; error?: string }
