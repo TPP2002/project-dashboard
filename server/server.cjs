@@ -1726,7 +1726,7 @@ function tryListen(port, attemptsLeft) {
     if (PORT_BASE === 0 && process.connected && typeof process.send === 'function') {
       process.send({ type: 'dashboard-ready', service: SERVICE, port: state.actualPort, pid: process.pid });
     }
-    openBrowser(localUrl);
+    if (!COLLABORATION) openBrowser(localUrl);  // 协作模式在服务器上跑,不开本机浏览器
   });
   server.once('error', (err) => {
     if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0) {
