@@ -60,7 +60,7 @@ function effectiveAuthor(cmd, flags) {
 function runCliOperation(cmd, flags, fn) {
   const outbox = require('./syncOutbox.cjs');
   if (!REPLAY_COMMANDS.includes(cmd) && !PATCH_COMMANDS.includes(cmd)) {
-    return outbox.withoutRecording(() => fn(flags));
+    return outbox.withUntrackedSource(cmd, () => fn(flags));
   }
   // Only cloud projects need input snapshots. Leave non-cloud invocation and
   // parameter-error ordering intact, including stdin and missing-file messages.
@@ -86,7 +86,7 @@ function runCliOperation(cmd, flags, fn) {
         catch { /* Let the unchanged command reader report its original error. */ }
       }
     }
-    if ((cmd === 'pending' && flags.json || cmd === 'add' && cmds.isBatchAdd(flags))
+    if ((cmd === 'pending' && (flags._ || [])[0] && flags.json || cmd === 'add' && cmds.isBatchAdd(flags))
       && flags['json-file'] === undefined) files.stdin = defaults.stdin = cmds.readStdinSync();
     if (cmd === 'unclaim') {
       const branches = array(flags.branch).filter(x => x !== true).map(String);
@@ -114,9 +114,9 @@ function fail(status, message) { throw Object.assign(new Error(message), { statu
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 function applyPatch(flags) {
   const meta = ['commitShas', 'prNumbers', 'gitBranch'];
-  if (Object.keys(flags).some(k => !['taskId', 'add', 'project', 'registry', 'author'].includes(k))
-    || !object(flags.add) || Object.keys(flags.add).some(k => !meta.includes(k))
-    || meta.some(k => !Array.isArray(flags.add[k]))) fail(400, 'patch-ai-meta 只接受 taskId 与三个元数据数组 add');
+  if (Object.keys(flags).some(k => !['taskId', 'add', 'remove', 'project', 'registry', 'author'].includes(k))
+    || ['add', 'remove'].some(op => !object(flags[op]) || Object.keys(flags[op]).some(k => !meta.includes(k))
+      || meta.some(k => !Array.isArray(flags[op][k])))) fail(400, 'patch-ai-meta 只接受 taskId 与三个元数据数组 add/remove');
   const { resolveProject } = require('./resolveProject.cjs');
   const store = require('../cli/store.cjs');
   const proj = resolveProject(flags.project, { registryPath: flags.registry });
@@ -124,7 +124,7 @@ function applyPatch(flags) {
     const task = (b.tasks || []).find(t => t.id === flags.taskId);
     if (!task) fail(404, `任务 ${flags.taskId} 不存在`);
     for (const key of meta) {
-      const values = [...(task[key] || []), ...flags.add[key]];
+      const values = [...(task[key] || []).filter(value => !flags.remove[key].includes(value)), ...flags.add[key]];
       task[key] = key === 'commitShas' ? store.unionShas(values) : [...new Set(values)];
     }
   });
@@ -154,7 +154,7 @@ function applyOp(op, { registryPath, projectId, author } = {}) {
     }
     const flags = { ...op.flags, project: projectId, registry: registryPath };
     for (const key of ['json', 'help']) delete flags[key];
-    if (author !== undefined) flags.author = author;
+    if (author !== undefined) { flags.author = author; delete flags.from; }
     const files = op.files || {};
     const allowedFiles = ['add', 'pending'].includes(op.command) ? ['json-file', 'stdin']
       : op.command === 'collect-brief' ? ['file'] : [];

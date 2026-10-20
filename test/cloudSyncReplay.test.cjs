@@ -166,7 +166,8 @@ test('unknown/excluded commands 403; untracked 400; missing project/card 404; st
 
 test('patch-ai-meta unions SHAs and deduplicates other arrays in order; rejects extra keys and missing task', t => {
   const f = fixture(t); f.seed(); f.ready();
-  const op = add => ({ kind: 'op', command: 'patch-ai-meta', flags: { taskId: 'T1', add }, files: {} });
+  const op = add => ({ kind: 'op', command: 'patch-ai-meta', flags: { taskId: 'T1', add,
+    remove: { commitShas: [], prNumbers: [], gitBranch: [] } }, files: {} });
   const add = { commitShas: ['abcdef1', 'abcdef123456', 'bbbbbbb'], prNumbers: [42, 42, 7], gitBranch: ['feature', 'feature', 'next'] };
   f.replay(op(add)); f.replay(op(add));
   const task = readBoard(f.b.board).tasks[0];
@@ -176,6 +177,76 @@ test('patch-ai-meta unions SHAs and deduplicates other arrays in order; rejects 
     op({ ...add, gitBranch: 'feature' })]) assert.throws(() => f.replay(invalid), e => e.status === 400);
   const missing = op(add); missing.flags.taskId = 'MISSING';
   assert.throws(() => f.replay(missing), e => e.status === 404);
+  assert.equal(fs.existsSync(f.b.proj().syncDir), false);
+});
+
+test('review 2: actual doctor branch cleanup emits removals and replay removes the same branch', t => {
+  const f = fixture(t); f.seed(); f.seed('T2');
+  const git = args => cp.execFileSync('git', ['-C', f.a.root, '-c', 'core.hooksPath=' + path.join(f.dir, 'no-hooks'), ...args],
+    { windowsHide: true, encoding: 'utf8' }).trim();
+  git(['init', '-q', '-b', 'master']);
+  git(['config', 'user.email', 'test@example.invalid']); git(['config', 'user.name', 'test']);
+  git(['config', 'commit.gpgsign', 'false']);
+  git(['commit', '--allow-empty', '-q', '-m', 'initial']);
+  git(['checkout', '-q', '-b', 'old-feature']);
+  git(['commit', '--allow-empty', '-q', '-m', 'feat(T2): only T2 owns this change']);
+  git(['checkout', '-q', 'master']);
+  git(['merge', '--no-ff', '-m', "Merge branch 'old-feature'", 'old-feature']);
+  git(['branch', '-D', 'old-feature']);
+  // T1 received a stale broadcast entry, not an explicit claim (which doctor
+  // correctly treats as authoritative). T2 is the actual owner of the branch.
+  cmds.set({ ...f.a.P, _: ['T1'], field: 'gitBranch', value: JSON.stringify(['old-feature']) });
+  cmds.claim({ ...f.a.P, _: ['T2'], builder: '派单器', branch: 'old-feature' });
+  f.ready();
+  f.execute(['doctor', '--branches', '--fix']);
+  const rows = readOutbox(f.a.proj());
+  const removal = rows.find(row => row.command === 'patch-ai-meta' && row.flags.taskId === 'T1' && row.flags.remove.gitBranch.length);
+  assert.ok(removal, JSON.stringify(rows));
+  assert.deepEqual(removal.flags.remove, { commitShas: [], prNumbers: [], gitBranch: ['old-feature'] });
+  assert.deepEqual(removal.flags.add, { commitShas: [], prNumbers: [], gitBranch: [] });
+  for (const row of rows) {
+    assert.equal(row.kind, 'op'); assert.equal(row.command, 'patch-ai-meta');
+    f.replay(row);
+  }
+  const a = readBoard(f.a.board).tasks, b = readBoard(f.b.board).tasks;
+  assert.deepEqual(a.find(task => task.id === 'T1').gitBranch, []);
+  assert.deepEqual(b.map(task => comparable(task)), a.map(task => comparable(task)));
+  assert.equal(fs.existsSync(f.b.proj().syncDir), false);
+});
+
+test('review 2: removes all metadata types before union, retains re-added entries, validates both maps', t => {
+  const f = fixture(t); f.seed();
+  cmds.done({ ...f.a.P, _: ['T1'], pr: ['10', '20'], commit: ['abcdef1', 'bbbbbbb'] });
+  f.ready();
+  const add = { commitShas: ['abcdef123456'], prNumbers: [10, 30], gitBranch: ['new'] };
+  const remove = { commitShas: ['abcdef1', 'bbbbbbb'], prNumbers: [10, 20], gitBranch: [] };
+  const op = { kind: 'op', command: 'patch-ai-meta', flags: { taskId: 'T1', add, remove }, files: {} };
+  f.replay(op);
+  const task = readBoard(f.b.board).tasks[0];
+  assert.deepEqual(task.commitShas, ['abcdef123456']);
+  assert.deepEqual(task.prNumbers, [10, 30]); assert.deepEqual(task.gitBranch, ['new']);
+  const before = fs.readFileSync(f.b.board);
+  for (const invalid of [
+    { ...op.flags, remove: { ...remove, status: [] } },
+    { ...op.flags, remove: { ...remove, gitBranch: 'new' } },
+    { taskId: 'T1', add }, { ...op.flags, add: { ...add, percent: [] } },
+    { ...op.flags, replace: {} },
+  ]) {
+    assert.throws(() => f.replay({ ...op, flags: invalid }), e => e.status === 400);
+    assert.deepEqual(fs.readFileSync(f.b.board), before);
+  }
+});
+
+test('review 4: explicit replay author overrides both human and arbitrary note from values', t => {
+  const f = fixture(t); f.seed(); f.ready();
+  for (const from of ['human', '冒充署名']) {
+    f.execute(['note', 'T1', '--text', 'review author', '--from', from]);
+    const op = readOutbox(f.a.proj()).at(-1);
+    assert.equal(op.flags.from, from);
+    applyOp(op, { registryPath: f.b.reg, projectId: 't', author: '云端负责人' });
+    assert.equal(readBoard(f.b.board).activity.at(-1).author, '云端负责人');
+    assert.equal(op.flags.from, from, 'replay must not mutate the supplied operation');
+  }
   assert.equal(fs.existsSync(f.b.proj().syncDir), false);
 });
 

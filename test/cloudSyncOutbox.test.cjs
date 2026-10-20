@@ -151,7 +151,8 @@ test('⑥ actual git scan creates additive patch-ai-meta only; repeated scan cre
   const rows = f.ops(); assert.equal(rows.length, 1);
   assert.equal(rows[0].command, 'patch-ai-meta'); assert.equal(rows[0].kind, 'op');
   assert.match(rows[0].opId, /^[0-9a-f-]{36}:1$/);
-  assert.deepEqual(rows[0].flags, { taskId: 'T1', add: { commitShas: readBoard(f.board).tasks[0].commitShas, prNumbers: [77], gitBranch: ['feature'] } });
+  assert.deepEqual(rows[0].flags, { taskId: 'T1', add: { commitShas: readBoard(f.board).tasks[0].commitShas, prNumbers: [77], gitBranch: ['feature'] },
+    remove: { commitShas: [], prNumbers: [], gitBranch: [] } });
   f.ok(['sync-from-git', '--branch', 'feature']); assert.equal(f.ops().length, 1);
 });
 
@@ -194,7 +195,7 @@ test('⑧ real non-writable queue directory fails command, preserves board, next
   f.ok(['note', 'T1', '--text', 'after repair']); assert.equal(f.ops()[0].seq, 1);
 });
 
-test('a command with multiple mutations records once and clears context on exceptions; excluded CLI does not record', t => {
+test('a command with multiple mutations records once; non-replay nested writes keep their source', t => {
   const f = fixture(t, null); f.seed(); f.register({ enabled: true, remoteProjectId: 'remote' });
   runCliOperation('edit', { project: 't', registry: f.reg, _: ['T1'], title: 'one' }, () => {
     mutate(f.proj(), b => { b.tasks[0].title = 'one'; });
@@ -203,6 +204,110 @@ test('a command with multiple mutations records once and clears context on excep
   assert.equal(f.ops().length, 1); assert.equal(getOpContext(), null);
   assert.throws(() => runCliOperation('edit', { project: 't', registry: f.reg }, () => { throw new Error('reject'); }), /reject/);
   assert.equal(getOpContext(), null);
-  runCliOperation('archive-activity', {}, () => mutate(f.proj(), b => { b.tasks[0].title = 'excluded'; }));
-  assert.equal(f.ops().length, 1);
+  runCliOperation('archive-activity', {}, () => {
+    assert.equal(getOpContext(), null);
+    mutate(f.proj(), b => { b.tasks[0].title = 'nested'; });
+  });
+  assert.equal(f.ops().length, 2);
+  assert.equal(f.ops()[1].kind, 'untracked');
+  assert.equal(f.ops()[1].source, 'archive-activity');
+  assert.throws(() => runCliOperation('docs-audit', {}, () => { throw new Error('failed audit'); }), /failed audit/);
+  mutate(f.proj(), b => { b.tasks[0].title = 'direct'; });
+  assert.equal(f.ops()[2].source, 'unknown', 'source must be cleared on both success and error');
+});
+
+test('review 1: stale/missing counter recovers from durable JSONL tail; torn JSON is discarded', t => {
+  const f = fixture(t); f.seed();
+  f.ok(['note', 'T1', '--text', 'durable record']);
+  const counter = path.join(f.proj().syncDir, 'outbox.seq');
+  const log = path.join(f.proj().syncDir, 'outbox.jsonl');
+  fs.writeFileSync(counter, '1\n');
+  f.ok(['note', 'T1', '--text', 'after counter rollback']);
+  assert.deepEqual(f.ops().map(r => r.seq), [1, 2, 3]);
+  fs.unlinkSync(counter);
+  f.ok(['note', 'T1', '--text', 'after missing counter']);
+  assert.deepEqual(f.ops().map(r => r.seq), [1, 2, 3, 4]);
+  const prefix = fs.readFileSync(log);
+  fs.appendFileSync(log, '{"v":1,"seq":5,"flags":{"text":"半截记录');
+  fs.writeFileSync(counter, '2\n');
+  f.ok(['note', 'T1', '--text', 'after torn tail']);
+  assert.deepEqual(f.ops().map(r => r.seq), [1, 2, 3, 4, 5]);
+  assert.equal(f.ops().at(-1).flags.text, 'after torn tail');
+  assert.deepEqual(fs.readFileSync(log).subarray(0, prefix.length), prefix);
+  assert.equal(fs.readFileSync(counter, 'utf8'), '5\n');
+});
+
+test('review 1: long UTF-8 tail without newline survives; first torn record and ahead counter recover', t => {
+  const f = fixture(t); f.seed();
+  // Larger than one tail chunk and with multibyte characters across boundaries.
+  f.ok(['note', 'T1', '--text', '多字节尾记录'.repeat(1000)]);
+  const counter = path.join(f.proj().syncDir, 'outbox.seq');
+  const log = path.join(f.proj().syncDir, 'outbox.jsonl');
+  const saved = f.ops();
+  fs.truncateSync(log, fs.statSync(log).size - 1);
+  fs.unlinkSync(counter);
+  f.ok(['note', 'T1', '--text', 'append after complete unterminated row']);
+  assert.deepEqual(f.ops().slice(0, 2), saved);
+  assert.deepEqual(f.ops().map(r => r.seq), [1, 2, 3]);
+  fs.writeFileSync(counter, '8\n');
+  f.ok(['note', 'T1', '--text', 'respect higher counter']);
+  assert.equal(f.ops().at(-1).seq, 9);
+
+  const empty = fixture(t, null); empty.seed(); empty.register({ enabled: true, remoteProjectId: 'remote' });
+  fs.mkdirSync(empty.proj().syncDir, { recursive: true });
+  fs.writeFileSync(path.join(empty.proj().syncDir, 'outbox.jsonl'), '{"seq":1,');
+  empty.ok(['note', 'T1', '--text', 'first complete record']);
+  assert.deepEqual(empty.ops().map(r => r.seq), [1]);
+});
+
+test('review 1: malformed newline-terminated record is rejected, never erased as a torn tail', t => {
+  const f = fixture(t); f.seed();
+  const log = path.join(f.proj().syncDir, 'outbox.jsonl');
+  fs.appendFileSync(log, '{"broken":\n');
+  const beforeLog = fs.readFileSync(log), beforeBoard = fs.readFileSync(f.board);
+  const r = f.cli(['note', 'T1', '--text', 'must fail']);
+  assert.equal(r.status, 1);
+  assert.deepEqual(fs.readFileSync(log), beforeLog);
+  assert.deepEqual(fs.readFileSync(f.board), beforeBoard);
+});
+
+test('review 3: actual docs-audit --create-card records an untracked write with source', t => {
+  const f = fixture(t);
+  const plans = path.join(f.root, 'docs', 'plans'); fs.mkdirSync(plans, { recursive: true });
+  fs.writeFileSync(path.join(plans, 'untagged.md'), '# A document missing its required status tag\n');
+  f.ok(['docs-audit', '--create-card']);
+  const rows = f.ops();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].kind, 'untracked');
+  assert.equal(rows[0].source, 'docs-audit');
+  const cards = readBoard(f.board).tasks;
+  assert.equal(cards.length, 1); assert.match(cards[0].id, /^DOCS-AUDIT-\d{6}$/);
+  assert.deepEqual(rows[0].taskIds, [cards[0].id]);
+  for (const key of ['command', 'flags', 'opId', 'files']) assert.equal(Object.hasOwn(rows[0], key), false);
+});
+
+test('review 5: pending without task ID exits with original error while stdin pipe stays open', async t => {
+  const f = fixture(t);
+  // Establish the exact existing command error, without entering its stdin reader.
+  let expected;
+  try { require('../cli/commands.cjs').pending({ project: 't', registry: f.reg, _: [], json: true }); }
+  catch (e) { expected = '✖ ' + e.message; }
+  assert.match(expected, /缺参数/);
+  const before = fs.readFileSync(f.board);
+  const child = spawn(process.execPath, [INDEX, 'pending', '--json', '--project', 't', '--registry', f.reg],
+    { cwd: f.dir, env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], timeout: 5000 });
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  const started = Date.now();
+  const result = await new Promise((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', (code, signal) => resolve({ code, signal }));
+    // Deliberately do not call child.stdin.end().
+  });
+  assert.equal(result.code, 1, stderr);
+  assert.equal(result.signal, null);
+  assert.ok(Date.now() - started < 5000, 'must finish before the five-second timeout');
+  assert.equal(stderr.trimEnd(), expected);
+  assert.deepEqual(fs.readFileSync(f.board), before);
+  assert.deepEqual(f.ops(), []);
 });
