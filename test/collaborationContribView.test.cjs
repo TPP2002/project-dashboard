@@ -91,8 +91,8 @@ test('recent is chronological newest 20, only signed, timezone stable and saniti
     text: 'SECRET RAW', reason: 'SECRET REASON', branch: 'SECRET BRANCH', pr: 123, cost: 999 }));
   activity.reverse();
   activity.push(event('note', { ts: NOW + 1, userId: undefined }));
-  const result = view({ tasks: [{ id: 'ONE', title: 'Work C:\\private\\file /home/secret' }], activity }, {
-    users: [{ ...users[0], displayName: 'Name C:\\private\\name' }],
+  const result = view({ tasks: [{ id: 'ONE', title: 'Work C:\\path\\to\\file /home/secret' }], activity }, {
+    users: [{ ...users[0], displayName: 'Name C:\\path\\to\\name' }],
   });
   assert.equal(result.recent.length, 20);
   assert.deepEqual(result.recent.map(r => r.ts), Array.from({ length: 20 }, (_, i) => NOW - i * 1000));
