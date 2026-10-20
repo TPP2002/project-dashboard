@@ -1709,6 +1709,8 @@ function tryListen(port, attemptsLeft) {
     if (COLLABORATION) {
       console.log(`  协作模式 · 对外地址:${COLLABORATION.origin}`);
       console.log(`  容器内监听:${COLLABORATION.host}:${state.actualPort}`);
+      // 同步代理的测试以 stdout 出现本机网址判定固定端口重启已就绪
+      console.log(`  健康检查:${localUrl}api/health`);
     } else console.log(`  本地地址：${localUrl}`);
     console.log(`  PID：${process.pid}`);
     console.log(`  代码来自：${DASH_ROOT}`);
