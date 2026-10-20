@@ -1,0 +1,132 @@
+{
+    "source":  "164b865e82afb36cf970a9f0db321cb2bd33969f:cli/index.cjs",
+    "cases":  [
+                  {
+                      "args":  [
+                                   "note",
+                                   "T1",
+                                   "--text",
+                                   "a note"
+                               ],
+                      "result":  {
+                                     "code":  0,
+                                     "stdout":  "✔ note → T1\n",
+                                     "stderr":  ""
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "edit",
+                                   "T1",
+                                   "--title",
+                                   "Updated"
+                               ],
+                      "result":  {
+                                     "code":  0,
+                                     "stdout":  "✔ edit T1 → 未开工\n",
+                                     "stderr":  ""
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "claim",
+                                   "T1",
+                                   "--branch",
+                                   "branch",
+                                   "--builder",
+                                   "派单器"
+                               ],
+                      "result":  {
+                                     "code":  0,
+                                     "stdout":  "✔ claim T1 → 施工中\n",
+                                     "stderr":  ""
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "progress",
+                                   "T1",
+                                   "--percent",
+                                   "20"
+                               ],
+                      "result":  {
+                                     "code":  0,
+                                     "stdout":  "✔ progress T1 → 未开工\n",
+                                     "stderr":  ""
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "show",
+                                   "T1"
+                               ],
+                      "result":  {
+                                     "code":  0,
+                                     "stdout":  "T1  ⬜ 未开工 0%\n人话标题：测试云端同步任务\n分支：-\n—— 精简卡。技术说明/依赖/文档/全部字段：加 --full；开工任务书：brief T1 --project local\n",
+                                     "stderr":  ""
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "show",
+                                   "T1",
+                                   "--json"
+                               ],
+                      "result":  {
+                                     "code":  0,
+                                     "stdout":  "{\"ok\":true,\"text\":\"T1  ⬜ 未开工 0%\\n人话标题：测试云端同步任务\\n分支：-\\n—— 精简卡。技术说明/依赖/文档/全部字段：加 --full；开工任务书：brief T1 --project local\"}\n",
+                                     "stderr":  ""
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "brief",
+                                   "T1"
+                               ],
+                      "result":  {
+                                     "code":  0,
+                                     "stdout":  "# T1 · 测试云端同步任务\n\n**项目**：local（`local`）　**状态**：未开工 0%　**建议档位**：test　**波次**：0　**施工方式**：未标\n**分支**：还没人建　**开工日**：-\n\n## 技术说明（给模型的详细说明，正本）\n\nTask T1\n\n## 会改哪些文件\n\n- 没登记。看板据此判并行，空着等于放任撞车。\n  认领时顺手补：`board.cmd claim T1 --project local --branch \u003c分支\u003e --builder \u003c施工方式\u003e --scope \"\u003cglob\u003e\"`（可重复）\n\n## 依赖\n\n- 没登记依赖。\n\n## 参考文档\n\n- 没登记。\n\n## 最近留言\n\n- 无。\n\n## 下一步命令\n\n```bash\nboard.cmd claim T1 --project local --branch \u003c你的分支名\u003e --builder \u003c施工方式\u003e --scope \"\u003c会改的文件\u003e\"\nboard.cmd progress T1 --project local --percent \u003cn\u003e --next \"\u003c下一步\u003e\"\nboard.cmd pending T1 --project local --json-file pending.json   # 中途冒出新的拍板点\nboard.cmd done T1 --project local --pr \u003cPR号\u003e --commit \u003csha\u003e\n```\n",
+                                     "stderr":  ""
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "note",
+                                   "MISSING",
+                                   "--text",
+                                   "failure"
+                               ],
+                      "result":  {
+                                     "code":  1,
+                                     "stdout":  "",
+                                     "stderr":  "✖ board.json 校验失败（1 处）：\n  activity[1].taskId: 引用不存在的 task「MISSING」\n"
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "add",
+                                   "NO-MODEL",
+                                   "--title",
+                                   "gate"
+                               ],
+                      "result":  {
+                                     "code":  1,
+                                     "stdout":  "",
+                                     "stderr":  "✖ 建卡必须带 --model \u003c建议档位\u003e(0901 拍板,机器闸)。按模型路由表(skill §12.2)照抄一个:\n  机械执行/清单/一行修 → --model \"sonnet·低\"\n  照单施工/接线/修复   → --model \"opus·中\"\n  设计/评审/校准/疑难  → --model \"fable·高\"\n  负责人亲办不开对话   → --model \"负责人本人办\"\n  (编排型可组合,如 \"fable·高编排+opus施工\";≤40 字符)\n"
+                                 }
+                  },
+                  {
+                      "args":  [
+                                   "claim",
+                                   "T1",
+                                   "--branch",
+                                   "branch"
+                               ],
+                      "result":  {
+                                     "code":  1,
+                                     "stdout":  "",
+                                     "stderr":  "✖ 缺 --builder \u003c施工方式\u003e。\nclaim 必须带 --builder \u003c施工方式\u003e(机器闸;合法值五选一,一字不差):\n  派单器          活由派单器派出、收单员施工\n  自干:例外①~④    本对话自干,编号必须对上开工须知/派单简报例外表的第①~④条(裸「自干」不收)\n  可复制模板(占位符自己替换;自干就把值换成对应例外编号):\n    claim \u003c卡号\u003e --project \u003c项目id\u003e --branch \u003c分支名\u003e --builder \"派单器\" --scope \"\u003c会改的文件\u003e\"\n"
+                                 }
+                  }
+              ]
+}

@@ -10,6 +10,7 @@ const { atomicWriteJsonSync, atomicWriteFileSync } = require('./atomicWrite.cjs'
 const { assertValid } = require('./boardSchema.cjs');
 const { syncRoot, registryFile, readConfig, validateConfig, loadDeviceCredential } = require('./syncCredential.cjs');
 const { createSyncClient } = require('./syncClient.cjs');
+const { terminalText } = require('./syncNotice.cjs');
 
 const backoffDelay = attempt => Math.min(2000 * 2 ** attempt, 300000);
 function buildSshArgs(input) {
@@ -42,6 +43,7 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
   let tunnel = null, attempt = 0, retryAt = 0, stream = null, streamConnected = false, streamRetryAt = 0;
   let streamAbort, wake, sleepTimer, shuttingDown = false;
   const queues = new Map(), projectErrors = new Map();
+  const staleRound = Symbol('project detached or remote binding changed');
   const agent = { pid: process.pid, startedAt, state: 'reconnecting', nextRetryAt: null, lastError: null,
     origin: null, deviceLabel: null, deviceExpiresAt: null };
   function projects() {
@@ -66,7 +68,13 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
   }
   function locked(proj, fn) {
     fs.mkdirSync(path.dirname(proj.board), { recursive: true });
-    return withLock(proj.lock, fn);
+    return withLock(proj.lock, () => {
+      // Detach takes this same board lock while replacing the registry entry.
+      // Never apply a result belonging to the binding captured before an await.
+      const cloud = readRegistry(registryPath).projects?.[proj.id]?.cloud;
+      if (cloud?.enabled !== true || cloud.remoteProjectId !== proj.cloud.remoteProjectId) throw staleRound;
+      return fn();
+    });
   }
   function log(level, event, id, count, httpStatus) {
     const dir = path.join(root, 'logs'); fs.mkdirSync(dir, { recursive: true });
@@ -82,19 +90,21 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
   function publish() {
     const summary = Object.create(null);
     for (const proj of projects()) {
-      summary[proj.id] = locked(proj, () => {
-        const current = state(proj), pending = readOutbox(proj).filter(r => r.kind === 'op' && r.seq > current.ackedSeq);
-        const rejected = readJson(path.join(proj.syncDir, 'rejected.json'), { items: [] });
-        return { remoteProjectId: proj.cloud.remoteProjectId, pending: pending.length,
-          oldestPendingAt: pending[0]?.clientTs || null, ackedSeq: current.ackedSeq,
-          rejectedUnseen: rejected.items.filter(r => !r.seen).length, untracked: current.untracked.length,
-          lastPushAt: current.lastPushAt, lastPullAt: current.lastPullAt, lastError: projectErrors.get(proj.id) || current.lastError || null };
-      });
+      try {
+        summary[proj.id] = locked(proj, () => {
+          const current = state(proj), pending = readOutbox(proj).filter(r => r.kind === 'op' && r.seq > current.ackedSeq);
+          const rejected = readJson(path.join(proj.syncDir, 'rejected.json'), { items: [] });
+          return { remoteProjectId: proj.cloud.remoteProjectId, pending: pending.length,
+            oldestPendingAt: pending[0]?.clientTs || null, ackedSeq: current.ackedSeq,
+            rejectedUnseen: rejected.items.filter(r => !r.seen).length, untracked: current.untracked.length,
+            lastPushAt: current.lastPushAt, lastPullAt: current.lastPullAt, lastError: projectErrors.get(proj.id) || current.lastError || null };
+        });
+      } catch (error) { if (error !== staleRound) throw error; }
     }
     fs.mkdirSync(root, { recursive: true });
     atomicWriteJsonSync(path.join(root, 'status.json'), { v: 1, updatedAt: timestamp(), agent: { ...agent }, projects: summary });
   }
-  function failure(error, id) {
+  function failure(error, id, originalProject) {
     agent.lastError = safeError(error);
     agent.state = error.code === 'LOGIN_REQUIRED' ? 'login-required' : 'reconnecting';
     if (!error.syncRetryAt) error.syncRetryAt = now() + (error.code === 'LOGIN_REQUIRED' ? timing.credential : backoffDelay(attempt++));
@@ -102,7 +112,7 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
     agent.nextRetryAt = new Date(retryAt).toISOString();
     if (id) {
       projectErrors.set(id, agent.lastError);
-      const proj = project(id);
+      const proj = originalProject || project(id);
       if (proj) locked(proj, () => { const current = state(proj); current.lastError = agent.lastError; saveState(proj, current); });
     }
     if (!error.syncReported) log('warn', 'sync-failed', id, undefined, error.httpStatus);
@@ -127,11 +137,28 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
     startTunnel();
     return client;
   }
-  function serialized(id, fn) {
+  function serialized(proj, fn) {
+    if (!proj) return Promise.resolve(staleRound);
+    const id = proj.id;
     const previous = queues.get(id) || Promise.resolve();
     const work = previous.catch(() => {}).then(async () => {
-      try { const result = await fn(); success(id); publish(); return result; }
-      catch (error) { failure(error, id); throw error; }
+      try {
+        const result = await fn();
+        locked(proj, () => success(id));
+        publish();
+        return result;
+      } catch (error) {
+        if (error === staleRound) return staleRound;
+        try {
+          // Network failures from an obsolete binding must not poison its replacement.
+          locked(proj, () => {});
+          failure(error, id, proj);
+        } catch (reportError) {
+          if (reportError === staleRound) return staleRound;
+          throw reportError;
+        }
+        throw error;
+      }
     });
     queues.set(id, work);
     void work.finally(() => { if (queues.get(id) === work) queues.delete(id); }).catch(() => {});
@@ -144,16 +171,15 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
     }
   }
   async function pullProject(proj) {
+    const connected = await connection();
     const before = locked(proj, () => ({ current: state(proj), rows: readOutbox(proj) }));
     const dirtyUntracked = before.rows.some(r => r.kind === 'untracked' && r.seq > before.current.ackedSeq);
-    const snapshot = await (await connection()).snapshot(proj.cloud.remoteProjectId, dirtyUntracked ? null : before.current.etag);
-    if (!snapshot.notModified) {
-      try { snapshot.board.project.id = proj.id; assertValid(snapshot.board); }
-      catch { throw Object.assign(new Error('云端看板格式无效'), { code: 'INVALID_BOARD' }); }
-    }
+    const snapshot = await connected.snapshot(proj.cloud.remoteProjectId, dirtyUntracked ? null : before.current.etag);
     locked(proj, () => {
       const current = state(proj);
       if (!snapshot.notModified) {
+        try { snapshot.board.project.id = proj.id; assertValid(snapshot.board); }
+        catch { throw Object.assign(new Error('云端看板格式无效'), { code: 'INVALID_BOARD' }); }
         const cloud = snapshot.board, local = readJson(proj.board, { tasks: [] });
         const base = readJson(path.join(proj.syncDir, 'base.json'), { tasks: [] });
         const pending = readOutbox(proj).some(r => r.kind === 'op' && r.seq > current.ackedSeq);
@@ -181,22 +207,36 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
         current.etag = snapshot.etag;
       }
       current.lastPullAt = timestamp(); current.lastError = null; saveState(proj, current);
+      log('info', snapshot.notModified ? 'pull-unchanged' : 'pull', proj.id);
     });
-    log('info', snapshot.notModified ? 'pull-unchanged' : 'pull', proj.id);
     return snapshot;
   }
   async function sendProject(proj) {
     while (true) {
-      const input = locked(proj, () => ({ current: state(proj), rows: readOutbox(proj) }));
-      const pending = input.rows.filter(r => r.seq > input.current.ackedSeq);
-      if (!pending.length) return;
-      const rows = []; let ops = 0;
-      for (const row of pending) {
-        if (row.kind === 'op' && ops === 20) break;
-        rows.push(row); if (row.kind === 'op') ops++;
-      }
-      const batch = rows.filter(r => r.kind === 'op');
-      const response = batch.length ? await (await connection()).sendOps(proj.cloud.remoteProjectId, input.current.ackedSeq, batch) : { results: [] };
+      const hasPending = locked(proj, () => {
+        const current = state(proj);
+        return readOutbox(proj).some(row => row.seq > current.ackedSeq);
+      });
+      if (!hasPending) return;
+      const connected = await connection();
+      // Re-read after connection awaits: detach may have discarded every row.
+      // Start the request inside the lock, but never hold a synchronous lock
+      // while waiting for the network response.
+      const sending = locked(proj, () => {
+        const current = state(proj);
+        const pending = readOutbox(proj).filter(row => row.seq > current.ackedSeq);
+        const rows = []; let ops = 0;
+        for (const row of pending) {
+          if (row.kind === 'op' && ops === 20) break;
+          rows.push(row); if (row.kind === 'op') ops++;
+        }
+        const batch = rows.filter(row => row.kind === 'op');
+        return { rows, batch, response: batch.length
+          ? connected.sendOps(proj.cloud.remoteProjectId, current.ackedSeq, batch) : { results: [] } };
+      });
+      const { rows, batch } = sending;
+      if (!rows.length) return;
+      const response = await sending.response;
       let retry = false;
       locked(proj, () => {
         const current = state(proj);
@@ -213,7 +253,7 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
                 404: '云端项目或任务不存在', 409: '任务归属或状态冲突' }[receipt.httpStatus] || '云端拒绝此改动';
               const member = row.command === 'claim' && receipt.httpStatus === 409 && typeof receipt.error === 'string'
                 ? /^这张卡已被成员 ([^\n]{1,64}?) 认领\(主负责人\)/.exec(receipt.error) : null;
-              const detail = member ? `已被成员 ${member[1]} 认领,要一起干请在网页上改用「加入协作」`
+              const detail = member ? `已被成员 ${terminalText(member[1])} 认领,要一起干请在网页上改用「加入协作」`
                 : row.command === 'set' && receipt.httpStatus === 403 ? '云端项目不接受 set,请改用专门命令' : null;
               rejected.items.push({ seq: row.seq, opId: row.opId, command: row.command, taskIds: taskIds(row),
                 httpStatus: receipt.httpStatus, error: `${reason}${receipt.httpStatus ? `（HTTP ${receipt.httpStatus}）` : ''}`,
@@ -233,8 +273,8 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
         if (rejected.items.length) atomicWriteJsonSync(path.join(proj.syncDir, 'rejected.json'), rejected);
         if (batch.length) current.lastPushAt = timestamp();
         saveState(proj, current);
+        log('info', 'push', proj.id, batch.length);
       });
-      log('info', 'push', proj.id, batch.length);
       await pullProject(proj);
       if (retry) throw Object.assign(new Error('等待云端重试'), { code: 'RETRY' });
     }
@@ -259,16 +299,20 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
       current.lastArchiveDay = day; saveState(proj, current);
     });
   }
-  const sendPending = id => serialized(id, async () => { const proj = project(id); if (proj) await sendProject(proj); });
-  const pull = id => serialized(id, async () => { const proj = project(id); if (proj) await pullProject(proj); });
+  const sendPending = id => { const proj = project(id); return serialized(proj, () => sendProject(proj)); };
+  const pull = id => { const proj = project(id); return serialized(proj, () => pullProject(proj)); };
   async function syncOnce() {
-    let firstError;
-    for (const proj of projects()) {
-      try { await serialized(proj.id, async () => { await sendProject(proj); await pullProject(proj); archive(proj); }); }
+    let firstError, completed = false;
+    const roundProjects = projects();
+    for (const proj of roundProjects) {
+      try {
+        const result = await serialized(proj, async () => { await sendProject(proj); await pullProject(proj); archive(proj); });
+        if (result !== staleRound) completed = true;
+      }
       catch (error) { firstError ||= error; }
     }
     if (firstError) { failure(firstError); throw firstError; }
-    publish();
+    if (completed || !roundProjects.length) publish();
   }
   function acquire() {
     fs.mkdirSync(root, { recursive: true });

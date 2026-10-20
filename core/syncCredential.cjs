@@ -121,7 +121,8 @@ async function withCloudClient(registryPath, fn, { spawn: launch = spawn, fetch,
     };
     return await fn(client, { config, ready });
   } finally {
-    try { await client.logout(); } finally { tunnel?.kill(); client.close(); }
+    try { await client.logout(); } catch { /* Cleanup must preserve the callback result or error. */ }
+    finally { try { tunnel?.kill(); } finally { client.close(); } }
   }
 }
 async function enrollDevice({ registryPath, username, password, label, protector }) {

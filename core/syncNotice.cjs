@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const terminalText = value => String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
 
 function unseenRejected(proj) {
   if (!proj?.cloud) return [];
@@ -15,7 +16,7 @@ function unseenRejected(proj) {
 function noticeLine(items) {
   if (!items.length) return '';
   const item = items[0];
-  return `⚠ 云端退回了你 ${items.length} 条改动:${item.command} ${(item.taskIds || []).join(',')}(${item.reason || item.error})` +
+  return terminalText(`⚠ 云端退回了你 ${items.length} 条改动:${item.command} ${(item.taskIds || []).join(',')}(${item.reason || item.error})`) +
     `${items.length > 1 ? '等' : ''}。看 board.cmd cloud status`;
 }
-module.exports = { unseenRejected, noticeLine };
+module.exports = { unseenRejected, noticeLine, terminalText };

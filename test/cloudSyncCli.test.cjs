@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { fork, execFile, execFileSync } = require('node:child_process');
+const { fork, execFile } = require('node:child_process');
 const { emptyBoard } = require('../core/boardSchema.cjs');
 const { atomicWriteJsonSync: write } = require('../core/atomicWrite.cjs');
 const { resolveProject } = require('../core/resolveProject.cjs');
@@ -16,6 +16,100 @@ const { syncRoot, loadDeviceCredential } = require('../core/syncCredential.cjs')
 const INDEX = path.resolve(__dirname, '../cli/index.cjs');
 const SERVER = path.resolve(__dirname, '../server/server.cjs');
 const ORIGIN = 'http://127.0.0.1:47123';
+const jsPath = file => JSON.stringify(path.resolve(__dirname, file));
+
+test('R2/R3/R6 review: cleanup, overlapping password and registry permissions', { timeout: 60000 }, async t => {
+  const f = fixture(t);
+  const remoteHome = path.join(f.home, 'review-server'); fs.mkdirSync(remoteHome);
+  const remoteRegistry = path.join(remoteHome, 'registry.json'); write(remoteRegistry, { projects: {} });
+  const auth = createAuth({ home: remoteHome, registryPath: remoteRegistry });
+  await auth.bootstrap('foobar1', 'foobar');
+  const srv = await server(remoteHome); t.after(() => stop(srv));
+  await cloud(f, 'config', '--direct', '--base-url', srv.base, '--origin', ORIGIN);
+  await require('../core/syncCredential.cjs').enrollDevice({ registryPath: f.registryPath,
+    username: 'foobar1', password: 'foobar', label: 'review',
+    protector: process.platform === 'win32' ? undefined : protector });
+  await t.test('R3 stdin password may overlap username and label', async () => {
+    await good(f, ['cloud', 'login', '--username', 'foobar1', '--label', 'foobar-machine'], { input: 'foobar\n' });
+  });
+  await t.test('R2 upload succeeds locally even if logout fails', async () => {
+    f.addProject('logout');
+    const hook = path.join(f.home, 'logout-fails.cjs'), closed = path.join(f.home, 'closed');
+    fs.writeFileSync(hook, 'const m=require(' + jsPath('../core/syncClient.cjs') + '), create=m.createSyncClient;' +
+      'm.createSyncClient=options=>{const client=create(options), close=client.close;' +
+      'client.logout=async()=>{throw new Error("logout network failure")};' +
+      'client.close=()=>{require("node:fs").writeFileSync(' + JSON.stringify(closed) + ',"closed");close()};return client};');
+    await good(f, ['cloud', 'attach', 'logout', '--remote', 'logout', '--upload'], { preload: hook });
+    assert.equal(read(f.registryPath).projects.logout.cloud.enabled, true);
+    assert.equal(text(closed), 'closed');
+  });
+  await t.test('R2 callback error survives logout error; tunnel and client always close', async () => {
+    const credentialModule = require('../core/syncCredential.cjs');
+    const config = credentialModule.readConfig(f.registryPath);
+    credentialModule.writeConfig(f.registryPath, { v: 1, mode: 'ssh', origin: ORIGIN,
+      sshHost: 'test-only', localPort: 47124, remotePort: 47125 });
+    const module = require('../core/syncClient.cjs'), original = module.createSyncClient;
+    let closed = 0, killed = 0;
+    const callbackError = new Error('callback failed');
+    module.createSyncClient = () => ({ logout: async () => { throw new Error('cleanup failed'); }, close: () => { closed++; } });
+    try {
+      await assert.rejects(credentialModule.withCloudClient(f.registryPath, async () => { throw callbackError; }, {
+        spawn: (_exe, _args, options) => {
+          assert.equal(options.windowsHide, true);
+          const child = new (require('node:events').EventEmitter)();
+          child.stderr = { resume() {} }; child.kill = () => { killed++; }; return child;
+        },
+      }), error => error === callbackError);
+    } finally { module.createSyncClient = original; credentialModule.writeConfig(f.registryPath, config); }
+    assert.equal(closed, 1); assert.equal(killed, 1);
+  });
+  await t.test('R6 attach/detach restore registry mode after atomic replacement', async () => {
+    f.addProject('permissions');
+    const hook = path.join(f.home, 'chmod-monitor.cjs'), callsFile = path.join(f.home, 'chmod-calls.json');
+    fs.writeFileSync(hook, 'const fs=require("node:fs"), original=fs.chmodSync, calls=[];' +
+      'fs.chmodSync=function(file,mode){calls.push([file,mode]);return original.call(this,file,mode)};' +
+      'process.on("exit",()=>fs.writeFileSync(' + JSON.stringify(callsFile) + ',JSON.stringify(calls)));');
+    if (process.platform !== 'win32') fs.chmodSync(f.registryPath, 0o600);
+    const mode = fs.statSync(f.registryPath).mode & 0o7777;
+    for (const args of [['attach', 'permissions', '--remote', 'permissions', '--upload'], ['detach', 'permissions']]) {
+      await good(f, ['cloud', ...args], { preload: hook });
+      assert.ok(read(callsFile).some(([file, value]) => file === f.registryPath && value === mode),
+        'Registry replacement must explicitly restore the previous mode');
+      if (process.platform !== 'win32') assert.equal(fs.statSync(f.registryPath).mode & 0o7777, 0o600);
+    }
+  });
+});
+
+test('R4 status discards summaries for an old remote binding', async t => {
+  const f = fixture(t); f.addProject('local');
+  const reg = read(f.registryPath); reg.projects.local.cloud = { enabled: true, remoteProjectId: 'new-remote' };
+  write(f.registryPath, reg); fs.mkdirSync(f.root);
+  write(path.join(f.root, 'status.json'), { agent: { state: 'connected' }, updatedAt: new Date().toISOString(),
+    projects: { local: { remoteProjectId: 'old-remote', pending: 777, untracked: 888, lastPullAt: '1999-01-01T01:02:03Z' } } });
+  const output = await cloud(f, 'status');
+  assert.match(output.stdout, /同步程序还没报到/); assert.doesNotMatch(output.stdout, /777|888|1999/);
+  const row = JSON.parse((await cloud(f, 'status', '--json')).stdout).projects[0];
+  assert.equal(row.pending, null); assert.equal(row.untracked, null); assert.equal(row.lastPullAt, null);
+});
+
+test('R5 notices sanitize all untrusted terminal fields including legacy errors', () => {
+  const { noticeLine } = require('../core/syncNotice.cjs');
+  const controls = '\u0000\u001b[2J\r\n\u007f\u0085\u009b';
+  for (const useReason of [false, true]) {
+    const item = { command: 'claim' + controls, taskIds: ['T1' + controls], error: 'error' + controls,
+      ...(useReason ? { reason: '小王' + controls } : {}) };
+    const line = noticeLine([item]);
+    assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
+    assert.ok(line.includes(useReason ? '小王[2J' : 'error[2J'));
+  }
+});
+
+test('R7 legacy comparison does not depend on Git history and has fixed outputs', () => {
+  assert.equal(text(__filename).includes(['HEAD', 'cli/index.cjs'].join(':')), false, 'Do not compare code with itself');
+  const data = read(path.join(__dirname, 'fixtures/cloud-sync-cli/outputs.json'));
+  assert.ok(data.cases.some(item => item.args[0] === 'claim' && item.result.code === 1));
+});
+
 const PASSWORD = 'Cli-stdin-only-test-password-中文';
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const text = file => fs.readFileSync(file, 'utf8');
@@ -333,7 +427,7 @@ test('⑦ status only consumes public reports, handles missing/stale/missing-pro
   for (const file of ['state.json', 'base.json', 'outbox.jsonl', 'outbox.seq']) fs.writeFileSync(path.join(proj.syncDir, file), 'invalid');
   const statusFile = path.join(f.root, 'status.json');
   const report = { v: 1, updatedAt: new Date().toISOString(), agent: { state: 'connected', nextRetryAt: null },
-    projects: { local: { pending: 12, rejectedUnseen: 99, untracked: 2, lastPullAt: '2026-10-20T03:00:00Z' } } };
+    projects: { local: { remoteProjectId: 'remote-local', pending: 12, rejectedUnseen: 99, untracked: 2, lastPullAt: '2026-10-20T03:00:00Z' } } };
   write(statusFile, report);
   const r = await cloud(f, 'status');
   assert.match(r.stdout, /^已连接/); assert.match(r.stdout, /待发 12 条.*未读退回 1 条.*未同步提醒 2 条/);
@@ -377,21 +471,10 @@ test('⑩ disabled projects preserve pre-change stdout/stderr/exit bytes and nev
   const f = fixture(t), proj = f.addProject('local');
   await add(f, 'local', 'T1');
   const initial = fs.readFileSync(proj.board);
-  const oldIndex = execFileSync('git', ['show', 'HEAD:cli/index.cjs'], {
-    windowsHide: true, cwd: path.resolve(__dirname, '..'), encoding: 'utf8',
-  });
-  const source = path.join(f.home, 'original-index.txt'), runner = path.join(f.home, 'old-cli.cjs');
-  fs.writeFileSync(source, oldIndex);
-  fs.writeFileSync(runner, `
-    const Module = require('node:module'), fs = require('node:fs');
-    const file=${JSON.stringify(INDEX)}, m=new Module(file);
-    m.filename=file; m.paths=Module._nodeModulePaths(require('node:path').dirname(file));
-    process.mainModule=m;
-    m._compile(fs.readFileSync(${JSON.stringify(source)},'utf8').replace('if (require.main === module) main();','main();'),file);
-  `);
   const monitor = path.join(f.home, 'monitor.cjs'), readsFile = path.join(f.home, 'reads.json');
   fs.writeFileSync(monitor, `
     const fs=require('node:fs'), path=require('node:path'), reads=[];
+    require(${jsPath('../core/runtimeRoot.cjs')}).displayCliCommand=()=>"board.cmd";
     const root=${JSON.stringify(f.root)};
     for(const key of ['readFileSync','openSync','readdirSync','statSync','lstatSync','existsSync']){
       const original=fs[key]; fs[key]=function(file,...args){
@@ -401,20 +484,13 @@ test('⑩ disabled projects preserve pre-change stdout/stderr/exit bytes and nev
     }
     process.on('exit',()=>fs.writeFileSync(${JSON.stringify(readsFile)},JSON.stringify(reads)));
   `);
-  const commands = [
-    ['note', 'T1', '--text', 'a note'], ['edit', 'T1', '--title', 'Updated'],
-    ['claim', 'T1', '--branch', 'branch', '--builder', '派单器'],
-    ['progress', 'T1', '--percent', '20'], ['show', 'T1'], ['show', 'T1', '--json'],
-    ['brief', 'T1'], ['note', 'MISSING', '--text', 'failure'], ['add', 'NO-MODEL', '--title', 'gate'],
-  ];
+  const cases = read(path.join(__dirname, 'fixtures/cloud-sync-cli/outputs.json')).cases;
   for (const enabled of [undefined, false]) {
     const reg = read(f.registryPath);
     if (enabled === false) reg.projects.local.cloud = { enabled: false, remoteProjectId: 'unused' };
     else delete reg.projects.local.cloud;
     write(f.registryPath, reg);
-    for (const args of commands) {
-      fs.writeFileSync(proj.board, initial);
-      const before = await command(f, [...args, '--project', 'local'], { runner });
+    for (const { args, result: before } of cases) {
       fs.writeFileSync(proj.board, initial);
       const after = await command(f, [...args, '--project', 'local'], { preload: monitor });
       assert.deepEqual(after, before, args.join(' '));

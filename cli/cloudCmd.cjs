@@ -9,6 +9,15 @@ const { atomicWriteJsonSync, atomicWriteFileSync } = require('../core/atomicWrit
 const { resolveProject, readRegistry } = require('../core/resolveProject.cjs');
 const { withLock } = require('../core/lock.cjs');
 const { assertValid } = require('../core/boardSchema.cjs');
+const { terminalText } = require('../core/syncNotice.cjs');
+
+function writeRegistry(file, registry) {
+  const mode = fs.existsSync(file) ? fs.statSync(file).mode & 0o7777 : undefined;
+  atomicWriteJsonSync(file, registry);
+  if (mode !== undefined) {
+    try { fs.chmodSync(file, mode); } catch (error) { if (process.platform !== 'win32') throw error; }
+  }
+}
 
 function readJson(file, fallback, tolerant = false) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
@@ -35,7 +44,8 @@ function status(flags, registryPath) {
   const projects = [], lines = [first];
   for (const [id, entry] of Object.entries(registry.projects || {})) {
     if (entry?.cloud?.enabled !== true || (flags.project && flags.project !== id)) continue;
-    const summary = report?.projects?.[id];
+    const reported = report?.projects?.[id];
+    const summary = reported?.remoteProjectId === entry.cloud.remoteProjectId ? reported : null;
     const rejected = require('../core/syncNotice.cjs').unseenRejected({
       cloud: entry.cloud, syncDir: path.join(syncRoot(registryPath), id),
     });
@@ -45,7 +55,7 @@ function status(flags, registryPath) {
     projects.push(row);
     lines.push(`${id} → ${row.remoteProjectId}、待发 ${row.pending ?? '未知'} 条、未读退回 ${row.rejectedUnseen} 条、` +
       `未同步提醒 ${row.untracked ?? '未知'} 条、上次同步 ${row.lastPullAt || '尚无'}${summary ? '' : '（同步程序还没报到）'}`);
-    for (const item of rejected) lines.push(`  ${item.seq}、${item.command}、${(item.taskIds || []).join(',')}、${item.reason || item.error}、${item.at}`);
+    for (const item of rejected) lines.push(terminalText(`  ${item.seq}、${item.command}、${(item.taskIds || []).join(',')}、${item.reason || item.error}、${item.at}`));
   }
   return { connection, projects, text: lines.join('\n') };
 }
@@ -130,7 +140,7 @@ async function attach(flags, registryPath) {
         lastPullAt: flags.adopt ? new Date().toISOString() : null, lastPushAt: null,
         lastArchiveDay: null, untracked: [], lastError: null });
       registry.projects[proj.id].cloud = { enabled: true, remoteProjectId: flags.remote, attachedAt: new Date().toISOString() };
-      atomicWriteJsonSync(registryPath, registry);
+      writeRegistry(registryPath, registry);
     });
   });
   return { ok: true, id: proj.id, remoteProjectId: flags.remote, backup,
@@ -169,7 +179,7 @@ function detach(flags, registryPath) {
         atomicWriteJsonSync(stateFile, state);
       }
       registry.projects[proj.id].cloud.enabled = false;
-      atomicWriteJsonSync(registryPath, registry);
+      writeRegistry(registryPath, registry);
       return { ok: true, dropped, text: '已退出云同步,本机看板保留' };
     });
   });
@@ -242,13 +252,9 @@ async function login(flags, registryPath) {
   if (!password) throw new Error('密码不能为空，密码只从标准输入读');
   let device;
   try {
-    if ([flags.username, flags.label].some(value => typeof value === 'string' && value.includes(password))) {
-      throw new Error('密码只从标准输入读');
-    }
     device = await enrollDevice({ registryPath, username: flags.username, password,
       label: flags.label || `本机同步·${os.hostname()}` });
   } catch (error) {
-    if (error.message === '密码只从标准输入读') throw error;
     throw new Error(error.httpStatus === 401 ? '账号或密码不对（HTTP 401）'
       : Number.isInteger(error.httpStatus) ? `云端登录失败（HTTP ${error.httpStatus}）`
         : '云端登录失败，请检查连接配置、网络或本机凭据加密');
