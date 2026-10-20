@@ -165,6 +165,16 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
   await t.test('new routes enforce three-role permissions, CSRF, origin and project boundaries', async () => {
     const invitation = auth.createInvite(owner.token, { projectIds: ['alpha'], expiresInHours: 1, maxUses: 1, role: 'viewer' });
     const viewer = await auth.register({ inviteToken: invitation.token, username: 'matrix-viewer', password: PASSWORD });
+    for (const [route, data] of [
+      ['/api/sync/projects', undefined], ['/api/sync/projects/alpha/snapshot', undefined],
+      ['/api/sync/projects/alpha/ops', { ackSeq: 0, ops: [] }],
+      ['/api/sync/projects/alpha/upload', { board: {} }],
+    ]) {
+      assert.equal((await request(route, { data })).status, 401, route);
+      for (const session of [member, viewer, owner]) {
+        assert.equal((await request(route, { session, data })).status, 403, route);
+      }
+    }
     const root = '/api/collaboration/projects/alpha/tasks';
     const routes = [[root, { title: 'Matrix task' }], ...Object.entries({ note: { text: 'Hello' }, claim: {}, progress: { percent: 1 },
       join: {}, leave: {}, 'remove-collaborator': { userId: other.user.id },
@@ -337,6 +347,10 @@ test('HTTP collaboration authorization, revocation, persistence and local compat
     const s = await stream(srv.base, derived); t.after(() => s.close()); await s.wait('hello');
     assert.equal((await request(`/api/auth/devices/${created.body.device.id}/revoke`, { session: owner, data: {} })).status, 200);
     await s.untilClosed(); assert.equal((await request('/api/projects', { session: derived })).status, 401);
+    for (const [route, data] of [
+      ['/api/sync/projects', undefined], ['/api/sync/projects/alpha/snapshot', undefined],
+      ['/api/sync/projects/alpha/ops', { ackSeq: 0, ops: [] }], ['/api/sync/projects/new/upload', { board: {} }],
+    ]) assert.equal((await request(route, { session: derived, data })).status, 401, route);
     assert.equal((await request('/api/auth/device-login', { data: { token: created.body.token } })).status, 401);
   });
   await t.test('logout and disabled users lose existing cookie access', async () => {
