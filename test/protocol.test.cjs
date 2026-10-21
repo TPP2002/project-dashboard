@@ -13,7 +13,7 @@ const { STATUS } = require('../core/boardSchema.cjs');
 const cmds = require('../cli/commands.cjs');
 
 const CLI = path.resolve(__dirname, '../cli/index.cjs');
-const NAMES = ['brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
+const NAMES = ['brief', 'claim', 'assign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox'];
 const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const card = (flags = {}) => JSON.parse(protocol({ ...flags, format: 'json' }).text);
@@ -68,6 +68,14 @@ test('--format json 输出约定形状；显式项目无需预先注册', (t) =>
   }
   assert.ok(result.rules.length && result.rules.every((text) => typeof text === 'string'));
   assert.deepEqual(Object.keys(result.examples).sort(), ['add', 'claim', 'pending', 'cost', 'done'].sort());
+});
+
+test('assign 协议保持状态，说明本地仅入队与回放的负责人字段', () => {
+  const entry = card({ project: 't' }).transitions.find(row => row.command === 'assign');
+  assert.equal(entry.status, null);
+  for (const phrase of ['--me', '已作废', '本地', 'activity', '回放', 'assigneeUserId/assigneeName', '同一人不改字段']) {
+    assert.ok(entry.writes.join('；').includes(phrase), phrase);
+  }
 });
 
 test('省略项目且认不出时使用占位符，不报错也不改 registry/board', (t) => {
@@ -225,6 +233,9 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   assert.ok(task.dates.done);
   assert.deepEqual(task.decisions[0], landed, '已落地决策不得被 done 覆盖');
   assert.ok(task.decisions.slice(1).every((d) => d.landed && d.landedAt && d.landedCommit === 'a1b2c3d'));
+  const beforeAssign = get();
+  task = apply('assign', { me: true, [cmds.COMMAND_DEFAULTS]: { actorUserId: 'protocol-owner', actorName: '负责人' } });
+  assert.deepEqual(task, { ...beforeAssign, assigneeUserId: 'protocol-owner', assigneeName: '负责人' });
   rejectTerminal();
   task = apply('reopen', { reason: '验收返工' });
   assert.equal(task.percent, 0);

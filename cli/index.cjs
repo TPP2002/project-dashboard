@@ -37,6 +37,7 @@ const REGISTRY = {
   // —— 已实现（core+cli 承重墙）——
   register: ['./commands.cjs', 'register'], add: ['./commands.cjs', 'add'],
   claim: ['./commands.cjs', 'claim'], unclaim: ['./commands.cjs', 'unclaim'],
+  assign: ['./commands.cjs', 'assign'],
   progress: ['./commands.cjs', 'progress'],
   'await-collect': ['./commands.cjs', 'awaitCollect'],
   'collect-brief': ['./commands.cjs', 'collectBrief'],

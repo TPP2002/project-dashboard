@@ -6,7 +6,7 @@ const { detectProjectIds } = require('../core/resolveProject.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 const COMMAND_NAMES = [
-  'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
+  'brief', 'claim', 'assign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox',
 ];
 
@@ -20,6 +20,10 @@ const TRANSITIONS = [
     '仅允许未开工/待开工/可复工/待拍板/已拍板/施工中/待收单；其余拒绝',
     'dates.start（仅首次）、lastProgressAt；按参数合并 gitBranch、fileScope',
     '**--builder 必填机器闸**：派单器 / 自干:例外①~④ 五选一（缺省与编号外拒收、一个字段不写）；写进卡的 builder 字段与同一条 claim 流水',
+    '云同步回放带操作人且无主负责人时写 assigneeUserId/assigneeName；同一人不改这两字段，其他人占用拒绝；无操作人保持原行为',
+  ] },
+  { command: 'assign', status: null, writes: [
+    '--me 必填；已作废/其他主负责人占用拒绝；本地非云项目拒绝，本地云项目仅追加请求 activity（已有主负责人拒绝）；回放带操作人且无主负责人时仅写 assigneeUserId/assigneeName，同一人不改字段；追加补记主负责人 activity',
   ] },
   { command: 'progress', status: null, writes: [
     '已完工/已作废拒绝；报到 100 也不自动完工',
@@ -137,11 +141,9 @@ function renderMarkdown(card) {
     `| ${READ_ONLY_COMMANDS.join(' / ')} | 保持 | 只读，无写入 |`,
     card.rules.at(-1),
     '## 正确示例（pending.json 骨架可按实际问题替换，须保持三件套字数）',
-    `- add：\`${card.examples.add}\``,
-    `- claim：\`${card.examples.claim}\``,
+    `- add：\`${card.examples.add}\`；claim：\`${card.examples.claim}\``,
     `- pending：\`${pending[0]}\`；pending.json：\`${pending[1]}\``,
-    `- cost（收官前必做，没它 done 会被拒收）：\`${card.examples.cost}\``,
-    `- done：\`${card.examples.done}\``,
+    `- cost（收官前必做，没它 done 会被拒收）：\`${card.examples.cost}\`；done：\`${card.examples.done}\``,
   ].join('\n');
 }
 
