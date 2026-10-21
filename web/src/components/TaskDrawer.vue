@@ -14,7 +14,8 @@ import { ageLevel, ageTone } from '@/utils/ageLevel'
 import type { DocRef, Status } from '@/types'
 import OwnerCollaborators from '@/collaboration/OwnerCollaborators.vue'
 import OwnerTaskActions from '@/collaboration/OwnerTaskActions.vue'
-import { isCollaborationOwner } from '@/collaboration/http'
+import { collaborationOwnerUser, isCollaborationOwner } from '@/collaboration/http'
+import { ownerHiddenLegacyActions } from '@/collaboration/ownerActions'
 
 /**
  * docked = 宽屏内嵌模式(由 App.vue 按 ≥1600 的断点决定)。
@@ -152,7 +153,7 @@ function actionAllowed(action: DrawerAction, status: Status): boolean {
   if (action === 'park' || action === 'cancel') return !terminal
   return true
 }
-const availableActions = computed(() => drawerActions.filter((entry) => task.value && actionAllowed(entry.action, task.value.status)))
+const availableActions = computed(() => drawerActions.filter((entry) => task.value && actionAllowed(entry.action, task.value.status) && !ownerHiddenLegacyActions(collaborationOwnerUser()).includes(entry.action)))
 const actionMinLength = computed(() => activeAction.value === 'note' ? 1 : 4)
 function resetActionForm() { activeAction.value = null; actionText.value = ''; actionError.value = '' }
 function openAction(action: DrawerAction) {
@@ -274,6 +275,33 @@ onUnmounted(() => {
                 @click="copyPlainTitleFix(task)"
               ><Icon :name="copiedFix ? 'check' : 'pencil'" :size="14" />{{ copiedFix ? '已复制补充命令' : '无人话标题·点击复制补充命令' }}</button>
             </div>
+
+            <section class="sec block">
+              <div class="sec-t">操作</div>
+              <OwnerCollaborators v-if="isCollaborationOwner() && task.collaborators" :key="pid + ':' + task.id" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
+              <div class="inline-list">
+                <OwnerTaskActions v-if="isCollaborationOwner()" :key="'actions:' + pid + ':' + task.id" variant="drawer" inline :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
+                <button
+                  v-for="entry in availableActions" :key="entry.action"
+                  type="button" class="btn btn-sm" :disabled="actionBusy"
+                  :aria-pressed="activeAction === entry.action" @click="openAction(entry.action)"
+                ><Icon :name="entry.icon" :size="14" />{{ entry.label }}</button>
+              </div>
+              <form v-if="activeAction" class="task-action-form" @submit.prevent="submitAction">
+                <label class="task-action-label">
+                  {{ activeAction === 'note' ? '留言（必填）' : '理由（至少 4 个字）' }}
+                  <textarea
+                    v-model="actionText" class="field" rows="3" required :minlength="actionMinLength"
+                    :disabled="actionBusy" :placeholder="activeAction === 'note' ? '给施工方留下要先读的话' : '请写明这次操作的理由'"
+                  />
+                </label>
+                <div class="inline-list">
+                  <button type="submit" class="btn btn-primary btn-sm" :disabled="actionBusy || actionText.trim().length < actionMinLength">{{ actionBusy ? '提交中…' : '确认' }}</button>
+                  <button type="button" class="btn btn-sm" :disabled="actionBusy" @click="resetActionForm">取消</button>
+                </div>
+                <p v-if="actionError" class="err" role="alert">{{ actionError }}</p>
+              </form>
+            </section>
 
             <!-- 收单指令：collect-brief 存进卡上的完整指令，抽屉最上方显示、一键复制 -->
             <section v-if="task.collectBrief?.text" class="sec block brief-sec">
@@ -440,31 +468,6 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <section class="sec block">
-              <div class="sec-t">操作</div>
-              <div class="inline-list">
-                <button
-                  v-for="entry in availableActions" :key="entry.action"
-                  type="button" class="btn btn-sm" :disabled="actionBusy"
-                  :aria-pressed="activeAction === entry.action" @click="openAction(entry.action)"
-                ><Icon :name="entry.icon" :size="14" />{{ entry.label }}</button>
-              </div>
-              <form v-if="activeAction" class="task-action-form" @submit.prevent="submitAction">
-                <label class="task-action-label">
-                  {{ activeAction === 'note' ? '留言（必填）' : '理由（至少 4 个字）' }}
-                  <textarea
-                    v-model="actionText" class="field" rows="3" required :minlength="actionMinLength"
-                    :disabled="actionBusy" :placeholder="activeAction === 'note' ? '给施工方留下要先读的话' : '请写明这次操作的理由'"
-                  />
-                </label>
-                <div class="inline-list">
-                  <button type="submit" class="btn btn-primary btn-sm" :disabled="actionBusy || actionText.trim().length < actionMinLength">{{ actionBusy ? '提交中…' : '确认' }}</button>
-                  <button type="button" class="btn btn-sm" :disabled="actionBusy" @click="resetActionForm">取消</button>
-                </div>
-                <p v-if="actionError" class="err" role="alert">{{ actionError }}</p>
-              </form>
-            </section>
-
             <!-- 活动 -->
             <section v-if="acts.length" class="sec block">
               <div class="sec-t">活动</div>
@@ -477,11 +480,6 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
-            </section>
-            <section v-if="isCollaborationOwner()" class="sec block">
-              <div class="sec-t">协作操作</div>
-              <OwnerCollaborators v-if="task.collaborators" :key="pid + ':' + task.id" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
-              <OwnerTaskActions :key="'actions:' + pid + ':' + task.id" variant="drawer" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
             </section>
           </div>
         </aside>
