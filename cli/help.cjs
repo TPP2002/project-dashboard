@@ -327,6 +327,8 @@ const COMMANDS = {
     usage: 'add <卡号> --project <id> --title <技术说明> --plain-title <人话标题> --model <档位> [--scope <glob>...] [--status <状态>] [--wave <n>] [--desc <一句话>]\n'
       + 'add --project <id> --json-file <清单.json>   # 一份清单建一批',
     args: [
+
+      ['--priority <urgent|high|medium|low|optional>', '也接受紧急/高/中/低/可选；AI 只在建卡时给初始档,之后由人改'],
       ['<卡号>', '大写字母/数字/中划线，如 FEAT-12'],
       ['--title <文本>', '给模型看的技术详细说明（必填）'],
       ['--plain-title <文本>', '给负责人看的一句人话，20~35 字，禁文件名/函数名/缩写（必填，机器闸）'],
@@ -383,6 +385,8 @@ const COMMANDS = {
     summary: '改卡面文字（标题/人话标题/说明/档位/波次），带校验',
     usage: 'edit <卡号> --project <id> [--title <技术说明>] [--plain-title <人话标题>] [--desc <一句话>] [--model <档位>] [--wave <n>]',
     args: [
+
+      ['--priority <urgent|high|medium|low|optional>', '也接受紧急/高/中/低/可选；AI 只在建卡时给初始档,之后由人改'],
       ['--title <文本>', '给模型看的技术说明，不能改成空'],
       ['--plain-title <文本>', '给负责人看的一句人话，不能改成空'],
       ['--desc <文本>', '一句话补充说明，允许改成空串'],
@@ -392,7 +396,7 @@ const COMMANDS = {
     examples: ['edit FEAT-12 --project myproj --plain-title "连续输错密码要能自动锁一会儿"'],
     notes: [
       '至少给一个要改的字段；flag 后面漏写值当场拒（那是手误，不是"要清空"）。',
-      '只认这五个字段——写错字段名就往卡上挂一个谁也不认识的属性，那是 `set` 的老毛病。',
+      '只认上述字段——写错字段名就往卡上挂一个谁也不认识的属性，那是 `set` 的老毛病。',
     ],
   },
   park: {

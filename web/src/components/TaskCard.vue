@@ -13,8 +13,12 @@ import Icon from './Icon.vue'
 import StatusTile from './StatusTile.vue'
 import AvatarStack from '@/collaboration/AvatarStack.vue'
 import OwnerTaskActions from '@/collaboration/OwnerTaskActions.vue'
-import { isCollaborationOwner } from '@/collaboration/http'
-import { aiWork } from 'virtual:collaboration-rules'
+import { isCollaborationOwner, collaborationOwnerUser } from '@/collaboration/http'
+import { aiWork, memberActions } from 'virtual:collaboration-rules'
+import { postTaskAction } from '@/api/client'
+import type { Priority } from '@/utils/taskPriority'
+import PriorityBadge from './PriorityBadge.vue'
+import PriorityPicker from './PriorityPicker.vue'
 
 const props = defineProps<{ task: Task; projectId: string }>()
 const collaborationTask = computed(() => ({ ...props.task, aiWork: props.task.aiWork ?? aiWork(props.task) }))
@@ -41,6 +45,12 @@ onBeforeUnmount(() => {
   if (root.value) unregisterCardElement(registeredKey, root.value)
 })
 const store = useBoardStore()
+const picker = ref<InstanceType<typeof PriorityPicker>>()
+const canPriority = computed(() => !isCollaborationOwner() || memberActions(props.task, collaborationOwnerUser()).includes('priority'))
+async function setPriority(priority: Priority) {
+  await postTaskAction(props.projectId, props.task.id, 'priority', { priority })
+  await store.loadBoard(props.projectId, { detect: true })
+}
 const pending = () => (props.task.decisions ?? []).filter((d) => d.answer == null).length
 const building = () => props.task.status === '施工中'
 const age = computed(() => cardAgeMs(props.task, ageNow.value))
@@ -58,6 +68,14 @@ const progressAge = computed(() => {
   <article
     ref="root"
     class="tcard card"
+    :data-priority="task.priority"
+    :data-priority-edge="!building()"
+    @contextmenu="picker?.contextmenu($event)"
+    @touchstart.passive="picker?.startPress($event)"
+    @touchend="picker?.cancelPress()"
+    @touchmove="picker?.cancelPress()"
+    @touchcancel="picker?.cancelPress()"
+    @click.capture="picker?.suppressClick($event)"
     :class="{ pulsing: store.isPulsing(projectId, task.id), projected: !!projectColor }"
     :style="projectColor ? { '--proj': projectColor } : undefined"
     role="button"
@@ -71,6 +89,7 @@ const progressAge = computed(() => {
       <StatusTile :status="task.status" :size="16" />
       <span class="tid mono">{{ task.id }}</span>
       <span class="spacer" />
+      <PriorityBadge :priority="task.priority" />
       <span v-if="age !== null && !isSettled(task)" class="badge age" :class="ageTone(level)"
         :title="`自 ${task.dates?.start} 开工起的卡龄`">{{ formatAge(age) }}</span>
       <span v-if="pending()" class="badge warn icon-badge" :title="pending() + ' 条待拍板'">
@@ -100,6 +119,7 @@ const progressAge = computed(() => {
       <OwnerTaskActions :key="projectId + ':' + task.id" variant="card" :task="task" :project-id="projectId" :refresh="() => store.loadBoard(projectId, { detect: true })" />
     </div>
     <AvatarStack v-else-if="task.collaborators || task.assigneeName" :task="collaborationTask" />
+    <PriorityPicker ref="picker" :task-id="task.id" :priority="task.priority" :allowed="canPriority" :submit="setPriority" />
   </article>
 </template>
 

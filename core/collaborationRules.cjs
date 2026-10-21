@@ -1,4 +1,5 @@
 'use strict';
+const { canPrioritize } = require('./taskPriority.cjs');
 // Shared presentation/authorization rules. Project access is checked by callers;
 // the CLI evaluates these against the freshly read task inside both locks.
 const terminal = t => ['已完工', '已作废'].includes(t.status);
@@ -10,6 +11,7 @@ function memberActions(task, user) {
   if (!user || user.disabled || !['owner', 'member'].includes(user.role)) return [];
   const owner = user.role === 'owner';
   const actions = ['note'];
+  if (canPrioritize(task)) actions.push('priority');
   const collaborators = task.collaborators || [];
   const collaborating = collaborators.some(c => c.userId === user.id);
   if (!collaborating && task.assigneeUserId !== user.id && collaborators.length < 5 &&
@@ -35,6 +37,7 @@ function memberActions(task, user) {
 }
 function toEsmSource() {
   return [
+    `const canPrioritize = ${String(canPrioritize)};`,
     '// Generated from core/collaborationRules.cjs; do not edit.',
     `const terminal = ${String(terminal)};`,
     `const pending = ${String(pending)};`,

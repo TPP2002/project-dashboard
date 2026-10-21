@@ -2,7 +2,8 @@
 // 单项目 Kanban：按 STATUS 泳道（只显示非空泳道），宽内容只在泳道容器内横向滚动。
 import StatusTile from '@/components/StatusTile.vue'
 import Icon from '@/components/Icon.vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { sortLaneByPriority } from '@/utils/taskPriority'
 import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { appearance } from '@/utils/appearance'
@@ -16,6 +17,9 @@ const board = computed(() => store.currentBoard)
 const pid = computed(() => store.currentProjectId || '')
 // 默认折叠"已完工"泳道,只显示活跃泳道;doneCount 供开关显示折叠数。
 const showDone = ref(false)
+const laneSort = ref('priority')
+try { if (localStorage.getItem('dashboard.laneSort') === 'original') laneSort.value = 'original' } catch { /* Storage can be disabled. */ }
+watch(laneSort, value => { try { localStorage.setItem('dashboard.laneSort', value) } catch { /* Keep the in-memory choice. */ } })
 const doneCount = computed(() => (board.value?.tasks ?? []).filter((task) => DONE_STATUSES.has(task.status)).length)
 const columns = computed(() => derive.groupByStatus(board.value)
   .filter((column) => column.tasks.length > 0 && (showDone.value || !DONE_STATUSES.has(column.status)))
@@ -24,7 +28,7 @@ const columns = computed(() => derive.groupByStatus(board.value)
   .map((column) => DONE_STATUSES.has(column.status)
     ? { ...column, tasks: [...column.tasks].sort((left, right) => (right.dates?.done || '').localeCompare(left.dates?.done || '')) }
     : column.status === '施工中' || column.status === '待收单' ? { ...column, tasks: sortStalestFirst(column.tasks) } : column)
-  .map(column => ({ ...column, limit: appearance.wipLimits[column.status] || 0 })))
+  .map(column => ({ ...column, tasks: laneSort.value === 'priority' ? sortLaneByPriority(column.tasks, column.status) : column.tasks, limit: appearance.wipLimits[column.status] || 0 })))
 const progress = computed(() => derive.progress(board.value))
 
 function statusTone(status: string) {
@@ -44,6 +48,7 @@ function statusTone(status: string) {
         <p>按状态查看任务；已完工泳道默认收起，避免活跃工作被淹没。</p>
       </div>
       <div class="head-actions">
+        <label>排序：<select v-model="laneSort"><option value="priority">优先级</option><option value="original">原顺序</option></select></label>
         <span class="badge info">{{ progress.done }}/{{ progress.total }} 完工</span>
         <span class="progress-value">{{ progress.percent }}%</span>
         <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
@@ -80,10 +85,10 @@ function statusTone(status: string) {
           </span>
           <span class="badge count-badge" :class="isOverLimit(column.tasks.length, column.limit) ? 'bad' : 'n'">{{ column.tasks.length }}<span v-if="column.limit"> / {{ column.limit }}</span></span>
         </header>
-        <div class="column-body stagger-list">
+        <TransitionGroup name="priority-lane" tag="div" class="column-body stagger-list">
           <!-- TaskCard 属第 4 批，本批只提供规范化容器。 -->
           <TaskCard v-for="task in column.tasks" :key="task.id" :task="task" :project-id="pid" />
-        </div>
+        </TransitionGroup>
       </section>
     </div>
   </div>

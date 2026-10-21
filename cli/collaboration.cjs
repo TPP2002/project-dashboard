@@ -7,6 +7,7 @@ const { mutate } = require('./store.cjs');
 const { TASKID } = require('../core/boardSchema.cjs');
 const { publicJson } = require('../core/collaborationPublic.cjs');
 const { memberActions } = require('../core/collaborationRules.cjs');
+const { normalizePriority, LABELS } = require('../core/taskPriority.cjs');
 const { taskTransition } = require('./commands.cjs');
 const inputChannel = require('node:diagnostics_channel').channel('dashboard.collaboration-input');
 
@@ -64,11 +65,11 @@ async function readInternalInput(maxBytes = 16384) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { fail(400, 'Invalid input'); }
 }
-function taskOperation(command, input, auth = createAuth()) {
+function taskOperation(command, input, auth = createAuth(), ownerOnly = false) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail(400, 'Invalid input');
   const fields = { create: ['title', 'plainTitle', 'description'], note: ['text'], claim: [], progress: ['percent', 'note'],
     unclaim: ['reason'], park: ['reason'], unpark: ['reason'], done: [], cancel: ['reason'], reopen: ['reason'],
-    join: [], leave: [], 'remove-collaborator': ['userId'] };
+    join: [], leave: [], 'remove-collaborator': ['userId'], priority: ['priority'] };
   if (!Object.hasOwn(fields, command)) fail(403, 'Forbidden command');
   const keys = ['sessionToken', 'actorId', 'projectId', ...(command === 'create' ? [] : ['taskId']), ...fields[command]];
   if (Object.keys(input).some(k => !keys.includes(k))) fail(400, 'Unexpected field');
@@ -79,11 +80,13 @@ function taskOperation(command, input, auth = createAuth()) {
   };
   if (command === 'create') { bounded(input.title, 200, true); bounded(input.plainTitle, 200, false); bounded(input.description, 4000, false); }
   if (command === 'note') bounded(input.text, 2000, true);
+  if (command === 'priority' && !normalizePriority(input.priority)) fail(400, 'Invalid priority');
   if (command === 'remove-collaborator') bounded(input.userId, 128, true);
   if (fields[command].includes('reason')) bounded(input.reason, 500, true);
   if (command === 'progress' && (!Number.isInteger(input.percent) || input.percent < 0 || input.percent > 100 ||
       (input.note !== undefined && (typeof input.note !== 'string' || input.note.length > 2000)))) fail(400, 'Invalid progress');
   return auth.withSession(input.sessionToken, ({ user }) => {
+    if (ownerOnly && user.role !== 'owner') fail(403, 'Forbidden');
     if (input.actorId !== user.id) fail(403, 'Actor mismatch');
     if (user.role === 'viewer') fail(403, 'Forbidden');
     if (user.role !== 'owner' && !user.projectIds.includes(input.projectId)) fail(404, 'Not found');
@@ -94,6 +97,7 @@ function taskOperation(command, input, auth = createAuth()) {
     const clock = new Date(); const now = clock.toISOString();
     const date = `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, '0')}-${String(clock.getDate()).padStart(2, '0')}`;
     let taskId = input.taskId;
+    let oldPriority, newPriority;
     // Auth lock -> board lock, same order for every task. mutate re-reads the
     // board and applies schema validation and atomicWrite under its existing lock.
     const updatedBoard = mutate(proj, board => {
@@ -110,7 +114,10 @@ function taskOperation(command, input, auth = createAuth()) {
       if (!t) fail(404, 'Not found');
       const action = command === 'remove-collaborator' ? 'removeCollaborator' : command;
       if (!memberActions(t, user).includes(action)) fail(409, 'Task operation is not available');
-      if (command === 'join') {
+      if (command === 'priority') {
+        oldPriority = t.priority || 'medium'; newPriority = normalizePriority(input.priority);
+        if (oldPriority !== newPriority) t.priority = newPriority;
+      } else if (command === 'join') {
         t.collaborators = [...(t.collaborators || []), { userId: user.id, name: user.displayName, joinedAt: now }];
       } else if (command === 'leave' || command === 'remove-collaborator') {
         const target = command === 'leave' ? user.id : input.userId;
@@ -138,6 +145,10 @@ function taskOperation(command, input, auth = createAuth()) {
       if (['claim', 'progress'].includes(command)) t.lastProgressAt = now;
       result = { ok: true, task: t };
     }, () => {
+      if (command === 'priority') return oldPriority === newPriority ? null : {
+        ts: now, type: 'collaboration:priority', taskId, userId: user.id, author: user.displayName,
+        oldPriority, newPriority, text: `优先级 ${LABELS[oldPriority]} → ${LABELS[newPriority]}`,
+      };
       const descriptions = { create: `新建任务 ${taskId}：${input.title}`, note: input.text, claim: 'Member claimed task', progress: 'Member updated progress',
         join: 'Member joined collaboration', leave: 'Member left collaboration', 'remove-collaborator': 'Removed collaborator',
         unclaim: `放弃认领 ${taskId}：${input.reason}`, park: `暂缓 ${taskId}：${input.reason}`, unpark: `复工 ${taskId}：${input.reason}`,
@@ -159,6 +170,16 @@ function ownerOperation(input, auth = createAuth()) {
       Object.keys(input).some(k => !['sessionToken', 'args'].includes(k)) ||
       !Array.isArray(input.args) || input.args.some(a => typeof a !== 'string')) fail(400, 'Invalid owner command');
   const [command, ...args] = input.args;
+  if (command === 'edit') {
+    // The legacy owner endpoint translates priority into edit; do not grant general edit.
+    const { parseFlags } = require('./index.cjs');
+    const flags = parseFlags(args);
+    if (Object.keys(flags).some(k => !['_', 'priority', 'project', 'author', 'json', 'registry'].includes(k)) ||
+        flags._.length !== 1 || !normalizePriority(flags.priority)) fail(400, 'Invalid priority command');
+    return taskOperation('priority', { sessionToken: input.sessionToken,
+      actorId: auth.withSession(input.sessionToken, ({ user }) => { if (user.role !== 'owner') fail(403, 'Forbidden'); return user.id; }),
+      projectId: flags.project, taskId: flags._[0], priority: flags.priority }, auth, true);
+  }
   if (!['note', 'park', 'unpark', 'cancel', 'reopen', 'request-info', 'decide', 'undecide', 'mark-landed'].includes(command)) fail(403, 'Forbidden command');
   const { REGISTRY, parseFlags } = require('./index.cjs');
   const flags = parseFlags(args);
@@ -255,7 +276,7 @@ async function main(args = process.argv.slice(2)) {
     if (args.length) fail(400, 'Internal owner commands accept stdin only');
     console.log(JSON.stringify(ownerOperation(await readInternalInput(2 * 1024 * 1024)), publicJson)); return;
   }
-  if (['create', 'note', 'claim', 'progress', 'unclaim', 'park', 'unpark', 'done', 'cancel', 'reopen', 'join', 'leave', 'remove-collaborator'].includes(command)) {
+  if (['create', 'note', 'claim', 'progress', 'unclaim', 'park', 'unpark', 'done', 'cancel', 'reopen', 'join', 'leave', 'remove-collaborator', 'priority'].includes(command)) {
     if (args.length) fail(400, 'Internal task commands accept stdin only');
     console.log(JSON.stringify(taskOperation(command, await readInternalInput(65536)))); return;
   }

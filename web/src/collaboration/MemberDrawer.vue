@@ -4,7 +4,13 @@ import type { Collaborator, MemberTask, TaskAction, User } from './types'
 import { drawerActions, messageProblem } from './board'
 import CollabIcon from './CollabIcon.vue'
 import CollaboratorList from './CollaboratorList.vue'
-const props = defineProps<{ task: MemberTask; user: User; busy: boolean; send: (text: string) => Promise<void> }>()
+import PrioritySegment from '../components/PrioritySegment.vue'
+import type { Priority } from '../utils/taskPriority'
+const props = defineProps<{ task: MemberTask; user: User; busy: boolean; send: (text: string) => Promise<void>; setPriority?: (priority: Priority) => Promise<unknown> }>()
+async function submitPriority(priority: Priority) {
+  if (!props.setPriority) throw new Error('优先级操作不可用')
+  await props.setPriority(priority)
+}
 defineEmits<{ close: []; action: [action: TaskAction]; remove: [person: Collaborator] }>()
 const closeButton = ref<HTMLButtonElement | null>(null)
 const message = ref('')
@@ -39,6 +45,7 @@ onMounted(() => closeButton.value?.focus())
       <small v-if="task.dates?.design">设计：{{ task.dates.design }}</small><small v-if="task.dates?.start">开工：{{ task.dates.start }}</small><small v-if="task.dates?.done">完工：{{ task.dates.done }}</small>
     </header>
     <div v-if="actions.length" class="drawer-actions"><button v-for="entry in actions" :key="entry.action" type="button" class="btn btn-sm" :class="entry.kind" :disabled="busy" @click="$emit('action', entry.action)">{{ entry.label }}</button></div>
+    <section class="drawer-actions" aria-label="操作"><PrioritySegment :priority="task.priority" :readonly="!task.actions?.includes('priority')" :disabled="busy" :submit="submitPriority" /></section>
     <div class="member-thread">
       <CollaboratorList :task="task" :user-id="user.id" :show-slots="!viewer" :can-remove="task.actions?.includes('removeCollaborator')" :busy="busy" @remove="$emit('remove', $event)" />
       <section class="member-description"><h3>说明</h3><p v-if="task.plainTitle && task.plainTitle !== task.title">{{ task.title }}</p><p>{{ task.description || '暂无说明' }}</p><p v-if="task.blockReason">阻碍：{{ task.blockReason }}</p><p v-if="task.cancelReason">作废理由：{{ task.cancelReason }}</p></section>

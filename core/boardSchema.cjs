@@ -143,6 +143,9 @@ function validateTask(t, p, errs, ids) {
     errs.push(`${p}.modelHint: 应为 ≤40 字符的字符串(建议施工档位,如 "sonnet·低")`);
   }
   // 施工方式:可缺省(老卡),给了就必须是合法枚举(claim 机器闸只放五个值,set/backfill 也不许塞别的)。
+  if (t.priority !== undefined && !require('./taskPriority.cjs').PRIORITIES.includes(t.priority)) {
+    errs.push(`${p}.priority: 非法优先级「${t.priority}」`);
+  }
   if (t.builder !== undefined && !(isType(t.builder, 'string') && BUILDER_VALUES.includes(t.builder))) {
     errs.push(`${p}.builder: 非法施工方式「${t.builder}」，允许: ${BUILDER_VALUES.join('/')}`);
   }

@@ -1006,7 +1006,7 @@ async function handleCostJobDetail(req, res, query) {
   }
 }
 
-const TASK_ACTIONS = ['note', 'park', 'unpark', 'cancel', 'reopen', 'request-info'];
+const TASK_ACTIONS = ['note', 'park', 'unpark', 'cancel', 'reopen', 'request-info', 'priority'];
 
 /** 网页治理操作只转发 CLI；正文按字面参数传递，拒绝文案沿用 decide 的约定。 */
 function handleTaskAction(req, res, pid, tid, action) {
@@ -1020,8 +1020,12 @@ function handleTaskAction(req, res, pid, tid, action) {
       return sendJson(res, 400, { ok: false, error: '请求体应为 JSON 对象' });
     }
     const hasText = (field) => typeof body[field] === 'string' && body[field].trim().length > 0;
-    const args = [CLI_INDEX, action, tid];
-    if (action === 'note') {
+    const args = [CLI_INDEX, action === 'priority' ? 'edit' : action, tid];
+    if (action === 'priority') {
+      const priority = require('../core/taskPriority.cjs').normalizePriority(body.priority);
+      if (!priority || Object.keys(body).some(k => k !== 'priority')) return sendJson(res, 400, { ok: false, error: '非法优先级' });
+      args.push('--priority', priority);
+    } else if (action === 'note') {
       if (!hasText('text')) return sendJson(res, 400, { ok: false, error: '缺 text（留言正文）' });
       args.push('--text', body.text, '--from', 'human');
     } else if (action === 'request-info') {

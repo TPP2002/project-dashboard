@@ -13,10 +13,12 @@ export interface Session {
   csrfToken?: string
 }
 export interface Project { id: string; name: string }
-export type TaskAction = 'note' | 'join' | 'leave' | 'removeCollaborator' | 'progress' | 'claim' | 'unclaim' | 'park' | 'unpark' | 'done' | 'cancel' | 'reopen'
+export type TaskAction = 'priority' | 'note' | 'join' | 'leave' | 'removeCollaborator' | 'progress' | 'claim' | 'unclaim' | 'park' | 'unpark' | 'done' | 'cancel' | 'reopen'
 export interface Collaborator { userId: string; name: string; joinedAt: string }
 export interface TaskMessage { ts: string | null; author: string | null; text: string; userId: string | null }
 export interface MemberTask {
+  priority?: import('../utils/taskPriority').Priority
+  lastProgressAt?: string
   id: string
   title: string
   plainTitle?: string
