@@ -4,6 +4,9 @@ import { toChineseError } from './errorText'
 let context: Session | null = null
 /** Read-only mode/identity check for the owner's optional collaboration controls. */
 export function isCollaborationOwner(): boolean { return context?.mode === 'collaboration' && context.user?.role === 'owner' }
+export function collaborationOwnerUser(): Readonly<NonNullable<Session['user']>> | null {
+  return isCollaborationOwner() ? context!.user : null
+}
 let generation = 0
 const pending = new Set<AbortController>()
 const expiredListeners = new Set<() => void>()

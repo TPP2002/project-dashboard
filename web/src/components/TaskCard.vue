@@ -12,9 +12,12 @@ import { isSettled } from 'virtual:task-signal'
 import Icon from './Icon.vue'
 import StatusTile from './StatusTile.vue'
 import AvatarStack from '@/collaboration/AvatarStack.vue'
+import OwnerTaskActions from '@/collaboration/OwnerTaskActions.vue'
+import { isCollaborationOwner } from '@/collaboration/http'
+import { aiWork } from 'virtual:collaboration-rules'
 
 const props = defineProps<{ task: Task; projectId: string }>()
-const collaborationTask = computed(() => ({ ...props.task, aiWork: props.task.aiWork ?? !!(props.task.builder || props.task.gitBranch?.length || props.task.prNumbers?.length || props.task.commitShas?.length) }))
+const collaborationTask = computed(() => ({ ...props.task, aiWork: props.task.aiWork ?? aiWork(props.task) }))
 const projectColor = computed(() => projectColorCss(props.projectId))
 const root = ref<HTMLElement | null>(null)
 let registeredKey = ''
@@ -92,7 +95,11 @@ const progressAge = computed(() => {
         <Icon name="bot" :size="14" />{{ task.modelHint }}
       </span>
     </div>
-    <AvatarStack v-if="task.collaborators || task.assigneeName" :task="collaborationTask" />
+    <div v-if="isCollaborationOwner()" class="owner-card-foot">
+      <AvatarStack v-if="task.collaborators || task.assigneeName || collaborationTask.aiWork" :task="collaborationTask" />
+      <OwnerTaskActions :key="projectId + ':' + task.id" variant="card" :task="task" :project-id="projectId" :refresh="() => store.loadBoard(projectId, { detect: true })" />
+    </div>
+    <AvatarStack v-else-if="task.collaborators || task.assigneeName" :task="collaborationTask" />
   </article>
 </template>
 
@@ -108,6 +115,7 @@ const progressAge = computed(() => {
 .tcard-head, .tcard-meta, .prog-wrap { display: flex; align-items: center; gap: var(--s2); }
 .tcard-head { font-size: var(--fs-sm); }
 .tcard-meta { flex-wrap: wrap; }
+.owner-card-foot { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .tid { color: var(--text-2); font-weight: 600; }
 .age { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ttitle { font-size: var(--fs-base); line-height: 1.4; }
