@@ -92,6 +92,21 @@ test('proxy isolation, bounded authentication and current member work state', as
     const input = { sessionToken: member.token, actorId: member.user.id, projectId: 'alpha', taskId: 'ONE', percent: 80 };
     for (const status of ['暂缓', '压轴', '待开工', '未开工', '可复工', '已拍板', '待拍板', '待收单', '收官', '已完工', '已作废']) {
       board.tasks[0].status = status;
+      if (status === '暂缓') {
+        board.tasks[0].blockReason = '等待资料';
+        fs.writeFileSync(boardFile, JSON.stringify(board));
+        assert.equal(taskOperation('progress', input, auth).task.percent, 80);
+        const saved = JSON.parse(fs.readFileSync(boardFile));
+        assert.equal(saved.tasks[0].percent, 80);
+        assert.equal(saved.tasks[0].status, '暂缓');
+        assert.equal(saved.tasks[0].blockReason, '等待资料');
+        const before = fs.readFileSync(boardFile, 'utf8');
+        assert.throws(() => taskOperation('progress', { ...input, percent: 100 }, auth),
+          { status: 409, message: '暂缓的卡进度最多 99%' });
+        assert.equal(fs.readFileSync(boardFile, 'utf8'), before);
+        delete board.tasks[0].blockReason;
+        continue;
+      }
       fs.writeFileSync(boardFile, JSON.stringify(board));
       const before = fs.readFileSync(boardFile, 'utf8');
       assert.throws(() => taskOperation('progress', input, auth), { status: 409 }, status);

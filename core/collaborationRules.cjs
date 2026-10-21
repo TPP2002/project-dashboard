@@ -21,9 +21,10 @@ function memberActions(task, user) {
   // Collaboration grants progress even on AI work, without granting lifecycle
   // operations or changing the existing creator/assignee rules below.
   const active = task.status === '施工中' && !task.blockReason && !(task.deps?.blockedBy || []).length;
-  if (collaborating && active) actions.push('progress');
-  if (!owner && aiWork(task)) return actions;
+  const parked = task.status === '暂缓';
   const assigned = owner || task.assigneeUserId === user.id;
+  if ((collaborating && active) || (parked && (collaborating || assigned))) actions.push('progress');
+  if (!owner && aiWork(task)) return actions;
   const createdOrAssigned = assigned || task.createdByUserId === user.id;
   if ((!task.assigneeUserId || assigned) && ['未开工', '待开工', '可复工', '已拍板'].includes(task.status) && !pending(task)) actions.push('claim');
   if (assigned && active && !collaborating) actions.push('progress');

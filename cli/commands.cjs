@@ -529,6 +529,7 @@ function taskTransition(task, command, { reason, note, branches = [], collect = 
     t.unclaimReason = reason; t.unclaimedAt = date; t.lastProgressAt = now;
   } else if (command === 'park') {
     t.status = '暂缓'; t.blockReason = reason;
+    if (t.percent > 99) t.percent = 99;
     if (note) t.parkedNote = String(note);
     delete t.unparkReason; delete t.unparkedAt;
   } else if (command === 'unpark') {
@@ -591,6 +592,7 @@ function progress(flags) {
     if (TERMINAL_STATUSES.includes(t.status)) {
       throw new Error(`${id} 已经是「${t.status}」，不能再报进度；要接着做先 reopen ${id} --reason "<为什么重开>"`);
     }
+    if (t.status === '暂缓' && pct > 99) throw new Error('暂缓的卡进度最多 99%,要完工先复工');
     if (pct !== undefined) { if (isNaN(pct) || pct < 0 || pct > 100) throw new Error('--percent 应为 0-100'); t.percent = pct; }
     if (flags.next !== undefined) t.nextMilestone = String(flags.next);
     if (flags.tests) { const [tot, pass, mff] = String(flags.tests).split('/').map(Number); t.tests = { total: tot || 0, passing: pass || 0, mustFailFirst: mff || 0 }; }
