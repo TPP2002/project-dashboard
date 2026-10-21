@@ -182,6 +182,6 @@ test('member operations authorize and mutate in real CLI children', async t => {
     assert.deepEqual(task, original); assert.equal(done.task.nextMilestone, undefined);
     assert.ok(memberActions(task, a.user).includes('done')); assert.equal(memberActions(done.task, a.user).includes('done'), false);
     assert.deepEqual(memberActions(task, viewer.user), []);
-    assert.deepEqual(memberActions({ ...task, builder: '派单器' }, a.user), ['note']);
+    assert.deepEqual(memberActions({ ...task, builder: '派单器' }, a.user), ['note', 'priority']);
   });
 });

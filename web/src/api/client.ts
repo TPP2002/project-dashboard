@@ -107,6 +107,7 @@ export async function postDecide(
 }
 
 export interface TaskActionPayloads {
+  priority: { priority: import('../utils/taskPriority').Priority }
   note: { text: string }
   park: { reason: string; note?: string }
   unpark: { reason: string }

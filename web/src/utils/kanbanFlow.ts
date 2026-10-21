@@ -10,14 +10,15 @@ export function localDayStart(value: string | null | undefined): number | null {
     ? date.getTime() : null
 }
 
-function progressTime(task: Task): number {
+type ProgressTask = { lastProgressAt?: string; dates?: { start?: string | null } }
+function progressTime(task: ProgressTask): number {
   const stamp = task.lastProgressAt
   const time = stamp ? (localDayStart(stamp) ?? new Date(stamp).getTime()) : NaN
   return Number.isFinite(time) ? time : localDayStart(task.dates?.start) ?? Infinity
 }
 
 /** 精确进度时间优先、开工日兜底；没有时间线索排最后，同时间保留输入顺序且不改输入。 */
-export function sortStalestFirst(tasks: readonly Task[]): Task[] {
+export function sortStalestFirst<T extends ProgressTask>(tasks: readonly T[]): T[] {
   return tasks.map((task, index) => ({ task, index, time: progressTime(task) }))
     .sort((a, b) => (a.time === b.time ? a.index - b.index : a.time - b.time))
     .map(item => item.task)

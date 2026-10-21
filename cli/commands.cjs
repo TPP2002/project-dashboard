@@ -109,6 +109,9 @@ function register(flags) {
 
 // ---------- add（新建 task） ----------
 function add(flags) {
+  const { normalizePriority } = require('../core/taskPriority.cjs');
+  const priority = flags.priority === undefined ? undefined : normalizePriority(flags.priority);
+  if (priority === null) throw new Error('--priority 非法优先级');
   // 一份清单建一批（--json-file / --json）走批量分支：一次加锁一次写盘、全有或全无
   if (isBatchAdd(flags)) return addBatch(flags);
   const proj = resolveProj(flags);
@@ -138,6 +141,7 @@ function add(flags) {
       gitBranch: [], worktree: [], prNumbers: [], commitShas: [], decisions: [],
       deps: { dependsOn: [], blockedBy: [], relatedTasks: [] }, docs: [],
     };
+    if (priority !== undefined) t.priority = priority;
     if (modelHint) t.modelHint = modelHint;
     if (plainTitle) t.plainTitle = plainTitle;
     if (scopes.length) t.fileScope = scopes;
@@ -191,7 +195,7 @@ function readJsonInput(flags, what) {
 
 // 批量清单每项认得的字段。多一个不认识的就当场拒——批量最怕"写错键名被静默吞掉"：
 // 20 张卡里有一张 plaintitle 拼错，回读才发现人话标题是空的，正是 CLI-ADD-NO-PLAINTITLE-FILESCOPE 那个坑。
-const BATCH_ITEM_KEYS = ['id', 'plainTitle', 'title', 'model', 'scope', 'deps', 'wave', 'desc', 'status'];
+const BATCH_ITEM_KEYS = ['id', 'plainTitle', 'title', 'model', 'scope', 'deps', 'wave', 'desc', 'status', 'priority'];
 const DEP_KEYS = ['dependsOn', 'blockedBy', 'relatedTasks'];
 
 function batchReject(errs) {
@@ -286,7 +290,9 @@ function addBatch(flags) {
 
     if (item.desc !== undefined && typeof item.desc !== 'string') errs.push(`${at2}: desc 应为字符串`);
 
-    drafts.push({ id, title, plainTitle, model, status, wave, scope, deps, desc: item.desc || '' });
+    const priority = item.priority === undefined ? undefined : require('../core/taskPriority.cjs').normalizePriority(item.priority);
+    if (priority === null) errs.push(`${at2}: priority 非法优先级`);
+    drafts.push({ id, title, plainTitle, model, status, wave, scope, deps, priority, desc: item.desc || '' });
   });
 
   // 跟板有关的校验：先只读查一遍，好把错误跟上面的形状问题一起报全（锁内还会再查一次兜并发）
@@ -319,6 +325,7 @@ function addBatch(flags) {
         gitBranch: [], worktree: [], prNumbers: [], commitShas: [], decisions: [],
         deps: d.deps, docs: [],
       };
+      if (d.priority !== undefined) t.priority = d.priority;
       t.modelHint = d.model;
       t.plainTitle = d.plainTitle;
       if (d.scope.length) t.fileScope = d.scope;
@@ -947,6 +954,7 @@ function note(flags) {
 // 字段名打错就往卡上挂一个谁也不认识的属性，写进去了也没人发现（审计 §4-A5）。
 // edit 只认这五个字段、逐个校验、留一条看得懂的痕；set 留着做真正的兜底。
 function edit(flags) {
+  const { normalizePriority, LABELS } = require('../core/taskPriority.cjs');
   const proj = resolveProj(flags);
   const id = need(flags._[0], 'edit <taskId> [--title <技术说明>] [--plain-title <人话标题>] [--desc <一句话>] [--model <建议档位>] [--wave <n>]');
   // flag 后面漏写值时 parseFlags 记成 true —— 那是手误，不是「要清空」，当场拒掉。
@@ -961,8 +969,10 @@ function edit(flags) {
   const desc = raw('desc');           // 允许空串：说明写错了要能删掉
   const model = raw('model');
   const wave = raw('wave');
-  if (![title, plainTitle, desc, model, wave].some((v) => v !== undefined)) {
-    throw new Error('edit 至少给一个要改的字段：--title / --plain-title / --desc / --model / --wave');
+  const priority = flags.priority === undefined ? undefined : normalizePriority(raw('priority'));
+  if (priority === null) throw new Error('--priority 非法优先级');
+  if (![title, plainTitle, desc, model, wave, priority].some((v) => v !== undefined)) {
+    throw new Error('edit 至少给一个要改的字段：--title / --plain-title / --desc / --model / --wave / --priority');
   }
   if (title !== undefined && !title.trim()) throw new Error('--title 不能是空的（技术说明是模型读卡的唯一入口）');
   if (plainTitle !== undefined && !plainTitle.trim()) throw new Error('--plain-title 不能是空的（负责人只看得懂这一层）');
@@ -977,6 +987,7 @@ function edit(flags) {
   }
   // 给活动流用的人话清单；下面 mutateTask 回的 changed 是字段名，两者用途不同，别混。
   const changedLabels = [];
+  let priorityNote = '';
   if (title !== undefined) changedLabels.push('技术说明');
   if (plainTitle !== undefined) changedLabels.push('人话标题');
   if (desc !== undefined) changedLabels.push('一句话说明');
@@ -984,12 +995,17 @@ function edit(flags) {
   if (wave !== undefined) changedLabels.push('波次');
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
+    if (priority !== undefined && (t.priority || 'medium') !== priority) {
+      priorityNote = `优先级 ${LABELS[t.priority || 'medium']} → ${LABELS[priority]}`;
+      t.priority = priority;
+    }
     if (title !== undefined) t.title = title.trim();
     if (plainTitle !== undefined) t.plainTitle = plainTitle.trim();
     if (desc !== undefined) t.description = desc;
     if (model !== undefined) t.modelHint = model.trim();
     if (wave !== undefined) t.wave = waveNum;
-  }, act('note', flags.author, `edit ${id}：改了 ${changedLabels.join('、')}`, id));
+  }, () => changedLabels.length || priorityNote ? act('note', flags.author,
+    [changedLabels.length ? `edit ${id}：改了 ${changedLabels.join('、')}` : '', priorityNote].filter(Boolean).join('；'), id) : null);
   return okTask(board, id, changed);
 }
 
@@ -1007,6 +1023,7 @@ function edit(flags) {
  * 落地那天，这张表不用改就会自动把它们提示出来；没落地时也不会指一条不存在的命令。
  */
 const FIELD_COMMANDS = {
+  priority: [{ cmd: 'edit', use: 'edit <id> --priority <urgent|high|medium|low|optional>' }],
   status: [
     { cmd: 'claim', use: 'claim <id> --branch <分支> --builder <施工方式>（→ 施工中，走迁移白名单）' },
     { cmd: 'park', use: 'park <id> --reason <理由>（→ 暂缓）' },

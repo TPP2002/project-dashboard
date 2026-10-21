@@ -57,6 +57,7 @@ export interface TaskCost {
 }
 
 export interface Task {
+  priority?: import('./utils/taskPriority').Priority
   assigneeUserId?: string | null
   assigneeName?: string | null
   collaborators?: import('./collaboration/types').Collaborator[]

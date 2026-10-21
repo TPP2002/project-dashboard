@@ -3,6 +3,7 @@
    深浅两套 + 八种光谱，组件只使用语义变量。
    ============================================================ */
 :root {
+  --p0: #e5484d; --p1: #f08c2e; --p2: #3e7bd6; --p3: #8e8e89;
   /* —— 浅色（默认） —— */
   --bg: #fbfbfa; --surface: #ffffff; --surface-2: #f6f6f5; --surface-3: #eeeeed;
   --line: #e4e4e2; --line-strong: #d2d2cf;
@@ -104,6 +105,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --p0: #ff6b70; --p1: #ffa552; --p2: #7fb0ff; --p3: #9a9a93;
     --bg: #0d0d0e; --surface: #151516; --surface-2: #1b1b1d; --surface-3: #232326;
     --line: #242426; --line-strong: #343437;
     --text: #e7e7e8; --text-2: #9a9a9e; --text-3: #6a6a6f;
@@ -130,6 +132,7 @@
 }
 
 :root[data-theme="dark"] {
+  --p0: #ff6b70; --p1: #ffa552; --p2: #7fb0ff; --p3: #9a9a93;
   --bg: #0d0d0e; --surface: #151516; --surface-2: #1b1b1d; --surface-3: #232326;
   --line: #242426; --line-strong: #343437;
   --text: #e7e7e8; --text-2: #9a9a9e; --text-3: #6a6a6f;
@@ -407,3 +410,16 @@ tbody tr:hover { background: var(--surface-2); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }
+
+[data-priority="urgent"] { --priority-color: var(--p0); }
+[data-priority="high"] { --priority-color: var(--p1); }
+[data-priority="medium"] { --priority-color: var(--p2); }
+[data-priority="low"], [data-priority="optional"] { --priority-color: var(--p3); }
+[data-priority-edge="true"] { position: relative; }
+[data-priority-edge="true"][data-priority]:not([data-priority="medium"]):not([data-priority="optional"])::before { content: ''; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--priority-color); }
+.priority-card-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.priority-picking { outline: 2px solid var(--info); outline-offset: 1px; }
+.priority-lane-move { transition: transform .28s cubic-bezier(.2,.8,.3,1) !important; }
+/* Preserve staggered entry without retaining its transform over Vue's FLIP moves. */
+.column-body.stagger-list > .tcard { animation-fill-mode: backwards; }
+@media (prefers-reduced-motion: reduce) { .priority-lane-move { transition: none !important; } }

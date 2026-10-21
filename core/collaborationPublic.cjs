@@ -13,7 +13,7 @@ function text(value) {
 }
 function taskView(t, user, activity = []) {
   const out = {};
-  for (const k of ['id', 'title', 'plainTitle', 'description', 'status', 'assigneeUserId', 'assigneeName', 'lastProgressAt', 'blockReason', 'cancelReason', 'createdByUserId']) {
+  for (const k of ['priority', 'id', 'title', 'plainTitle', 'description', 'status', 'assigneeUserId', 'assigneeName', 'lastProgressAt', 'blockReason', 'cancelReason', 'createdByUserId']) {
     if (typeof t[k] === 'string') out[k] = text(t[k]);
   }
   for (const k of ['percent', 'wave']) if (Number.isInteger(t[k])) out[k] = t[k];

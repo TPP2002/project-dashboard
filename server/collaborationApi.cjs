@@ -334,12 +334,12 @@ function createCollaborationApi({ config, home, registryPath, summarize,
         const result = await runTask('create', { ...b, projectId, sessionToken: raw, actorId: session.user.id }, env);
         json(res, 200, result); return true;
       }
-      const task = pathname.match(/^\/api\/collaboration\/projects\/([^/]+)\/tasks\/([^/]+)\/(claim|progress|note|unclaim|park|unpark|done|cancel|reopen|join|leave|remove-collaborator)$/);
+      const task = pathname.match(/^\/api\/collaboration\/projects\/([^/]+)\/tasks\/([^/]+)\/(claim|progress|note|unclaim|park|unpark|done|cancel|reopen|join|leave|remove-collaborator|priority)$/);
       if (task && req.method === 'POST') {
         const projectId = decodeURIComponent(task[1]); const taskId = decodeURIComponent(task[2]);
         authorizedProject(session.user, projectId);
         const fields = { claim: [], progress: ['percent', 'note'], note: ['text'], unclaim: ['reason'], park: ['reason'], unpark: ['reason'], done: [], cancel: ['reason'], reopen: ['reason'],
-          join: [], leave: [], 'remove-collaborator': ['userId'] };
+          join: [], leave: [], 'remove-collaborator': ['userId'], priority: ['priority'] };
         const b = only(await body(req, 65536), fields[task[3]]);
         const result = await runTask(task[3], { ...b, projectId, taskId, sessionToken: raw, actorId: session.user.id }, env);
         json(res, 200, result); return true;

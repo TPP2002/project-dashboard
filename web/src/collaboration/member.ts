@@ -16,6 +16,7 @@ export function memberApi(request: MemberRequest = apiJson) {
       // Do not retain owner-only fields even if a server regression adds them to a response.
       return response.tasks.map(task => ({
         id: task.id, title: task.title, plainTitle: task.plainTitle, description: task.description,
+        priority: task.priority, lastProgressAt: task.lastProgressAt,
         status: task.status, percent: task.percent, assigneeUserId: task.assigneeUserId, assigneeName: task.assigneeName,
         actions: [...(task.actions ?? [])], aiWork: task.aiWork,
         blockReason: task.blockReason, cancelReason: task.cancelReason, createdByUserId: task.createdByUserId,

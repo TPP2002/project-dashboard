@@ -16,6 +16,9 @@ import OwnerCollaborators from '@/collaboration/OwnerCollaborators.vue'
 import OwnerTaskActions from '@/collaboration/OwnerTaskActions.vue'
 import { collaborationOwnerUser, isCollaborationOwner } from '@/collaboration/http'
 import { ownerHiddenLegacyActions } from '@/collaboration/ownerActions'
+import { memberActions } from 'virtual:collaboration-rules'
+import PrioritySegment from './PrioritySegment.vue'
+import type { Priority } from '@/utils/taskPriority'
 
 /**
  * docked = 宽屏内嵌模式(由 App.vue 按 ≥1600 的断点决定)。
@@ -28,6 +31,12 @@ const props = defineProps<{ docked?: boolean }>()
 const store = useBoardStore()
 const task = computed(() => store.selectedTask)
 const pid = computed(() => store.selectedTaskProjectId || '')
+const canPriority = computed(() => !!task.value && (!isCollaborationOwner() || memberActions(task.value, collaborationOwnerUser()).includes('priority')))
+async function setPriority(priority: Priority) {
+  if (!task.value || !canPriority.value) return
+  await postTaskAction(pid.value, task.value.id, 'priority', { priority })
+  await store.loadBoard(pid.value, { detect: true })
+}
 const acts = computed(() => derive.activityOfTask(store.selectedBoard, task.value?.id || ''))
 watch(() => [store.selectedTaskId, pid.value, store.loading, store.activityComplete[pid.value]], () => {
   if (store.loading || !store.selectedTaskId || !pid.value) return
@@ -278,6 +287,7 @@ onUnmounted(() => {
 
             <section class="sec block">
               <div class="sec-t">操作</div>
+              <PrioritySegment :priority="task.priority" :readonly="!canPriority" :submit="setPriority" />
               <OwnerCollaborators v-if="isCollaborationOwner() && task.collaborators" :key="pid + ':' + task.id" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
               <div class="inline-list">
                 <OwnerTaskActions v-if="isCollaborationOwner()" :key="'actions:' + pid + ':' + task.id" variant="drawer" inline :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
