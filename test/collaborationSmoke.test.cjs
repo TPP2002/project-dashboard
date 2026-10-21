@@ -68,7 +68,7 @@ test('role-aware board views expose actions and only the latest fifty scrubbed m
   activity.push({ taskId: 'OTHER', kind: 'message', text: 'hidden' }, { taskId: 'ONE', type: 'note', text: 'not a message' });
   const board = { schemaVersion: '1.0', project: { id: 'alpha', name: 'Alpha' }, tasks: [task], activity };
   const view = boardView(board, member).tasks[0];
-  assert.deepEqual(view.actions, ['note', 'unclaim', 'park', 'done', 'cancel']);
+  assert.deepEqual(view.actions, ['note', 'priority', 'unclaim', 'park', 'done', 'cancel']);
   assert.equal(view.messages.length, 50); assert.equal(view.messages[0].ts, '5'); assert.equal(view.messages.at(-1).ts, '54');
   assert.deepEqual(Object.keys(view.messages[0]).sort(), ['author', 'text', 'ts', 'userId']);
   assert.equal(view.messages[0].userId, 'member'); assert.equal(view.messages[0].author, 'Person');
@@ -78,6 +78,6 @@ test('role-aware board views expose actions and only the latest fifty scrubbed m
   assert.deepEqual(boardView(board, { ...member, role: 'viewer' }).tasks[0].actions, []);
   task.builder = '派单器'; task.gitBranch = ['private-branch']; task.prNumbers = [33]; task.commitShas = ['abcdef1'];
   const ai = boardView(board, member).tasks[0];
-  assert.equal(ai.aiWork, true); assert.deepEqual(ai.actions, ['note']);
+  assert.equal(ai.aiWork, true); assert.deepEqual(ai.actions, ['note', 'priority']);
   assert.doesNotMatch(JSON.stringify(ai), /派单器|private-branch|abcdef1|"builder"|"gitBranch"|"prNumbers"|"commitShas"/);
 });
