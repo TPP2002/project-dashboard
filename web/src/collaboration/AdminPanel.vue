@@ -16,20 +16,30 @@ const inviteRole = ref<'member' | 'viewer'>('member')
 const label = ref('')
 const secret = ref<{ token: string; kind: 'invite' | 'device' | 'reset' } | null>(null)
 const busy = ref(false)
+const refreshing = ref(false)
 const error = ref('')
 const notice = ref('')
 const controller = new AbortController()
-async function load() {
-  // Do not leave stale permission data editable if refresh fails.
-  data.value = null
-  const [admin, list] = await Promise.all([
-    apiJson<AdminData>('/api/auth/admin', undefined, controller.signal),
-    apiJson<{ projects: Project[] }>('/api/projects', undefined, controller.signal),
-  ])
-  if (controller.signal.aborted) return
-  data.value = admin
-  projects.value = list.projects
-  selected.value = selected.value.filter(id => list.projects.some(project => project.id === id))
+async function load(full = false) {
+  refreshing.value = true
+  try {
+    const [admin, list] = await Promise.all([
+      apiJson<AdminData>('/api/auth/admin', undefined, controller.signal),
+      full ? apiJson<{ projects: Project[] }>('/api/projects', undefined, controller.signal) : undefined,
+    ])
+    if (controller.signal.aborted) return
+    data.value = admin
+    if (list) {
+      projects.value = list.projects
+      selected.value = selected.value.filter(id => list.projects.some(project => project.id === id))
+    }
+  } catch (cause) {
+    // Do not leave stale permission data editable if refresh fails.
+    data.value = null
+    throw cause
+  } finally {
+    refreshing.value = false
+  }
 }
 async function run(action: () => Promise<void>) {
   if (busy.value) return
@@ -39,13 +49,14 @@ async function run(action: () => Promise<void>) {
   catch (cause) { if (!controller.signal.aborted) error.value = cause instanceof Error ? cause.message : '操作失败' }
   finally { busy.value = false }
 }
-function refresh() { return run(load) }
+function refresh() { return run(() => load(true)) }
 function createInvite() {
   if (!selected.value.length) return
   return run(async () => {
     const result = await apiJson<{ invite: Invite; token: string }>('/api/auth/invites', { projectIds: selected.value, expiresInHours: hours.value, maxUses: maxUses.value, role: inviteRole.value }, controller.signal)
     if (controller.signal.aborted) return
     secret.value = { token: result.token, kind: 'invite' }
+    if (data.value) data.value.invites.unshift(result.invite)
     await load()
   })
 }
@@ -87,7 +98,7 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
 </script>
 <template>
   <main class="collab collab-page" :aria-busy="busy">
-    <div class="collab-heading"><h1>成员与邀请</h1><button class="btn" :disabled="busy" @click="refresh">刷新</button></div>
+    <div class="collab-heading"><h1 class="admin-title">成员与邀请<small v-if="refreshing && data" class="admin-refreshing" role="status">正在刷新…</small></h1><button class="btn" :disabled="busy" @click="refresh">刷新</button></div>
     <p v-if="error" class="collab-error" role="alert">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
     <SecretDisplay v-if="secret" :token="secret.token" :kind="secret.kind" @dismiss="secret = null" />
@@ -136,5 +147,7 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
   </main>
 </template>
 <style scoped>
+.admin-title { position: relative; }
+.admin-refreshing { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: var(--s2); white-space: nowrap; font-size: 12px; font-weight: normal; }
 .invite-roles { border: 0; padding: 0; }.invite-roles legend { margin-bottom: var(--s2); }.invite-roles button { border-radius: 0; }.invite-roles button:first-of-type { border-radius: var(--r) 0 0 var(--r); }.invite-roles button:last-child { border-radius: 0 var(--r) var(--r) 0; }.invite-roles [aria-pressed=true] { background: var(--text); color: var(--bg); }
 </style>
