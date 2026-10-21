@@ -44,6 +44,7 @@ const REGISTRY = {
   pending: ['./commands.cjs', 'pending'], decide: ['./commands.cjs', 'decide'],
   undecide: ['./undecide.cjs', 'undecide'],
   park: ['./commands.cjs', 'park'], unpark: ['./commands.cjs', 'unpark'], block: ['./commands.cjs', 'block'],
+  unblock: ['./commands.cjs', 'unblock'],
   done: ['./commands.cjs', 'done'], cancel: ['./commands.cjs', 'cancel'], reopen: ['./commands.cjs', 'reopen'],
   note: ['./commands.cjs', 'note'],
   'request-info': ['./requestInfo.cjs', 'requestInfo'],

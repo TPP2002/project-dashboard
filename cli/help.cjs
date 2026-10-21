@@ -29,7 +29,7 @@ const EXIT_CODES = [
 const GROUPS = [
   ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
-  ['卡的生命周期', ['add', 'assign', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
+  ['卡的生命周期', ['add', 'assign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
     'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud']],
@@ -437,6 +437,23 @@ const COMMANDS = {
     ],
     examples: ['block FEAT-12 --project myproj --by FEAT-09 --reason "要等新的鉴权中间件"'],
     notes: [],
+  },
+  unblock: {
+    summary: '解除指定或全部阻塞，记录解除依据并保持卡的状态',
+    usage: 'unblock <卡号> --project <id> [--by <卡号>...] --reason <解除依据>',
+    args: [
+      ['--by <卡号>', '要去掉的阻塞卡，可重复；不传则清空全部阻塞卡'],
+      ['--reason <文本>', '必填，解除阻塞的依据'],
+    ],
+    examples: [
+      'unblock FEAT-12 --project myproj --reason "上游已全部完成"',
+      'unblock FEAT-12 --project myproj --by FEAT-09 --by FEAT-10 --reason "这两张上游卡已完成"',
+    ],
+    notes: [
+      '阻塞卡清空后删除 blockReason；还有剩余则保留。不改状态、进度或 dependsOn。',
+      '只有阻塞说明时可清掉说明；暂缓的卡用 unpark --reason 解除。',
+      '缺少解除依据、指定卡号不在阻塞列表、没有阻塞或卡已暂缓时退出码 1，不写盘。',
+    ],
   },
   set: {
     summary: '兜底：直接给某个字段赋值（有专门命令的字段优先用专门命令）',
