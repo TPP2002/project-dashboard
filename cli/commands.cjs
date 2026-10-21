@@ -368,6 +368,10 @@ function claim(flags) {
     if (actorUserId && t.assigneeUserId && t.assigneeUserId !== actorUserId) {
       throw Object.assign(new Error(`这张卡已被成员 ${t.assigneeName || t.assigneeUserId} 认领(主负责人),云端退回本次认领;要一起干请在网页上改用「加入协作」,或请对方先放弃认领`), { status: 409 });
     }
+    if (actorUserId && !t.assigneeUserId) {
+      t.assigneeUserId = actorUserId;
+      t.assigneeName = commandDefault(flags, 'actorName', () => undefined) || actorUserId;
+    }
     t.status = '施工中';
     t.builder = builder; // 施工方式落卡;老卡没这字段照样读,只有新认领才强制写
     t.dates = t.dates || {}; if (!t.dates.start) t.dates.start = today();
@@ -386,6 +390,36 @@ function claim(flags) {
     res.text = `✔ claim ${id} → ${res.task.status}\n\n`
       + buildBrief({ pid: proj.id, projName: proj.name, board, task: res.task });
   }
+  return res;
+}
+
+// ---------- assign（云同步补记主负责人，不迁移状态） ----------
+function assign(flags) {
+  const usage = 'assign <卡号> --me [--project <id>] [--author <身份>]';
+  const id = need((flags._ || [])[0], usage);
+  if (flags.me !== true) throw new Error('缺参数。用法: ' + usage);
+  const proj = resolveProj(flags);
+  const actorUserId = commandDefault(flags, 'actorUserId', () => undefined);
+  const actorName = commandDefault(flags, 'actorName', () => undefined) || actorUserId;
+  if (!actorUserId && !proj.cloud) throw new Error('assign 只在云同步时生效');
+  const { board, changed } = mutateTask(proj, id, b => {
+    const t = findTask(b, id);
+    if (t.status === '已作废') {
+      throw Object.assign(new Error('已作废的卡不能补记主负责人'), { status: 409 });
+    }
+    // 本地没有可信操作人；已有主负责人时不能靠 --author 冒认身份。
+    if (t.assigneeUserId && t.assigneeUserId !== actorUserId) {
+      throw Object.assign(new Error(`这张卡已被成员 ${t.assigneeName || t.assigneeUserId} 认领(主负责人)，不能补记主负责人`), { status: 409 });
+    }
+    if (actorUserId && !t.assigneeUserId) {
+      t.assigneeUserId = actorUserId;
+      t.assigneeName = actorName;
+    }
+  }, act('note', flags.author || actorName, actorUserId
+    ? `${actorName} 为 ${id} 补记主负责人`
+    : `${flags.author || 'cli'} 为 ${id} 已提交补记主负责人请求，云端按操作人落地`, id));
+  const res = okTask(board, id, changed);
+  res.text = actorUserId ? `✔ ${id} 补记主负责人成功` : '已提交,云同步回放后生效';
   return res;
 }
 
@@ -1198,7 +1232,7 @@ function cost(flags) {
 module.exports = {
   COMMAND_DEFAULTS, currentBranch, readStdinSync,
   taskTransition,
-  register, add, addBatch, isBatchAdd, claim, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
+  register, add, addBatch, isBatchAdd, claim, assign, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
   hasCostQuantity, hasCostLedger, costGateRefusal,
 };

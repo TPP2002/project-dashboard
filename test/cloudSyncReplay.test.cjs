@@ -89,8 +89,10 @@ const cases = {
   'mark-landed': { setup: f => { addPending(f); decide(f); }, args: ['mark-landed', 'T1', '--all', '--commit', 'abcdef1'] },
   cost: { args: ['cost', 'T1', '--agents', 'test:2', '--tokens', '500', '--credits', '10', '--credit-unit', '积分', '--note', '本次用量'] },
 };
-test('the equivalence matrix covers every declared replay command except set', () => {
-  assert.deepEqual(Object.keys(cases).sort(), REPLAY_COMMANDS.filter(c => c !== 'set').sort());
+// assign deliberately defers assignment to the authenticated actor; its source/destination
+// differences and the real CLI outbox-to-replay journey are covered by cloudCliAssign.
+test('the equivalence matrix plus actor-dependent assign covers every declared replay command except set', () => {
+  assert.deepEqual([...Object.keys(cases), 'assign'].sort(), REPLAY_COMMANDS.filter(c => c !== 'set').sort());
 });
 for (const [command, spec] of Object.entries(cases)) {
   test(`replay ${command}: real source CLI, independent destination, deleted input and all affected cards/activity equal`, t => {

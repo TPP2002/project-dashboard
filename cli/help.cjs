@@ -29,7 +29,7 @@ const EXIT_CODES = [
 const GROUPS = [
   ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
-  ['卡的生命周期', ['add', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
+  ['卡的生命周期', ['add', 'assign', 'unclaim', 'park', 'unpark', 'block', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
     'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud']],
@@ -106,6 +106,18 @@ const COMMANDS = {
       '自干例外的「为什么符合例外」要用 note 在卡上留一句；done 时发现没留只提醒、不拦收官。',
       '卡还不在板上就先 add。不 claim 就 commit 会被闸门拒。',
     ],
+  },
+  assign: {
+    summary: '通过云同步补记自己为主负责人，保留卡的状态和进度',
+    usage: 'assign <卡号> --me [--project <id>] [--author <身份>]',
+    args: [
+      ['<卡号>', '要补记主负责人的卡，已完工也可补记，已作废拒绝'],
+      ['--me', '必填，主负责人由云端登录操作人确定，不能用 --author 指定'],
+    ],
+    examples: ['assign FEAT-12 --me --project myproj --author 项目经理'],
+    notes: ['只在云同步时生效；本地仅追加请求活动并入队，已提交,云同步回放后生效。',
+      '卡上已有其他主负责人时拒绝；本地无法确认操作人，已有主负责人时也拒绝。云端同一人重复补记不改字段。',
+      '回放仅在无主负责人时写 assigneeUserId/assigneeName，并追加活动；不改其他卡字段。'],
   },
   progress: {
     summary: '回写进度与下一个里程碑',

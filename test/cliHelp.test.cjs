@@ -32,6 +32,16 @@ test('cloud 帮助覆盖每个子命令、密码输入和接入模式', () => {
   for (const phrase of ['标准输入', '--upload', '--adopt', '--drop-pending', '--seq', '--task-name', '--sched-cli', '--sched-share']) assert.ok(result.stdout.includes(phrase), phrase);
 });
 
+test('assign 帮助说明云同步补记用法、边界和示例，并列在写命令组', () => {
+  const result = run(['assign', '--help']);
+  assert.equal(result.status, 0, result.stderr);
+  for (const word of ['assign <卡号> --me', '--project', '--author', '只在云同步时生效', '已完工', '已作废', '云同步回放后生效']) {
+    assert.ok(result.stdout.includes(word), word);
+  }
+  assert.ok(help.GROUPS.find(([title]) => title === '卡的生命周期')[1].includes('assign'));
+  assert.ok(result.stdout.includes(help.COMMANDS.assign.examples[0]));
+});
+
 test('每条帮助都有一句话、用法行、参数表、示例、退出码', () => {
   for (const [cmd, entry] of Object.entries(help.COMMANDS)) {
     assert.ok(entry.summary && entry.summary.length >= 4, `${cmd} 缺一句话说明`);
