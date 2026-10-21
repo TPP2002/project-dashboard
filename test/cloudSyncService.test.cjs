@@ -22,7 +22,8 @@ test('launcher runs direct or hold with Windows argv quoting and hidden synchron
   for (const scheduled of [false, true]) {
     const schedCli = path.join(os.tmpdir(), 'scheduler root', 'sched.cjs');
     const schedShare = path.join(os.tmpdir(), 'shared files');
-    const source = service.launcherSource({ node, cloudSyncScript: script, ...(scheduled ? { schedCli, schedShare } : {}) });
+    const workDir = path.join(os.tmpdir(), 'sync data');
+    const source = service.launcherSource({ node, cloudSyncScript: script, ...(scheduled ? { schedCli, schedShare, workDir } : {}) });
     const match = source.match(/rc = sh\.Run\("((?:""|[^"])*)", 0, True\)/);
     assert.ok(match, source);
     const command = match[1].replace(/""/g, '"');
@@ -32,11 +33,14 @@ test('launcher runs direct or hold with Windows argv quoting and hidden synchron
     if (scheduled) {
       for (const fragment of [`"${schedCli}" "hold"`, `"--share" "${schedShare}"`, '"--cores" "1"',
         '"--project" "dashboard"', '"--category" "other"', '"--work-type" "cloud-sync"', `"--" "${node}"`,
-        `"--root" "${path.join(os.tmpdir(), 'code root')}"`, '"--targets" "cli/cloudSync.cjs"']) assert.ok(command.includes(fragment), fragment);
+        `"--root" "${workDir}"`, '"--targets" "launcher.vbs"']) assert.ok(command.includes(fragment), fragment);
+      // 常驻进程的工作目录不得落在代码根(发布副本),否则 release 换名会被占住
+      assert.ok(!command.includes(`"--root" "${path.join(os.tmpdir(), 'code root')}"`));
     }
     assert.match(source, /WScript\.Quit rc/);
   }
   assert.throws(() => service.launcherSource({ node, cloudSyncScript: script, schedCli: script }), /同时提供/);
+  assert.throws(() => service.launcherSource({ node, cloudSyncScript: script, schedCli: script, schedShare: script }), /同步数据目录/);
 });
 
 test('registration has current-user logon repetition, IgnoreNew and only a wscript action', () => {
