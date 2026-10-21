@@ -146,7 +146,11 @@ test('real cloud sync service: replay, guards, snapshots, upload, concurrency an
     assert.deepEqual(response.body.results.map(r => r.status), chain.map(() => 'applied'));
     firstResults = response.body.results;
     const cloud = read(), direct = JSON.parse(fs.readFileSync(localBoard));
-    assert.deepEqual(comparable(cloud.tasks), comparable(direct.tasks));
+    // Replayed claim records the authenticated device owner as assignee; the local CLI has no actor.
+    assert.equal(cloud.tasks[0].assigneeUserId, owner.user.id);
+    assert.equal(cloud.tasks[0].assigneeName, owner.user.displayName);
+    const withoutAssignee = tasks => tasks.map(({ assigneeUserId, assigneeName, ...rest }) => rest);
+    assert.deepEqual(comparable(withoutAssignee(cloud.tasks)), comparable(direct.tasks));
     assert.equal(cloud.tasks[0].status, '已完工');
     const audit = ['userId', 'via', 'clientTs', 'device', 'opId'];
     assert.deepEqual(comparable(cloud.activity.map(a => Object.fromEntries(Object.entries(a).filter(([k]) => !audit.includes(k))))), comparable(direct.activity));
