@@ -33,4 +33,13 @@ function memberActions(task, user) {
   if (createdOrAssigned && terminal(task)) actions.push('reopen');
   return actions;
 }
-module.exports = { memberActions, aiWork };
+function toEsmSource() {
+  return [
+    '// Generated from core/collaborationRules.cjs; do not edit.',
+    `const terminal = ${String(terminal)};`,
+    `const pending = ${String(pending)};`,
+    ...[memberActions, aiWork].map(fn => `export const ${fn.name} = ${String(fn)};`),
+    '',
+  ].join('\n');
+}
+module.exports = { memberActions, aiWork, toEsmSource };

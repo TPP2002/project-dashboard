@@ -13,6 +13,8 @@ import { appearance } from '@/utils/appearance'
 import { ageLevel, ageTone } from '@/utils/ageLevel'
 import type { DocRef, Status } from '@/types'
 import OwnerCollaborators from '@/collaboration/OwnerCollaborators.vue'
+import OwnerTaskActions from '@/collaboration/OwnerTaskActions.vue'
+import { isCollaborationOwner } from '@/collaboration/http'
 
 /**
  * docked = 宽屏内嵌模式(由 App.vue 按 ≥1600 的断点决定)。
@@ -261,7 +263,7 @@ onUnmounted(() => {
           </header>
 
           <div class="d-body">
-            <OwnerCollaborators v-if="task.collaborators" :key="pid + ':' + task.id" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
+            <OwnerCollaborators v-if="task.collaborators && !isCollaborationOwner()" :key="pid + ':' + task.id" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
             <div class="d-title-row">
               <h2 class="d-title">{{ humanTitle(task) }}</h2>
               <button
@@ -475,6 +477,11 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
+            </section>
+            <section v-if="isCollaborationOwner()" class="sec block">
+              <div class="sec-t">协作操作</div>
+              <OwnerCollaborators v-if="task.collaborators" :key="pid + ':' + task.id" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
+              <OwnerTaskActions :key="'actions:' + pid + ':' + task.id" variant="drawer" :task="task" :project-id="pid" :refresh="() => store.loadBoard(pid, { detect: true })" />
             </section>
           </div>
         </aside>
