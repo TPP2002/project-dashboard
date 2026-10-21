@@ -1,6 +1,6 @@
 'use strict';
 const REPLAY_COMMANDS = Object.freeze(['add', 'claim', 'assign', 'unclaim', 'progress', 'await-collect',
-  'collect-brief', 'pending', 'decide', 'undecide', 'park', 'unpark', 'block', 'done', 'cancel',
+  'collect-brief', 'pending', 'decide', 'undecide', 'park', 'unpark', 'block', 'unblock', 'done', 'cancel',
   'reopen', 'note', 'request-info', 'edit', 'mark-landed', 'cost', 'set']);
 const PATCH_COMMANDS = Object.freeze(['sync-from-git', 'doctor', 'backfill', 'sync-progress']);
 

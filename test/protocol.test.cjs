@@ -14,7 +14,7 @@ const cmds = require('../cli/commands.cjs');
 
 const CLI = path.resolve(__dirname, '../cli/index.cjs');
 const NAMES = ['brief', 'claim', 'assign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
-  'park', 'unpark', 'block', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox'];
+  'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox'];
 const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const card = (flags = {}) => JSON.parse(protocol({ ...flags, format: 'json' }).text);
 
@@ -191,6 +191,9 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   task = apply('block', { by: 'UPSTREAM', reason: '上游未完成' });
   assert.deepEqual(task.deps.blockedBy, ['UPSTREAM']);
   assert.equal(task.blockReason, '上游未完成');
+  task = apply('unblock', { reason: '上游完成' });
+  assert.deepEqual(task.deps.blockedBy, []);
+  assert.ok(!Object.hasOwn(task, 'blockReason'));
   task = apply('park', { reason: '等条件', note: '已完成主体' });
   assert.equal(task.blockReason, '等条件');
   assert.equal(task.parkedNote, '已完成主体');

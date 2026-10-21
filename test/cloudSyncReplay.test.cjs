@@ -79,6 +79,7 @@ const cases = {
   park: { args: ['park', 'T1', '--reason', '等上游', '--note', '保留说明'] },
   unpark: { setup: f => cmds.park({ ...f.a.P, _: ['T1'], reason: '等上游' }), args: ['unpark', 'T1', '--reason', '上游已完成'] },
   block: { args: ['block', 'T1', '--by', 'T2', '--reason', '上游依赖'] },
+  unblock: { setup: f => cmds.block({ ...f.a.P, _: ['T1'], by: 'T2', reason: '上游' }), args: ['unblock', 'T1', '--reason', '上游已完成'] },
   done: { setup: f => { addPending(f); decide(f); cmds.cost({ ...f.a.P, _: ['T1'], agents: 'test:1', tokens: '10' }); },
     args: ['done', 'T1', '--commit', 'abcdef123456', '--pr', '42'] },
   cancel: { args: ['cancel', 'T1', '--reason', '需求撤回'] },

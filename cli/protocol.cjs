@@ -7,7 +7,7 @@ const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 const COMMAND_NAMES = [
   'brief', 'claim', 'assign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
-  'park', 'unpark', 'block', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox',
+  'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox',
 ];
 
 // 只读命令:状态与写入完全同构,md 渲染时并成一行(见 renderMarkdown),JSON 侧照旧逐条给。
@@ -62,6 +62,7 @@ const TRANSITIONS = [
     '仅暂缓可用；删除 blockReason/parkedNote，写 unparkReason、unparkedAt',
   ] },
   { command: 'block', status: null, writes: ['合并 deps.blockedBy，可选 blockReason；不改状态，无终态拒绝闸'] },
+  { command: 'unblock', status: null, writes: ['去掉 deps.blockedBy 中给定或全部卡号,空了清 blockReason;不改状态;暂缓卡拒绝'] },
   { command: 'cancel', status: '已作废', writes: [
     '任意状态可用；cancelReason、cancelledAt、lastProgressAt；删除 blockReason/parkedNote/unparkReason/unparkedAt/unclaimReason/unclaimedAt/nextMilestone；保留 percent/完工日期',
   ] },
@@ -125,12 +126,10 @@ function renderMarkdown(card) {
   const pending = card.examples.pending.split('\n');
   return [
     `# 看板协议卡 · 项目 ${card.project} · 由 CLI 生成、与 --help 同源`,
-    '## 什么时候跑什么',
     ...card.rules.slice(0, -1).map((rule) => `- ${rule}`),
     '## 命令一行用法',
     ...card.commands.map(({ usage }) => `- \`${usage}\``),
-    '## 状态机与各命令静默行为',
-    '写命令共同追加 activity、刷新 project.updatedAt；“按参数”字段仅在传入时写。JSON 的 status=null 表示保持。',
+    '**状态机与各命令静默行为**：写命令共同追加 activity、刷新 project.updatedAt；“按参数”字段仅在传入时写。JSON 的 status=null 表示保持。',
     '| 命令 | 改不改状态、改到哪 | 实际写了什么字段 |',
     '|---|---|---|',
     // 只读命令那几行全是一模一样的「保持 / 只读，无写入」，在 md 里并成一行 —— 协议卡有 66 行

@@ -837,6 +837,29 @@ function block(flags) {
   return okTask(board, id, changed);
 }
 
+function unblock(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'unblock <taskId> [--by <卡号>...] --reason <解除依据>');
+  const reason = String(need(flags.reason, '--reason <解除依据>'));
+  const by = asArray(flags.by);
+  let removed = [];
+  const { board, changed } = mutateTask(proj, id, (b) => {
+    const t = findTask(b, id);
+    if (t.status === '暂缓') throw new Error('暂缓的卡用 unpark --reason 解除');
+    const blockedBy = t.deps?.blockedBy || [];
+    if (!blockedBy.length && !Object.hasOwn(t, 'blockReason')) throw new Error('这张卡没有阻塞');
+    for (const blocker of by) {
+      if (!blockedBy.includes(blocker)) throw new Error(`卡号 ${blocker} 不在 blockedBy 中`);
+    }
+    removed = by.length ? blockedBy.filter(blocker => by.includes(blocker)) : [...blockedBy];
+    const remaining = blockedBy.filter(blocker => !removed.includes(blocker));
+    if (t.deps && Object.hasOwn(t.deps, 'blockedBy')) t.deps.blockedBy = remaining;
+    if (!remaining.length) delete t.blockReason;
+  }, () => act('unblock', flags.author,
+    `解除阻塞 ${id}:${reason}(${removed.length ? `去掉 ${removed.join(',')}` : '清掉阻塞说明'})`, id));
+  return okTask(board, id, changed);
+}
+
 /**
  * 这条账目条目里有没有「消耗量」—— 即它到底说出了花掉多少,而不只是谁干的。
  *
@@ -1090,7 +1113,12 @@ const FIELD_COMMANDS = {
   ],
   blockReason: [
     { cmd: 'block', use: 'block <id> --by <卡号>… --reason <理由>' },
+    { cmd: 'unblock', use: 'unblock <id> [--by <卡号>…] --reason <解除依据>' },
     { cmd: 'park', use: 'park <id> --reason <理由>' },
+  ],
+  'deps.blockedBy': [
+    { cmd: 'block', use: 'block <id> --by <卡号>… --reason <理由>' },
+    { cmd: 'unblock', use: 'unblock <id> [--by <卡号>…] --reason <解除依据>' },
   ],
   parkedNote: [{ cmd: 'park', use: 'park <id> --reason <理由> --note <遗留>' }],
   cost: [{ cmd: 'cost', use: 'cost <id> --agents "<模型:个数,…>" [--tokens <n>]' }],
@@ -1236,6 +1264,6 @@ module.exports = {
   COMMAND_DEFAULTS, currentBranch, readStdinSync,
   taskTransition,
   register, add, addBatch, isBatchAdd, claim, assign, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
-  park, unpark, block, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
+  park, unpark, block, unblock, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
   hasCostQuantity, hasCostLedger, costGateRefusal,
 };
