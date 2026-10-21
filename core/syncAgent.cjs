@@ -42,6 +42,7 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
   let client = injectedClient, config, credential, running = false, runPromise, lockFd;
   let tunnel = null, attempt = 0, retryAt = 0, stream = null, streamConnected = false, streamRetryAt = 0;
   let streamAbort, wake, sleepTimer, shuttingDown = false;
+  let stopRequested = false;
   const queues = new Map(), projectErrors = new Map();
   const staleRound = Symbol('project detached or remote binding changed');
   const agent = { pid: process.pid, startedAt, state: 'reconnecting', nextRetryAt: null, lastError: null,
@@ -362,6 +363,9 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
     const signatures = new Map();
     while (running) {
       try {
+        if (fs.existsSync(path.join(root, 'stop.request'))) {
+          stopRequested = true; running = false; break;
+        }
         const reconnect = path.join(root, 'reconnect.request');
         if (fs.existsSync(reconnect)) {
           fs.unlinkSync(reconnect); disconnect(); killTunnel(); retryAt = 0; streamRetryAt = 0; lastSync = -Infinity;
@@ -403,8 +407,11 @@ function createSyncAgent({ registryPath, now = Date.now, client: injectedClient,
       finally {
         running = false; shuttingDown = true; disconnect(); killTunnel();
         await Promise.allSettled([...queues.values()]);
-        agent.state = 'stopped'; agent.nextRetryAt = null; publish();
-        process.removeListener('exit', exit); release();
+        try { agent.state = 'stopped'; agent.nextRetryAt = null; publish(); }
+        finally {
+          process.removeListener('exit', exit); release();
+          if (stopRequested) fs.rmSync(path.join(root, 'stop.request'), { force: true });
+        }
       }
     })();
     return runPromise;

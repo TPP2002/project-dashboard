@@ -26,10 +26,10 @@ test('注册表里每条命令都有帮助条目(新增命令漏写帮助会当�
 test('cloud 帮助覆盖每个子命令、密码输入和接入模式', () => {
   const result = run(['cloud', '--help']);
   assert.equal(result.status, 0, result.stderr);
-  for (const command of ['config', 'login', 'logout', 'reconnect', 'status', 'ack', 'attach', 'detach']) {
+  for (const command of ['config', 'login', 'logout', 'reconnect', 'status', 'ack', 'attach', 'detach', 'service install', 'service uninstall', 'service status']) {
     assert.ok(result.stdout.includes(command), command);
   }
-  for (const phrase of ['标准输入', '--upload', '--adopt', '--drop-pending', '--seq']) assert.ok(result.stdout.includes(phrase), phrase);
+  for (const phrase of ['标准输入', '--upload', '--adopt', '--drop-pending', '--seq', '--task-name', '--sched-cli', '--sched-share']) assert.ok(result.stdout.includes(phrase), phrase);
 });
 
 test('每条帮助都有一句话、用法行、参数表、示例、退出码', () => {
