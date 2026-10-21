@@ -4,7 +4,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { registryFile, syncRoot, readConfig, writeConfig, enrollDevice,
   clearDeviceCredential, loadDeviceCredential, withCloudClient } = require('../core/syncCredential.cjs');
-const SUBCOMMANDS = ['config', 'login', 'logout', 'reconnect', 'status', 'ack', 'attach', 'detach'];
+const SUBCOMMANDS = ['config', 'login', 'logout', 'reconnect', 'status', 'ack', 'attach', 'detach', 'service'];
 const { atomicWriteJsonSync, atomicWriteFileSync } = require('../core/atomicWrite.cjs');
 const { resolveProject, readRegistry } = require('../core/resolveProject.cjs');
 const { withLock } = require('../core/lock.cjs');
@@ -268,6 +268,19 @@ async function cloud(flags) {
     throw Object.assign(new Error('未知云端子命令。可用: ' + SUBCOMMANDS.join(' ')), { exitCode: 2 });
   }
   const registryPath = registryFile(flags.registry);
+  if (command === 'service') {
+    const action = flags._[1];
+    if (!['install', 'uninstall', 'status'].includes(action) || flags._.length !== 2) {
+      throw Object.assign(new Error('用法：cloud service install | uninstall | status'), { exitCode: 2 });
+    }
+    const allowed = new Set(['_', 'registry', 'json', 'task-name', 'sched-cli', 'sched-share']);
+    if (Object.keys(flags).some(key => !allowed.has(key))) throw new Error('未知后台服务参数');
+    for (const key of ['registry', 'task-name', 'sched-cli', 'sched-share']) {
+      if (flags[key] !== undefined && (typeof flags[key] !== 'string' || !flags[key].trim())) throw new Error('后台服务参数必须提供非空值');
+    }
+    return require('../core/cloudService.cjs')[action]({ registryPath, taskName: flags['task-name'],
+      schedCli: flags['sched-cli'], schedShare: flags['sched-share'] });
+  }
   if (command === 'config') return configCommand(flags, registryPath);
   if (command === 'login') return login(flags, registryPath);
   if (command === 'logout') {

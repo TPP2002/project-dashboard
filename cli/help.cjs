@@ -39,7 +39,7 @@ const GROUPS = [
 const COMMANDS = {
   cloud: {
     summary: '配置、登录和管理本机项目的云同步，查看并确认云端退回',
-    usage: 'cloud <config|login|logout|reconnect|status|ack|attach|detach> [参数]',
+    usage: 'cloud <config|login|logout|reconnect|status|ack|attach|detach|service> [参数]',
     args: [
       ['config [--ssh-host <别名> --remote-port <n> --local-port <n> --origin <地址>]', '配置隧道；不带参数查看配置'],
       ['config --direct --base-url <地址> --origin <地址>', '配置直连'],
@@ -50,8 +50,11 @@ const COMMANDS = {
       ['ack --project <id> (--all | --seq <n> [--seq <n>…])', '把退回标为知道了'],
       ['attach <本机id> --remote <云端id> (--upload | --adopt)', '上传本机或备份本机后采用云端'],
       ['detach <本机id> [--drop-pending]', '退出同步；丢弃待发前留存原始记录'],
+      ['service install [--sched-cli <绝对路径> --sched-share <共享盘根>]', '安装并启动静默同步；调度参数须成对提供'],
+      ['service uninstall [--task-name <名称>]', '卸载并停止同步，保留队列与状态'],
+      ['service status [--json]', '查看计划任务、下次触发与运行状态；三项均支持 --task-name，默认 DashboardCloudSync'],
     ],
-    examples: ['cloud status --json', 'cloud login --username owner'],
+    examples: ['cloud status --json', 'cloud login --username owner', 'cloud service install --sched-cli "<sched.cjs绝对路径>" --sched-share "<共享盘根>"', 'cloud service uninstall', 'cloud service status --json'],
     notes: ['所有子命令支持 --registry 与 --json。未知子命令退出 2；status 读不到状态文件仍退出 0。'],
   },
   // ——— 开工与同步 ———
