@@ -31,7 +31,8 @@ test('launcher runs direct or hold with Windows argv quoting and hidden synchron
     assert.equal(command.includes('"hold"'), scheduled);
     if (scheduled) {
       for (const fragment of [`"${schedCli}" "hold"`, `"--share" "${schedShare}"`, '"--cores" "1"',
-        '"--project" "dashboard"', '"--category" "other"', '"--work-type" "cloud-sync"', `"--" "${node}"`]) assert.ok(command.includes(fragment), fragment);
+        '"--project" "dashboard"', '"--category" "other"', '"--work-type" "cloud-sync"', `"--" "${node}"`,
+        `"--root" "${path.join(os.tmpdir(), 'code root')}"`, '"--targets" "cli/cloudSync.cjs"']) assert.ok(command.includes(fragment), fragment);
     }
     assert.match(source, /WScript\.Quit rc/);
   }
@@ -108,6 +109,7 @@ test('status combines task query, live lock and report without trusting stale re
   const report = { agent: { pid: 4321, state: 'connected' } }; write(path.join(f.root, 'status.json'), report);
   const options = { registryPath: f.registryPath, platform: 'win32', alive: pid => pid === 4321,
     run(command, args) { assert.equal(command, 'powershell.exe'); assert.match(decode(args), /Get-ScheduledTaskInfo/);
+      assert.match(decode(args), /if \(\$i\.NextRunTime\)/);
       return JSON.stringify({ installed: true, nextRunTime: '2026-01-01T10:00:00' }); } };
   assert.equal(service.status(options).running, false);
   fs.writeFileSync(path.join(f.root, 'agent.lock'), '4321');
