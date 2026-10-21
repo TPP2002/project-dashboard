@@ -14,8 +14,10 @@ const xml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 const powershellArgs = source => ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')];
 function launcherSource({ node, cloudSyncScript, schedCli, schedShare, registryPath }) {
   if (!!schedCli !== !!schedShare) throw new Error('--sched-cli 与 --sched-share 必须同时提供');
+  // 计划任务的工作目录是系统目录,hold 默认按它算代码指纹会撞上无权限文件,所以显式给代码根
   const args = schedCli ? [node, schedCli, 'hold', '--share', schedShare, '--project', 'dashboard', '--cores', '1',
-    '--title', '看板云同步常驻', '--category', 'other', '--work-type', 'cloud-sync', '--', node, cloudSyncScript, 'run']
+    '--title', '看板云同步常驻', '--category', 'other', '--work-type', 'cloud-sync',
+    '--root', path.resolve(path.dirname(cloudSyncScript), '..'), '--targets', 'cli/cloudSync.cjs', '--', node, cloudSyncScript, 'run']
     : [node, cloudSyncScript, 'run'];
   return ['Option Explicit', 'Dim sh, rc', 'Set sh = CreateObject("WScript.Shell")',
     ...(registryPath ? [`sh.Environment("PROCESS")("DASHBOARD_REGISTRY") = ${literal(registryPath)}`] : []),
@@ -80,7 +82,7 @@ async function uninstall({ registryPath, taskName = DEFAULT_TASK, platform = pro
 function status({ registryPath, taskName = DEFAULT_TASK, platform = process.platform, run = defaultRun, alive = pidAlive } = {}) {
   let task = { installed: false, nextRunTime: null };
   if (platform === 'win32') {
-    const output = run('powershell.exe', powershellArgs(`$ErrorActionPreference='Stop'; $t=Get-ScheduledTask | Where-Object { $_.TaskName -eq ${ps(taskName)} -and $_.TaskPath -eq '\\' }; if ($t) { $i=$t | Get-ScheduledTaskInfo; @{installed=$true;nextRunTime=$i.NextRunTime.ToString('o')} | ConvertTo-Json -Compress } else { @{installed=$false;nextRunTime=$null} | ConvertTo-Json -Compress }`));
+    const output = run('powershell.exe', powershellArgs(`$ErrorActionPreference='Stop'; $t=Get-ScheduledTask | Where-Object { $_.TaskName -eq ${ps(taskName)} -and $_.TaskPath -eq '\\' }; if ($t) { $i=$t | Get-ScheduledTaskInfo; @{installed=$true;nextRunTime=$(if ($i.NextRunTime) { $i.NextRunTime.ToString('o') } else { $null })} | ConvertTo-Json -Compress } else { @{installed=$false;nextRunTime=$null} | ConvertTo-Json -Compress }`));
     task = JSON.parse(String(output).trim());
   }
   const root = syncRoot(registryPath), report = readJson(path.join(root, 'status.json')), pid = lockPid(root);
