@@ -371,6 +371,8 @@ function claim(flags) {
     if (actorUserId && !t.assigneeUserId) {
       t.assigneeUserId = actorUserId;
       t.assigneeName = commandDefault(flags, 'actorName', () => undefined) || actorUserId;
+      // 与网页认领同口径:主负责人不能同时在协作人名单里(boardSchema 校验)
+      if (t.collaborators) t.collaborators = t.collaborators.filter(c => c.userId !== actorUserId);
     }
     t.status = '施工中';
     t.builder = builder; // 施工方式落卡;老卡没这字段照样读,只有新认领才强制写
@@ -414,6 +416,7 @@ function assign(flags) {
     if (actorUserId && !t.assigneeUserId) {
       t.assigneeUserId = actorUserId;
       t.assigneeName = actorName;
+      if (t.collaborators) t.collaborators = t.collaborators.filter(c => c.userId !== actorUserId);
     }
   }, act('note', flags.author || actorName, actorUserId
     ? `${actorName} 为 ${id} 补记主负责人`

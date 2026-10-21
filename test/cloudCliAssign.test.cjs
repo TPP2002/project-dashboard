@@ -99,6 +99,16 @@ test('assign supports every non-void status; same actor preserves fields and mis
   }
 });
 
+test('collaborator who becomes assignee via replay claim or assign leaves the collaborator list', t => {
+  const mate = { userId: 'u-mate', name: '小李', joinedAt: '2026-01-02T00:00:00Z' };
+  for (const command of ['claim', 'assign']) {
+    const f = fixture(t, { collaborators: [{ userId: actor.actorUserId, name: actor.actorName, joinedAt: '2026-01-02T00:00:00Z' }, mate] });
+    assert.equal(f.replay(command).ok, true);
+    assert.equal(f.read().tasks[0].assigneeUserId, actor.actorUserId);
+    assert.deepEqual(f.read().tasks[0].collaborators, [mate]);
+  }
+});
+
 test('⑥ assign refuses another member by name or id, leaving board bytes unchanged', t => {
   for (const assigneeName of ['小王', undefined]) {
     const f = fixture(t, { assigneeUserId: 'other', assigneeName });
