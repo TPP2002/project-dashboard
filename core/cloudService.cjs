@@ -12,12 +12,14 @@ const quote = value => '"' + String(value).replace(/(\\*)"/g, '$1$1\\"').replace
 const ps = value => "'" + String(value).replace(/'/g, "''") + "'";
 const xml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
 const powershellArgs = source => ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')];
-function launcherSource({ node, cloudSyncScript, schedCli, schedShare, registryPath }) {
+function launcherSource({ node, cloudSyncScript, schedCli, schedShare, registryPath, workDir }) {
   if (!!schedCli !== !!schedShare) throw new Error('--sched-cli 与 --sched-share 必须同时提供');
-  // 计划任务的工作目录是系统目录,hold 默认按它算代码指纹会撞上无权限文件,所以显式给代码根
+  if (schedCli && !workDir) throw new Error('调度台包装须提供同步数据目录');
+  // hold 按 --root 算代码指纹并把它设成常驻进程的工作目录:用同步数据目录、按启动器算指纹,
+  // 既避开计划任务所在系统目录的无权限文件,也不占住发布副本目录(否则 release 换名会 EBUSY)
   const args = schedCli ? [node, schedCli, 'hold', '--share', schedShare, '--project', 'dashboard', '--cores', '1',
     '--title', '看板云同步常驻', '--category', 'other', '--work-type', 'cloud-sync',
-    '--root', path.resolve(path.dirname(cloudSyncScript), '..'), '--targets', 'cli/cloudSync.cjs', '--', node, cloudSyncScript, 'run']
+    '--root', workDir, '--targets', 'launcher.vbs', '--', node, cloudSyncScript, 'run']
     : [node, cloudSyncScript, 'run'];
   return ['Option Explicit', 'Dim sh, rc', 'Set sh = CreateObject("WScript.Shell")',
     ...(registryPath ? [`sh.Environment("PROCESS")("DASHBOARD_REGISTRY") = ${literal(registryPath)}`] : []),
@@ -42,7 +44,7 @@ function install({ registryPath, taskName = DEFAULT_TASK, schedCli, schedShare, 
   }
   const root = syncRoot(registryPath), launcherPath = path.join(root, 'launcher.vbs');
   const source = launcherSource({ node: process.execPath, cloudSyncScript: path.resolve(__dirname, '../cli/cloudSync.cjs'),
-    schedCli, schedShare, registryPath: registryFile(registryPath) });
+    schedCli, schedShare, registryPath: registryFile(registryPath), workDir: root });
   fs.mkdirSync(root, { recursive: true });
   // WScript reads Unicode scripts reliably with a UTF-16 BOM, including Chinese titles.
   fs.writeFileSync(launcherPath, '\ufeff' + source, 'utf16le');
