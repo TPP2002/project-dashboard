@@ -1176,7 +1176,7 @@ function handleDispatch(req, res) {
     let child;
     try {
       child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: true, shell: false,
       });
       child.unref();
     } catch (e) {
@@ -1233,7 +1233,7 @@ function handleDispatchProject(req, res) {
       'chcp 65001 >nul && claude ' + JSON.stringify(prompt)];
     try {
       const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: true, shell: false,
       });
       child.unref();
     } catch (e) {
@@ -1288,7 +1288,7 @@ function handleDispatchTask(req, res) {
     const cmdArgs = ['/c', 'start', '看板派单-' + tid, 'cmd', '/k', 'claude', trigger];
     try {
       const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: true, shell: false,
       });
       child.unref();
     } catch (e) {
@@ -1513,13 +1513,21 @@ function serveStatic(req, res, pathname) {
 // ============ 主入口：路由 ============
 
 const server = http.createServer(async (req, res) => {
-  if (!collaborationApi && !isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
   let parsed;
   try { parsed = url.parse(req.url, true); }
   catch (_) { return sendJson(res, 400, { ok: false, error: '非法 URL' }); }
   const pathname = parsed.pathname || '/';
 
   try {
+    if (pathname === '/board-member.cjs') {
+      if (!['GET', 'HEAD'].includes(req.method)) return sendJson(res, 405, { ok: false, error: '仅支持 GET/HEAD' });
+      const bytes = fs.readFileSync(path.join(DASH_ROOT, 'cli', 'boardMember.cjs'));
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="board-member.cjs"', 'Cache-Control': 'no-cache',
+        'Content-Length': bytes.length });
+      res.end(req.method === 'HEAD' ? undefined : bytes); return;
+    }
+    if (!collaborationApi && !isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
     if (collaborationApi && await collaborationApi.handle(req, res, pathname)) return;
     if (!collaborationApi && pathname === '/api/auth/session' && req.method === 'GET') return sendJson(res, 200, { ok: true, mode: 'local', user: null });
     if (pathname.startsWith('/api/')) {
@@ -1658,11 +1666,11 @@ function openBrowser(targetUrl) {
   try {
     const { spawn } = require('child_process');
     if (process.platform === 'win32') {
-      spawn('cmd', ['/c', 'start', '', targetUrl], { detached: true, stdio: 'ignore' }).unref();
+      spawn('cmd', ['/c', 'start', '', targetUrl], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     } else if (process.platform === 'darwin') {
-      spawn('open', [targetUrl], { detached: true, stdio: 'ignore' }).unref();
+      spawn('open', [targetUrl], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     } else {
-      spawn('xdg-open', [targetUrl], { detached: true, stdio: 'ignore' }).unref();
+      spawn('xdg-open', [targetUrl], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     }
   } catch (_) { /* 开不了浏览器不算错，用户手动访问即可 */ }
 }

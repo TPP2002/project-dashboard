@@ -219,8 +219,10 @@ function createCollaborationApi({ config, home, registryPath, summarize,
         return true;
       }
       if (!['GET', 'HEAD'].includes(req.method)) writeGuard(req, session, publicWrite);
-      if (session?.user.role === 'viewer' && req.method !== 'GET' && !['/api/auth/password', '/api/auth/logout'].includes(pathname)) fail(403, 'Forbidden');
+      const ownDeviceRoute = pathname === '/api/auth/my-devices' || /^\/api\/auth\/my-devices\/[^/]+\/revoke$/.test(pathname);
+      if (session?.user.role === 'viewer' && req.method !== 'GET' && !ownDeviceRoute && !['/api/auth/password', '/api/auth/logout'].includes(pathname)) fail(403, 'Forbidden');
       if (pathname.startsWith('/api/auth/')) {
+        if (req.method === 'GET' && pathname === '/api/auth/my-devices') { json(res, 200, { ok: true, devices: auth.myDevices(raw) }); return true; }
         if (req.method === 'GET' && pathname === '/api/auth/admin') { json(res, 200, { ok: true, ...auth.admin(raw) }); return true; }
         if (req.method !== 'POST') fail(404, 'Not found');
         const b = await body(req);
@@ -236,6 +238,11 @@ function createCollaborationApi({ config, home, registryPath, summarize,
         if (pathname === '/api/auth/password') {
           await auth.changePassword(raw, only(b, ['currentPassword', 'newPassword']));
           json(res, 200, { ok: true }); sweep(); return true;
+        }
+        if (ownDeviceRoute) {
+          if (pathname === '/api/auth/my-devices') result = auth.createMyDevice(raw, only(b, ['label']).label);
+          else { only(b, []); result = auth.revokeMyDevice(raw, decodeURIComponent(pathname.split('/')[4])); }
+          json(res, 200, { ok: true, ...result }); sweep(); return true;
         }
         if (session.user.role !== 'owner') fail(403, 'Forbidden');
         if (pathname === '/api/auth/remember-device') {
