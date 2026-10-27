@@ -1176,7 +1176,7 @@ function handleDispatch(req, res) {
     let child;
     try {
       child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: true, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false, // 故意可见:负责人点「派单」要看到这个终端窗口,改成 true 窗口会被藏起来
       });
       child.unref();
     } catch (e) {
@@ -1233,7 +1233,7 @@ function handleDispatchProject(req, res) {
       'chcp 65001 >nul && claude ' + JSON.stringify(prompt)];
     try {
       const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: true, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false, // 故意可见:负责人点「派单」要看到这个终端窗口,改成 true 窗口会被藏起来
       });
       child.unref();
     } catch (e) {
@@ -1288,7 +1288,7 @@ function handleDispatchTask(req, res) {
     const cmdArgs = ['/c', 'start', '看板派单-' + tid, 'cmd', '/k', 'claude', trigger];
     try {
       const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: true, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false, // 故意可见:负责人点「派单」要看到这个终端窗口,改成 true 窗口会被藏起来
       });
       child.unref();
     } catch (e) {
