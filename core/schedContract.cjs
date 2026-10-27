@@ -148,16 +148,28 @@ function writeCommand(share, command, sources = productionSources) {
   return target;
 }
 
+/** 仅供心跳顶层和机器条目使用；已知字段仍严格校验。 */
+function fieldsLenient(value, required, optional = {}, onUnknown = () => {}) {
+  const record = requireRecord(value);
+  for (const [name, check] of Object.entries(required)) check(record[name]);
+  for (const name of Object.keys(record)) {
+    if (Object.hasOwn(required, name)) continue;
+    const check = Object.hasOwn(optional, name) ? optional[name] : undefined;
+    if (check) check(record[name]);
+    else onUnknown(name);
+  }
+}
+
 /** 完整一拍展示缓存；只校验，不重算准入、保护锁或兑现值。 */
-function validateHeartbeat(value) {
+function checkHeartbeat(value, onUnknown = () => {}) {
   const count = v => integer(v), positive = v => integer(v, 1);
   const nonNegative = v => { if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) throw new Error('[sched] 心跳核数或偏好不合法'); };
   const nullable = check => v => { if (v !== null) check(v); };
   const boolean = oneOf([true, false]);
-  fields(value, {
+  fieldsLenient(value, {
     machine: segment, pid: positive, protocol: positive, head: v => { if (typeof v !== 'string' || !/^[0-9a-f]{40}$/.test(v)) throw new Error('[sched] 心跳代码版本不合法'); },
     at: isoTime, tick: positive, cursorSeq: count, queued: count, granted: count,
-    machines: list(v => fields(v, {
+    machines: list(v => fieldsLenient(v, {
       name: segment, preference: nonNegative, quotaCores: count, grantedCores: count, externalLoadCores: nonNegative,
       availableCores: nonNegative, overCommitted: boolean, fresh: boolean, online: boolean,
       ci: oneOf(['active', 'idle', 'unknown']), ownerHold: boolean,
@@ -181,11 +193,11 @@ function validateHeartbeat(value) {
       // 派单员 2026-10-27 起(rogue 卡 AD-20261019-HUB-PLACE-NEEDS-BASH,PR #1277)透传执行端工具读数 tools = { bash? }:
       // 可选展示字段、不升版;1027 看板第三次因此「读不到调度共享盘:未知字段 tools」,与 0914/1010 同类。
       tools: v => fields(v, {}, { bash: boolean }),
-    })),
+    }, name => onUnknown(`machines[].${name}`))),
     queue: list(v => fields(v, { ticketId, position: positive, band: oneOf([0, 1]), requestedCores: positive,
       allowedMachines: list(segment, 1, true), queuedAt: isoTime, state: oneOf(['queued', 'unsatisfiable']), reason: nullable(text) })),
     locks: list(v => fields(v, { machine: segment, byTicketId: ticketId })),
-  });
+  }, {}, onUnknown);
   const ordered = names => names.every((name, index) => index === 0 || names[index - 1] < name);
   if (!ordered(value.machines.map(m => m.name)) || !ordered(value.locks.map(l => l.machine))) throw new Error('[sched] 心跳机器或保护锁未按名字排序');
   for (const machine of value.machines) {
@@ -198,6 +210,14 @@ function validateHeartbeat(value) {
   return value;
 }
 
+function validateHeartbeat(value) { return checkHeartbeat(value); }
+
+function heartbeatUnknownFields(value) {
+  const unknown = new Set();
+  checkHeartbeat(value, name => unknown.add(name));
+  return [...unknown].sort();
+}
+
 module.exports = { SCHED_FORMAT_VERSION, SAFE_SEGMENT, RESERVATION_LEVELS, productionSources,
   requireRecord, text, segment, integer, isoTime, oneOf, list, fields, ticketId, canonicalJson, contentHash, deriveTicketId,
-  validateReserve, validateCommand, validateReceipt, assertWritableFormat, schedPaths, readJson, writeCommand, validateHeartbeat };
+  validateReserve, validateCommand, validateReceipt, assertWritableFormat, schedPaths, readJson, writeCommand, validateHeartbeat, heartbeatUnknownFields };
