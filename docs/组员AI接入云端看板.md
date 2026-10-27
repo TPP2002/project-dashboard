@@ -10,13 +10,13 @@
 
 ## 2. 下载命令行
 
-找个固定的目录放它，比如 `D:\tools`（下文都用这个目录举例）。
+放在用户目录下的 `tools` 文件夹里。
 
-Windows：
+Windows（PowerShell）：
 
 ```powershell
-mkdir D:\tools -Force
-curl.exe -o D:\tools\board-member.cjs https://124.222.101.139/board-member.cjs
+mkdir $HOME\tools -Force
+curl.exe -o $HOME\tools\board-member.cjs https://124.222.101.139/board-member.cjs
 ```
 
 Mac / Linux：
@@ -29,8 +29,10 @@ mkdir -p ~/tools && curl -o ~/tools/board-member.cjs https://124.222.101.139/boa
 
 ## 3. 登录（本人做一次，不要交给 AI）
 
+Windows 下面的命令里写 `$HOME\tools\board-member.cjs`，Mac / Linux 写 `~/tools/board-member.cjs`。
+
 ```powershell
-node D:\tools\board-member.cjs login --server https://124.222.101.139 --username 你的用户名
+node $HOME\tools\board-member.cjs login --server https://124.222.101.139 --username 你的用户名
 ```
 
 按提示输入网页登录用的密码。密码不会存到电脑上，存的是这台电脑专用的登录凭据，90 天有效。
@@ -38,19 +40,21 @@ node D:\tools\board-member.cjs login --server https://124.222.101.139 --username
 登录后设默认项目（只有一个项目可以跳过）：
 
 ```powershell
-node D:\tools\board-member.cjs projects
-node D:\tools\board-member.cjs use 项目编号
+node $HOME\tools\board-member.cjs projects
+node $HOME\tools\board-member.cjs use 项目编号
 ```
 
 ## 4. 告诉你的 AI
 
-把下面这段加进项目根目录的 `CLAUDE.md`（Claude Code）或 `AGENTS.md`（Codex），路径换成你自己的：
+先运行 `node $HOME\tools\board-member.cjs guide`，输出里「下面的命令都写成」后面那段就是带完整路径的命令。
+
+把下面这段加进项目根目录的 `CLAUDE.md`（Claude Code）或 `AGENTS.md`（Codex），`<完整命令>` 换成上面看到的那段：
 
 ```markdown
 ## 云端看板
 
-本项目的任务在云端看板上管理，命令行是 `node D:\tools\board-member.cjs`。
-开工前先运行 `node D:\tools\board-member.cjs guide`，照里面的说明用。
+本项目的任务在云端看板上管理，命令行是 `<完整命令>`。
+开工前先运行 `<完整命令> guide`，照里面的说明用。
 接活先 claim，做到节点报 progress，做完 done。
 不要替我登录，提示要重新登录时告诉我。
 ```
