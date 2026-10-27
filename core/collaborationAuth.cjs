@@ -166,7 +166,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     return { user: publicUser(u), sessionId: s.id, deviceId: s.deviceId, csrfToken: csrf(raw) };
   }
   function deviceActive(db, d) {
-    return !d.revoked && Date.parse(deviceExpiry(d)) > Date.now() && db.users.some(u => u.id === d.userId && u.role === 'owner' && !u.disabled);
+    return !d.revoked && Date.parse(deviceExpiry(d)) > Date.now() && db.users.some(u => u.id === d.userId && !u.disabled);
   }
   function deviceIn(db, raw) {
     if (typeof raw !== 'string' || !TOKEN.test(raw)) return null;
@@ -288,6 +288,28 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     const d = db.devices.find(d => d.id === id);
     if (d) d.revoked = true;
     db.sessions = db.sessions.filter(s => s.deviceId !== id);
+  }
+  function myDevices(raw) {
+    const db = read(); const { user } = requireSession(db, raw);
+    return db.devices.filter(d => d.userId === user.id)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(publicDevice);
+  }
+  function createMyDevice(raw, label) {
+    return transaction(db => {
+      const s = requireSession(db, raw);
+      if (s.deviceId !== null) fail(403, 'Password session required');
+      if (typeof label !== 'string' || !label.trim() || label.length > 128) fail(400, 'Invalid label');
+      if (db.devices.filter(d => d.userId === s.user.id && deviceActive(db, d)).length >= 10) fail(409, 'Too many devices');
+      return addDevice(db, s.user, label);
+    });
+  }
+  function revokeMyDevice(raw, id) {
+    return transaction(db => {
+      const { user } = requireSession(db, raw);
+      if (!db.devices.some(d => d.id === id && d.userId === user.id)) fail(404, 'Not found');
+      revokeDeviceIn(db, id);
+      return {};
+    });
   }
   function rememberDevice(raw, label) {
     return transaction(db => {
@@ -447,7 +469,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
   }
   return {
     bootstrap, login, register, access, createInvite, deviceLogin, resetOwner, rememberDevice, restoreSession, logout,
-    changePassword, createReset, resetPassword,
+    changePassword, createReset, resetPassword, myDevices, createMyDevice, revokeMyDevice,
     projectDirectory: projectId => read().users
       .filter(u => u.role === 'owner' || u.projectIds.includes(projectId))
       .map(u => ({ id: u.id, displayName: u.displayName, role: u.role, disabled: u.disabled })),
@@ -460,7 +482,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       db.invites.forEach(i => { i.revoked = true; });
       (db.resets || []).forEach(r => { r.used = true; });
     }),
-    admin: raw => { const db = read(); requireSession(db, raw, true); return { users: db.users.map(publicUser), invites: db.invites.map(publicInvite), devices: db.devices.map(publicDevice), resets: (db.resets || []).map(publicReset) }; },
+    admin: raw => { const db = read(); requireSession(db, raw, true); return { users: db.users.map(publicUser), invites: db.invites.map(publicInvite), devices: db.devices.map(d => ({ ...publicDevice(d), userId: d.userId })), resets: (db.resets || []).map(publicReset) }; },
     createDevice: (raw, label) => ownerMutation(raw, (db, u) => addDevice(db, u, label)),
     revokeInvite: (raw, id) => revoke(raw, 'invites', id),
     revokeDevice: (raw, id) => revoke(raw, 'devices', id),
