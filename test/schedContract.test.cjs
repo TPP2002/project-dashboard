@@ -154,3 +154,15 @@ test('派单员心跳可带执行端作业槽实测 agentSlots(缺键或 null �
   extra.machines[0] = { ...extra.machines[0], agentSlots: { capacity: 4, occupied: 1, free: 3 } };
   assert.throws(() => c.validateHeartbeat(extra), { message: '[sched] 未知字段:free' });
 });
+
+test('派单员心跳机器条目可带执行端工具读数 tools(1027 看板第三次整页读不到调度共享盘的病根)', () => {
+  const { heartbeat } = require('./fixtures/sched/support.cjs');
+  for (const tools of [{ bash: true }, { bash: false }, {}]) {
+    const ok = heartbeat();
+    ok.machines[0] = { ...ok.machines[0], tools };
+    assert.doesNotThrow(() => c.validateHeartbeat(ok), `tools=${JSON.stringify(tools)} 应合法`);
+  }
+  const bad = heartbeat();
+  bad.machines[0] = { ...bad.machines[0], tools: { bash: 'yes' } };
+  assert.throws(() => c.validateHeartbeat(bad));
+});

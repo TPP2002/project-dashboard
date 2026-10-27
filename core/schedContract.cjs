@@ -178,6 +178,9 @@ function validateHeartbeat(value) {
       // 缺键或 null 表示未知(新写者对没有 jobSlots 的旧执行心跳写 null,不拿准入回退值假装实测)。
       // 对象严格只认 capacity/occupied,缺嵌套字段、多字段与非法值整份拒读;可选展示字段、不升版,与 ciRunners 同理。
       agentSlots: nullable(v => fields(v, { capacity: positive, occupied: count })),
+      // 派单员 2026-10-27 起(rogue 卡 AD-20261019-HUB-PLACE-NEEDS-BASH,PR #1277)透传执行端工具读数 tools = { bash? }:
+      // 可选展示字段、不升版;1027 看板第三次因此「读不到调度共享盘:未知字段 tools」,与 0914/1010 同类。
+      tools: v => fields(v, {}, { bash: boolean }),
     })),
     queue: list(v => fields(v, { ticketId, position: positive, band: oneOf([0, 1]), requestedCores: positive,
       allowedMachines: list(segment, 1, true), queuedAt: isoTime, state: oneOf(['queued', 'unsatisfiable']), reason: nullable(text) })),
