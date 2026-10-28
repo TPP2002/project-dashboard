@@ -167,3 +167,23 @@ test('派单员心跳机器条目可带执行端工具读数 tools(1027 看板�
   bad.machines[0] = { ...bad.machines[0], tools: { bash: 'yes' } };
   assert.throws(() => c.validateHeartbeat(bad));
 });
+
+test('机器条目 tools 认任意合规工具名(bash、py:<项目id>),值必须是布尔;名字不合规或值非布尔整份拒读(SCHED-SPARE-PY-DEPS-VERIFY-1028)', () => {
+  const { heartbeat } = require('./fixtures/sched/support.cjs');
+  for (const tools of [
+    { bash: true, 'py:mama': true }, { 'py:mama': false }, { bash: false, 'py:better-numbers': true },
+    { ['py:' + 'a'.repeat(32)]: true },
+  ]) {
+    const ok = heartbeat();
+    ok.machines[0] = { ...ok.machines[0], tools };
+    assert.doesNotThrow(() => c.validateHeartbeat(ok), `tools=${JSON.stringify(tools)} 应合法`);
+  }
+  for (const tools of [
+    { 'py:mama': 'yes' }, { 'Py:mama': true }, { 'py:': true }, { 'py:mama:x': true },
+    { 'a b': true }, { ['py:' + 'a'.repeat(33)]: true },
+  ]) {
+    const bad = heartbeat();
+    bad.machines[0] = { ...bad.machines[0], tools };
+    assert.throws(() => c.validateHeartbeat(bad), `tools=${JSON.stringify(tools)} 应整份拒读`);
+  }
+});
