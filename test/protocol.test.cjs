@@ -13,7 +13,7 @@ const { STATUS } = require('../core/boardSchema.cjs');
 const cmds = require('../cli/commands.cjs');
 
 const CLI = path.resolve(__dirname, '../cli/index.cjs');
-const NAMES = ['brief', 'claim', 'assign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
+const NAMES = ['brief', 'claim', 'assign', 'unassign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox'];
 const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const card = (flags = {}) => JSON.parse(protocol({ ...flags, format: 'json' }).text);
@@ -239,6 +239,8 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   const beforeAssign = get();
   task = apply('assign', { me: true, [cmds.COMMAND_DEFAULTS]: { actorUserId: 'protocol-owner', actorName: '负责人' } });
   assert.deepEqual(task, { ...beforeAssign, assigneeUserId: 'protocol-owner', assigneeName: '负责人' });
+  task = apply('unassign', { [cmds.COMMAND_DEFAULTS]: { actorUserId: 'protocol-owner', actorName: '负责人' } });
+  assert.deepEqual(task, beforeAssign);
   rejectTerminal();
   task = apply('reopen', { reason: '验收返工' });
   assert.equal(task.percent, 0);

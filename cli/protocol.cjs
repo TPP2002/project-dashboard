@@ -6,7 +6,7 @@ const { detectProjectIds } = require('../core/resolveProject.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 const COMMAND_NAMES = [
-  'brief', 'claim', 'assign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
+  'brief', 'claim', 'assign', 'unassign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox',
 ];
 
@@ -24,6 +24,9 @@ const TRANSITIONS = [
   ] },
   { command: 'assign', status: null, writes: [
     '--me 必填；已作废/其他主负责人占用拒绝；本地非云项目拒绝，本地云项目仅追加请求 activity（已有主负责人拒绝）；回放带操作人且无主负责人时仅写 assigneeUserId/assigneeName，同一人不改字段；追加补记主负责人 activity',
+  ] },
+  { command: 'unassign', status: null, writes: [
+    '已作废拒绝；本地非云项目拒绝，本地云项目仅追加请求 activity；回放仅本人可删 assigneeUserId/assigneeName 并追加撤下主负责人 activity，无主负责人不改卡字段；保留其他卡字段',
   ] },
   { command: 'progress', status: null, writes: [
     '已完工/已作废拒绝；报到 100 也不自动完工',
@@ -140,9 +143,10 @@ function renderMarkdown(card) {
     `| ${READ_ONLY_COMMANDS.join(' / ')} | 保持 | 只读，无写入 |`,
     card.rules.at(-1),
     '## 正确示例（pending.json 骨架可按实际问题替换，须保持三件套字数）',
-    `- add：\`${card.examples.add}\`；claim：\`${card.examples.claim}\``,
-    `- pending：\`${pending[0]}\`；pending.json：\`${pending[1]}\``,
-    `- cost（收官前必做，没它 done 会被拒收）：\`${card.examples.cost}\`；done：\`${card.examples.done}\``,
+    // 示例合成一行，给新增命令的独立用法和状态行留位置，保留 66 行上限。
+    `- add：\`${card.examples.add}\`；claim：\`${card.examples.claim}\`；`
+      + `pending：\`${pending[0]}\`；pending.json：\`${pending[1]}\`；`
+      + `cost（收官前必做，没它 done 会被拒收）：\`${card.examples.cost}\`；done：\`${card.examples.done}\``,
   ].join('\n');
 }
 
