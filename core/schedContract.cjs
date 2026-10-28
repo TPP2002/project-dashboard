@@ -8,6 +8,7 @@ const { isUtf8 } = require('node:buffer');
 const SCHED_FORMAT_VERSION = 1;
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const RESERVATION_LEVELS = [0, 5, 10, 15];
+const TOOL_NAME = /^[a-z][a-z0-9]*(?::[a-z][a-z0-9-]{0,31})?$/;
 const productionSources = { now: () => Date.now(), nonce: () => randomUUID() };
 
 function requireRecord(value, label = '对象') {
@@ -192,7 +193,15 @@ function checkHeartbeat(value, onUnknown = () => {}) {
       agentSlots: nullable(v => fields(v, { capacity: positive, occupied: count })),
       // 派单员 2026-10-27 起(rogue 卡 AD-20261019-HUB-PLACE-NEEDS-BASH,PR #1277)透传执行端工具读数 tools = { bash? }:
       // 可选展示字段、不升版;1027 看板第三次因此「读不到调度共享盘:未知字段 tools」,与 0914/1010 同类。
-      tools: v => fields(v, {}, { bash: boolean }),
+      // 2026-10-28 起 tools 认任意「工具名 → 布尔」键值对:除 bash 外,py:<项目id>(该项目 Python 依赖自检是否通过)
+      // 由 stock-rogue 卡 SCHED-SPARE-PY-DEPS-VERIFY-1028 引入,派单员原样透传。工具名须匹配 TOOL_NAME,
+      // 名字不合规或值不是布尔仍整份拒读(不改成宽松忽略)。
+      tools: v => {
+        for (const [name, flag] of Object.entries(requireRecord(v, 'tools'))) {
+          if (!TOOL_NAME.test(name)) throw new Error(`[sched] 工具名不合法:${name}`);
+          boolean(flag);
+        }
+      },
     }, name => onUnknown(`machines[].${name}`))),
     queue: list(v => fields(v, { ticketId, position: positive, band: oneOf([0, 1]), requestedCores: positive,
       allowedMachines: list(segment, 1, true), queuedAt: isoTime, state: oneOf(['queued', 'unsatisfiable']), reason: nullable(text) })),
