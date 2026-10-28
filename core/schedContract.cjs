@@ -194,7 +194,7 @@ function checkHeartbeat(value, onUnknown = () => {}) {
       // 派单员 2026-10-27 起(rogue 卡 AD-20261019-HUB-PLACE-NEEDS-BASH,PR #1277)透传执行端工具读数 tools = { bash? }:
       // 可选展示字段、不升版;1027 看板第三次因此「读不到调度共享盘:未知字段 tools」,与 0914/1010 同类。
       // 2026-10-28 起 tools 认任意「工具名 → 布尔」键值对:除 bash 外,py:<项目id>(该项目 Python 依赖自检是否通过)
-      // 由 stock-rogue 卡 SCHED-SPARE-PY-DEPS-VERIFY-1028 引入,派单员原样透传。工具名须匹配 TOOL_NAME,
+      // 由卡 SCHED-SPARE-PY-DEPS-VERIFY-1028 引入,派单员原样透传。工具名须匹配 TOOL_NAME,
       // 名字不合规或值不是布尔仍整份拒读(不改成宽松忽略)。
       tools: v => {
         for (const [name, flag] of Object.entries(requireRecord(v, 'tools'))) {

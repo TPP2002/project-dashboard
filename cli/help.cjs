@@ -29,7 +29,7 @@ const EXIT_CODES = [
 const GROUPS = [
   ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
-  ['卡的生命周期', ['add', 'assign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
+  ['卡的生命周期', ['add', 'assign', 'unassign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
     'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud']],
@@ -118,6 +118,15 @@ const COMMANDS = {
     notes: ['只在云同步时生效；本地仅追加请求活动并入队，已提交,云同步回放后生效。',
       '卡上已有其他主负责人时拒绝；本地无法确认操作人，已有主负责人时也拒绝。云端同一人重复补记不改字段。',
       '回放仅在无主负责人时写 assigneeUserId/assigneeName，并追加活动；不改其他卡字段。'],
+  },
+  unassign: {
+    summary: '云同步时把自己从卡的主负责人上撤下,不改状态和进度;只有本人能撤',
+    usage: 'unassign <卡号> [--project <id>] [--author <身份>]',
+    args: [['<卡号>', '要撤下自己的卡，已作废拒绝，其余状态均可']],
+    examples: ['unassign FEAT-12 --project myproj --author 项目经理'],
+    notes: ['只在云同步时生效；本地仅追加请求活动并入队，已提交,云同步回放后生效。',
+      '云端按登录操作人校验，只有主负责人本人能撤；无主负责人时成功且不改卡字段。',
+      '回放删除 assigneeUserId/assigneeName；保留状态、进度及其他卡字段。'],
   },
   progress: {
     summary: '回写进度与下一个里程碑',

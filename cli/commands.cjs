@@ -426,6 +426,34 @@ function assign(flags) {
   return res;
 }
 
+// ---------- unassign（云同步撤下自己的主负责人，不迁移状态） ----------
+function unassign(flags) {
+  const id = need((flags._ || [])[0], 'unassign <卡号> [--project <id>] [--author <身份>]');
+  const proj = resolveProj(flags);
+  const actorUserId = commandDefault(flags, 'actorUserId', () => undefined);
+  const actorName = commandDefault(flags, 'actorName', () => undefined) || actorUserId;
+  if (!actorUserId && !proj.cloud) throw new Error('unassign 只在云同步时生效');
+  let removed = false;
+  const { board, changed } = mutateTask(proj, id, b => {
+    const t = findTask(b, id);
+    if (t.status === '已作废') {
+      throw Object.assign(new Error('已作废的卡不能撤主负责人'), { status: 409 });
+    }
+    if (!actorUserId || !t.assigneeUserId) return;
+    if (t.assigneeUserId !== actorUserId) {
+      throw Object.assign(new Error(`这张卡的主负责人是 ${t.assigneeName || t.assigneeUserId},只有本人能撤下`), { status: 409 });
+    }
+    delete t.assigneeUserId;
+    delete t.assigneeName;
+    removed = true;
+  }, () => actorUserId
+    ? (removed ? act('note', flags.author || actorName, `${actorName} 撤下 ${id} 的主负责人`, id) : null)
+    : act('note', flags.author, `${flags.author || 'cli'} 为 ${id} 已提交撤下主负责人请求,云端按操作人落地`, id));
+  const res = okTask(board, id, changed);
+  res.text = actorUserId ? `✔ ${id} 已撤下主负责人` : '已提交,云同步回放后生效';
+  return res;
+}
+
 // ---------- await-collect（施工方交活 → 待收单） ----------
 // 外部施工方(GLM/DeepSeek/Codex…)交活之后、收单员收单之前,卡挂「待收单」——负责人扫一眼
 // 「待收单」泳道就知道哪几张是"干完了没人收",不用逐张翻施工中(负责人 2026-09-24 原话)。
@@ -1263,7 +1291,7 @@ function cost(flags) {
 module.exports = {
   COMMAND_DEFAULTS, currentBranch, readStdinSync,
   taskTransition,
-  register, add, addBatch, isBatchAdd, claim, assign, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
+  register, add, addBatch, isBatchAdd, claim, assign, unassign, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, unblock, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
   hasCostQuantity, hasCostLedger, costGateRefusal,
 };
