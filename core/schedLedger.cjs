@@ -4,30 +4,60 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { isUtf8 } = require('node:buffer');
 const c = require('./schedContract.cjs');
-const { createVerifiedBytesCache } = require('./schedVerifiedBytes.cjs');
-const verifiedBytes = createVerifiedBytesCache();
+const ledgerCaches = new Map();
 const SAMPLE_LIMIT = 20;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const sampleKey = request => JSON.stringify([request.category, request.work.type]);
 
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function readLedger(share) {
+  let key;
   try {
     const directory = path.join(c.schedPaths(share).root, 'ledger');
     const files = fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1);
-    verifiedBytes.begin(directory, files.map(file => file.name));
+    key = path.resolve(directory);
+    const previous = ledgerCaches.get(key);
+    const stats = files.map(file => fs.statSync(path.join(directory, file.name)));
+    const rebuild = !previous || files.length !== previous.size || files.some((file, i) =>
+      !previous.has(file.name) || stats[i].size < previous.get(file.name).size);
+    const next = new Map();
     const events = [];
     let previousSeq = 0;
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
       if (!file.isFile() || !/^\d{4}-\d{2}-\d{2}\.jsonl$/.test(file.name)) throw new Error('台账目录含未知文件');
       c.isoTime(`${file.name.slice(0, 10)}T00:00:00.000Z`);
-      const bytes = fs.readFileSync(path.join(directory, file.name));
-      if (!isUtf8(bytes)) throw new Error('台账不是有效 UTF-8');
-      const verified = verifiedBytes.has(file.name, bytes);
-      const lines = bytes.toString('utf8').split('\n');
-      if (lines.at(-1) === '') lines.pop();
-      for (const line of lines) {
-        const event = c.requireRecord(JSON.parse(line), '台账事件');
-        if (!verified) {
+      const old = rebuild ? null : previous.get(file.name);
+      const size = stats[index].size;
+      let cached = old;
+      if (!old || size !== old.size) {
+        let bytes;
+        if (!old) bytes = fs.readFileSync(path.join(directory, file.name));
+        else {
+          const fd = fs.openSync(path.join(directory, file.name), 'r');
+          try {
+            bytes = Buffer.alloc(size - old.size);
+            let offset = 0;
+            while (offset < bytes.length) {
+              const count = fs.readSync(fd, bytes, offset, bytes.length - offset, old.size + offset);
+              if (!count) throw new Error('台账读取中被截断');
+              offset += count;
+            }
+          } finally { fs.closeSync(fd); }
+          if (old.tail.length) bytes = Buffer.concat([old.tail, bytes]);
+        }
+        if (!isUtf8(bytes)) throw new Error('台账不是有效 UTF-8');
+        const parsed = old ? old.events.slice(0, old.tail.length ? -1 : undefined) : [];
+        const lines = bytes.toString('utf8').split('\n');
+        if (lines.at(-1) === '') lines.pop();
+        for (const line of lines) {
+          const event = c.requireRecord(JSON.parse(line), '台账事件');
           c.oneOf([1])(event.v); c.integer(event.seq, 1); c.isoTime(event.at); c.text(event.type); c.requireRecord(event.data);
           if (event.ticketId !== undefined) { c.ticketId(event.ticketId); c.text(event.attemptId); }
           if (['started', 'finished', 'dispatch-intent', 'dispatched'].includes(event.type)) { c.ticketId(event.ticketId); c.text(event.attemptId); }
@@ -42,16 +72,25 @@ function readLedger(share) {
           }
           const { sha256, ...payload } = event;
           if (sha256 !== c.contentHash(payload)) throw new Error('台账校验和或事件顺序不合法');
+          parsed.push(deepFreeze(event));
         }
+        const lastNewline = bytes.lastIndexOf(10);
+        cached = { size: old ? size : bytes.length, events: parsed, tail: Buffer.from(bytes.subarray(lastNewline + 1)) };
+      }
+      next.set(file.name, cached);
+      for (const event of cached.events) {
         // 即使命中文件内的验证，仍检查本次完整目录里跨文件的顺序。
         if (event.seq <= previousSeq) throw new Error('台账校验和或事件顺序不合法');
         previousSeq = event.seq;
         events.push(event);
       }
-      if (!verified) verifiedBytes.remember(file.name, bytes);
     }
+    ledgerCaches.set(key, next);
     return { readable: true, events, reason: null };
-  } catch (error) { return { readable: false, events: [], reason: `读不到调度台账：${error.message}` }; }
+  } catch (error) {
+    if (key) ledgerCaches.delete(key);
+    return { readable: false, events: [], reason: `读不到调度台账：${error.message}` };
+  }
 }
 
 function requestsByTicket(tickets, events) {

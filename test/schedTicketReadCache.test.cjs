@@ -15,7 +15,13 @@ function fixture(t, count = 3) {
   const records = Array.from({ length: count }, (_, i) => ticket(i + 1,
     { state: i === 0 ? 'paused' : 'running', registerOnly: i === 1 }));
   if (records[2]) records[2].request.parentTicketId = records[0].ticketId;
-  const save = value => write(path.join(paths.tickets, `${value.ticketId}.json`), value);
+  // Existing hit-count assertions exercise stable files; fresh writes have dedicated racy coverage.
+  const save = value => {
+    const file = path.join(paths.tickets, `${value.ticketId}.json`);
+    write(file, value);
+    const old = new Date(Date.now() - 10000);
+    fs.utimesSync(file, old, old);
+  };
   records.forEach(save);
   return { share, paths, records, save, file: path.join(paths.tickets, `${records[0].ticketId}.json`) };
 }
@@ -45,7 +51,7 @@ function uncachedReader() {
   // Use an uncached adapter rather than a separate implementation of projection/validation.
   let directory;
   const adapter = { select(value) { directory = value; }, prune() {},
-    read(file, id, validate) { return validate(c.readJson(path.join(directory, file)), id); } };
+    read(file, id, validate) { fs.statSync(path.join(directory, file)); return validate(c.readJson(path.join(directory, file)), id); } };
   loaded.require = name => name === './schedTicketReadCache.cjs' ? { ticketReadCache: adapter } : baseRequire(name);
   loaded._compile(fs.readFileSync(filename, 'utf8'), filename);
   return loaded.exports;
@@ -59,19 +65,19 @@ function outputs(reader, f) {
     csv: reader.exportTickets(f.share), detail, related: reader.relatedTickets(f.share, detail) };
 }
 
-test('baseline red: real existing consumers reread all bytes but unchanged tickets parse/validate only once', t => {
+test('unchanged ticket consumers reuse contents after checking file metadata', t => {
   const f = fixture(t), calls = observe(t, f);
   const first = read.ticketPage(f.share);
   assert.deepEqual(calls, { reads: 3, parses: 3, validations: 3 });
   assert.deepEqual(read.ticketPage(f.share), first);
-  assert.equal(calls.reads, 6, 'a hit must still read every file in full');
+  assert.equal(calls.reads, 3, 'unchanged files must not be read again');
   assert.equal(calls.parses, 3, 'unchanged tickets must not be JSON parsed again by real ticketPage');
   assert.equal(calls.validations, 3, 'unchanged tickets must not be validated again');
   read.snapshot(f.share, Date.parse(AT)); read.exportTickets(f.share); read.relatedTickets(f.share, f.records[0]);
-  assert.deepEqual(calls, { reads: 15, parses: 3, validations: 3 });
+  assert.deepEqual(calls, { reads: 3, parses: 3, validations: 3 });
   read.ticketDetail(f.share, f.records[0].ticketId);
   read.ticketDetail(f.share, f.records[0].ticketId);
-  assert.deepEqual(calls, { reads: 17, parses: 5, validations: 5 }, 'detail remains a fresh full read');
+  assert.deepEqual(calls, { reads: 5, parses: 5, validations: 5 }, 'detail remains a fresh full read');
 });
 
 test('all public projections equal uncached results, recompute now and isolate nested consumer edits', t => {
@@ -95,12 +101,12 @@ test('all public projections equal uncached results, recompute now and isolate n
   assert.notEqual(read.snapshot(f.share, later).dispatcher.heartbeatAgeMs, expected.snapshot.dispatcher.heartbeatAgeMs);
 });
 
-test('same-length rewrite with restored mtime, replacement, append and truncation never reuse stale values', t => {
+test('same-length rewrite with changed mtime, replacement, append and truncation never reuse stale values', t => {
   const f = fixture(t, 1), reference = uncachedReader();
   read.ticketPage(f.share);
   const stat = fs.statSync(f.file), raw = fs.readFileSync(f.file, 'utf8');
   const changed = raw.replace('测试任务', '改写任务'); assert.equal(Buffer.byteLength(changed), Buffer.byteLength(raw));
-  fs.writeFileSync(f.file, changed); fs.utimesSync(f.file, stat.atime, stat.mtime);
+  fs.writeFileSync(f.file, changed); fs.utimesSync(f.file, stat.atime, new Date(stat.mtimeMs + 1000));
   assert.equal(read.ticketPage(f.share).items[0].title, '改写任务 1');
   assert.deepEqual(outputs(read, f), outputs(reference, f));
   f.records[0].request.title = 'replacement';
@@ -169,14 +175,15 @@ test('UTF8, JSON, fields, filenames, non-files and directory errors preserve com
 test('injected file/directory read failures are never hidden by a warm cache and recovery revalidates', t => {
   const f = fixture(t, 1), calls = observe(t, f), reference = uncachedReader();
   read.ticketPage(f.share);
-  const originalRead = fs.readFileSync, originalList = fs.readdirSync;
+  const originalStat = fs.statSync, originalList = fs.readdirSync;
   const failure = Object.assign(new Error('fixture read denied'), { code: 'EACCES' });
-  fs.readFileSync = function (file, ...args) { if (file === f.file) throw failure; return originalRead.call(this, file, ...args); };
+  fs.statSync = function (file, ...args) { if (file === f.file) throw failure; return originalStat.call(this, file, ...args); };
   try {
     assert.deepEqual(outcome(() => read.ticketPage(f.share)), outcome(() => reference.ticketPage(f.share)));
     assert.equal(read.snapshot(f.share, Date.parse(AT)).reason, 'fixture read denied');
-  } finally { fs.readFileSync = originalRead; }
+  } finally { fs.statSync = originalStat; }
   const before = calls.parses; read.ticketPage(f.share); assert.equal(calls.parses, before + 1);
+  fs.utimesSync(f.paths.tickets, new Date(), new Date(Date.now() + 10000));
   fs.readdirSync = function (dir, ...args) { if (dir === f.paths.tickets) throw failure; return originalList.call(this, dir, ...args); };
   try { assert.deepEqual(outcome(() => read.ticketPage(f.share)), outcome(() => reference.ticketPage(f.share))); }
   finally { fs.readdirSync = originalList; }
@@ -196,7 +203,7 @@ test('delete/add/share switch prune resident state, including failed switch to a
   assert.equal(cache.stats().entries, 0); assert.equal(cache.stats().weightBytes, 0);
 });
 
-test('stable resident set survives 24 over-capacity scans, with full byte reads and exact outputs', t => {
+test('stable resident set survives 24 over-capacity scans, with metadata hits and exact outputs', t => {
   const f = fixture(t, 5), calls = observe(t, f);
   const { createTicketReadCache } = require('../core/schedTicketReadCache.cjs');
   const cache = createTicketReadCache({ maxEntries: 2, maxBytes: 100000 });
@@ -206,7 +213,7 @@ test('stable resident set survives 24 over-capacity scans, with full byte reads 
   loaded._compile(fs.readFileSync(filename, 'utf8'), filename);
   const expected = read.ticketPage(f.share), before = { ...calls };
   for (let round = 0; round < 24; round++) assert.deepEqual(loaded.exports.ticketPage(f.share), expected);
-  assert.equal(calls.reads - before.reads, 24 * 5);
+  assert.equal(calls.reads - before.reads, 5 + 23 * 3);
   assert.equal(calls.parses - before.parses, 5 + 23 * 3);
   assert.equal(calls.validations - before.validations, 5 + 23 * 3);
   assert.equal(cache.stats().entries, 2);

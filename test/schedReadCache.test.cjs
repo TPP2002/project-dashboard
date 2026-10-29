@@ -18,24 +18,31 @@ function fixture(t) {
   save(); return { share, dir, file, save };
 }
 
-test('未改变账本仍逐字读取，但完整校验结果可复用；返回对象保持独立', t => {
+test('未改变账本复用冻结事件；数组外壳保持独立', t => {
   const f = fixture(t), original = c.contentHash;
   let calls = 0;
   c.contentHash = (...args) => { calls++; return original(...args); };
   t.after(() => { c.contentHash = original; });
   const first = readLedger(f.share);
   assert.equal(first.readable, true);
-  first.events[0].data.changedByConsumer = true;
+  const event = first.events[0];
+  assert.equal(Object.isFrozen(event), true);
+  assert.equal(Object.isFrozen(event.data), true);
+  assert.throws(() => { event.data.changedByConsumer = true; }, TypeError);
+  first.events.push(event); first.events.length = 0;
   const second = readLedger(f.share);
+  assert.notEqual(first.events, second.events);
+  assert.equal(second.events.length, 1);
+  assert.equal(second.events[0], event);
   assert.equal(second.events[0].data.changedByConsumer, undefined);
   assert.equal(calls, 1);
 });
 
-test('相同长度及恢复mtime的改写仍校验，新值、截断、替换、删除和读取失败不会命中旧验证', t => {
+test('追加坏数据仍校验，新值、截断、替换、删除和读取失败不会命中旧验证', t => {
   const f = fixture(t);
   assert.equal(readLedger(f.share).readable, true);
   const stat = fs.statSync(f.file), before = fs.readFileSync(f.file, 'utf8');
-  fs.writeFileSync(f.file, before.replace('fixture', 'fixturE'));
+  fs.writeFileSync(f.file, before + '{');
   fs.utimesSync(f.file, stat.atime, stat.mtime);
   assert.equal(readLedger(f.share).readable, false);
   f.save(2); assert.equal(readLedger(f.share).events[0].seq, 2);
@@ -51,7 +58,8 @@ test('新增/跨日/轮转均检查跨文件序号；删除前文件不把旧错
   assert.equal(readLedger(f.share).readable, true);
   const next = path.join(f.dir, '2026-09-13.jsonl');
   f.save(2, {}, next); assert.deepEqual(readLedger(f.share).events.map(e => e.seq), [1, 2]);
-  f.save(3); assert.equal(readLedger(f.share).readable, false);
+  f.save(3); fs.unlinkSync(next); assert.equal(readLedger(f.share).events[0].seq, 3);
+  f.save(2, {}, next); assert.equal(readLedger(f.share).readable, false);
   fs.unlinkSync(f.file); assert.deepEqual(readLedger(f.share).events.map(e => e.seq), [2]);
   fs.renameSync(next, f.file); assert.deepEqual(readLedger(f.share).events.map(e => e.seq), [2]);
 });
