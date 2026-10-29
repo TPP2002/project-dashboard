@@ -15,18 +15,29 @@ const ACTIVE = ['granted', 'running', 'paused', 'slow'];
 const TIMING_KEYS = ['queuedMs', 'runningMs', 'pausedMs', 'slowMs'];
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 const warnedHeartbeatFields = new Set();
+const ticketDirectories = new Map();
+const snapshots = new Map();
+const jsonReadCache = new Map();
+function cachedJson(file) {
+  const stat = fs.statSync(file), old = jsonReadCache.get(file);
+  if (old?.size === stat.size && old.mtimeMs === stat.mtimeMs) return structuredClone(old.value);
+  jsonReadCache.delete(file);
+  const value = c.readJson(file);
+  jsonReadCache.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, value: structuredClone(value) });
+  return value;
+}
 
 function badRequest(message) { return Object.assign(new Error(message), { status: 400 }); }
 function readFailure(error) {
   return { ok: false, readable: false, reason: error.message, error: '读不到调度共享盘' };
 }
 function readConfig(share) {
-  const config = c.readJson(c.schedPaths(share).dispatcher);
+  const config = cachedJson(c.schedPaths(share).dispatcher);
   c.fields(config, { machine: c.segment, createdAt: c.isoTime, createdBy: c.text });
   return config;
 }
 function jsonFiles(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true }).filter(entry => entry.name.endsWith('.json')).map(entry => {
+  return fs.readdirSync(directory, { withFileTypes: true }).filter(entry => !entry.isDirectory() && entry.name.endsWith('.json')).map(entry => {
     if (!entry.isFile()) throw new Error(`[sched] 不是普通快照文件:${entry.name}`);
     return entry.name;
   });
@@ -76,7 +87,12 @@ function validateTicket(value, id) {
 function readTickets(share) {
   const directory = c.schedPaths(share).tickets;
   ticketReadCache.select(directory);
-  const files = jsonFiles(directory);
+  const stamp = fs.statSync(directory, { bigint: true });
+  const previous = ticketDirectories.get(directory);
+  // Consecutive directory changes can share the same millisecond timestamp.
+  const unchanged = previous?.mtimeNs === stamp.mtimeNs && previous.ctimeNs === stamp.ctimeNs;
+  const files = unchanged ? previous.files : jsonFiles(directory);
+  ticketDirectories.set(directory, { mtimeMs: stamp.mtimeMs, mtimeNs: stamp.mtimeNs, ctimeNs: stamp.ctimeNs, files });
   ticketReadCache.prune(files);
   return files.map(file => {
     const id = c.ticketId(file.slice(0, -5));
@@ -97,19 +113,32 @@ function summarize(ticket) {
 function recentReceipts(share) {
   const directory = c.schedPaths(share).commandReceipts;
   return jsonFiles(directory).map(file => {
-    const receipt = c.validateReceipt(c.readJson(path.join(directory, file)));
+    const receipt = c.validateReceipt(cachedJson(path.join(directory, file)));
     if (receipt.commandId !== c.segment(file.slice(0, -5))) throw new Error('[sched] 指令回执编号与文件名不符');
     return receipt;
   }).sort((a, b) => compare(b.at, a.at) || compare(b.commandId, a.commandId)).slice(0, 20);
 }
 
 function snapshot(share, nowMs) {
+  const key = path.resolve(share), cached = snapshots.get(key);
+  if (cached && nowMs >= cached.at && nowMs - cached.at < 2000) {
+    const value = structuredClone(cached.value);
+    value.share = share;
+    return value;
+  }
+  const value = buildSnapshot(share, nowMs);
+  if (value.ok) snapshots.set(key, { at: nowMs, value: structuredClone(value) });
+  else snapshots.delete(key);
+  return value;
+}
+
+function buildSnapshot(share, nowMs) {
   try {
     const paths = c.schedPaths(share);
-    const format = c.readJson(paths.format);
+    const format = cachedJson(paths.format);
     c.fields(format, { formatVersion: v => c.integer(v, 1), capabilities: c.list(c.text, 0, true), createdAt: c.isoTime });
     const config = readConfig(share);
-    const heartbeat = c.validateHeartbeat(c.readJson(paths.heartbeat));
+    const heartbeat = c.validateHeartbeat(cachedJson(paths.heartbeat));
     if (heartbeat.machine !== config.machine) throw new Error('[sched] 心跳与派单主机配置不一致');
     const records = readTickets(share), tickets = records.map(summarize);
     const registerOnly = tickets.filter(ticket => ticket.registerOnly && ticket.state === 'running');
@@ -206,8 +235,23 @@ function ticketDetail(share, id) {
   const directory = c.schedPaths(share).tickets;
   // 先证实目录可读，目录本身丢失不能冒充「这张单不存在」。
   const files = jsonFiles(directory);
-  if (!files.includes(`${id}.json`)) throw Object.assign(new Error('单子不存在'), { status: 404 });
-  return validateTicket(c.readJson(path.join(directory, `${id}.json`)), id);
+  if (files.includes(`${id}.json`)) {
+    try { return validateTicket(c.readJson(path.join(directory, `${id}.json`)), id); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  const archive = path.join(directory, '_archive');
+  let dates;
+  try { dates = fs.readdirSync(archive, { withFileTypes: true }); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; dates = []; }
+  for (const date of dates.filter(entry => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
+    .sort((a, b) => compare(b.name, a.name))) {
+    const file = path.join(archive, date.name, `${id}.json`);
+    let value;
+    try { value = c.readJson(file); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    return validateTicket(value, id);
+  }
+  throw Object.assign(new Error('单子不存在'), { status: 404 });
 }
 function relatedTickets(share, ticket) {
   try { return ticketRelations(ticket, readTickets(share), readLedger(share)); }

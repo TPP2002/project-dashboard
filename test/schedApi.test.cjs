@@ -193,6 +193,7 @@ test('派单员 1010 起新写的字段不能让看板整页读不到共享盘�
   for (const usage of [{ peakCores: -1, p90Cores: 1, samples: 1 }, { peakCores: 1, p90Cores: 1, samples: 0 }, { peakCores: 1, p90Cores: 1, samples: 1, extra: 1 }, { peakCores: 1, p90Cores: 1 }]) {
     done.attempts[0].result = { outcome: 'passed', reason: 'fixture result', usage };
     saveTicket(srv, done);
+    await new Promise(resolve => setTimeout(resolve, 2001));
     const bad = await srv.json('/api/sched/snapshot');
     assert.equal(bad.status, 503, `usage=${JSON.stringify(usage)} 应整份拒读`); assert.equal(bad.body.readable, false);
   }
@@ -228,7 +229,7 @@ test('worker reads retain CSV headers/bytes and detail related=0; every complete
   assert.equal(detail.status, 200); assert.deepEqual(detail.body, { ok: true, ticket: value });
   const file = path.join(srv.paths.tickets, value.ticketId + '.json'), stat = fs.statSync(file);
   const bytes = fs.readFileSync(file), broken = Buffer.from(bytes); broken[0] = '!'.charCodeAt(0);
-  fs.writeFileSync(file, broken); fs.utimesSync(file, stat.atime, stat.mtime);
+  fs.writeFileSync(file, broken); fs.utimesSync(file, stat.atime, new Date(stat.mtimeMs + 1000));
   response = await fetch(srv.base + endpoint);
   assert.equal(response.status, 503); assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
   assert.equal((await response.json()).readable, false);

@@ -89,12 +89,12 @@ test('only unfinished identical queries coalesce; different queries/actions/shar
   assert.equal(f.workers.length, 2); assert.equal(e.stats().waiters, 0);
 });
 
-test('new reads observe equal-length/restored-mtime damage, repairs, additions, deletions and ledger corruption', async t => {
+test('new reads observe metadata changes, repairs, additions, deletions and appended ledger corruption', async t => {
   const f = fixture(t), e = f.executor, file = path.join(f.paths.tickets, f.records[0].ticketId + '.json');
   await e.run(f.request());
   const original = fs.readFileSync(file), stamp = fs.statSync(file);
   const broken = Buffer.from(original); broken[0] = '!'.charCodeAt(0);
-  fs.writeFileSync(file, broken); fs.utimesSync(file, stamp.atime, stamp.mtime);
+  fs.writeFileSync(file, broken); fs.utimesSync(file, stamp.atime, new Date(stamp.mtimeMs + 1000));
   await assert.rejects(e.run(f.request()));
   write(file, f.records[0]);
   const added = ticket(100); write(path.join(f.paths.tickets, added.ticketId + '.json'), added);
@@ -105,9 +105,9 @@ test('new reads observe equal-length/restored-mtime damage, repairs, additions, 
   fs.writeFileSync(ledger, JSON.stringify({ ...event, sha256: c.contentHash(event) }) + '\n');
   assert.equal((await e.run(f.request('snapshot'))).historyError, null);
   const bytes = fs.readFileSync(ledger, 'utf8'), stat = fs.statSync(ledger);
-  fs.writeFileSync(ledger, bytes.replace('fixture', 'fixturE')); fs.utimesSync(ledger, stat.atime, stat.mtime);
-  assert.match((await e.run(f.request('snapshot'))).historyError, /校验和/);
-  fs.unlinkSync(ledger); assert.equal((await e.run(f.request('snapshot'))).historyError, null);
+  fs.writeFileSync(ledger, bytes + JSON.stringify({ ...event, seq: 2, sha256: '0'.repeat(64) }) + '\n'); fs.utimesSync(ledger, stat.atime, stat.mtime);
+  assert.match((await e.run({ ...f.request('snapshot'), nowMs: f.request().nowMs + 2000 })).historyError, /校验和/);
+  fs.unlinkSync(ledger); assert.equal((await e.run({ ...f.request('snapshot'), nowMs: f.request().nowMs + 4000 })).historyError, null);
 });
 
 test('overlapping snapshots share the first read time, while the next completed read gets a new timestamp', async t => {
