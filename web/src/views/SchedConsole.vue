@@ -41,6 +41,7 @@ onUnmounted(store.stop)
     </header>
     <div v-if="store.snapshotError" class="sched-banner bad" role="alert"><div><strong>读不到调度共享盘</strong><p>{{ store.snapshotError }}</p></div>
       <button class="sched-btn" :disabled="store.loading" @click="store.refreshSnapshot">重新读取</button></div>
+    <div v-else-if="store.reconnecting" class="sched-banner info" role="status">正在重连调度台…(第 {{ store.reconnectAttempt }}/3 次)</div>
     <p v-else-if="!store.snapshot" class="sched-empty" role="status">正在读取调度共享盘…</p>
     <p v-if="store.storageError" class="warn" role="status">{{ store.storageError }}</p>
     <p v-if="store.commandError" class="bad" role="alert">{{ store.commandError }}</p>
@@ -98,6 +99,7 @@ onUnmounted(store.stop)
 .sched-pills { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
 .sched-pill { border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 10px; font-size: var(--fs-sm); color: var(--text-2); background: var(--surface); white-space: nowrap; }
 .sched-pill.ok { color: var(--ok); }.sched-pill.bad { color: var(--bad); }
+.sched-page .sched-banner.info { border-color: var(--info); background: color-mix(in srgb, var(--info) 12%, transparent); }
 .sched-howto { color: var(--text-3); font-size: var(--fs-sm); }.sched-howto summary, .sched-offline summary { cursor: pointer; }
 .sched-flow { display: flex; gap: 6px; flex-wrap: wrap; margin: var(--s2) 0; }
 .sched-flow > div { flex: 1; min-width: 150px; padding: 6px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }

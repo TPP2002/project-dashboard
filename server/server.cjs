@@ -63,6 +63,7 @@ const { createAuditionApi } = require('./auditionApi.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
 const { createCiJobsMonitor, githubRepository, runnerMachines, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
 const schedContract = require('../core/schedContract.cjs');
+const { createSchedReadExecutor } = require('../core/schedReadExecutor.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookInstalledFor } = require('../core/hookProbe.cjs');
 const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
@@ -551,6 +552,7 @@ function handleHealth(req, res) {
     latestReleaseCommit,
     launchHint,
     releasedAt: RELEASED_AT,
+    lastSchedReadOkAt,   // 最近一次成功读到调度共享盘快照的时刻（自愈/巡检用，没有则 null）
   });
 }
 
@@ -757,7 +759,22 @@ const auditionApi = createAuditionApi({
   registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards: () => pollBoards(),
 });
 
-const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, resolveShare: resolveSchedShare });
+// 自愈所需：复用现有调度读取路径，记录最近一次【成功】读到调度共享盘快照的时刻；
+// 不新增任何读盘——只在既有 snapshot 读取成功时记下时间戳，供 /api/health 暴露。
+let lastSchedReadOkAt = null;
+const schedExecutor = createSchedReadExecutor();
+const recordingSchedExecutor = {
+  async run(request, ctrl) {
+    const result = await schedExecutor.run(request, ctrl);
+    if (request && request.action === 'snapshot' && result && result.readable) {
+      lastSchedReadOkAt = new Date().toISOString();
+    }
+    return result;
+  },
+  sweep: (share) => schedExecutor.sweep(share),
+  close: () => schedExecutor.close(),
+};
+const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, resolveShare: resolveSchedShare, executor: recordingSchedExecutor });
 
 /** board 位于项目的 .dashboard 目录；仅异步读取 origin，绝不改 Git 或执行 shell。 */
 function readCiRepository(boardPath, runFile = execFile) {

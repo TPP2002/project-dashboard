@@ -9,6 +9,7 @@ export const useSchedStore = defineStore('sched', () => {
   const snapshot = ref<api.SchedSnapshot | null>(null)
   const snapshotError = ref(''), loading = ref(false), commandError = ref(''), storageError = ref('')
   const now = ref(Date.now()), busy = ref(false)
+  const reconnecting = ref(false), reconnectAttempt = ref(0)
   const submitted = ref(loadCommands()), filters = ref(loadFilters())
   const ledger = ref<api.TicketPage | null>(null), ledgerError = ref(''), ledgerLoading = ref(false)
   const cursors = ref(['']), page = ref(0)
@@ -60,8 +61,15 @@ export const useSchedStore = defineStore('sched', () => {
   async function refreshSnapshot() {
     if (!active || document.visibilityState !== 'visible' || snapshotRequest) return
     const request = new AbortController(); snapshotRequest = request; loading.value = true
+    reconnecting.value = false; reconnectAttempt.value = 0
     try {
-      const data = await api.fetchSnapshot(request.signal)
+      const data = await api.fetchSnapshotWithRetry(api.fetchSnapshot, {
+        signal: request.signal,
+        onRetry: (n) => {
+          if (n === 0) { reconnecting.value = false; reconnectAttempt.value = 0 }
+          else { reconnecting.value = true; reconnectAttempt.value = n }
+        },
+      })
       if (request.signal.aborted || snapshotRequest !== request || !active) return
       if (metadataShare !== data.share) { queueDetails.value = {}; queueErrors.value = {}; metadataShare = data.share }
       metadataGeneration++; metadataTickets = new Set(data.queue.map(item => item.ticketId))
@@ -69,7 +77,10 @@ export const useSchedStore = defineStore('sched', () => {
       snapshot.value = data; snapshotError.value = ''; now.value = Date.now(); reconcileReceipts(data)
       await queueMetadata(data, request.signal)
     } catch (error) {
-      if (!request.signal.aborted) snapshotError.value = error instanceof Error ? error.message : String(error)
+      if (!request.signal.aborted) {
+        reconnecting.value = false
+        snapshotError.value = error instanceof Error ? error.message : String(error)
+      }
     } finally { if (snapshotRequest === request) { snapshotRequest = null; loading.value = false } }
   }
   async function loadLedger() {
@@ -174,7 +185,7 @@ export const useSchedStore = defineStore('sched', () => {
     ledgerRequestKey = ''
   }
 
-  return { snapshot, snapshotError, loading, commandError, storageError, now, busy, readable, host, commands,
+  return { snapshot, snapshotError, loading, commandError, storageError, now, busy, readable, host, commands, reconnecting, reconnectAttempt,
     filters, ledger, ledgerError, ledgerLoading, page, detail, detailId, detailError, detailLoading, related, queueDetails, queueErrors,
     exporting, exportError, exportLedger, refreshSnapshot, loadLedger, applyFilters, movePage, openDetail, closeDetail, command, start, stop }
 })

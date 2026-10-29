@@ -702,25 +702,93 @@ async function runWatchServer(opts, deps = {}) {
     return 2;
   }
 
-  const child = d.spawn(process.execPath, [opts.server, ...(opts.serverArgs || [])], {
-    cwd: d.cwd, stdio: 'inherit', windowsHide: true,
-  });
-  updateOwnRecord((r) => ({
-    ...(r || {}),
-    watcherPid: process.pid,
-    serverPid: child.pid,
-    serverStartedAt: new Date().toISOString(),
-  }));
+  // —— server 拉起参数：首次与每次自愈重启【共用同一份】 argv/env/cwd（不另拼一份）——
+  const serverCmd = process.execPath;
+  const serverArgs = [opts.server, ...(opts.serverArgs || [])];
+  const serverSpawnOpts = { cwd: d.cwd, stdio: 'inherit', windowsHide: true };
 
+  let currentChild = null;          // 当前存活的 server 子进程（重启后随之更新）
   let childExit = null;
   let finished = false;
+  let stopping = false;             // 看护主动停树（信号/票据终态/wrapper 死/共享盘不可读）→ 不算崩溃、不重启
   let stopFailed = false;
+  let backoffTimer = null;          // 退避重启计时器：必须 unref，收场时清掉，不能吊住看护退出
+  let crashCount = 0;               // 10 分钟窗口内的连续崩溃次数
+  let firstCrashAt = null;          // 连续崩溃窗口起点
   let doneResolve;
   const done = new Promise((res) => { doneResolve = res; });
+
+  // server 子进程的退出/错误统一接线：区分「看护主动停树 / 人类意图信号」与「自发崩溃」，后者才走自愈重启。
+  const wireChild = (c) => {
+    c.once('exit', (code, signal) => {
+      childExit = code ?? (signal ? 130 : 1);
+      // 人类意图信号（SIGINT/SIGTERM）或看护主动停树（stopping）：都算"被有意停掉"，不自愈重启。
+      if (signal === 'SIGINT' || signal === 'SIGTERM' || stopping || finished) { finish(null); return; }
+      void handleCrash(childExit, signal);
+    });
+    c.once('error', (e) => {
+      childExit = 1;
+      d.err(`[launcher-watch] server 启动失败：${e && e.message}`);
+      if (stopping || finished) { finish(1); return; }
+      void handleCrash(1, null);
+    });
+  };
+
+  // 同一张常驻票不撤不换：重启复用与首次完全相同的 argv/env/cwd；只补记 serverPid / serverStartedAt。
+  const spawnServer = () => {
+    currentChild = d.spawn(serverCmd, serverArgs, serverSpawnOpts);
+    updateOwnRecord((r) => ({
+      ...(r || {}),
+      watcherPid: process.pid,
+      serverPid: currentChild.pid,
+      serverStartedAt: new Date().toISOString(),
+    }));
+    wireChild(currentChild);
+    return currentChild;
+  };
+
+  // 自发崩溃后的自愈：1s→2s→4s→…封顶 60s 退避重启；10 分钟内第 6 次崩溃放弃并把 lastCrash 落盘。
+  // 退避基数与上限经 deps 注入（缺省 1000ms / 60000ms），单测可缩到毫秒级跑完；生产形态不变。
+  const CRASH_WINDOW_MS = 10 * 60 * 1000;
+  const MAX_CRASHES = 6;
+  const backoffBaseMs = d.backoffBaseMs ?? 1000;
+  const backoffMaxMs = d.backoffMaxMs ?? 60000;
+  const backoffDelayMs = (n) => Math.min(backoffBaseMs * 2 ** (n - 1), backoffMaxMs);
+  const handleCrash = (code, signal) => {
+    const now = Date.now();
+    if (firstCrashAt === null) firstCrashAt = now;
+    else if (now - firstCrashAt > CRASH_WINDOW_MS) { firstCrashAt = now; crashCount = 0; }  // 窗口过期，重新计数
+    crashCount += 1;
+    if (crashCount >= MAX_CRASHES) {
+      // 放弃：把最近一次崩溃写进归属登记（lastCrash），按现有路径收场；常驻票不撤不换。
+      try {
+        updateOwnRecord((r) => ({
+          ...(r || {}),
+          lastCrash: { at: new Date(now).toISOString(), code, signal: signal || null, count: crashCount },
+        }));
+      } catch { /* 落盘失败也照常按现有路径收场 */ }
+      d.err(`[launcher-watch] 10 分钟内连续 ${crashCount} 次拉起失败，放弃自愈（常驻票 ${opts.ticketId || '无'} 不撤不换）：` +
+        `最近一次退出 code=${code} signal=${signal || '-'}。按现有路径收场。`);
+      finish(null);
+      return;
+    }
+    const delay = backoffDelayMs(crashCount);
+    d.err(`[launcher-watch] server 异常退出（code=${code} signal=${signal || '-'}，第 ${crashCount} 次崩溃），` +
+      `${Math.round(delay / 1000)} 秒后退避重启（同一常驻票不撤不换）。`);
+    backoffTimer = setTimeout(() => {
+      backoffTimer = null;
+      if (finished || stopping) return;   // 期间若已收场/主动停树，不再拉起
+      spawnServer();
+    }, delay);
+    if (backoffTimer && typeof backoffTimer.unref === 'function') backoffTimer.unref();
+  };
+
+  spawnServer();
 
   const finish = (fallback, { keepRecord = false } = {}) => {
     if (finished) return;
     finished = true;
+    if (backoffTimer) { clearTimeout(backoffTimer); backoffTimer = null; }   // 退避计时器必须收场时清掉，不能吊住看护退出
     clearInterval(timer);
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
@@ -733,7 +801,6 @@ async function runWatchServer(opts, deps = {}) {
     doneResolve();
   };
 
-  let stopping = false;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const stopOwn = async (reason, code, { cancelTicket = false, cancelReason = '共享盘持续不可读：先停自有进程再退单' } = {}) => {
     if (stopping || finished) return;
@@ -743,18 +810,18 @@ async function runWatchServer(opts, deps = {}) {
     // 账/进程脱节，就是从"停不成也 finish"这条缝里漏出来的。停不成：留在原地看住现场。
     let stopResult = null;
     for (let attempt = 1; attempt <= d.stopRetries; attempt++) {
-      stopResult = await d.stopTree(child.pid, { platform: d.platform });
+      stopResult = await d.stopTree(currentChild.pid, { platform: d.platform });
       if (stopResult && stopResult.ok === true) break;
       const detail = (stopResult && stopResult.reason) || '未知原因';
       if (attempt < d.stopRetries) {
-        d.err(`[launcher-watch] 停树未确认（第 ${attempt}/${d.stopRetries} 次，pid ${child.pid}）：${detail}；` +
+        d.err(`[launcher-watch] 停树未确认（第 ${attempt}/${d.stopRetries} 次，pid ${currentChild.pid}）：${detail}；` +
           `${Math.round(d.stopRetryDelayMs / 1000)} 秒后再试。`);
         await sleep(d.stopRetryDelayMs);
       }
     }
     if (!stopResult || stopResult.ok !== true) {
       stopFailed = true;
-      d.err(`[launcher-watch] 停止自己管理的服务未确认（pid ${child.pid}，已试 ${d.stopRetries} 次）：` +
+      d.err(`[launcher-watch] 停止自己管理的服务未确认（pid ${currentChild.pid}，已试 ${d.stopRetries} 次）：` +
         `${(stopResult && stopResult.reason) || '未知原因'}。本看护【不退出】：调度单不撤（账/进程保持一致）、` +
         '绝不冒充已停止、也绝不另起新单，请人工结束该进程树；它退出后本看护即收场（退出码 1，登记如实记退出时刻）。');
       return;   // 不 finish：看护与 hold 都留在原地看住现场，直到自有进程真退出
@@ -807,12 +874,7 @@ async function runWatchServer(opts, deps = {}) {
     try { tick(); } catch (e) { d.err(`[launcher-watch] 看护检查失败：${e && e.message}`); }
   }, d.intervalMs);
 
-  child.once('exit', (code, signal) => {
-    childExit = code ?? (signal ? 130 : 1);
-    // 停树没确认成功期间看护一直没退；自有进程此刻真退了（含人工收场）才许收场，退出码钉成 1 的失败边界。
-    finish(null);
-  });
-  child.once('error', (e) => { childExit = 1; d.err(`[launcher-watch] server 启动失败：${e && e.message}`); finish(1); });
+  // server 子进程的退出/错误接线已在 spawnServer() 内通过 wireChild 统一处理（含自愈重启与主动停树分流）。
 
   await done;
   return process.exitCode ?? 0;
