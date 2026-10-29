@@ -708,6 +708,7 @@ async function runWatchServer(opts, deps = {}) {
   const serverSpawnOpts = { cwd: d.cwd, stdio: 'inherit', windowsHide: true };
 
   let currentChild = null;          // 当前存活的 server 子进程（重启后随之更新）
+  let childAlive = false;
   let childExit = null;
   let finished = false;
   let stopping = false;             // 看护主动停树（信号/票据终态/wrapper 死/共享盘不可读）→ 不算崩溃、不重启
@@ -721,12 +722,14 @@ async function runWatchServer(opts, deps = {}) {
   // server 子进程的退出/错误统一接线：区分「看护主动停树 / 人类意图信号」与「自发崩溃」，后者才走自愈重启。
   const wireChild = (c) => {
     c.once('exit', (code, signal) => {
+      childAlive = false;
       childExit = code ?? (signal ? 130 : 1);
       // 人类意图信号（SIGINT/SIGTERM）或看护主动停树（stopping）：都算"被有意停掉"，不自愈重启。
       if (signal === 'SIGINT' || signal === 'SIGTERM' || stopping || finished) { finish(null); return; }
       void handleCrash(childExit, signal);
     });
     c.once('error', (e) => {
+      childAlive = false;
       childExit = 1;
       d.err(`[launcher-watch] server 启动失败：${e && e.message}`);
       if (stopping || finished) { finish(1); return; }
@@ -737,6 +740,7 @@ async function runWatchServer(opts, deps = {}) {
   // 同一张常驻票不撤不换：重启复用与首次完全相同的 argv/env/cwd；只补记 serverPid / serverStartedAt。
   const spawnServer = () => {
     currentChild = d.spawn(serverCmd, serverArgs, serverSpawnOpts);
+    childAlive = true;
     updateOwnRecord((r) => ({
       ...(r || {}),
       watcherPid: process.pid,
@@ -805,18 +809,21 @@ async function runWatchServer(opts, deps = {}) {
   const stopOwn = async (reason, code, { cancelTicket = false, cancelReason = '共享盘持续不可读：先停自有进程再退单' } = {}) => {
     if (stopping || finished) return;
     stopping = true;
+    if (!childAlive && backoffTimer) { clearTimeout(backoffTimer); backoffTimer = null; }
     d.log(`[launcher-watch] ${reason}`);
     // 有界重试；【确认自有进程真退了】才许收场 —— 看护先退、hold 随后注销而 server 还活着的
     // 账/进程脱节，就是从"停不成也 finish"这条缝里漏出来的。停不成：留在原地看住现场。
-    let stopResult = null;
-    for (let attempt = 1; attempt <= d.stopRetries; attempt++) {
-      stopResult = await d.stopTree(currentChild.pid, { platform: d.platform });
-      if (stopResult && stopResult.ok === true) break;
-      const detail = (stopResult && stopResult.reason) || '未知原因';
-      if (attempt < d.stopRetries) {
-        d.err(`[launcher-watch] 停树未确认（第 ${attempt}/${d.stopRetries} 次，pid ${currentChild.pid}）：${detail}；` +
-          `${Math.round(d.stopRetryDelayMs / 1000)} 秒后再试。`);
-        await sleep(d.stopRetryDelayMs);
+    let stopResult = childAlive ? null : { ok: true };
+    if (childAlive) {
+      for (let attempt = 1; attempt <= d.stopRetries; attempt++) {
+        stopResult = await d.stopTree(currentChild.pid, { platform: d.platform });
+        if (stopResult && stopResult.ok === true) break;
+        const detail = (stopResult && stopResult.reason) || '未知原因';
+        if (attempt < d.stopRetries) {
+          d.err(`[launcher-watch] 停树未确认（第 ${attempt}/${d.stopRetries} 次，pid ${currentChild.pid}）：${detail}；` +
+            `${Math.round(d.stopRetryDelayMs / 1000)} 秒后再试。`);
+          await sleep(d.stopRetryDelayMs);
+        }
       }
     }
     if (!stopResult || stopResult.ok !== true) {

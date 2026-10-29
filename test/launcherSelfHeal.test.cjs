@@ -122,6 +122,59 @@ test('自愈：server 自发崩溃两次后稳住 → 退避重启 3 次、serve
   clean(e.dir);
 });
 
+for (const trigger of ['SIGINT', 'terminal']) {
+  test(`退避等待期间 ${trigger}：及时收场、不停已退出的子进程、不再重启`, { timeout: 10000 }, async (t) => {
+    const e = makeEnv();
+    const T = 'tk-' + 'd'.repeat(20);
+    const W = 4245;
+    const backoffBaseMs = 1500;
+    let stopCalls = 0;
+    let cancelCalls = 0;
+    let state = 'granted';
+    let exitCode = null;
+    let settled = false;
+    lr.writeRecord(e.recordFile, { schema: 1, hostname: os.hostname(), mode: 'strict', key: 'k', ticketId: T, wrapperPid: W, serverPid: null });
+    const d = makeWatchDeps(e, {
+      ticketId: T, wrapperPid: W, exitPlan: [null],
+      over: {
+        backoffBaseMs,
+        stopRetryDelayMs: 1,
+        stopTree: async () => { stopCalls++; return { ok: false, reason: 'process already exited' }; },
+        client: {
+          status: () => ({ state }),
+          cancel: async () => { cancelCalls++; return { exitCode: 0 }; },
+        },
+        exit: (code) => { exitCode = code; },
+      },
+    });
+    const p = lr.runWatchServer({ ticketId: T, share: e.share, wrapperPid: W, record: e.recordFile, server: 'server.cjs', key: 'k' }, d);
+    void p.then(() => { settled = true; });
+    t.after(async () => {
+      if (!settled) {
+        d._setWrapperDead(true);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        d._spawned.at(-1)?.emit('exit', null, 'SIGTERM');
+      }
+      await p;
+      clean(e.dir);
+    });
+    assert.ok(await waitFor(() => d._spawned.length === 1), '首次 server 已拉起');
+    d._spawned[0].crash(7);
+    assert.equal(d._spawned.length, 1, '崩溃后正处于退避等待');
+    if (trigger === 'SIGINT') process.emit('SIGINT');
+    else state = 'cancelled';
+    assert.ok(await waitFor(() => settled, 500), '退避等待期间应及时收场');
+    assert.equal(stopCalls, 0, '已退出的子进程不能再调 stopTree');
+    assert.equal(exitCode, 7, '与原成功收场路径一致，透传已有子进程退出码');
+    assert.equal(cancelCalls, 0, '信号与票据终态收场不重复撤单');
+    assert.ok(lr.readRecord(e.recordFile).serverExitedAt, '成功收场照常登记退出时刻');
+    assert.equal(lr.readRecord(e.recordFile).ticketId, T, '常驻票不换');
+    await new Promise((resolve) => setTimeout(resolve, backoffBaseMs + 100));
+    assert.equal(d._spawned.length, 1, '退避到点后不得再次拉起 server');
+    assert.equal(stopCalls, 0, '收场后也不再停树');
+  });
+}
+
 test('人类信号：server 收到 SIGINT → 不重启，看护按停机收场', { timeout: 15000 }, async () => {
   const e = makeEnv();
   const T = 'tk-' + 'b'.repeat(20);
