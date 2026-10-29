@@ -208,3 +208,88 @@ test('放弃自愈：10 分钟内连续 6 次崩溃 → 收场并落盘 lastCras
   assert.ok(typeof rec.lastCrash.at === 'string' && !Number.isNaN(Date.parse(rec.lastCrash.at)), 'lastCrash.at 是 ISO 时间');
   clean(e.dir);
 });
+
+test('退避期间登记换主：旧看护不再起服、不停树、不撤单、不改新登记', { timeout: 10000 }, async (t) => {
+  const e = makeEnv();
+  const T = 'tk-' + 'e'.repeat(20);
+  const W = 4246;
+  let stopCalls = 0;
+  let cancelCalls = 0;
+  let settled = false;
+  const errors = [];
+  lr.writeRecord(e.recordFile, { schema: 1, hostname: os.hostname(), mode: 'strict', key: 'k', ticketId: T, wrapperPid: W, serverPid: null });
+  const d = makeWatchDeps(e, {
+    ticketId: T, wrapperPid: W, exitPlan: [null],
+    over: {
+      backoffBaseMs: 60,
+      stopTree: async () => { stopCalls++; return { ok: false }; },
+      client: { status: () => ({ state: 'granted' }), cancel: async () => { cancelCalls++; } },
+      err: (line) => { errors.push(line); },
+    },
+  });
+  const p = lr.runWatchServer({ ticketId: T, share: e.share, wrapperPid: W, record: e.recordFile, server: 'server.cjs', key: 'k' }, d);
+  void p.then(() => { settled = true; });
+  t.after(async () => {
+    if (!settled) d._spawned.at(-1)?.emit('exit', null, 'SIGTERM');
+    await p;
+    clean(e.dir);
+  });
+  assert.ok(await waitFor(() => d._spawned.length === 1), '首次 server 已拉起');
+  d._spawned[0].crash(7);
+  const replacement = Buffer.from(JSON.stringify({ ...lr.readRecord(e.recordFile), key: 'new-lifecycle', serverPid: 9000 }, null, 2) + '\n');
+  fs.writeFileSync(e.recordFile, replacement);
+  assert.ok(await waitFor(() => settled, 3000), '归属换主后旧看护应收场');
+  assert.equal(d._spawned.length, 1, '旧看护不得拉起第二个 server');
+  assert.equal(stopCalls, 0, '退避期间没有活子进程，不应停树');
+  assert.equal(cancelCalls, 0, '归属换主收场不撤单');
+  assert.deepEqual(fs.readFileSync(e.recordFile), replacement, '新登记逐字节保持不变');
+  assert.ok(errors.some((line) => line.includes('归属登记已不属于本生命周期，不再自愈重启')), '日志说明归属换主');
+});
+
+test('退避核对归属暂时抛异常：原间隔重试核对，不增加崩溃次数', { timeout: 10000 }, async (t) => {
+  const e = makeEnv();
+  const T = 'tk-' + 'f'.repeat(20);
+  const W = 4247;
+  const backoffBaseMs = 150;
+  let confirmations = 0;
+  let settled = false;
+  const confirmationTimes = [];
+  const errors = [];
+  lr.writeRecord(e.recordFile, { schema: 1, hostname: os.hostname(), mode: 'strict', key: 'k', ticketId: T, wrapperPid: W, serverPid: null });
+  const d = makeWatchDeps(e, {
+    ticketId: T, wrapperPid: W, exitPlan: [null, null],
+    over: {
+      backoffBaseMs,
+      confirmOwn: (...args) => {
+        confirmations++;
+        confirmationTimes.push(Date.now());
+        if (confirmations === 2) throw new Error('record lock timeout');
+        return lr.confirmOwnRecordLocked(...args);
+      },
+      err: (line) => { errors.push(line); },
+    },
+  });
+  const p = lr.runWatchServer({ ticketId: T, share: e.share, wrapperPid: W, record: e.recordFile, server: 'server.cjs', key: 'k' }, d);
+  void p.then(() => { settled = true; });
+  t.after(async () => {
+    if (!settled) d._spawned.at(-1)?.emit('exit', null, 'SIGTERM');
+    await p;
+    clean(e.dir);
+  });
+  assert.ok(await waitFor(() => d._spawned.length === 1), '首次 server 已拉起');
+  d._spawned[0].crash(7);
+  assert.ok(await waitFor(() => confirmations >= 2, 3000), '第一次退避到点核对已抛异常');
+  assert.equal(settled, false, '核对暂时失败不应收场');
+  assert.equal(d._spawned.length, 1, '核对抛异常时不得起服');
+  assert.ok(errors.some((line) => line.includes('record lock timeout')), '日志保留核对异常信息');
+  assert.ok(await waitFor(() => d._spawned.length === 2, 3000), '第二次到点核对成功后起服');
+  assert.equal(confirmations, 3, '首次起服核对一次，退避到点核对两次');
+  assert.ok(confirmationTimes[2] - confirmationTimes[1] >= backoffBaseMs - 5, '核对异常仍按同一退避间隔重试');
+  assert.equal(settled, false, '再次核对成功后继续看护');
+  d._spawned[1].crash(8);
+  const crashLogs = errors.filter((line) => line.includes('server 异常退出'));
+  assert.equal(crashLogs.length, 2, '只有两次真实崩溃');
+  assert.ok(crashLogs[1].includes('第 2 次崩溃'), '核对异常不能算作第 3 次崩溃');
+  process.emit('SIGINT');
+  await p;
+});

@@ -779,9 +779,23 @@ async function runWatchServer(opts, deps = {}) {
     const delay = backoffDelayMs(crashCount);
     d.err(`[launcher-watch] server 异常退出（code=${code} signal=${signal || '-'}，第 ${crashCount} 次崩溃），` +
       `${Math.round(delay / 1000)} 秒后退避重启（同一常驻票不撤不换）。`);
-    backoffTimer = setTimeout(() => {
+    backoffTimer = setTimeout(function restartAfterBackoff() {
       backoffTimer = null;
       if (finished || stopping) return;   // 期间若已收场/主动停树，不再拉起
+      let own;
+      try {
+        own = d.confirmOwn(opts.record, { key: opts.key, ticketId: opts.ticketId, wrapperPid: opts.wrapperPid });
+      } catch (e) {
+        d.err(`[launcher-watch] 自愈重启前核对归属登记失败：${e && e.message}；稍后按原退避间隔再核对。`);
+        backoffTimer = setTimeout(restartAfterBackoff, delay);
+        if (backoffTimer && typeof backoffTimer.unref === 'function') backoffTimer.unref();
+        return;
+      }
+      if (!own || own.ok !== true) {
+        d.err(`[launcher-watch] 归属登记已不属于本生命周期，不再自愈重启：${(own && own.reason) || '未知原因'}`);
+        finish(null, { keepRecord: true });
+        return;
+      }
       spawnServer();
     }, delay);
     if (backoffTimer && typeof backoffTimer.unref === 'function') backoffTimer.unref();
