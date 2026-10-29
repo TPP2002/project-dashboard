@@ -18,15 +18,22 @@ function fixture(t) {
   save(); return { share, dir, file, save };
 }
 
-test('未改变账本复用已校验事件；返回对象保持独立', t => {
+test('未改变账本复用冻结事件；数组外壳保持独立', t => {
   const f = fixture(t), original = c.contentHash;
   let calls = 0;
   c.contentHash = (...args) => { calls++; return original(...args); };
   t.after(() => { c.contentHash = original; });
   const first = readLedger(f.share);
   assert.equal(first.readable, true);
-  first.events[0].data.changedByConsumer = true;
+  const event = first.events[0];
+  assert.equal(Object.isFrozen(event), true);
+  assert.equal(Object.isFrozen(event.data), true);
+  assert.throws(() => { event.data.changedByConsumer = true; }, TypeError);
+  first.events.push(event); first.events.length = 0;
   const second = readLedger(f.share);
+  assert.notEqual(first.events, second.events);
+  assert.equal(second.events.length, 1);
+  assert.equal(second.events[0], event);
   assert.equal(second.events[0].data.changedByConsumer, undefined);
   assert.equal(calls, 1);
 });

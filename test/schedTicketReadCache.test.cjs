@@ -15,7 +15,13 @@ function fixture(t, count = 3) {
   const records = Array.from({ length: count }, (_, i) => ticket(i + 1,
     { state: i === 0 ? 'paused' : 'running', registerOnly: i === 1 }));
   if (records[2]) records[2].request.parentTicketId = records[0].ticketId;
-  const save = value => write(path.join(paths.tickets, `${value.ticketId}.json`), value);
+  // Existing hit-count assertions exercise stable files; fresh writes have dedicated racy coverage.
+  const save = value => {
+    const file = path.join(paths.tickets, `${value.ticketId}.json`);
+    write(file, value);
+    const old = new Date(Date.now() - 10000);
+    fs.utimesSync(file, old, old);
+  };
   records.forEach(save);
   return { share, paths, records, save, file: path.join(paths.tickets, `${records[0].ticketId}.json`) };
 }

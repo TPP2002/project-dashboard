@@ -9,6 +9,14 @@ const SAMPLE_LIMIT = 20;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const sampleKey = request => JSON.stringify([request.category, request.work.type]);
 
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function readLedger(share) {
   let key;
   try {
@@ -64,7 +72,7 @@ function readLedger(share) {
           }
           const { sha256, ...payload } = event;
           if (sha256 !== c.contentHash(payload)) throw new Error('台账校验和或事件顺序不合法');
-          parsed.push(event);
+          parsed.push(deepFreeze(event));
         }
         const lastNewline = bytes.lastIndexOf(10);
         cached = { size: old ? size : bytes.length, events: parsed, tail: Buffer.from(bytes.subarray(lastNewline + 1)) };
@@ -78,7 +86,7 @@ function readLedger(share) {
       }
     }
     ledgerCaches.set(key, next);
-    return { readable: true, events: structuredClone(events), reason: null };
+    return { readable: true, events, reason: null };
   } catch (error) {
     if (key) ledgerCaches.delete(key);
     return { readable: false, events: [], reason: `读不到调度台账：${error.message}` };

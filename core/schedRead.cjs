@@ -20,10 +20,11 @@ const snapshots = new Map();
 const jsonReadCache = new Map();
 function cachedJson(file) {
   const stat = fs.statSync(file), old = jsonReadCache.get(file);
-  if (old?.size === stat.size && old.mtimeMs === stat.mtimeMs) return structuredClone(old.value);
+  if (old && !old.racy && old.size === stat.size && old.mtimeMs === stat.mtimeMs) return structuredClone(old.value);
   jsonReadCache.delete(file);
   const value = c.readJson(file);
-  jsonReadCache.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, value: structuredClone(value) });
+  jsonReadCache.set(file, { size: stat.size, mtimeMs: stat.mtimeMs,
+    racy: Date.now() - stat.mtimeMs < 2000, value: structuredClone(value) });
   return value;
 }
 
@@ -89,10 +90,12 @@ function readTickets(share) {
   ticketReadCache.select(directory);
   const stamp = fs.statSync(directory, { bigint: true });
   const previous = ticketDirectories.get(directory);
-  // Consecutive directory changes can share the same millisecond timestamp.
-  const unchanged = previous?.mtimeNs === stamp.mtimeNs && previous.ctimeNs === stamp.ctimeNs;
+  // Coarse filesystem clock ticks can give consecutive changes identical timestamps.
+  // Re-enumerate lists sampled within two seconds of mtime, even when both stamps match.
+  const unchanged = previous && !previous.racy && previous.mtimeNs === stamp.mtimeNs && previous.ctimeNs === stamp.ctimeNs;
   const files = unchanged ? previous.files : jsonFiles(directory);
-  ticketDirectories.set(directory, { mtimeMs: stamp.mtimeMs, mtimeNs: stamp.mtimeNs, ctimeNs: stamp.ctimeNs, files });
+  const racy = Date.now() - Number(stamp.mtimeMs) < 2000;
+  ticketDirectories.set(directory, { mtimeMs: stamp.mtimeMs, mtimeNs: stamp.mtimeNs, ctimeNs: stamp.ctimeNs, files, racy });
   ticketReadCache.prune(files);
   return files.map(file => {
     const id = c.ticketId(file.slice(0, -5));
@@ -112,7 +115,11 @@ function summarize(ticket) {
 }
 function recentReceipts(share) {
   const directory = c.schedPaths(share).commandReceipts;
-  return jsonFiles(directory).map(file => {
+  const files = jsonFiles(directory), current = new Set(files.map(file => path.join(directory, file)));
+  for (const file of jsonReadCache.keys()) {
+    if (path.dirname(file) === directory && !current.has(file)) jsonReadCache.delete(file);
+  }
+  return files.map(file => {
     const receipt = c.validateReceipt(cachedJson(path.join(directory, file)));
     if (receipt.commandId !== c.segment(file.slice(0, -5))) throw new Error('[sched] 指令回执编号与文件名不符');
     return receipt;
@@ -127,9 +134,13 @@ function snapshot(share, nowMs) {
     return value;
   }
   const value = buildSnapshot(share, nowMs);
-  if (value.ok) snapshots.set(key, { at: nowMs, value: structuredClone(value) });
+  if (value.ok) snapshots.set(key, { at: nowMs, value });
   else snapshots.delete(key);
-  return value;
+  return structuredClone(value);
+}
+
+function cacheStats() {
+  return { jsonEntries: jsonReadCache.size, ticketDirectories: ticketDirectories.size, snapshots: snapshots.size };
 }
 
 function buildSnapshot(share, nowMs) {
@@ -266,4 +277,4 @@ function pollStamp(share) {
   return { cursorSeq, key: `${share}:${cursorSeq}:${receipts.mtimeMs}` };
 }
 
-module.exports = { snapshot, ticketPage, exportTickets, ticketDetail, relatedTickets, readConfig, readFailure, pollStamp, STATES };
+module.exports = { snapshot, ticketPage, exportTickets, ticketDetail, relatedTickets, readConfig, readFailure, pollStamp, STATES, cacheStats };
