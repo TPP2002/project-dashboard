@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as api from '@/api/sched'
+import { fetchSnapshotWithRetry } from './schedRetry'
 import { BoardStream } from '@/api/sse'
 import { commandTimes, loadCommands, loadFilters, queryFilters, saveLocal, type LedgerPrefs } from '@/components/sched/preferences'
 import { pruneQueueRecords, queueMetadataOf, type QueueMetadata } from './schedResourceLifecycle'
@@ -63,7 +64,7 @@ export const useSchedStore = defineStore('sched', () => {
     const request = new AbortController(); snapshotRequest = request; loading.value = true
     reconnecting.value = false; reconnectAttempt.value = 0
     try {
-      const data = await api.fetchSnapshotWithRetry(api.fetchSnapshot, {
+      const data = await fetchSnapshotWithRetry(api.fetchSnapshot, {
         signal: request.signal,
         onRetry: (n) => {
           if (n === 0) { reconnecting.value = false; reconnectAttempt.value = 0 }

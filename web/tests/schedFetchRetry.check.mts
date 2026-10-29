@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fetchSnapshotWithRetry } from '../src/api/sched.ts'
+import { fetchSnapshotWithRetry } from '../src/stores/schedRetry.ts'
 import type { SchedSnapshot } from '../src/api/sched.ts'
 
 // 造一个会按计数失败若干次、之后成功的 fetch 桩；并捕获 onRetry 回调序列。
