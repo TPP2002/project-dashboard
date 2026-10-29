@@ -34,8 +34,8 @@ onUnmounted(store.stop)
     <header class="sched-page-head">
       <h1>调度台</h1>
       <div class="sched-pills">
-        <span v-if="store.readable" class="sched-pill" :class="heartbeatAge !== null && heartbeatAge <= 60000 ? 'ok' : 'bad'">
-          {{ heartbeatAge !== null && heartbeatAge <= 60000 ? '派单员在线' : '派单员失联' }} · 心跳 {{ heartbeatAge === null ? '未知' : Math.floor(heartbeatAge / 1000) + ' 秒前' }}
+        <span v-if="store.readable" class="sched-pill" :class="heartbeatAge !== null && heartbeatAge <= 120000 ? 'ok' : 'bad'">
+          {{ heartbeatAge !== null && heartbeatAge <= 120000 ? '派单员在线' : '派单员失联' }} · 心跳 {{ heartbeatAge === null ? '未知' : Math.floor(heartbeatAge / 1000) + ' 秒前' }}
         </span><span class="sched-pill">台账永久 · 日志 90 天</span>
       </div>
     </header>
