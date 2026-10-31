@@ -76,3 +76,28 @@ test('costPrefixes:未注册项目返回 null', () => {
   writeRegistry({});
   assert.strictEqual(server.costPrefixes('nobody'), null);
 });
+
+test('costPrefixes:mainRepo 是 junction 时,前缀同时含真实路径与联接路径两种编码', (t) => {
+  // junction 建在独立临时目录,测试自己先拆联接再删真实目录,绝不让 recursive 穿过联接删。
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'moved-')));
+  const real = path.join(base, 'real');
+  const alias = path.join(base, 'alias');
+  fs.mkdirSync(real);
+  fs.symlinkSync(real, alias, 'junction');
+  const peerHome = mkdir('peer-home');
+  t.after(() => {
+    fs.rmSync(alias, { force: true });
+    fs.rmSync(real, { recursive: true, force: true });
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  writeRegistry({
+    moved: { mainRepo: alias },
+    peer: { mainRepo: peerHome },
+  });
+  const moved = server.costPrefixes('moved');
+  assert.deepEqual(moved.prefixes, [real, alias].map(mapRepoToPrefix));
+  const peer = server.costPrefixes('peer');
+  for (const expected of [real, alias].map(mapRepoToPrefix)) {
+    assert.ok(peer.otherPrefixes.includes(expected), `peer 的其他前缀应含 ${expected}`);
+  }
+});

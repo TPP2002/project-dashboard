@@ -828,13 +828,14 @@ function handleRetiredCpu(req, res) {
 function costPrefixes(pid) {
   const proj = resolveProjectSafe(pid);
   if (!proj) return null;
-  const prefixes = [...new Set(proj.costRoots.map(costUsage.mapRepoToPrefix))];
+  const prefixRoots = (proj.costPrefixRoots && proj.costPrefixRoots.length) ? proj.costPrefixRoots : proj.costRoots;
+  const prefixes = [...new Set(prefixRoots.map(costUsage.mapRepoToPrefix))];
   const otherPrefixes = new Set();
   for (const otherPid of Object.keys(readRegistrySafe().projects || {})) {
     if (otherPid === pid) continue;
     const other = resolveProjectSafe(otherPid);
     if (!other) continue;
-    for (const root of other.costRoots) otherPrefixes.add(costUsage.mapRepoToPrefix(root));
+    for (const root of ((other.costPrefixRoots && other.costPrefixRoots.length) ? other.costPrefixRoots : other.costRoots)) otherPrefixes.add(costUsage.mapRepoToPrefix(root));
   }
   return { prefixes, otherPrefixes: [...otherPrefixes] };
 }
@@ -923,7 +924,7 @@ async function handleCostPortfolio(res, query) {
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   try {
     const projects = Object.keys(readRegistrySafe().projects || {}).map((id) => resolveProjectSafe(id)).filter(Boolean);
-    const prefixes = [...new Set(projects.flatMap((p) => p.costRoots.map(costUsage.mapRepoToPrefix)))];
+    const prefixes = [...new Set(projects.flatMap((p) => ((p.costPrefixRoots && p.costPrefixRoots.length) ? p.costPrefixRoots : p.costRoots).map(costUsage.mapRepoToPrefix)))];
     const [uniqueUsage, codex] = await Promise.all([
       prefixes.length ? costUsage.getUsage({ prefixes, days }) : null,
       codexApi.getCostUsage(days, ''),
