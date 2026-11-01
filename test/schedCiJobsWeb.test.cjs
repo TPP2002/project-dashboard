@@ -121,6 +121,8 @@ test('一个仓库尚未返回时，下一拍仍能刷新其它仓库且不重�
   const monitor = c.createCiJobsMonitor({ now: () => now, repositoryOverrides: 'owner/slow,owner/fast', gh: async endpoint => {
     calls.push(endpoint);
     if (endpoint.includes('/slow/') && endpoint.includes('status=in_progress')) return new Promise(resolve => { release = resolve; });
+    if (endpoint.includes('status=in_progress')) return { workflow_runs: [{ id: 1, name: 'CI', head_branch: 'main', pull_requests: [] }] };
+    if (endpoint.includes('/jobs?')) return { jobs: [] };
     return { workflow_runs: [] };
   } });
   const first = monitor.refresh();
@@ -130,7 +132,7 @@ test('一个仓库尚未返回时，下一拍仍能刷新其它仓库且不重�
   await new Promise(setImmediate);
   assert.equal(monitor.snapshot().repositories.find(item => item.repository === 'owner/fast').updatedAt, new Date(now).toISOString());
   assert.equal(calls.filter(endpoint => endpoint.includes('/slow/') && endpoint.includes('status=in_progress')).length, 1);
-  release({ workflow_runs: [] }); await Promise.all([first, second]);
+  release({ workflow_runs: [{ id: 1, name: 'CI', head_branch: 'main', pull_requests: [] }] }); await Promise.all([first, second]);
 });
 
 test('仓库清单覆盖不依赖注册表可读，不额外采集其它仓库', async () => {
