@@ -1667,7 +1667,7 @@ function probeHealth(port) {
 async function findExistingInstance() {
   // 显式端口 0 用于隔离自检，由系统分配并持有端口，不扫描或接管其它实例。
   if (PORT_BASE === 0) return null;
-  for (let p = PORT_BASE; p <= PORT_BASE + PORT_RANGE; p++) {
+  for (let p = PORT_BASE; p <= Math.min(PORT_BASE + PORT_RANGE, 65535); p++) {
     const h = await probeHealth(p);
     if (h && h.service === SERVICE && sameDataScope(h)) return { port: p, health: h };
   }
@@ -1808,7 +1808,7 @@ function tryListen(port, attemptsLeft) {
     if (!COLLABORATION) openBrowser(localUrl);  // 协作模式在服务器上跑,不开本机浏览器
   });
   server.once('error', (err) => {
-    if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0) {
+    if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0 && port < 65535) {
       console.log(`端口 ${port} 被占用，尝试 ${port + 1} ...`);
       setTimeout(() => tryListen(port + 1, attemptsLeft - 1), 50);
     } else {
