@@ -17,6 +17,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -25,7 +26,11 @@ for (const f of ['启动看板.bat', 'dashboard.sh']) {
   test(`${f}:薄入口不起服务,整条链交给 cli/launcher.cjs`, () => {
     const s = read(f);
     assert.ok(!/node\s+"?server[\\/]server\.cjs/.test(s), '不许直接起本检出的 server —— 那正是本卡要治的病');
-    assert.match(s, /cli[\\/]launcher\.cjs/, '薄入口必须把整条编排交给 cli/launcher.cjs');
+    if (f === '启动看板.bat') {
+      assert.match(s, /wscript\.exe/i);
+      assert.match(s, /launcher-silent\.vbs/);
+      assert.match(read('scripts/launcher-silent.vbs'), /cli[\\/]launcher\.cjs/);
+    } else assert.match(s, /cli[\\/]launcher\.cjs/, '薄入口必须把整条编排交给 cli/launcher.cjs');
   });
 
   test(`${f}:薄入口不许 cd 进发布副本`, () => {
@@ -63,3 +68,37 @@ test('serviceStatus:探不到服务时如实说"没在跑",不报错也不瞎猜
   assert.equal(st.running, false);
   assert.match(st.text, /没在跑/);
 });
+
+for (const [name, env, reason] of [
+  ['自定义数据目录', { DASHBOARD_HOME: 'C:/path/to/dashboard' }, '数据目录非默认'],
+  ['测试环境', { NODE_TEST_CONTEXT: 'child-v8' }, '测试环境'],
+]) {
+  test(`launcher: ${name}起稳后不自动安装看护`, async (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-watchdog-test-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const root = path.join(dir, 'repo'); const rel = path.join(dir, 'release');
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'web', 'node_modules'), { recursive: true });
+    fs.mkdirSync(path.join(rel, 'server'), { recursive: true });
+    fs.writeFileSync(path.join(rel, 'server', 'server.cjs'), '');
+    let record = null; let installs = 0; const logs = [];
+    const launcher = require('../cli/launcher.cjs');
+    const result = await launcher.main([], {
+      platform: 'win32', env, codeRoot: root, home: path.join(dir, 'home'), relHome: rel,
+      hostname: 'testhost', readStamp: () => null,
+      loadClient: () => ({ deriveTicketId: () => 'ticket' }), verifyReady: () => ({ ok: true }),
+      probeHealth: () => ({ running: false }), runRelease: () => 0,
+      acquireMutex: () => ({ release() {} }), readRecord: () => record,
+      writeRecord: (_file, r) => { record = r; }, kill: () => {},
+      startUnderHold: async () => {
+        record = { ...record, serverPid: 1234 };
+        await new Promise(resolve => setTimeout(resolve, 350));
+        return { exitCode: 0 };
+      },
+      installWatchdog: () => { installs++; }, log: message => logs.push(message), err: message => logs.push(message),
+    });
+    assert.equal(result, 0);
+    assert.equal(installs, 0);
+    assert.ok(logs.some(message => message.includes(reason)));
+  });
+}
