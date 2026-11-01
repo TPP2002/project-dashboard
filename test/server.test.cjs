@@ -82,6 +82,19 @@ async function getJson(pathname) {
   let body = null; try { body = await res.json(); } catch { /* 非 JSON 保持 null */ }
   return { status: res.status, body };
 }
+
+async function waitForHealth(predicate, { timeoutMs = 5000, stepMs = 100 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const remaining = deadline - Date.now();
+    assert.ok(remaining > 0, '等待探活缓存刷新超时');
+    const res = await fetch(SRV.base + '/api/health', { signal: AbortSignal.timeout(remaining) });
+    const response = { status: res.status, body: await res.json() };
+    assert.ok(Date.now() <= deadline, '等待探活缓存刷新超时');
+    if (predicate(response.body)) return response;
+    await new Promise(resolve => setTimeout(resolve, Math.min(stepMs, Math.max(0, deadline - Date.now()))));
+  }
+}
 const doc = (proj, p) => fetch(SRV.base + '/api/doc?projectId=' + encodeURIComponent(proj) + '&path=' + encodeURIComponent(p));
 
 // ---- SSE 客户端：http.get 保持长连，累积并按空行切分 event/data 块 ----
@@ -151,7 +164,7 @@ after(async () => {
 
 test('GET /api/health → ok + 端口/pid/projects/hooksInstalled', async () => {
   newProject('health');
-  const { status, body } = await getJson('/api/health');
+  const { status, body } = await waitForHealth(body => body.projects?.includes('health'));
   assert.equal(status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.service, 'claude-dashboard');
@@ -181,7 +194,7 @@ test('GET /api/health → hook 探测认「代码的家」(SERVER-GIT-CWD-USES-M
   };
   fs.writeFileSync(SRV.reg, JSON.stringify(reg));
 
-  const { body } = await getJson('/api/health');
+  const { body } = await waitForHealth(body => body.projects?.includes('split') && body.hooksInstalled?.split === true);
   assert.equal(body.hooksInstalled.split, true,
     'hook 装在 codeRepo 上就该判已装;去 mainRepo 找 = 恒报未装');
 });
@@ -413,7 +426,7 @@ test('GET /api/health → 共用仓仅有 alpha 同步块时，beta 的 hooksIns
   }
   fs.writeFileSync(SRV.reg, JSON.stringify(reg));
 
-  const { status, body } = await getJson('/api/health');
+  const { status, body } = await waitForHealth(body => body.hooksInstalled?.alpha !== undefined && body.hooksInstalled?.beta !== undefined);
   assert.equal(status, 200);
   assert.equal(body.hooksInstalled.alpha, true);
   assert.equal(body.hooksInstalled.beta, false, '共用仓里 alpha 装过不代表 beta 已装');
