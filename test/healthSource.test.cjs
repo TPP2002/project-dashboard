@@ -44,6 +44,27 @@ test('null stamp reader remains memory-only', () => {
   source.stop();
 });
 
+test('patch is immediately visible without I/O and remains after a background read of the saved file', async () => {
+  let saved = { modules: { codex: false }, webhook: { configured: true, events: { done: true } } };
+  let reads = 0;
+  const timers = [];
+  const source = createHealthSource({ index: { ids: () => ['a'] }, now: () => 0,
+    initialDetails: { distBuilt: true },
+    readDetails: async () => { reads++; return saved; },
+    setTimer: (fn, ms) => { const timer = { fn, ms, unref() {} }; timers.push(timer); return timer; }, clearTimer() {},
+  });
+  await source.start();
+  saved = { modules: { codex: true }, webhook: { configured: true, events: { done: false } } };
+  source.patch(saved);
+  assert.deepEqual(source.current(), { ...saved, distBuilt: true, projects: ['a'], latestReleaseCommit: null });
+  assert.equal(reads, 1, 'patch does not read files or trigger another refresh');
+  assert.equal(timers.length, 1, 'patch leaves the refresh timer unchanged');
+  await timers[0].fn();
+  assert.deepEqual(source.current(), { ...saved, distBuilt: true, projects: ['a'], latestReleaseCommit: null });
+  assert.equal(reads, 2);
+  source.stop();
+});
+
 test('registry changes coalesce into one dirty follow-up and never overlap refreshes', async () => {
   const pending = [], timers = [];
   let ids = ['old'], active = 0, peak = 0, calls = 0;
@@ -120,6 +141,8 @@ function serverHealthFixture({ index, promises, healthSource, clock = { time: 0 
   const helpers = source.slice(source.indexOf('async function readHealthHook('), source.indexOf('// ============ SSE ============'));
   const start = source.indexOf('function handleHealth(');
   const handler = source.slice(start, source.indexOf('\nfunction handleProjects(', start));
+  const pollStart = source.indexOf('let settingsFingerprint;');
+  const poll = source.slice(pollStart, source.indexOf('// ============ API 处理 ============', pollStart));
   const calls = [];
   const noDisk = () => { throw Error('synchronous disk access from health'); };
   const context = {
@@ -135,11 +158,50 @@ function serverHealthFixture({ index, promises, healthSource, clock = { time: 0 
     Date: { now: () => clock.time }, releaseHome: () => '/release',
     releaseBehindOf: require('../core/releaseCheck.cjs').releaseBehindOf,
     readRegistrySafe: noDisk, readSettings: noDisk, resolveModules: noDisk, hooksInstalledMap: noDisk,
+    collaborationApi: null, schedApi: { poll() {} }, broadcast() {},
     sendJson: (res, status, body) => calls.push({ status, body, at: clock.time }),
   };
-  vm.runInNewContext(helpers + handler + '\nmodule.exports = { readHealthDetails, handleHealth };', context);
-  return { ...context.module.exports, calls, source, handler };
+  vm.runInNewContext(helpers + poll + handler + '\nmodule.exports = { readHealthDetails, handleHealth, pollServices };', context);
+  return { ...context.module.exports, calls, source, handler, context };
 }
+
+test('settings fingerprint checks coalesce while stat is pending and refresh only on change including deletion', async () => {
+  const pending = [];
+  let stats = 0, refreshes = 0;
+  const f = serverHealthFixture({ promises: {
+    stat: () => { stats++; return new Promise((resolve, reject) => pending.push({ resolve, reject })); },
+  }, healthSource: { refresh: () => { refreshes++; } } });
+  f.context.resolveModules = () => ({ cpu: false });
+  const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+  f.pollServices();
+  f.pollServices();
+  assert.equal(stats, 1, 'pending stat is not duplicated');
+  pending.shift().resolve({ mtimeMs: 1, size: 10 });
+  await settle();
+  assert.equal(refreshes, 1);
+  f.pollServices();
+  pending.shift().resolve({ mtimeMs: 1, size: 10 });
+  await settle();
+  assert.equal(refreshes, 1, 'unchanged fingerprint reuses the cache');
+  for (const meta of [{ mtimeMs: 1, size: 11 }, { mtimeMs: 2, size: 11 }]) {
+    f.pollServices();
+    pending.shift().resolve(meta);
+    await settle();
+  }
+  assert.equal(refreshes, 3, 'either size or mtime change refreshes the cache');
+  f.pollServices();
+  pending.shift().reject(Object.assign(Error('missing'), { code: 'ENOENT' }));
+  await settle();
+  assert.equal(refreshes, 4, 'file deletion transitions to a null fingerprint');
+  f.pollServices();
+  pending.shift().reject(Error('still unavailable'));
+  await settle();
+  assert.equal(refreshes, 4, 'repeated unavailable fingerprint does not refresh repeatedly');
+  f.pollServices();
+  pending.shift().resolve({ mtimeMs: 2, size: 11 });
+  await settle();
+  assert.equal(refreshes, 5, 'recovery from a null fingerprint refreshes again');
+});
 
 test('health metadata reads hooks, settings and dist asynchronously and retains fields on I/O failure', async () => {
   const path = require('node:path');

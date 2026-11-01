@@ -576,9 +576,22 @@ function pollBoards() {
   return boardPoller.tick();
 }
 
+let settingsFingerprint;
+let settingsStatInFlight = false;
 function pollServices() {
   if (collaborationApi) collaborationApi.sweep();
   schedApi.poll(broadcast, resolveModules().cpu);
+  if (settingsStatInFlight) return;
+  settingsStatInFlight = true;
+  void fs.promises.stat(SETTINGS_PATH).then(
+    meta => `${meta.mtimeMs}:${meta.size}`,
+    () => null,
+  ).then(fingerprint => {
+    if (fingerprint !== settingsFingerprint) {
+      settingsFingerprint = fingerprint;
+      void healthSource.refresh();
+    }
+  }).finally(() => { settingsStatInFlight = false; });
 }
 
 // ============ API 处理 ============
@@ -775,6 +788,10 @@ function handleSettings(req, res) {
       if (Object.hasOwn(body, 'webhookEvents')) patch.webhookEvents = normalizeWebhookEvents(body.webhookEvents);
       if (Object.hasOwn(body, 'modules')) patch.modules = { ...normalizeModules(readSettings().modules), ...body.modules };
       const settings = writeSettings(patch);
+      healthSource.patch({
+        modules: healthModules(settings),
+        webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(settings.webhookEvents) },
+      });
       return sendJson(res, 200, { ok: true, settings: {
         webhookEvents: normalizeWebhookEvents(settings.webhookEvents), modules: normalizeModules(settings.modules),
       } });
@@ -1804,7 +1821,7 @@ function tryListen(port, attemptsLeft) {
 
 async function main() {
   await index.refresh();
-  void healthSource.start();
+  await healthSource.start();
   // A collaboration instance never probes, reuses or terminates another service.
   if (collaborationApi) return tryListen(PORT_BASE, 0);
   const inst = await findExistingInstance();

@@ -52,6 +52,7 @@ function createHealthSource({ index, readStamp = null, readDetails = null, initi
 
   return {
     current: () => ({ ...details, projects: index.ids(), latestReleaseCommit }),
+    patch(partial) { details = { ...details, ...partial }; },
     refresh,
     start() { if (!started) { started = true; return refresh(); } return inFlight; },
     stop() { started = false; dirty = false; if (timer !== null) clearTimer(timer); timer = null; },
