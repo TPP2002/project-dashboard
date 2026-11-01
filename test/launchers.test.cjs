@@ -25,7 +25,11 @@ for (const f of ['启动看板.bat', 'dashboard.sh']) {
   test(`${f}:薄入口不起服务,整条链交给 cli/launcher.cjs`, () => {
     const s = read(f);
     assert.ok(!/node\s+"?server[\\/]server\.cjs/.test(s), '不许直接起本检出的 server —— 那正是本卡要治的病');
-    assert.match(s, /cli[\\/]launcher\.cjs/, '薄入口必须把整条编排交给 cli/launcher.cjs');
+    if (f === '启动看板.bat') {
+      assert.match(s, /wscript\.exe/i);
+      assert.match(s, /launcher-silent\.vbs/);
+      assert.match(read('scripts/launcher-silent.vbs'), /cli[\\/]launcher\.cjs/);
+    } else assert.match(s, /cli[\\/]launcher\.cjs/, '薄入口必须把整条编排交给 cli/launcher.cjs');
   });
 
   test(`${f}:薄入口不许 cd 进发布副本`, () => {

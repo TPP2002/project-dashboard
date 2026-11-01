@@ -32,6 +32,7 @@ const { resolveSchedShare } = require('../core/settings.cjs');
 const { DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const lr = require('../core/launcherRuntime.cjs');
 const { serviceStatus } = require('./release.cjs');
+const { createWatchdog } = require('./watchdog.cjs');
 
 /** 看护进程文件（core/launcherRuntime.cjs）自身；hold/启动器都以绝对路径 argv 拉起它。 */
 const WATCH_RUNTIME = path.resolve(__dirname, '..', 'core', 'launcherRuntime.cjs');
@@ -204,6 +205,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     retireOwn: lr.retireOwnInstance,
     startConfirmMs: START_CONFIRM_MS,
     readRecord: lr.readRecord,
+    installWatchdog: () => createWatchdog({ home: d.home, repoRoot: d.codeRoot }).install(),
     writeRecord: lr.writeRecordLocked,   // 接主登记走 record.write.lock 短临界区（R9）
     kill: (pid, signal) => process.kill(pid, signal),
     acquireMutex: (file) => lr.acquireLaunchMutex(file, { kill: d.kill }),
@@ -393,7 +395,13 @@ async function main(argv = process.argv.slice(2), deps = {}) {
         runPromise.then(() => 'exited'),
       ]);
       waiter.stop();
-      if (outcome === 'started') log('看板服务已起稳：本次启动编排完成，放行后续双击（它们会重新检查并发布最新版本）。');
+      if (outcome === 'started') {
+        log('看板服务已起稳：本次启动编排完成，放行后续双击（它们会重新检查并发布最新版本）。');
+        if (!standalone && d.platform === 'win32' && d.env.DASHBOARD_NO_WATCHDOG !== '1') {
+          try { d.installWatchdog(); log('看护已就绪（每 5 分钟探活）'); }
+          catch (e) { log(`看护安装失败：${e.message}`); }
+        }
+      }
       else if (outcome === 'timeout') log('⚠ 迟迟未见服务起稳的登记（可能在排队）：先放行启动锁，不锁死编排；本窗口继续等待。');
       releaseOnce();
       return await runPromise;
