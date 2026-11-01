@@ -159,8 +159,17 @@ async function mapLimited(items, visit) {
 
 /** 不启动定时器、不写磁盘；调用方注入时钟和 gh。refresh 合并并发调用，snapshot 始终即时返回。 */
 function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = async () => [],
-  readRunnerMachines = async () => new Map(), runnerOverrides = {}, repositoryOverrides } = {}) {
+  readRunnerMachines = async () => new Map(), runnerOverrides = {}, repositoryOverrides, concurrency = 4 } = {}) {
   const states = new Map();
+  const limit = Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 16 ? concurrency : 4;
+  const rawGh = gh, waiting = [];
+  let inFlight = 0;
+  gh = async endpoint => {
+    if (inFlight >= limit) await new Promise(resolve => waiting.push(resolve));
+    else inFlight++;
+    try { return await rawGh(endpoint); }
+    finally { if (waiting.length) waiting.shift()(); else inFlight--; }
+  };
   let pending = null, pendingAt = null, boards = [], mapping = new Map(), readAt = null, failedAt = null, unavailable = false;
 
   async function jobsFor(base, run, attempt = null) {
@@ -233,7 +242,8 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       }
       // 完整校验后一起替换本仓作业和样本，坏作业不能污染上一拍。
       partitionJobs(entries, { boards, mapping, estimates: history, nowMs: now() });
-      Object.assign(state, { entries, history, historyAt, updatedAt: new Date(observedAt).toISOString(), staleSince: null, error: null });
+      Object.assign(state, { entries, history, historyAt, updatedAt: new Date(observedAt).toISOString(), staleSince: null, error: null,
+        idleTicks: runs.size ? 0 : 3 });
     } catch (error) {
       if (error?.code === 'ENOENT') { unavailable = true; return; }
       state.staleSince ||= new Date(now()).toISOString();
@@ -253,11 +263,12 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       boards = nextBoards;
       for (const name of states.keys()) if (!names.includes(name)) states.delete(name);
       for (const name of names) if (!states.has(name)) {
-        states.set(name, { entries: [], history: new Map(), completedJobs: new Map(), historyAt: null, updatedAt: null, staleSince: null, error: null });
+        states.set(name, { entries: [], history: new Map(), completedJobs: new Map(), historyAt: null, updatedAt: null, staleSince: null, error: null, idleTicks: 0 });
       }
       readAt = new Date(now()).toISOString(); failedAt = null; unavailable = false;
       // 单仓自己保留失败拍；其它仓继续采集，且完成后立即可从 snapshot 读取。
       await mapLimited(names.map(name => [name, states.get(name)]), ([repository, state]) => {
+        if (!state.pending && state.idleTicks > 0) { state.idleTicks--; return; }
         state.pending ||= collectRepository(repository, state).finally(() => { state.pending = null; });
         return state.pending;
       });

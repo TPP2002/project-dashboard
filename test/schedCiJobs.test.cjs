@@ -12,6 +12,33 @@ const queuedPath = `${base}/actions/runs?status=queued&per_page=20`;
 const historyPath = `${base}/actions/runs?status=completed&per_page=100`;
 const jobsPath = (id, page = 1) => `${base}/actions/runs/${id}/jobs?per_page=100&page=${page}`;
 const attemptPath = (id, attempt = 1, page = 1) => `${base}/actions/runs/${id}/attempts/${attempt}/jobs?per_page=100&page=${page}`;
+for (const concurrency of [undefined, 2]) test(`全仓 gh 并发上限 ${concurrency ?? 4}`, async () => {
+  let active = 0, peak = 0;
+  const monitor = c.createCiJobsMonitor({ concurrency, repositoryOverrides: 'o/a,o/b,o/c', gh: async endpoint => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setImmediate(resolve));
+    active--;
+    if (endpoint.includes('status=in_progress')) return { workflow_runs: Array.from({ length: 6 }, (_, i) => run({ id: i + 1, pull_requests: [] })) };
+    if (endpoint.includes('status=')) return { workflow_runs: [] };
+    return { jobs: [] };
+  } });
+  await monitor.refresh();
+  assert.ok(peak <= (concurrency ?? 4), `peak=${peak}`);
+});
+
+test('闲置仓跳过三拍，活动仓每拍查询，重新发现活动后恢复', async () => {
+  let tick = 0; const calls = [];
+  const monitor = c.createCiJobsMonitor({ repositoryOverrides: 'o/idle,o/busy', gh: async endpoint => {
+    calls.push([tick, endpoint]);
+    if (endpoint.includes('status=in_progress')) return { workflow_runs: endpoint.includes('/busy/') || tick >= 5 ? [run({ pull_requests: [] })] : [] };
+    if (endpoint.includes('status=')) return { workflow_runs: [] };
+    return { jobs: [] };
+  } });
+  for (tick = 1; tick <= 6; tick++) await monitor.refresh();
+  for (const n of [2, 3, 4]) assert.equal(calls.filter(([t, p]) => t === n && p.includes('/idle/')).length, 0);
+  for (const n of [1, 5, 6]) assert.ok(calls.some(([t, p]) => t === n && p.includes('/idle/')));
+  for (let n = 1; n <= 6; n++) assert.ok(calls.some(([t, p]) => t === n && p.includes('/busy/')));
+});
 const run = (extra = {}) => ({ id: 1, name: 'CI', head_branch: 'feat/window', status: 'in_progress',
   event: 'pull_request', pull_requests: [{ number: 9 }], ...extra });
 const job = (extra = {}) => ({ id: 11, name: 'fast', runner_name: 'runner-1', status: 'in_progress',
@@ -62,7 +89,9 @@ test('最后一条历史失败仍复用此前完整明细，恢复只补缺项�
     const calls = [];
     const monitor = c.createCiJobsMonitor({ now: () => now, repositoryOverrides: 'owner/repo', gh: async path => {
       calls.push(path);
-      if (path === runningPath || path === queuedPath) return { workflow_runs: [] };
+      if (path === runningPath) return { workflow_runs: [run({ id: 900, pull_requests: [] })] };
+      if (path === queuedPath) return { workflow_runs: [] };
+      if (path === jobsPath(900)) return { jobs: [] };
       if (path === historyPath) return { workflow_runs: [run({ id: 2, status: 'completed', run_attempt: 1 }), run({ id: 3, status: 'completed', run_attempt: 1 })] };
       if (path === attemptPath(2) || path === jobsPath(2)) return { total_count: 1, jobs: [successful()] };
       if (path === attemptPath(3) || path === jobsPath(3)) {
@@ -94,7 +123,9 @@ test('历史缓存区分仓库/run/attempt，移出100条窗口及删除仓库�
     gh: async path => {
       calls.push(path);
       if (path.includes('status=completed')) return { workflow_runs: ids.map(id => run({ id, status: 'completed', run_attempt: attempt })) };
+      if (path.includes('status=in_progress')) return { workflow_runs: [run({ id: 900, pull_requests: [] })] };
       if (path.includes('/actions/runs?')) return { workflow_runs: [] };
+      if (path.includes('/runs/900/jobs')) return { jobs: [] };
       return { total_count: 1, jobs: [successful()] };
     } });
   await monitor.refresh(); now += c.HISTORY_MS; await monitor.refresh();
