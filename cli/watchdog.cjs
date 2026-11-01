@@ -1,5 +1,6 @@
 'use strict';
 const path = require('node:path');
+const os = require('node:os');
 const realFs = require('node:fs');
 const cp = require('node:child_process');
 const { DASHBOARD_HOME } = require('../core/resolveProject.cjs');
@@ -39,7 +40,8 @@ function createWatchdog({ platform = process.platform, home = DASHBOARD_HOME, re
       'set "OUT=%LOGDIR%\\launcher.log"', 'if defined DAY set "OUT=%LOGDIR%\\launcher-!DAY!.log"',
       'echo [%date% %time%] no dashboard on 6060-6068, starting launcher>>"%LOG%"',
       `cd /d "${win(repoRoot)}"`, 'set DASHBOARD_NO_OPEN=1',
-      'node cli\\launcher.cjs >>"%OUT%" 2>&1', 'exit /b %errorlevel%', ''
+      'node cli\\launcher.cjs >>"%OUT%" 2>&1',
+      'echo [%date% %time%] launcher exited %errorlevel%>>"%LOG%"', 'exit /b %errorlevel%', ''
     ].join('\r\n');
     const vbs = `Set sh = CreateObject("WScript.Shell")\r\nsh.Run ${quoteVbs(win(cmdPath))}, 0, False\r\n`;
     const xml = `<?xml version="1.0" encoding="UTF-16"?>\r\n<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><RegistrationInfo><URI>\\DashboardLauncherWatchdog</URI></RegistrationInfo><Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger><TimeTrigger><Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>${local}</StartBoundary><Enabled>true</Enabled></TimeTrigger></Triggers><Principals><Principal id="Author">${sid ? `<UserId>${xmlEscape(sid)}</UserId>` : ''}<LogonType>InteractiveToken</LogonType></Principal></Principals><Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings><Actions Context="Author"><Exec><Command>wscript.exe</Command><Arguments>&quot;${xmlEscape(win(vbsPath))}&quot;</Arguments></Exec></Actions></Task>\r\n`;
@@ -49,6 +51,12 @@ function createWatchdog({ platform = process.platform, home = DASHBOARD_HOME, re
   function taskRun(args) { try { return runHidden('schtasks', args); } catch (e) { throw new Error(`${e.message}${e.stderr ? '\n' + e.stderr.toString() : ''}`); } }
   function install() {
     if (platform !== 'win32') return alternatives();
+    const tempRoot = path.resolve(os.tmpdir()).toLowerCase();
+    const inTemp = (value) => {
+      const resolved = path.resolve(value).toLowerCase();
+      return resolved === tempRoot || resolved.startsWith(tempRoot.endsWith(path.sep) ? tempRoot : tempRoot + path.sep);
+    };
+    if (inTemp(home) || inTemp(repoRoot)) throw new Error('拒绝把看护装到临时目录');
     fs.mkdirSync(dir, { recursive: true }); fs.mkdirSync(logs, { recursive: true });
     const r = render(); if (/[^\x00-\x7f]/.test(r.cmd)) throw new Error('看护路径含非 ASCII 字符，无法生成无损的 ASCII 脚本');
     fs.writeFileSync(cmdPath, r.cmd, 'ascii'); fs.writeFileSync(vbsPath, Buffer.concat([Buffer.from([255, 254]), Buffer.from(r.vbs, 'utf16le')])); fs.writeFileSync(xmlPath, r.xml);
@@ -65,7 +73,7 @@ function createWatchdog({ platform = process.platform, home = DASHBOARD_HOME, re
         for (const line of output.split(/\r?\n/)) { const m = line.match(/^\s*([^:：]+)[:：]\s*(.*?)\s*$/); if (m && names[m[1].trim().toLowerCase()]) task[names[m[1].trim().toLowerCase()]] = m[2]; }
       } catch (e) { err(e.message); }
     }
-    let record = null; try { const r = JSON.parse(fs.readFileSync(path.join(home, 'launcher-instance.json'), 'utf8')); record = { key: r.key, ticketId: r.ticketId, wrapperPid: r.wrapperPid, watcherPid: r.watcherPid, serverPid: r.serverPid }; } catch {}
+    let record = null; try { const r = JSON.parse(fs.readFileSync(path.join(home, 'launcher-instance.json'), 'utf8')); record = { key: r.key, ticketId: r.ticket ?? r.ticketId, wrapperPid: r.pids?.wrapper ?? r.wrapperPid, watcherPid: r.pids?.watcher ?? r.watcherPid, serverPid: r.pids?.server ?? r.serverPid, startedAt: r.startedAt }; } catch {}
     const health = probe({ portBase: 6060, portRange: 8 });
     const result = { task, health, record }; log(JSON.stringify(result, null, 2)); return result;
   }

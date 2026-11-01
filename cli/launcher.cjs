@@ -397,7 +397,11 @@ async function main(argv = process.argv.slice(2), deps = {}) {
       waiter.stop();
       if (outcome === 'started') {
         log('看板服务已起稳：本次启动编排完成，放行后续双击（它们会重新检查并发布最新版本）。');
-        if (!standalone && d.platform === 'win32' && d.env.DASHBOARD_NO_WATCHDOG !== '1') {
+        const skipWatchdog = d.platform !== 'win32' ? '当前系统不是 Windows'
+          : standalone ? '独立模式' : d.env.DASHBOARD_NO_WATCHDOG === '1' ? '已设置跳过看护'
+          : d.env.DASHBOARD_HOME ? '数据目录非默认' : d.env.NODE_TEST_CONTEXT !== undefined ? '测试环境' : null;
+        if (skipWatchdog) log(`${skipWatchdog}，不自动装看护；要装请手动 node cli/watchdog.cjs install`);
+        else {
           try { d.installWatchdog(); log('看护已就绪（每 5 分钟探活）'); }
           catch (e) { log(`看护安装失败：${e.message}`); }
         }

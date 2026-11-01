@@ -7,6 +7,7 @@ cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (
   echo [X] 没找到 Node.js，请安装后重试。
+  pause
   exit /b 1
 )
 if defined DASHBOARD_HOME (set "LOGHOME=%DASHBOARD_HOME%") else (set "LOGHOME=%USERPROFILE%\.claude\dashboard")
