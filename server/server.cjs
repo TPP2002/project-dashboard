@@ -69,6 +69,7 @@ const { createCiBoardsReader, readCiRepository } = require('../core/schedCiBoard
 const { createCiPollGate } = require('../core/ciPollGate.cjs');
 const schedContract = require('../core/schedContract.cjs');
 const { createSchedReadExecutor } = require('../core/schedReadExecutor.cjs');
+const { createActivityAutoArchive } = require('../core/activityAutoArchive.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
 const { hookForwardsProject } = require('../core/hookProbe.cjs');
 const { SETTINGS_PATH, readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
@@ -1770,6 +1771,31 @@ function startIntervals() {
   ciPoll.unref();
   server.once('close', () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); });
   server.once('close', () => { boardPoller.stop(); healthSource.stop(); });
+
+  // 自动按月归档旧活动：DASHBOARD_AUTO_ARCHIVE=0 关掉整个功能（见 core/activityAutoArchive.cjs）。
+  // 对注册表每个项目依次起一个静默子进程跑 archive-activity，只保留本月与上月的活动。
+  if (process.env.DASHBOARD_AUTO_ARCHIVE !== '0') {
+    try {
+      const activityAutoArchive = createActivityAutoArchive({
+        listProjects: () => index.ids(),
+        spawnArchive: (id, before) => new Promise((resolve, reject) => {
+          execFile(process.execPath, [CLI_INDEX, 'archive-activity', '--project', id, '--before', before, '--json'],
+            { windowsHide: true, timeout: 300000, maxBuffer: 1024 * 1024, encoding: 'utf8' },
+            (err, stdout) => {
+              if (err) { reject(err); return; }
+              let data;
+              try { data = JSON.parse(stdout); } catch (e) { reject(e); return; }
+              resolve({ moved: data && data.moved || 0, files: data && data.files || [] });
+            });
+        }),
+      });
+      activityAutoArchive.start();
+      server.once('close', () => activityAutoArchive.stop());
+    } catch (e) {
+      console.warn(`[activity-archive] 初始化失败，跳过自动归档：${e && e.message}`);
+    }
+  }
+
   refreshCi();
   poll.unref(); beat.unref(); // 别因定时器卡住进程退出
 }
