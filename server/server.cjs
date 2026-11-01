@@ -61,7 +61,9 @@ const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
-const { createCiJobsMonitor, githubRepository, runnerMachines, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
+const { createCiJobsMonitor, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
+const { createCiBoardsReader, readCiRepository } = require('../core/schedCiBoards.cjs');
+const { createCiPollGate } = require('../core/ciPollGate.cjs');
 const schedContract = require('../core/schedContract.cjs');
 const { createSchedReadExecutor } = require('../core/schedReadExecutor.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
@@ -145,6 +147,7 @@ const state = {
   webhookCursor: new Map(), // projectId → 已处理活动的最大 ISO ts（含失败与未勾选的活动）
   webhookSending: new Map(), // 同项目串行发送；只合并期间的变更标记，不保存重试队列
 };
+const ciPollGate = createCiPollGate();
 
 // Each cache has independent entry/source-byte/idle budgets. These are not JS heap limits.
 const summaryCache = createBoardReadCache({ maxEntries: 50 });
@@ -388,7 +391,7 @@ function sseWrite(res, event, data) {
 function broadcast(event, data) {
   if (collaborationApi) collaborationApi.broadcast(event, data);
   for (const res of state.subscribers) {
-    if (!sseWrite(res, event, data)) state.subscribers.delete(res);
+    if (!sseWrite(res, event, data) && state.subscribers.delete(res)) ciPollGate.clientDisconnected();
   }
 }
 
@@ -401,10 +404,13 @@ function handleStream(req, res) {
   });
   // 首个事件：hello（带当前项目列表，前端可据此立即拉一遍）
   sseWrite(res, 'hello', { ts: Date.now(), pid: process.pid, projects: Object.keys(readRegistrySafe().projects || {}) });
+  const wasStopped = !ciPollGate.shouldPoll();
   state.subscribers.add(res);
+  ciPollGate.clientConnected();
+  if (wasStopped) refreshCi();
 
   // 断开清理：close / error / aborted 都归位，Set.delete 幂等（重复删无副作用）
-  const cleanup = () => { state.subscribers.delete(res); };
+  const cleanup = () => { if (state.subscribers.delete(res)) ciPollGate.clientDisconnected(); };
   req.on('close', cleanup);
   req.on('error', cleanup);
   res.on('close', cleanup);
@@ -776,43 +782,11 @@ const recordingSchedExecutor = {
 };
 const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, resolveShare: resolveSchedShare, executor: recordingSchedExecutor });
 
-/** board 位于项目的 .dashboard 目录；仅异步读取 origin，绝不改 Git 或执行 shell。 */
-function readCiRepository(boardPath, runFile = execFile) {
-  return new Promise((resolve, reject) => {
-    runFile('git', ['-C', path.dirname(path.dirname(boardPath)), 'remote', 'get-url', 'origin'],
-      { encoding: 'utf8', windowsHide: true, timeout: 10_000, maxBuffer: 16 * 1024 }, (error, stdout) => {
-        if (error) return reject(error);
-        resolve(githubRepository(stdout));
-      });
-  });
-}
-const ciRepositoriesByBoard = new Map();
-// 共用注册表的项目路径；板损坏只缺标题，临时读不到 origin 时保留该项目上次的仓库归属。
-async function readCiBoards() {
-  const projects = Object.keys(readRegistry(REGISTRY).projects || {}).map(resolveProjectSafe).filter(Boolean);
-  const paths = new Set(projects.map(project => project.board));
-  for (const board of ciRepositoriesByBoard.keys()) if (!paths.has(board)) ciRepositoriesByBoard.delete(board);
-  return Promise.all(projects.map(async project => {
-    try { ciRepositoriesByBoard.set(project.board, await readCiRepository(project.board)); }
-    catch (error) { console.warn(`[sched-ci] 项目 ${project.id} 的远端暂不可读：${error.message}`); }
-    const repository = ciRepositoriesByBoard.get(project.board) ?? null;
-    try { return { ...JSON.parse(await fs.promises.readFile(project.board, 'utf8')), repository }; }
-    catch (error) {
-      console.warn(`[sched-ci] 项目 ${project.id} 的标题暂不可读：${error.message}`);
-      return { repository, tasks: [] };
-    }
-  }));
-}
-async function readCiRunnerMachines() {
-  try {
-    const file = schedContract.schedPaths(resolveSchedShare()).heartbeat;
-    const heartbeat = schedContract.validateHeartbeat(JSON.parse(await fs.promises.readFile(file, 'utf8')));
-    return runnerMachines(heartbeat.machines);
-  } catch { return new Map(); }
-}
+const ciBoards = createCiBoardsReader({ registryPath: REGISTRY, readRegistry, resolveProject: resolveProjectSafe });
 // DASHBOARD_CI_RUNNER_MAP 是 JSON 对象：runner 名 -> 机器名，或 { machine, project? }。
 // DASHBOARD_CI_REPOSITORIES 用逗号分隔 owner/repo，提供时整体覆盖注册项目的仓库清单。
-const ciJobs = createCiJobsMonitor({ now: Date.now, readBoards: readCiBoards, readRunnerMachines: readCiRunnerMachines,
+const ciJobs = createCiJobsMonitor({ now: Date.now, readBoards: ciBoards.readBoards, readRunnerMachines: () => ciBoards.readRunnerMachines(resolveSchedShare()),
+  concurrency: Number(process.env.DASHBOARD_CI_GH_CONCURRENCY),
   runnerOverrides: process.env.DASHBOARD_CI_RUNNER_MAP || '{}', repositoryOverrides: process.env.DASHBOARD_CI_REPOSITORIES });
 
 /** 旧租约已无生产者，不能把空目录解释为机器空闲，也不再接受失效预留。 */
@@ -1710,15 +1684,15 @@ server.on('close', () => {
   closeSchedReads();
 });
 
+function refreshCi() {
+  if (resolveModules().cpu && ciPollGate.shouldPoll()) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
+}
 function startIntervals() {
   const poll = setInterval(() => {
     sweepBoardReadCaches();
     try { pollBoards(); } catch (_) {}
   }, POLL_MS);
   const beat = setInterval(() => broadcast('ping', { ts: Date.now() }), HEARTBEAT_MS);
-  const refreshCi = () => {
-    if (resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
-  };
   const ciPoll = setInterval(refreshCi, CI_POLL_MS);
   ciPoll.unref();
   server.once('close', () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); });
