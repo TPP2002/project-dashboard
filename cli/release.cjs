@@ -517,7 +517,7 @@ function serviceStatus(opts = {}) {
   const probe = `
     const http = require('http');
     const get = (port) => new Promise((res) => {
-      const r = http.get({ host: '127.0.0.1', port, path: '/api/health', timeout: 400 }, (s) => {
+      const r = http.get({ host: '127.0.0.1', port, path: '/api/health', timeout: 2000 }, (s) => {
         let d = ''; s.on('data', (c) => d += c); s.on('end', () => { try { res(JSON.parse(d)); } catch { res(null); } });
       });
       r.on('error', () => res(null)); r.on('timeout', () => { r.destroy(); res(null); });
@@ -531,7 +531,7 @@ function serviceStatus(opts = {}) {
     })();
   `;
   let health = null;
-  try { health = JSON.parse(execFileSync(process.execPath, ['-e', probe], { encoding: 'utf8', timeout: 15000, windowsHide: true }) || 'null'); }
+  try { health = JSON.parse(execFileSync(process.execPath, ['-e', probe], { encoding: 'utf8', timeout: 30000, windowsHide: true }) || 'null'); }
   catch { health = null; }
 
   const stamp = readStamp(opts.dest ? path.resolve(opts.dest) : releaseHome());

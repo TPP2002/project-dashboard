@@ -12,5 +12,5 @@ if errorlevel 1 (
 )
 if defined DASHBOARD_HOME (set "LOGHOME=%DASHBOARD_HOME%") else (set "LOGHOME=%USERPROFILE%\.claude\dashboard")
 wscript.exe //B //Nologo "%~dp0scripts/launcher-silent.vbs" %*
-echo 看板已在后台启动，浏览器稍后自动打开；日志：%LOGHOME%\logs\launcher-YYYYMMDD.log；看护：node cli/watchdog.cjs status
+echo 看板已在后台启动，浏览器稍后自动打开；日志：%LOGHOME%\logs\launcher-YYYYMMDD-*.log；看护：node cli/watchdog.cjs status
 exit /b 0
