@@ -39,6 +39,15 @@ for (const f of ['启动看板.bat', 'dashboard.sh']) {
   });
 }
 
+test('launcher-silent.vbs:真跑到算出日志路径,不被内置函数重名绊倒', { skip: process.platform !== 'win32' }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'launcher-vbs-test-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const vbs = path.join(dir, 'probe.vbs');
+  fs.writeFileSync(vbs, read('scripts/launcher-silent.vbs').replace('sh.Run command, 0, False', 'WScript.Echo logfile'));
+  const r = require('node:child_process').spawnSync('cscript', ['//Nologo', vbs], { encoding: 'utf8', windowsHide: true, env: { ...process.env, DASHBOARD_HOME: dir } });
+  assert.match(r.stdout, /launcher-\d{8}\.log/, r.stdout + r.stderr);
+});
+
 const launcher = read('cli/launcher.cjs');
 
 test('launcher:从发布副本起服务,不碰本检出的 server', () => {
