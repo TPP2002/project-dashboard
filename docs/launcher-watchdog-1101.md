@@ -8,7 +8,7 @@ Windows 严格模式启动成功后自动安装看护；也可在检出目录执
 
 看护目录位于数据目录的 `watchdog` 下，包含 ASCII 命令脚本、隐藏运行脚本和带 UTF-16 标记的任务定义。计划任务通过隐藏运行脚本启动，每五分钟探活一次。命令脚本在检出目录运行，不把发布副本设为当前目录。
 
-启动器及服务输出写入数据目录的 `logs/launcher-YYYYMMDD.log`；日期无法识别时看护使用 `launcher.log`。看护启动事件写入 `watchdog/watchdog.log`，超过 1 MB 时轮转为 `.1`。看护拉起前清理超过七天的日期日志。`DASHBOARD_HOME` 可指定数据目录；`DASHBOARD_NO_WATCHDOG=1` 跳过自动安装。
+双击启动及服务输出写入数据目录的 `logs/launcher-YYYYMMDD-<时刻>-<随机数>.log`（每次双击独立一份，互不抢占同一个文件）；看护仍写 `logs/launcher-YYYYMMDD.log`；日期无法识别时看护使用 `launcher.log`。看护启动事件写入 `watchdog/watchdog.log`，超过 1 MB 时轮转为 `.1`。看护拉起前清理超过七天的日期日志。`DASHBOARD_HOME` 可指定数据目录；`DASHBOARD_NO_WATCHDOG=1` 跳过自动安装。
 
 非 Windows 系统不会安装任务，安装或卸载命令会输出 launchd 和 cron 的参考写法；状态仍可查询服务和登记。实际安装与设备运行需要在目标机器验证。
 

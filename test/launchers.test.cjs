@@ -45,7 +45,7 @@ test('launcher-silent.vbs:真跑到算出日志路径,不被内置函数重名�
   const vbs = path.join(dir, 'probe.vbs');
   fs.writeFileSync(vbs, read('scripts/launcher-silent.vbs').replace('sh.Run command, 0, False', 'WScript.Echo logfile'));
   const r = require('node:child_process').spawnSync('cscript', ['//Nologo', vbs], { encoding: 'utf8', windowsHide: true, env: { ...process.env, DASHBOARD_HOME: dir } });
-  assert.match(r.stdout, /launcher-\d{8}\.log/, r.stdout + r.stderr);
+  assert.match(r.stdout, /launcher-\d{8}-\d+-\d+\.log/, r.stdout + r.stderr);
 });
 
 const launcher = read('cli/launcher.cjs');
