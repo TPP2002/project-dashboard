@@ -8,19 +8,21 @@ const { serviceStatus } = require('./release.cjs');
 
 function createWatchdog({ platform = process.platform, home = DASHBOARD_HOME, repoRoot = path.resolve(__dirname, '..'),
   run = (command, args, opts) => cp.execFileSync(command, args, opts), fs = realFs,
-  now = () => new Date(), log = console.log, err = console.error, probe = serviceStatus } = {}) {
+  now = () => new Date(), log = console.log, err = console.error, probe = serviceStatus,
+  tempDir = os.tmpdir(), realpath = realFs.realpathSync.native, env = process.env } = {}) {
   const dir = path.join(home, 'watchdog');
   const cmdPath = path.join(dir, 'dashboard-watchdog.cmd');
   const vbsPath = path.join(dir, 'dashboard-watchdog-silent-launch.vbs');
   const xmlPath = path.join(dir, 'DashboardLauncherWatchdog.xml');
   const logs = path.join(home, 'logs');
+  const whoamiPath = path.join(env.SystemRoot || 'C:' + '\\Windows', 'System32', 'whoami.exe');
   const runHidden = (c, a) => run(c, a, { windowsHide: true, encoding: 'utf8' });
   const win = s => s.replace(/\//g, '\\');
   const xmlEscape = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const quoteVbs = s => '"""' + s.replace(/"/g, '""') + '"""';
   function render() {
     let sid = '';
-    if (platform === 'win32') { try { sid = String(runHidden('whoami', ['/user'])).match(/S-1-(?:\d+-)+\d+/i)?.[0] || ''; } catch {} }
+    if (platform === 'win32') { try { sid = String(runHidden(whoamiPath, ['/user'])).match(/S-1-(?:\d+-)+\d+/i)?.[0] || ''; } catch {} }
     const date = now();
     const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
     const cmd = [
@@ -51,10 +53,23 @@ function createWatchdog({ platform = process.platform, home = DASHBOARD_HOME, re
   function taskRun(args) { try { return runHidden('schtasks', args); } catch (e) { throw new Error(`${e.message}${e.stderr ? '\n' + e.stderr.toString() : ''}`); } }
   function install() {
     if (platform !== 'win32') return alternatives();
-    const tempRoot = path.resolve(os.tmpdir()).toLowerCase();
+    const longPath = (value) => {
+      const resolved = path.resolve(value);
+      let current = resolved, suffix = '';
+      for (;;) {
+        try { return path.join(realpath(current), suffix); }
+        catch {
+          const parent = path.dirname(current);
+          if (parent === current) return resolved;
+          suffix = suffix ? path.join(path.basename(current), suffix) : path.basename(current);
+          current = parent;
+        }
+      }
+    };
+    const tempRoots = [...new Set([path.resolve(tempDir), longPath(tempDir)].map(root => root.toLowerCase()))];
     const inTemp = (value) => {
-      const resolved = path.resolve(value).toLowerCase();
-      return resolved === tempRoot || resolved.startsWith(tempRoot.endsWith(path.sep) ? tempRoot : tempRoot + path.sep);
+      const forms = [path.resolve(value), longPath(value)].map(form => form.toLowerCase());
+      return forms.some(form => tempRoots.some(root => form === root || form.startsWith(root.endsWith(path.sep) ? root : root + path.sep)));
     };
     if (inTemp(home) || inTemp(repoRoot)) throw new Error('拒绝把看护装到临时目录');
     fs.mkdirSync(dir, { recursive: true }); fs.mkdirSync(logs, { recursive: true });

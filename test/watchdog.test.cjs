@@ -8,7 +8,7 @@ const { createWatchdog } = require('../cli/watchdog.cjs');
 function fixture(platform = 'win32', output = '') {
   const calls = [], files = new Map(), messages = [];
   const fs = { mkdirSync() {}, writeFileSync(p, v) { files.set(p, v); }, readFileSync(p) { if (!files.has(p)) throw Error('missing'); return files.get(p); } };
-  const run = (command, args, options) => { calls.push([command, ...args, options]); return command === 'whoami' ? '' : output; };
+  const run = (command, args, options) => { calls.push([command, ...args, options]); return command.endsWith('whoami.exe') ? '' : output; };
   return { calls, files, messages, dog: createWatchdog({ platform, home: 'C:/path/to/dashboard', repoRoot: 'C:/path/to/repo', fs, run, probe: () => ({ running: false }), log: x => messages.push(x), err: x => messages.push(x), now: () => new Date('2026-11-01T00:00:00Z') }) };
 }
 test('render: ASCII CRLF cmd, hidden vbs and UTF-16 task', () => {
@@ -43,6 +43,58 @@ test('install refuses temporary home or repository before running commands', () 
     assert.throws(() => dog.install(), /拒绝把看护装到临时目录/);
     assert.deepEqual(calls, []);
   }
+});
+function realpathStub(entries) {
+  return (value) => {
+    const key = path.resolve(value).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(entries, key)) return entries[key];
+    const error = new Error(`ENOENT: no such file or directory, realpath '${value}'`);
+    error.code = 'ENOENT';
+    throw error;
+  };
+}
+
+// 8.3 短名映射到长名；home 本身不存在，只有父目录 temp-long 存在。
+const TEMP_ALIAS = {
+  [path.resolve('C:/path/to/TMP~1').toLowerCase()]: 'C:/path/to/temp-long',
+  [path.resolve('C:/path/to/temp-long').toLowerCase()]: 'C:/path/to/temp-long',
+};
+
+function guardedFixture(extra = {}) {
+  const calls = [], files = new Map(), mkdirs = [];
+  const fs = { mkdirSync(p) { mkdirs.push(p); }, writeFileSync(p, v) { files.set(p, v); }, readFileSync(p) { if (!files.has(p)) throw Error('missing'); return files.get(p); } };
+  const run = (command, args) => { calls.push([command, ...args]); return ''; };
+  const dog = createWatchdog({ platform: 'win32', home: 'C:/path/to/dashboard', repoRoot: 'C:/path/to/repo',
+    fs, run, probe: () => ({ running: false }), log() {}, err() {}, now: () => new Date('2026-11-01T00:00:00Z'), ...extra });
+  return { calls, files, mkdirs, dog };
+}
+
+test('install refuses a temp home whose temp root is only a short path', () => {
+  const f = guardedFixture({ home: 'C:/path/to/temp-long/lnc-x/home', tempDir: 'C:/path/to/TMP~1', realpath: realpathStub(TEMP_ALIAS) });
+  assert.throws(() => f.dog.install(), /拒绝把看护装到临时目录/);
+  assert.deepEqual(f.calls, []); assert.deepEqual(f.mkdirs, []); assert.equal(f.files.size, 0);
+});
+test('install refuses a long temp root when the home is written short', () => {
+  const f = guardedFixture({ home: 'C:/path/to/TMP~1/lnc-x/home', tempDir: 'C:/path/to/temp-long', realpath: realpathStub(TEMP_ALIAS) });
+  assert.throws(() => f.dog.install(), /拒绝把看护装到临时目录/);
+  assert.deepEqual(f.calls, []); assert.deepEqual(f.mkdirs, []); assert.equal(f.files.size, 0);
+});
+test('install refuses a repository inside the temporary directory', () => {
+  const f = guardedFixture({ repoRoot: 'C:/path/to/TMP~1/repo', tempDir: 'C:/path/to/TMP~1', realpath: realpathStub(TEMP_ALIAS) });
+  assert.throws(() => f.dog.install(), /拒绝把看护装到临时目录/);
+  assert.deepEqual(f.calls, []); assert.deepEqual(f.mkdirs, []); assert.equal(f.files.size, 0);
+});
+test('install accepts a sibling that only shares the temp prefix', () => {
+  const f = guardedFixture({ home: 'C:/path/to/temp-long-other/home', tempDir: 'C:/path/to/TMP~1', realpath: realpathStub(TEMP_ALIAS) });
+  assert.doesNotThrow(() => f.dog.install());
+  assert.ok(f.calls.some(c => c[1] === '/Create'));
+  assert.ok(f.files.size > 0);
+});
+test('render resolves whoami.exe under System32 from the injected environment', () => {
+  const f = guardedFixture({ env: { SystemRoot: 'C:/path/to/windows' } });
+  f.dog.render();
+  assert.equal(f.calls[0][0], path.join('C:/path/to/windows', 'System32', 'whoami.exe'));
+  assert.match(f.calls[0][0], /System32[\\/]whoami\.exe$/i);
 });
 for (const sample of [
   'Last Run Time: yesterday\nLast Result: 0\nNext Run Time: tomorrow\nStatus: Ready',
