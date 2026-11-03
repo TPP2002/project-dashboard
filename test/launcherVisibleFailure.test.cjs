@@ -201,7 +201,7 @@ test('notifyLaunchFailure:设了就 spawn wscript,文本已清洗且不弹控制
   const spawn = (...args) => { calls.push(args); return { unref() {} }; };
   launcher.notifyLaunchFailure('✖ 启动失败\n原因："日志被占用"', {
     platform: 'win32', env: { DASHBOARD_LAUNCH_NOTIFY: '1' }, spawn,
-    script: 'C:\\repo\\scripts\\launcher-notify.vbs',
+    script: path.join('scripts', 'launcher-notify.vbs'),
   });
   assert.equal(calls.length, 1);
   const [cmd, argv, opts] = calls[0];
