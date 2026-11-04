@@ -18,6 +18,7 @@ const store = useSchedStore()
 const heartbeatAge = computed(() => age(store.snapshot?.dispatcher.heartbeat.at ?? null, store.now))
 const online = computed(() => store.snapshot?.machines.filter(machine => machine.online) ?? [])
 const offline = computed(() => store.snapshot?.machines.filter(machine => !machine.online) ?? [])
+const onlineMachines = computed(() => online.value.map(machine => machine.name))
 const unassigned = computed(() => store.snapshot?.running.filter(ticket => !ticket.registerOnly && !store.snapshot?.machines.some(machine => machine.name === ticket.machine)) ?? [])
 const cancel = (ticketId: string) => store.command({ kind: 'cancel', data: { ticketId } })
 const jump = (ticketId: string) => store.command({ kind: 'jump-queue', data: { ticketId } })
@@ -71,10 +72,10 @@ onUnmounted(store.stop)
       </details>
       <p v-if="store.snapshot.historyError" class="warn" role="status">{{ store.snapshot.historyError }}；暂无法预估</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
+        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       <details v-if="offline.length" class="sched-offline"><summary>离线机器 {{ offline.length }} 台（不参与派单）</summary>
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
+          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       </details>
       <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
         :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />

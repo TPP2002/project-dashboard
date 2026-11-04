@@ -83,8 +83,25 @@ function jobTiming(job, nowMs) {
   return { ...job, queuedMs, elapsedMs, remainingMs: elapsedMs === null || job.expectedMs === null ? null : job.expectedMs - elapsedMs };
 }
 
+/** 排队作业只有在标签、在线 runner 和已知归属都确定时才给候选机器；其余情况交给主机卡。 */
+function queuedCandidates(job, runners, runnerHomes) {
+  const labels = Array.isArray(job.labels) ? job.labels.filter(value => typeof value === 'string') : null;
+  if (!Array.isArray(runners) || labels === null || !labels.some(value => value.toLowerCase() === 'self-hosted')) {
+    return { candidateMachines: null, candidateRunners: [] };
+  }
+  const wanted = labels.map(value => value.toLowerCase());
+  const names = [...new Set(runners.filter(runner => runner && runner.status === 'online' && nonempty(runner.name)
+    && Array.isArray(runner.labels)
+    && wanted.every(label => runner.labels.some(tag => typeof tag?.name === 'string' && tag.name.toLowerCase() === label)))
+    .map(runner => runner.name))].sort();
+  if (!names.length) return { candidateMachines: [], candidateRunners: [] };
+  const homes = names.map(name => runnerHomes.get(name));
+  if (!homes.every(nonempty)) return { candidateMachines: null, candidateRunners: names };
+  return { candidateMachines: [...new Set(homes)].sort(), candidateRunners: names };
+}
+
 /** 不凭分支相似度猜卡；没有精确命中时保留 null。未知 runner 保留在 machine=null 的独立组。 */
-function partitionJobs(entries, { boards = [], estimates = new Map(), mapping = runnerMapping(), nowMs }) {
+function partitionJobs(entries, { boards = [], estimates = new Map(), mapping = runnerMapping(), runnerHomes = new Map(), nowMs }) {
   const titles = new Map();
   for (const board of boards) for (const task of Array.isArray(board?.tasks) ? board.tasks : []) {
     if (!nonempty(task?.plainTitle) || !Array.isArray(task.gitBranch)) continue;
@@ -94,7 +111,7 @@ function partitionJobs(entries, { boards = [], estimates = new Map(), mapping = 
     }
   }
   const groups = new Map(), queued = [];
-  for (const { repository, run, jobs, prTitle } of entries) for (const job of jobs) {
+  for (const { repository, run, jobs, runners, prTitle } of entries) for (const job of jobs) {
     if (job.status !== 'in_progress' && job.status !== 'queued') continue;
     const phase = job.status === 'queued' ? 'queued' : 'running';
     const runner = phase === 'running' && nonempty(job.runner_name) ? job.runner_name : null;
@@ -102,9 +119,10 @@ function partitionJobs(entries, { boards = [], estimates = new Map(), mapping = 
     const branch = nonempty(run.head_branch) ? run.head_branch : '';
     const commitTitle = run.event === 'push' && branch === 'main' && nonempty(run.head_commit?.message)
       ? run.head_commit.message.split(/\r?\n/, 1)[0] : null;
+    const candidates = phase === 'queued' ? queuedCandidates(job, runners, runnerHomes) : null;
     const item = jobTiming({ id: apiId(job.id), ...(repository === undefined ? {} : { repository }), workflow: label(WORKFLOWS, run.name, '工作流名称未知'),
       job: label(JOBS, job.name, '作业名称未知'), title: prTitle || commitTitle || branch || '名称未知', branch,
-      cardTitle: titles.get(JSON.stringify([repository, branch])) ?? null, phase, runner, ...location,
+      cardTitle: titles.get(JSON.stringify([repository, branch])) ?? null, phase, runner, ...location, ...candidates,
       startedAt: phase === 'queued' || timestamp(job.started_at) === null ? null : job.started_at,
       queuedAt: timestamp(job.created_at) !== null ? job.created_at : timestamp(run.created_at) !== null ? run.created_at : null,
       expectedMs: estimates.get(sampleKey(run.name, job.name, repository)) ?? null }, nowMs);
@@ -171,6 +189,12 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
     finally { if (waiting.length) waiting.shift()(); else inFlight--; }
   };
   let pending = null, pendingAt = null, boards = [], mapping = new Map(), readAt = null, failedAt = null, unavailable = false;
+  // 心跳只列正在跑活的 runner，空闲的不在里面；这里记住见过的归属，只在内存里，不写盘。
+  const knownRunners = new Map();
+
+  async function runnerList(base) {
+    try { return apiList(await gh(`${base}/actions/runners?per_page=100`), 'runners'); } catch { return null; }
+  }
 
   async function jobsFor(base, run, attempt = null) {
     const jobs = [];
@@ -214,6 +238,9 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
         }
         return { repository, run, jobs, prTitle };
       });
+      // 有排队作业才读 runner 清单；读不到就当没有候选，不污染整仓的成败。
+      const runners = entries.some(entry => entry.jobs.some(job => job.status === 'queued')) ? await runnerList(base) : null;
+      for (const entry of entries) entry.runners = runners;
       const observedAt = now();
       let history = state.history, historyAt = state.historyAt;
       // 每十分钟抽最近 100 个已完成 run，再按每组最近 20 个成功 job 取中位数。
@@ -241,7 +268,7 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
         historyAt = now();
       }
       // 完整校验后一起替换本仓作业和样本，坏作业不能污染上一拍。
-      partitionJobs(entries, { boards, mapping, estimates: history, nowMs: now() });
+      partitionJobs(entries, { boards, mapping, runnerHomes: knownRunners, estimates: history, nowMs: now() });
       Object.assign(state, { entries, history, historyAt, updatedAt: new Date(observedAt).toISOString(), staleSince: null, error: null,
         idleTicks: runs.size ? 0 : 3 });
     } catch (error) {
@@ -260,6 +287,10 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       let observed;
       try { observed = await readRunnerMachines(); } catch { observed = new Map(); }
       mapping = runnerMapping(runnerOverrides, observed);
+      for (const [runner, home] of mapping) {
+        if (nonempty(home.machine)) knownRunners.set(runner, home.machine);
+        else knownRunners.delete(runner);
+      }
       boards = nextBoards;
       for (const name of states.keys()) if (!names.includes(name)) states.delete(name);
       for (const name of names) if (!states.has(name)) {
@@ -286,7 +317,7 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       const staleSince = failedAt || state.staleSince || (updated !== null && nowMs - updated > POLL_MS * 2
         ? new Date(updated + POLL_MS * 2).toISOString() : null);
       statuses.push({ repository, updatedAt: state.updatedAt, staleSince });
-      const current = partitionJobs(state.entries, { boards, mapping, estimates: state.history, nowMs });
+      const current = partitionJobs(state.entries, { boards, mapping, runnerHomes: knownRunners, estimates: state.history, nowMs });
       queued.push(...current.queued.map(job => ({ ...job, updatedAt: state.updatedAt, staleSince })));
       for (const group of current.machines) {
         if (!machines.has(group.machine)) machines.set(group.machine, []);
