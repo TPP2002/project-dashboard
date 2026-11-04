@@ -60,6 +60,7 @@ const sessionBindings = require('../core/sessionBindings.cjs');
 const costSessionDetail = require('../core/costSessionDetail.cjs');
 const costJobDetail = require('../core/costJobDetail.cjs');
 const glmCostUsage = require('../core/glmCostUsage.cjs');
+const workbuddyCostUsage = require('../core/workbuddyCostUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
@@ -936,11 +937,14 @@ function handleCostUsage(req, res, query) {
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
     Promise.resolve().then(() => glmCostUsage.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY })),
+    // WorkBuddy 账本只读：读不出来就这份为 null，不许拖垮整个成本接口。
+    Promise.resolve().then(() => workbuddyCostUsage.getWorkbuddyUsage({ projectId: pid, days, registryPath: REGISTRY }))
+      .catch(() => null),
     codexApi.getDeepseekBalance().catch(() => ({
       available: false, reason: '查询异常', balance: null, sampledAt: new Date().toISOString(),
     })),
   ])
-    .then(([usage, codex, deepseek, glm, deepseekBalance]) => {
+    .then(([usage, codex, deepseek, glm, workbuddy, deepseekBalance]) => {
       const quota = codexApi.getQuota();
       const claudeTokens = costUsage.totalClaudeTokens(usage);
       const codexTokens = codex.selected.tokens;
@@ -952,6 +956,7 @@ function handleCostUsage(req, res, query) {
         codex,
         deepseek,
         glm,
+        workbuddy,
         deepseekBalance,
         quota,
         combined: {
@@ -976,6 +981,10 @@ async function handleCostPortfolio(res, query) {
       codexApi.getCostUsage(days, ''),
     ]);
     const glmJobs = glmCostUsage.scanGlmJobs({ registryPath: REGISTRY });
+    // 账本只扫一次，各项目共用同一份；读不出来当没有，成本接口照常出。
+    let workbuddyLedgers = null;
+    try { workbuddyLedgers = workbuddyCostUsage.scanWorkbuddyLedgers({ registryPath: REGISTRY }); }
+    catch (e) { console.warn('[cost] WorkBuddy 账本读不进来,按没有处理:' + e.message); }
     const rows = [], seenRepos = new Set(), seenNames = new Set();
     for (const project of projects) {
       const id = project.id, selected = costPrefixes(id);
@@ -987,14 +996,19 @@ async function handleCostPortfolio(res, query) {
       const deepseek = sharedCodeRepo ? null : await codexApi.getDeepseekUsage(days, id);
       const glm = sharedCodeRepo ? null : glmCostUsage.summarizeGlmJobs(glmJobs,
         { projectRepo: project.codeRepo, days });
+      const workbuddy = sharedCodeRepo || !workbuddyLedgers ? null
+        : workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { projectRepo: project.codeRepo, days });
       const codexRow = duplicateName ? null : codex.byProject.find((row) => row.project === project.name);
       rows.push({ id, name: project.name, claudeTokens: costUsage.totalClaudeTokens(usage),
         claudeUsd: usage.usd.actual, claudeOutput: usage.claudeTotals.output,
         unpricedModels: usage.unpricedModels, sharedDirs: usage.sharedDirs,
         codexTokens: codexRow?.tokens || 0, codexBuckets: codexRow?.buckets || null,
         deepseekRmb: deepseek?.totals.costRmb || 0, deepseekJobs: deepseek?.totals.jobs || 0,
-        glm: glm?.totals || null, sharedCodeRepo, duplicateName });
+        glm: glm?.totals || null, workbuddy: workbuddy?.totals || null,
+        sharedCodeRepo, duplicateName });
     }
+    const workbuddyTotals = workbuddyLedgers
+      ? workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { days }) : null;
     const totals = {
       claudeTokens: uniqueUsage ? costUsage.totalClaudeTokens(uniqueUsage) : 0,
       claudeUsd: uniqueUsage?.usd.actual || 0,
@@ -1007,6 +1021,8 @@ async function handleCostPortfolio(res, query) {
       glmCreditJobs: rows.reduce((sum, row) => sum + (row.glm?.creditJobs || 0), 0),
       glmUncertainCredits: rows.reduce((sum, row) => sum + (row.glm?.uncertainCredits || 0), 0),
       glmTokens: rows.reduce((sum, row) => sum + (row.glm?.tokens || 0), 0),
+      workbuddy: workbuddyTotals,
+      workbuddyLastCheck: workbuddyLedgers?.lastCheck || null,
     };
     const unassignedCodexTokens = codex.byProject.filter((row) => !seenNames.has(row.project))
       .reduce((sum, row) => sum + row.tokens, 0);

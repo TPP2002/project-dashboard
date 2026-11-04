@@ -132,6 +132,34 @@ test('GLM 工单明细显示首轮加续聊 token、周积分和归因状态', a
   assert.equal(summarizeJobRows([row]).glmCredits, 15);
 });
 
+test('WorkBuddy 工单明细读命令行积分:只认自家引擎的落盘账,非法值给空,合计按张数累加', async (t) => {
+  const f = fixture(t);
+  const writeCost = (slug, task, cost) => {
+    writeJob(f.jobs, slug, { task, events: null });
+    fs.writeFileSync(path.join(f.jobs, slug, 'cost.json'), JSON.stringify(cost));
+  };
+  writeCost('wb-one', { engine: 'workbuddy', model: 'deepseek-v4.1-flash' },
+    { engine: 'workbuddy', workbuddyCredits: { credits: 1.49 } });
+  writeCost('wb-two', { engine: 'workbuddy' }, { engine: 'workbuddy', workbuddyCredits: { credits: 0.1 } });
+  writeCost('wb-null', { engine: 'workbuddy' }, { engine: 'workbuddy', workbuddyCredits: { credits: null } });
+  writeCost('wb-negative', { engine: 'workbuddy' }, { engine: 'workbuddy', workbuddyCredits: { credits: -1 } });
+  writeCost('wb-text', { engine: 'workbuddy' }, { engine: 'workbuddy', workbuddyCredits: { credits: '3.2' } });
+  writeCost('codex-with-field', { engine: 'codex' }, { engine: 'codex', workbuddyCredits: { credits: 99 } });
+  const rows = await collectJobRows(f.jobs);
+  const by = new Map(rows.map((row) => [row.slug, row]));
+  assert.equal(by.get('wb-one').workbuddyCredits, 1.49);
+  assert.equal(by.get('wb-two').workbuddyCredits, 0.1);
+  assert.equal(by.get('wb-null').workbuddyCredits, null, '定不出价就是空,不伪装成 0');
+  assert.equal(by.get('wb-negative').workbuddyCredits, null);
+  assert.equal(by.get('wb-text').workbuddyCredits, null);
+  assert.equal(by.get('codex-with-field').workbuddyCredits, null, '别的引擎带同名字段也不冒充');
+  const sum = summarizeJobRows(rows);
+  assert.equal(sum.workbuddyCredits, 1.59, '0.1 + 1.49 不留浮点尾巴');
+  assert.equal(sum.workbuddyCreditJobs, 2);
+  assert.equal(sum.jobs, 6);
+  assert.equal(summarizeJobRows([]).workbuddyCredits, 0);
+});
+
 test('collectJobRows:级联链看同卡单数、slug 合法性把关、按派单时间降序、目录缺失返回空', async (t) => {
   const f = fixture(t);
   writeJob(f.jobs, 'chain-old', { task: { taskId: 'CARD-9' }, meta: { dispatchedAt: OFF } });
