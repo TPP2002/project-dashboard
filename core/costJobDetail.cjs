@@ -162,6 +162,9 @@ async function collectJobRows(jobsRoot) {
       glmCredits: task.engine === 'glm' && Number.isSafeInteger(cost?.glmQuota?.weeklyDelta)
         && cost.glmQuota.weeklyDelta >= 0 ? cost.glmQuota.weeklyDelta : null,
       glmCreditsCertain: task.engine === 'glm' && cost?.attribution?.attributable === true,
+      // WorkBuddy 命令行积分只认自家引擎落盘的账，别的引擎带了这个字段也不冒充。
+      workbuddyCredits: task.engine === 'workbuddy' && Number.isFinite(cost?.workbuddyCredits?.credits)
+        && cost.workbuddyCredits.credits >= 0 ? cost.workbuddyCredits.credits : null,
       peak: dispatchedAt !== null ? isPeakBeijing(dispatchedAt) : null,
       chain: null, // 下面按同卡单数回填
     });
@@ -215,7 +218,8 @@ function filterJobRows(rows, filters = {}) {
 /** 筛后合计:jobs/轮次/四类 token/人民币(只累加有值的单,并给出有值的单数)。 */
 function summarizeJobRows(rows) {
   const sum = { jobs: 0, turns: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
-    costRmb: 0, costRmbJobs: 0, glmCredits: 0, glmCreditJobs: 0 };
+    costRmb: 0, costRmbJobs: 0, glmCredits: 0, glmCreditJobs: 0,
+    workbuddyCredits: 0, workbuddyCreditJobs: 0 };
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row) continue;
     sum.jobs++;
@@ -228,12 +232,17 @@ function summarizeJobRows(rows) {
       sum.glmCredits += row.glmCredits;
       sum.glmCreditJobs++;
     }
+    if (typeof row.workbuddyCredits === 'number' && Number.isFinite(row.workbuddyCredits) && row.workbuddyCredits >= 0) {
+      sum.workbuddyCredits += row.workbuddyCredits;
+      sum.workbuddyCreditJobs++;
+    }
     const rmb = jobCostRmb(row);
     if (rmb !== null) {
       sum.costRmb += rmb;
       sum.costRmbJobs++;
     }
   }
+  sum.workbuddyCredits = Math.round((sum.workbuddyCredits + Number.EPSILON) * 100) / 100;
   return sum;
 }
 

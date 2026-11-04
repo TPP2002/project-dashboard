@@ -28,6 +28,7 @@ interface JobRow {
   reportedUsd: number | null
   glmCredits: number | null
   glmCreditsCertain: boolean
+  workbuddyCredits: number | null
   peak: boolean | null
   chain: boolean | null
   costRmb: number | null
@@ -36,6 +37,7 @@ interface JobTotals {
   jobs: number; turns: number; input: number; output: number
   cacheRead: number; cacheWrite: number; costRmb: number; costRmbJobs: number
   glmCredits: number; glmCreditJobs: number
+  workbuddyCredits: number; workbuddyCreditJobs: number
 }
 interface DetailBody {
   ok: boolean; error?: string
@@ -147,7 +149,7 @@ function chainText(chain: boolean | null): string {
             <th>工单</th><th>卡</th><th>引擎</th><th>实际模型</th><th>指定档</th>
             <th>派单时间</th><th class="r">时长</th><th class="r">轮次</th>
             <th class="r">输入</th><th class="r">输出</th><th class="r">缓存读</th><th class="r">缓存写</th>
-            <th class="r">人民币折算</th><th class="r">GLM 积分</th><th class="r">CLI 参考美元</th><th>级联链</th>
+            <th class="r">人民币折算</th><th class="r">GLM 积分</th><th class="r">WorkBuddy 积分</th><th class="r">CLI 参考美元</th><th>级联链</th>
           </tr>
         </thead>
         <tbody>
@@ -173,6 +175,7 @@ function chainText(chain: boolean | null): string {
               {{ row.costRmb === null ? '—' : '¥' + rmb2(row.costRmb) }}
             </td>
             <td class="r" :title="row.glmCreditsCertain ? '可归单' : '并行或归因状态未知，仅供参考'">{{ row.glmCredits === null ? '—' : fmt(row.glmCredits) + (row.glmCreditsCertain ? '' : ' ≈') }}</td>
+            <td class="r">{{ row.workbuddyCredits === null ? '—' : row.workbuddyCredits.toFixed(2) }}</td>
             <td class="r">{{ row.reportedUsd === null ? '—' : '$' + row.reportedUsd.toFixed(2) }}</td>
             <td>{{ chainText(row.chain) }}</td>
           </tr>
@@ -187,6 +190,7 @@ function chainText(chain: boolean | null): string {
             <td class="r">{{ fmt(totals.cacheWrite) }}</td>
             <td class="r">¥{{ rmb2(totals.costRmb) }}</td>
             <td class="r">{{ totals.glmCreditJobs ? fmt(totals.glmCredits) + ' ≈' : '—' }}</td>
+            <td class="r">{{ totals.workbuddyCreditJobs ? totals.workbuddyCredits.toFixed(2) : '—' }}</td>
             <td class="r">—</td>
             <td>—</td>
           </tr>
@@ -208,7 +212,7 @@ h3 { font-size: var(--fs-md); }
 .muted { color: var(--text-3); }
 .models { overflow-wrap: anywhere; }
 .table-scroll { max-width: 100%; max-height: 320px; overflow: auto; }
-.job-table { min-width: 1080px; }
+.job-table { min-width: 1160px; }
 .r { text-align: right; }
 tfoot td { border-top: 1px solid var(--line-strong); font-weight: 600; }
 </style>

@@ -39,8 +39,17 @@ interface Usage {
 }
 interface GlmTally { jobs: number; tokens: number; input: number; output: number; cacheRead: number; cacheWrite: number; credits: number; creditJobs: number; uncertainCredits: number; missingUsageJobs: number }
 interface GlmUsage { totals: GlmTally; byModel: Record<string, GlmTally>; byDay: Array<GlmTally & { date: string }> }
-interface PortfolioRow { id: string; name: string; claudeTokens: number; claudeUsd: number; claudeOutput: number; unpricedModels: string[]; sharedDirs: string[]; codexTokens: number; deepseekRmb: number; glm: GlmTally | null; sharedCodeRepo: boolean; duplicateName: boolean }
-interface Portfolio { rows: PortfolioRow[]; unassignedCodexTokens: number; totals: { claudeTokens: number; claudeUsd: number; claudeOutput: number; unpricedModels: string[]; codexTokens: number; codexBuckets: { input: number; output: number; cachedInput: number }; codexBucketedTokens: number; deepseekRmb: number; glmCredits: number; glmCreditJobs: number; glmUncertainCredits: number; glmTokens: number } }
+interface WorkbuddyTotals { requests: number; credits: number; jobCredits: number; nonJobCredits: number; estimateCredits: number; unpricedRequests: number; jobs: number }
+interface WorkbuddyLastCheck { at?: string; through?: string | null; statementRows?: number; statementCredits?: number; ledgerCredits?: number }
+interface WorkbuddyUsage {
+  totals: WorkbuddyTotals
+  byModel: Record<string, { requests: number; credits: number }>
+  byDay: Array<{ date: string; requests: number; credits: number }>
+  lastCheck: WorkbuddyLastCheck | null
+  updatedAt: string | null
+}
+interface PortfolioRow { id: string; name: string; claudeTokens: number; claudeUsd: number; claudeOutput: number; unpricedModels: string[]; sharedDirs: string[]; codexTokens: number; deepseekRmb: number; glm: GlmTally | null; workbuddy: WorkbuddyTotals | null; sharedCodeRepo: boolean; duplicateName: boolean }
+interface Portfolio { rows: PortfolioRow[]; unassignedCodexTokens: number; totals: { claudeTokens: number; claudeUsd: number; claudeOutput: number; unpricedModels: string[]; codexTokens: number; codexBuckets: { input: number; output: number; cachedInput: number }; codexBucketedTokens: number; deepseekRmb: number; glmCredits: number; glmCreditJobs: number; glmUncertainCredits: number; glmTokens: number; workbuddy: WorkbuddyTotals | null; workbuddyLastCheck: WorkbuddyLastCheck | null } }
 
 const store = useBoardStore()
 const usage = ref<Usage | null>(null)
@@ -48,6 +57,7 @@ const codex = ref<CodexUsage | null>(null)
 const deepseek = ref<DeepseekUsage | null>(null)
 const deepseekBalance = ref<DeepseekBalance | null>(null)
 const glm = ref<GlmUsage | null>(null)
+const workbuddy = ref<WorkbuddyUsage | null>(null)
 const portfolio = ref<Portfolio | null>(null)
 const scope = ref<'all' | 'project'>('all')
 const quota = ref<QuotaSnapshot | null>(null)
@@ -78,6 +88,7 @@ async function load() {
     if (scope.value === 'all') {
       portfolio.value = body as Portfolio
       usage.value = null
+      workbuddy.value = null
       error.value = ''
       return
     }
@@ -87,6 +98,7 @@ async function load() {
     deepseek.value = body.deepseek ?? null
     deepseekBalance.value = body.deepseekBalance ?? null
     glm.value = body.glm ?? null
+    workbuddy.value = body.workbuddy ?? null
     quota.value = body.quota
     error.value = ''
   } catch (e) {
@@ -98,6 +110,7 @@ async function load() {
     deepseek.value = null
     deepseekBalance.value = null
     glm.value = null
+    workbuddy.value = null
     quota.value = null
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -194,7 +207,8 @@ const emptyReason = computed(() => {
   const hasCodex = (codex.value?.byDay?.length ?? 0) > 0
   const hasDeepseek = (deepseek.value?.totals.jobs ?? 0) > 0
   const hasGlm = (glm.value?.totals.jobs ?? 0) > 0
-  if (hasClaude || hasCodex || hasDeepseek || hasGlm) return null
+  const hasWorkbuddy = (workbuddy.value?.totals.requests ?? 0) > 0
+  if (hasClaude || hasCodex || hasDeepseek || hasGlm || hasWorkbuddy) return null
   return `这个项目近 ${days.value} 天没有任何对话记录,所以下面都是 0。换更长的区间看看,或者确认最近是不是没在这个项目上干活。`
 })
 
@@ -205,6 +219,26 @@ const modelRows = computed(() =>
 )
 const glmModelRows = computed(() => Object.entries(glm.value?.byModel ?? {})
   .sort((a, b) => b[1].tokens - a[1].tokens))
+const workbuddyModelRows = computed(() => Object.entries(workbuddy.value?.byModel ?? {})
+  .sort((a, b) => b[1].credits - a[1].credits || b[1].requests - a[1].requests))
+/** WorkBuddy 对账时间:后端给的是「YYYY-MM-DD HH:mm:ss」,界面只取月-日 时:分。 */
+function monthDayTime(value?: string | null): string {
+  if (!value) return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(value)
+  return match ? `${match[2]}-${match[3]} ${match[4]}:${match[5]}` : value
+}
+const workbuddyLastCheck = computed(() => {
+  const last = portfolio.value?.totals.workbuddyLastCheck
+  const statement = last?.statementCredits
+  const ledger = last?.ledgerCredits
+  if (typeof statement !== 'number' || typeof ledger !== 'number'
+    || !Number.isFinite(statement) || !Number.isFinite(ledger)) return null
+  return {
+    through: monthDayTime(last?.through),
+    statementCredits: statement.toFixed(2),
+    ledgerCredits: ledger.toFixed(2),
+  }
+})
 /** 有成本登记的卡(当前项目) */
 const costTasks = computed<Task[]>(() =>
   store.currentTasks.filter((task) => (task.cost?.entries?.length ?? 0) > 0),
@@ -219,8 +253,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
       <div>
         <h1><Icon name="coins" class="head-ic" :size="20" />成本监管</h1>
         <p class="page-subtitle">
-          本机流水：Claude 显示 API 直购等价估算，DeepSeek 显示按价目折算的人民币，
-          GLM 显示套餐积分，Codex 显示输入/输出用量。不同单位不相加，异机记录不在本账。
+          本机流水：Claude 显示 API 直购等价估算，DeepSeek 显示按价目折算的人民币，GLM 显示套餐积分，WorkBuddy 显示命令行扣的积分，Codex 显示输入/输出用量。不同单位不相加，异机记录不在本账。
         </p>
       </div>
       <div class="range-picker" role="group" aria-label="成本范围与时间">
@@ -260,8 +293,12 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
           <div class="card"><div class="v">${{ portfolio.totals.claudeUsd.toFixed(2) }}</div><div class="l">Claude API 等价估算</div></div>
           <div class="card"><div class="v">¥{{ portfolio.totals.deepseekRmb.toFixed(2) }}</div><div class="l">DeepSeek 按价目折算</div></div>
           <div class="card"><div class="v">{{ portfolio.totals.glmCreditJobs ? fmt(portfolio.totals.glmCredits) : '—' }}</div><div class="l">GLM 周窗积分差合计 · 参考</div></div>
+          <div class="card"><div class="v">{{ portfolio.totals.workbuddy && portfolio.totals.workbuddy.requests ? portfolio.totals.workbuddy.credits.toFixed(2) : '—' }}</div><div class="l">WorkBuddy 积分 · 命令行</div></div>
           <div class="card"><div class="v">{{ portfolio.totals.codexBucketedTokens ? fmt(portfolio.totals.codexBuckets.output) : '—' }}</div><div class="l">Codex 输出 token</div></div>
         </div>
+        <p v-if="portfolio.totals.workbuddy && portfolio.totals.workbuddy.nonJobCredits > 0" class="source-note">其中 {{ portfolio.totals.workbuddy.nonJobCredits.toFixed(2) }} WorkBuddy 积分没走工单（模型试用、探测），不归任何项目。</p>
+        <p v-if="portfolio.totals.workbuddy && portfolio.totals.workbuddy.unpricedRequests > 0" class="source-note">{{ portfolio.totals.workbuddy.unpricedRequests }} 条 WorkBuddy 请求定不出价，未计入。</p>
+        <p v-if="workbuddyLastCheck" class="source-note">WorkBuddy 积分 {{ workbuddyLastCheck.through }} 前的部分和官方明细核对过：官方 {{ workbuddyLastCheck.statementCredits }}，本账 {{ workbuddyLastCheck.ledgerCredits }}。</p>
         <p v-if="portfolio.totals.glmUncertainCredits > 0 || portfolio.totals.unpricedModels.length" class="source-note">
           {{ portfolio.totals.glmUncertainCredits > 0 ? `其中 ${fmt(portfolio.totals.glmUncertainCredits)} GLM 积分无法精确归单；` : '' }}
           {{ portfolio.totals.unpricedModels.length ? `${portfolio.totals.unpricedModels.length} 个 Claude 模型暂无牌价，未计入美元。` : '' }}
@@ -273,12 +310,13 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
         <p class="fine">点项目名查看逐日、会话、工单及各模型缓存命中率。共用代码仓的工单成本只归第一项，避免合计重复。</p>
         <div class="table-scroll portfolio-scroll">
           <table class="portfolio-table">
-            <thead><tr><th>项目</th><th>Claude API 等价</th><th>DeepSeek 人民币</th><th>GLM 积分</th><th>Codex token</th><th>口径提示</th></tr></thead>
+            <thead><tr><th>项目</th><th>Claude API 等价</th><th>DeepSeek 人民币</th><th>GLM 积分</th><th>WorkBuddy 积分</th><th>Codex token</th><th>口径提示</th></tr></thead>
             <tbody><tr v-for="row in portfolio.rows" :key="row.id">
               <td><button class="btn quiet btn-sm" @click="store.selectProject(row.id); scope = 'project'">{{ row.name }}</button></td>
               <td class="num">${{ row.claudeUsd.toFixed(2) }}</td>
               <td class="num">¥{{ row.deepseekRmb.toFixed(2) }}</td>
               <td class="num">{{ row.glm?.creditJobs ? fmt(row.glm.credits) : '—' }}</td>
+              <td class="num">{{ row.workbuddy?.requests ? row.workbuddy.credits.toFixed(2) : '—' }}</td>
               <td class="num">{{ fmt(row.codexTokens) }}</td>
               <td>{{ row.sharedDirs.length ? '共享对话目录；' : '' }}{{ row.sharedCodeRepo ? '共用代码仓；' : '' }}{{ row.duplicateName ? '项目同名，Codex 无法区分；' : '' }}{{ row.unpricedModels.length ? '有未计价模型' : '' }}</td>
             </tr></tbody>
@@ -298,6 +336,10 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
           <div class="card">
             <div class="v">{{ glm?.totals.creditJobs ? fmt(glm.totals.credits) : '—' }}</div>
             <div class="l">GLM 周窗积分差 · 参考</div>
+          </div>
+          <div class="card">
+            <div class="v">{{ workbuddy?.totals.requests ? workbuddy.totals.credits.toFixed(2) : '—' }}</div>
+            <div class="l">WorkBuddy 积分 · 命令行</div>
           </div>
           <div class="card">
             <div class="v">{{ codex?.selected.bucketedTokens ? fmt(codex.selected.buckets?.output ?? 0) : '—' }}</div>
@@ -378,6 +420,28 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
             </div>
             <p v-if="glm?.totals.uncertainCredits" class="fine">其中 {{ fmt(glm.totals.uncertainCredits) }} 积分无法精确归单，不能据此比较单卡效率。</p>
             <p v-if="glm?.totals.missingUsageJobs" class="fine">{{ glm.totals.missingUsageJobs }} 个首轮或续聊缺用量，token 小计不完整。</p>
+          </section>
+
+          <section v-if="workbuddy && workbuddy.totals.requests > 0" class="card glm-spend">
+            <h2>WorkBuddy · 命令行积分</h2>
+            <p class="fine">逐条请求记账：会话记录里的实扣，加上压缩上下文的估算。桌面应用里用的不算。</p>
+            <div class="glm-grid">
+              <div><strong>{{ workbuddy.totals.credits.toFixed(2) }}</strong><span>积分 · {{ workbuddy.totals.requests }} 次请求</span></div>
+              <div><strong>{{ workbuddy.totals.jobs }}</strong><span>张工单</span></div>
+              <div><strong>{{ workbuddy.totals.estimateCredits.toFixed(2) }}</strong><span>其中压缩上下文估算</span></div>
+            </div>
+            <div v-if="workbuddyModelRows.length" class="table-scroll">
+              <table class="glm-model-table">
+                <thead><tr><th>模型</th><th>请求数</th><th>积分</th></tr></thead>
+                <tbody>
+                  <tr v-for="[model, row] in workbuddyModelRows" :key="model">
+                    <td class="mono">{{ model }}</td>
+                    <td class="num">{{ row.requests }}</td>
+                    <td class="num">{{ row.credits.toFixed(2) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <CodexCostSummary
@@ -519,8 +583,8 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .error-state > :nth-child(2) { flex: 1; }
 .loading-state { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s5); }
 .overview { display: grid; gap: var(--s2); }
-.summary-cards, .summary-skeleton { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s2); }
-.portfolio-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.summary-cards, .summary-skeleton { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s2); }
+.portfolio-cards { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .summary-cards .card { min-width: 0; padding: var(--s3); }
 .summary-cards .v, .summary-reason { overflow-wrap: anywhere; }
 .summary-reason { color: var(--text-2); font-size: var(--fs-base); }
@@ -529,7 +593,7 @@ const agentsText = (entry: { agents?: Record<string, number> }) =>
 .cost-left { display: grid; gap: var(--s4); min-width: 0; }
 .portfolio-section { display: grid; gap: var(--s3); }
 .portfolio-scroll { max-height: 460px; }
-.portfolio-table { min-width: 960px; }
+.portfolio-table { min-width: 1080px; }
 .portfolio-table th:not(:first-child), .portfolio-table td.num { text-align: right; }
 .glm-spend { display: grid; gap: var(--s3); }
 .glm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s2); }
