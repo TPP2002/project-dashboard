@@ -4,6 +4,7 @@ export interface CiJob {
   phase: 'running' | 'queued'; queuedAt: string | null; queuedMs: number | null
   id: number; workflow: string; job: string; title: string; branch: string; cardTitle: string | null
   runner: string | null; machine: string | null; project: string | null; startedAt: string | null
+  candidateMachines?: string[] | null; candidateRunners?: string[]
   elapsedMs: number | null; expectedMs: number | null; remainingMs: number | null
 }
 export interface CiMachineJobs { machine: string | null; jobs: CiJob[] }
@@ -18,6 +19,7 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const nullableText = (value: unknown) => value === null || typeof value === 'string'
 const nullableTime = (value: unknown) => value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)))
 const nullableMs = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value))
+const textArray = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === 'string')
 function validJob(value: unknown, machine: unknown, phase: CiJob['phase']): boolean {
   if (!record(value) || !Number.isSafeInteger(value.id) || (value.id as number) <= 0 || value.machine !== machine || value.phase !== phase) return false
   if (phase === 'queued' && (value.runner !== null || value.startedAt !== null || value.elapsedMs !== null || value.remainingMs !== null)) return false
@@ -27,6 +29,8 @@ function validJob(value: unknown, machine: unknown, phase: CiJob['phase']): bool
     && ['elapsedMs', 'expectedMs', 'queuedMs'].every(key => nullableMs(value[key]) && (value[key] === null || (value[key] as number) >= 0))
     && nullableMs(value.remainingMs)
     && (value.repository === undefined || typeof value.repository === 'string')
+    && (value.candidateMachines === undefined || value.candidateMachines === null || textArray(value.candidateMachines))
+    && (value.candidateRunners === undefined || textArray(value.candidateRunners))
     && ['updatedAt', 'staleSince'].every(key => value[key] === undefined || nullableTime(value[key]))
 }
 export function isCiJobsSnapshot(value: unknown): value is CiJobsSnapshot {
