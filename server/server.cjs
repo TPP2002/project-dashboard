@@ -1008,7 +1008,7 @@ async function handleCostPortfolio(res, query) {
         sharedCodeRepo, duplicateName });
     }
     const workbuddyTotals = workbuddyLedgers
-      ? workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { days }) : null;
+      ? workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { days }).totals : null;
     const totals = {
       claudeTokens: uniqueUsage ? costUsage.totalClaudeTokens(uniqueUsage) : 0,
       claudeUsd: uniqueUsage?.usd.actual || 0,
