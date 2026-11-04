@@ -39,6 +39,11 @@ function request(overrides) {
   };
 }
 
+// 时刻一律按本机时间构造:产品按本机时区切天,夹具写死 +08:00 在别的时区跑会整体偏移。
+function localTime(month, day, hour, minute, second = 0) {
+  return new Date(2026, month - 1, day, hour, minute, second);
+}
+
 test('账本缺失、JSON 损坏、schemaVersion 不对都当没有账:返回空且不抛', (t) => {
   const root = fixture(t);
   const missing = path.join(root, 'repo-missing');
@@ -68,11 +73,11 @@ test('汇总口径:跨仓同请求号只算一次、null 积分只计次数、�
     unit: 'WorkBuddy 积分',
     updatedAt: '2026-11-02T00:00:00.000Z',
     requests: {
-      r1: request({ at: '2026-11-01T10:00:00+08:00', credits: 0.1, repo: path.join(root, 'repo-a') }),
-      r2: request({ at: '2026-11-02T10:00:00+08:00', credits: 0.2, repo: path.join(root, 'repo-a') }),
-      r3: request({ at: '2026-11-02T11:00:00+08:00', model: 'glm-5', credits: 0.2,
+      r1: request({ at: localTime(11, 1, 10, 0).toISOString(), credits: 0.1, repo: path.join(root, 'repo-a') }),
+      r2: request({ at: localTime(11, 2, 10, 0).toISOString(), credits: 0.2, repo: path.join(root, 'repo-a') }),
+      r3: request({ at: localTime(11, 2, 11, 0).toISOString(), model: 'glm-5', credits: 0.2,
         source: 'estimate', slug: null, repo: path.join(root, 'repo-a') }),
-      r4: request({ at: '2026-11-03T12:00:00+08:00', credits: null, slug: 'job-b',
+      r4: request({ at: localTime(11, 3, 12, 0).toISOString(), credits: null, slug: 'job-b',
         reason: '定不出价', repo: path.join(root, 'repo-a') }),
     },
     lastCheck: { through: '2026-11-02 13:55:00', statementCredits: 100.1, ledgerCredits: 100.05 },
@@ -84,7 +89,7 @@ test('汇总口径:跨仓同请求号只算一次、null 积分只计次数、�
     requests: {
       // 同一请求号在另一个仓重复记了一遍,只认先出现的那份。
       r1: request({ credits: 999, repo: path.join(root, 'repo-b') }),
-      r5: request({ at: '2026-11-04T09:00:00+08:00', model: 'glm-5', credits: 1.5,
+      r5: request({ at: localTime(11, 4, 9, 0).toISOString(), model: 'glm-5', credits: 1.5,
         source: 'official', slug: 'job-c', repo: path.join(root, 'repo-b') }),
     },
     lastCheck: { through: '2026-11-03 10:00:00', statementCredits: 200, ledgerCredits: 199.99 },
@@ -98,7 +103,7 @@ test('汇总口径:跨仓同请求号只算一次、null 积分只计次数、�
   assert.equal(scan.lastCheck.through, '2026-11-03 10:00:00', 'lastCheck 取 updatedAt 最新那份');
   assert.equal(scan.updatedAt, '2026-11-03T00:00:00.000Z');
 
-  const all = summarizeWorkbuddyRequests(scan, { nowMs: Date.parse('2026-11-04T12:00:00+08:00'), days: 90 });
+  const all = summarizeWorkbuddyRequests(scan, { nowMs: localTime(11, 4, 12, 0).getTime(), days: 90 });
   assert.equal(all.totals.requests, 5);
   assert.equal(all.totals.credits, 2, '0.1 + 0.2 + 0.2 + null + 1.5,重复的 999 不算');
   assert.equal(all.totals.jobCredits, 1.8);
@@ -116,7 +121,7 @@ test('汇总口径:跨仓同请求号只算一次、null 积分只计次数、�
   assert.equal(all.updatedAt, '2026-11-03T00:00:00.000Z');
 
   const project = getWorkbuddyUsage({
-    projectId: 'a', registryPath, days: 90, nowMs: Date.parse('2026-11-04T12:00:00+08:00'),
+    projectId: 'a', registryPath, days: 90, nowMs: localTime(11, 4, 12, 0).getTime(),
   });
   assert.equal(project.totals.requests, 3, '只算仓库 a 且排除了没走工单的请求');
   assert.equal(project.totals.credits, 0.3);
@@ -127,12 +132,12 @@ test('汇总口径:跨仓同请求号只算一次、null 积分只计次数、�
 });
 
 test('时间窗口与本机时区按天同口径:起止端点含入,晚于 now 的不算', () => {
-  const nowMs = Date.parse('2026-11-04T12:00:00+08:00');
+  const nowMs = localTime(11, 4, 12, 0).getTime();
   const data = { requests: [
-    { at: '2026-11-01T23:59:59+08:00', model: 'm', credits: 1, source: 'transcript', slug: 'job-a', repo: null },
-    { at: '2026-11-02T00:00:00+08:00', model: 'm', credits: 2, source: 'transcript', slug: 'job-a', repo: null },
-    { at: '2026-11-04T12:00:00+08:00', model: 'm', credits: 4, source: 'transcript', slug: 'job-a', repo: null },
-    { at: '2026-11-04T12:00:01+08:00', model: 'm', credits: 8, source: 'transcript', slug: 'job-a', repo: null },
+    { at: localTime(11, 1, 23, 59, 59).toISOString(), model: 'm', credits: 1, source: 'transcript', slug: 'job-a', repo: null },
+    { at: localTime(11, 2, 0, 0, 0).toISOString(), model: 'm', credits: 2, source: 'transcript', slug: 'job-a', repo: null },
+    { at: localTime(11, 4, 12, 0, 0).toISOString(), model: 'm', credits: 4, source: 'transcript', slug: 'job-a', repo: null },
+    { at: localTime(11, 4, 12, 0, 1).toISOString(), model: 'm', credits: 8, source: 'transcript', slug: 'job-a', repo: null },
   ] };
   const result = summarizeWorkbuddyRequests(data, { days: 3, nowMs });
   assert.equal(result.totals.requests, 2, '窗口起点与 now 端点都算,窗口外前后都不算');
