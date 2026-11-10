@@ -43,7 +43,6 @@ const stats = computed(() => {
     <header class="page-head">
       <div>
         <h1><Icon name="history" class="head-ic" :size="20" />拍板历史</h1>
-        <p>拍过的每一条都留档：什么时候拍的、拍了什么、当时为什么这么推荐。</p>
       </div>
       <div class="head-actions">
         <span class="pill">{{ stats.total }} 条 · 待落地 {{ stats.unlanded }} · 推定落地 {{ stats.presumed }} · 已落地 {{ stats.landed }}</span>
@@ -97,7 +96,6 @@ const stats = computed(() => {
 <style scoped>
 .history-page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
-.page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
 .toggle { display: flex; align-items: center; gap: var(--s1); color: var(--text-2); cursor: pointer; font-size: var(--fs-sm); white-space: nowrap; }
 .search { width: 200px; }

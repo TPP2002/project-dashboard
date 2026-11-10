@@ -143,7 +143,6 @@ function openTask(item: { projectId: string; task: { id: string } }) {
     <header class="page-head">
       <div>
         <h1>总览</h1>
-        <p>先处理会挡住工作的事情，再看项目统计。</p>
       </div>
       <div class="head-tools">
         <ScopeToggle />
@@ -197,7 +196,6 @@ function openTask(item: { projectId: string; task: { id: string } }) {
         <header class="section-head">
           <div>
             <h2>需要你处理</h2>
-            <p>待拍板、{{ store.modules.codex ? '被驳回和' : '' }}真被挡住的事情会先放在这里；自己按了暂停的「搁置中」单列在下面。</p>
           </div>
           <span class="badge" :class="actionTotal ? 'warn' : 'ok'">{{ actionTotal }} 项</span>
         </header>
@@ -296,7 +294,6 @@ function openTask(item: { projectId: string; task: { id: string } }) {
         <header class="section-head">
           <div>
             <h2>项目与统计</h2>
-            <p>处理完上面的事项后，再看各项目进度、状态和最近动态。</p>
           </div>
         </header>
 
@@ -367,7 +364,6 @@ function openTask(item: { projectId: string; task: { id: string } }) {
 <style scoped>
 .page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s6); overflow-x: hidden; }
 .page-head, .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
-.page-head p, .section-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-tools { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 /* 八列格：六块普通 KPI 各占一列，「最久没动」要写得下卡号，占两列。 */
 .kpi-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--s2); }
