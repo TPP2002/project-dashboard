@@ -297,12 +297,15 @@ function createResourcesApi(deps) {
     const { child, out, err } = started;
     let settled = false;
     const finish = (status, bodyObj) => { if (settled) return; settled = true; sendJson(res, status, bodyObj); };
-    const release = () => { writeBusy = false; if (loginId) loginInProgress.delete(loginId); };
+    // 只释放本请求自己持有的写锁:登录类转后台后锁已交出,子进程迟些退出时不能把别的请求的锁也放掉。
+    let lockHeld = true;
+    const unlock = () => { if (lockHeld) { lockHeld = false; writeBusy = false; } };
+    const release = () => { unlock(); if (loginId) loginInProgress.delete(loginId); };
     const waitMs = isLogin ? loginWaitMs : actionTimeoutMs;
     const timer = setTimeout(() => {
       if (isLogin) {
         // 等待窗内没退出：不杀子进程，返回 pending，后台继续，释放写锁，登录中集合留到子进程退出。
-        writeBusy = false;
+        unlock();
         detachChild(child);
         finish(200, { ok: true, pending: true, lastLine: lastLine(out.text()) });
       } else {

@@ -83,7 +83,12 @@ function rowBusy(a: PanelAccount): boolean { return !!rowOf(a.id).busy }
 function onRefreshAll() { emit('refresh-all') }
 function onRetryAll() { emit('refresh-all') }
 function onAdd(provider: string) { emit('add', provider) }
-function onToggle(a: PanelAccount) { emit('toggle', a.id, !a.enabled) }
+// 不做乐观更新:先把原生勾选状态退回列表里的真实值,等重新读取后再变;否则失败时开关停在错的位置。
+function onToggle(a: PanelAccount, event?: Event) {
+  const box = event?.target as HTMLInputElement | undefined
+  if (box) box.checked = !!a.enabled
+  emit('toggle', a.id, !a.enabled)
+}
 function onRefreshAccount(a: PanelAccount) { emit('refresh-account', a.id) }
 function onLogin(a: PanelAccount) { emit('login', a.id) }
 function onClearLimit(a: PanelAccount) { emit('clear-limit', a.id) }
@@ -155,7 +160,7 @@ function onRetryGroup(provider: string) { emit('retry-group', provider) }
                 </div>
                 <label class="res-switch">
                   <input type="checkbox" role="switch" :checked="!!a.enabled"
-                    :aria-label="'启用 ' + (a.label || '读不到')" :disabled="rowBusy(a)" @change="onToggle(a)" />
+                    :aria-label="'启用 ' + (a.label || '读不到')" :disabled="rowBusy(a)" @change="onToggle(a, $event)" />
                   <span>启用</span>
                 </label>
                 <div class="res-login">
