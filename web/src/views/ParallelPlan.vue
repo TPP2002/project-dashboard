@@ -116,11 +116,8 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
     <header class="page-head">
       <div>
         <h1><Icon name="checks" class="head-ic" :size="20" />现在能同时派几张</h1>
-        <p class="page-subtitle">
-          直接复制卡号发给新对话就能开工。这一页是算出来的,不花额度,卡片状态一变就重算。
-        </p>
       </div>
-      <button class="btn btn-sm" type="button" :disabled="loading" @click="load">
+      <button class="btn btn-sm" type="button" title="本机计算，不花额度" :disabled="loading" @click="load">
         {{ loading ? '算着…' : '重新算' }}
       </button>
     </header>
@@ -148,7 +145,6 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
         <header class="sec-head">
           <div>
             <h2>可以直接派 <span class="count">{{ plan.stats.readyCount }}</span></h2>
-            <p>互相不碰同一批文件,可以同时开工。</p>
           </div>
           <button class="btn" type="button" :disabled="!plan.ready.length" @click="copyAll">
             {{ copied === '__all__' ? '已复制全部' : '复制全部卡号' }}
@@ -185,7 +181,6 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
         <header class="sec-head">
           <div>
             <h2>同一块地方,要排队 <span class="count">{{ plan.waitingSameArea.length }}</span></h2>
-            <p>跟别的卡改同一批文件,同时派会互相覆盖。等前面那张完工再派。</p>
           </div>
         </header>
         <ul class="card-list">
@@ -209,7 +204,6 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
         <header class="sec-head">
           <div>
             <h2>在等上游 <span class="count">{{ plan.blocked.length }}</span></h2>
-            <p>前置的事还没做完,现在开工也白干。</p>
           </div>
         </header>
         <ul class="card-list">
@@ -231,7 +225,6 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
         <header class="sec-head">
           <div>
             <h2>已经有人在做 <span class="count">{{ plan.running.length }}</span></h2>
-            <p>别重复派。</p>
           </div>
         </header>
         <ul class="card-list">
@@ -253,13 +246,11 @@ function shownTitle(card: { plainTitle: string | null; title: string }) {
 <style scoped>
 .page { display: flex; flex-direction: column; gap: var(--s4); }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
-.page-subtitle { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .error-state, .loading-state { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s4); }
 .error-state { flex-direction: row; align-items: center; flex-wrap: wrap; }
 .warn-notice { display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s3) var(--s4); color: var(--text-2); font-size: var(--fs-base); line-height: 1.6; }
 .sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); padding: var(--s4); }
 .sec-head h2 { font-size: var(--fs-lg); }
-.sec-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-sm); }
 .count { font-family: var(--mono); color: var(--text-2); font-size: var(--fs-md); }
 .card-list { display: flex; flex-direction: column; gap: var(--s2); margin: 0; padding: 0 var(--s4) var(--s4); list-style: none; }
 .ready-row, .queued-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); padding: var(--s3); }

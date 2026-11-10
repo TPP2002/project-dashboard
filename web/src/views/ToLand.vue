@@ -196,7 +196,6 @@ async function confirmPresumedLanded() {
     <header class="page-head">
       <div>
         <h1><Icon name="toland" class="head-ic" :size="20" />待落地</h1>
-        <p>已拍板但还没落地——按任务派单，一个任务交给一个新对话。</p>
       </div>
       <div class="head-actions">
         <span class="badge info">{{ tasks.length }} 个任务</span>
@@ -296,7 +295,6 @@ async function confirmPresumedLanded() {
 <style scoped>
 .page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s4); }
-.page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
 .loading-list, .loading-card { display: flex; flex-direction: column; gap: var(--s3); }
 .loading-card { padding: var(--s5); }
