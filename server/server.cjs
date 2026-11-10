@@ -64,6 +64,7 @@ const workbuddyCostUsage = require('../core/workbuddyCostUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
+const { createResourcesApi } = require('./resourcesApi.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
 const { createCiJobsMonitor, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
 const { createCiBoardsReader, readCiRepository } = require('../core/schedCiBoards.cjs');
@@ -236,6 +237,18 @@ function isSameOriginRequest(req) {
   return String(origin).toLowerCase() === `http://${host}`;
 }
 
+/**
+ * 只在本机生效的接口（账号与额度）用这道闸：Host 头必须是本进程监听的
+ * 127.0.0.1:<port> 或 localhost:<port>，判据与 isSameOriginRequest 的 validHosts 同一口径。
+ * GET 也查——防域名重绑把本机读写接口暴露给外部网页。
+ */
+function isLocalRequest(req) {
+  const port = state.actualPort;
+  const host = String(req.headers.host || '').toLowerCase();
+  const validHosts = port ? [`127.0.0.1:${port}`, `localhost:${port}`] : [];
+  return validHosts.includes(host);
+}
+
 /** decodeURIComponent 遇畸形 % 序列会抛，包一层返回 null */
 function safeDecode(s) {
   try { return decodeURIComponent(s); } catch (_) { return null; }
@@ -280,6 +293,17 @@ function dispatchCwd(pid) {
  */
 function codexRepo(projectId) {
   return dispatchCwd(projectId);
+}
+
+/**
+ * 派单器仓（账号与额度页要跑它的 resources 命令）。
+ * 环境变量 DASHBOARD_DISPATCHER_REPO 非空且是绝对路径时优先，否则复用 codexRepo('rogue')。
+ * @returns {string|null} 仓绝对路径；找不到时 null，调用方须回 503 而不是拿它去 spawn。
+ */
+function resolveDispatcherRepo() {
+  const override = String(process.env.DASHBOARD_DISPATCHER_REPO || '').trim();
+  if (override && path.isAbsolute(override)) return override;
+  return codexRepo('rogue');
 }
 
 /** 读 board.json：ENOENT → null；解析失败 → 抛（调用方决定 404 还是 500） */
@@ -836,6 +860,16 @@ const auditionApi = createAuditionApi({
   dashRoot: DASH_ROOT, dataRoot: DASHBOARD_HOME, cliIndex: CLI_INDEX,
   execFile: ownerExecFile,
   registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards: () => pollBoards(),
+});
+
+// 账号与额度（只在本机生效）：只调派单器仓的 resources 命令，不碰账号文件与密钥内容。
+const resourcesApi = createResourcesApi({
+  sendJson,
+  readBody,
+  bodyMax: BODY_MAX,
+  resolveDispatcherRepo,
+  isCollaboration: Boolean(collaborationApi),
+  isLocalRequest,
 });
 
 // 自愈所需：复用现有调度读取路径，记录最近一次【成功】读到调度共享盘快照的时刻；
@@ -1647,6 +1681,7 @@ const server = http.createServer(async (req, res) => {
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
       if (sub === 'parallel' && req.method === 'GET') return handleParallel(req, res, parsed.query || {});
+      if (sub === 'resources' && resourcesApi.route(segs.slice(2).join('/'), req, res)) return;
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'audition' && auditionApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;

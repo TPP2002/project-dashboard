@@ -25,6 +25,7 @@ const NAV_ITEMS = {
   audition: { to: '/audition', icon: 'activity', title: '试听台', module: 'audition' },
   codex: { to: '/codex', icon: 'bot', title: 'Codex', module: 'codex' },
   parallel: { to: '/parallel', icon: 'checks', title: '能同时派几张' },
+  resources: { to: '/resources', icon: 'plug', title: '账号与额度' },
   daily: { to: '/daily', icon: 'calendar', title: '每日成果', badge: 'today' },
   kanban: { to: '/kanban', icon: 'kanban', title: '看板' },
   toland: { to: '/toland', icon: 'toland', title: '待落地', badge: 'unlanded' },
@@ -51,6 +52,7 @@ const DEFAULT_GROUPS: ReadonlyArray<NavGroupConfig<NavItemId>> = [
   ] },
   { id: 'projects', name: '项目管理', collapsed: false, items: [
     { id: 'toland', visible: true }, { id: 'history', visible: true }, { id: 'parallel', visible: true },
+    { id: 'resources', visible: true },
   ] },
   { id: 'extensions', name: '扩展模块', collapsed: true, items: [
     { id: 'reader', visible: true }, { id: 'audition', visible: true }, { id: 'codex', visible: true },
