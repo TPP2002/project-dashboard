@@ -102,8 +102,8 @@ onUnmounted(() => {
     </div>
     <div class="machine-metrics">
       <span>配额 <b>{{ formatCores(machine.quotaCores) }}</b> 核</span>
-      <span>已派任务 <b>{{ formatCores(machine.grantedCores) }}</b> 核</span>
-      <span>未接入调度的占用 <b>{{ formatCores(machine.externalLoadCores) }}</b> 核</span>
+      <span title="已派出去的各张单申请核数的合计，不是实际在用的核数">已派任务申请 <b>{{ formatCores(machine.grantedCores) }}</b> 核</span>
+      <span title="整台机器此刻在用的核数，已派任务用掉的也算在内">整机在用 <b>{{ formatCores(machine.externalLoadCores) }}</b> 核</span>
       <span v-if="machine.reservation">预留 已兑现 <b>{{ formatCores(machine.reservation.fulfilledCores) }}</b> / 申请 <b>{{ formatCores(machine.reservation.requestedCores) }}</b></span>
       <span>可用核（派单依据）<b>{{ formatCores(machine.availableCores, { floor: true }) }}</b> 核</span>
       <span>作业槽 <b>{{ slots.numbers }}</b></span>

@@ -6,7 +6,7 @@ const modulePromise = import('../core/schedMachineDisplay.mjs');
 const reading = changes => ({ online: true, availableCores: 11.9, quotaCores: 17, grantedCores: 2,
   externalLoadCores: 1.1, ci: 'idle', reservation: null, ...changes });
 
-test('配额 17、未接入占用 14.8、可用 0 必须显示占满，差额不能被当成可派核', async () => {
+test('配额 17、整机在用 14.8、可用 0 必须显示占满，差额不能被当成可派核', async () => {
   const { machineCapacity } = await modulePromise;
   const machine = Object.freeze(reading({ availableCores: 0, grantedCores: 0, externalLoadCores: 14.8, ci: 'active' }));
   const result = machineCapacity(machine, false);
@@ -18,11 +18,11 @@ test('配额 17、未接入占用 14.8、可用 0 必须显示占满，差额不
   assert.equal(machine.availableCores, 0);
 });
 
-test('CI 空闲但可用核为零仍显示占满，说明已派任务及未接入占用', async () => {
+test('CI 空闲但可用核为零仍显示占满，说明已派任务及整机在用的核', async () => {
   const { machineCapacity } = await modulePromise;
   const result = machineCapacity(reading({ availableCores: 0, grantedCores: 8, externalLoadCores: 6 }), false);
   assert.equal(result.label, '已被占满'); assert.equal(result.tone, 'warn'); assert.equal(result.barPercent, 100);
-  assert.match(result.detail, /已派任务/); assert.match(result.detail, /未接入调度的占用/);
+  assert.match(result.detail, /已派任务/); assert.match(result.detail, /整机在用的核/);
   assert.match(result.detail, /CI 空闲不代表机器可派/);
   const reservation = machineCapacity(reading({ availableCores: 0, grantedCores: 0, externalLoadCores: 0,
     reservation: { requestedCores: 15 } }), false);
@@ -171,4 +171,20 @@ test('机器卡实际显示作业槽占用/容量:核数与槽数分别说明,�
     loadSampledAt: '2026-09-14T09:59:00Z', agentSlots: { capacity: 4, occupied: 4 } });
   assert.match(stale.visible, /数据过期/); assert.doesNotMatch(stale.visible, /已被占满/);
   assert.match(stale.visible, /旧快照/);
+});
+
+test('机器卡把申请核数和整机在用核数分开标明，悬停各有一句说明', async () => {
+  const card = await machineCardHtml({ quotaCores: 17, grantedCores: 8, externalLoadCores: 6, availableCores: 0 });
+  assert.match(card.visible, /已派任务申请 8 核/);
+  assert.match(card.visible, /整机在用 6 核/);
+  assert.match(card.visible, /当前配额中有已派任务、整机在用的核。/);
+  assert.doesNotMatch(card.visible, /未接入调度/);
+  assert.ok(card.html.includes('title="已派出去的各张单申请核数的合计，不是实际在用的核数"'));
+  assert.ok(card.html.includes('title="整台机器此刻在用的核数，已派任务用掉的也算在内"'));
+});
+
+test('调度页已接入项目的说明只留统计口径一句', () => {
+  const source = require('node:fs').readFileSync(path.join(__dirname, '../web/src/views/SchedConsole.vue'), 'utf8');
+  assert.ok(source.includes('<p class="sched-note">按最近 7 天的台账统计</p>'));
+  assert.doesNotMatch(source, /未接入调度/);
 });

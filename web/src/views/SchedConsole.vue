@@ -68,7 +68,7 @@ onUnmounted(store.stop)
         <p v-if="!store.snapshot.connectedProjects.readable" class="warn" role="status">{{ store.snapshot.connectedProjects.reason }}</p>
         <p v-else-if="store.snapshot.connectedProjects.names.length" class="connected-projects"><span v-for="name in store.snapshot.connectedProjects.names" :key="name" class="sched-tag info">{{ name }}</span></p>
         <p v-else class="sched-empty">最近 7 天没有项目在台账中出现</p>
-        <p class="sched-note">按最近 7 天的台账统计。未接入调度的占用按外部负载统计，不区分来源</p>
+        <p class="sched-note">按最近 7 天的台账统计</p>
       </details>
       <p v-if="store.snapshot.historyError" class="warn" role="status">{{ store.snapshot.historyError }}；暂无法预估</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
