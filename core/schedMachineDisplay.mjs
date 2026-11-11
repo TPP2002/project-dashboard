@@ -49,7 +49,7 @@ export function machineCapacity(machine, stale = true) {
     ? Math.max(0, Math.min(100, (1 - available / quota) * 100)) : null;
   const occupants = [];
   if (machine.grantedCores > 0) occupants.push('已派任务');
-  if (machine.externalLoadCores > 0) occupants.push('未接入调度的占用');
+  if (machine.externalLoadCores > 0) occupants.push('整机在用的核');
   if (machine.reservation?.requestedCores > 0) occupants.push('负责人预留');
   const occupiedBy = occupants.length ? `当前配额中有${occupants.join('、')}。` : '';
   const idleHint = machine.ci === 'idle' ? 'CI 空闲不代表机器可派。' : '';
