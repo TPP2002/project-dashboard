@@ -12,7 +12,79 @@ const { assertValid } = require('../core/boardSchema.cjs');
 
 const home = path.resolve(process.argv[2] || path.join(require('os').tmpdir(), 'dash-demo'));
 const boardsDir = path.join(home, 'boards');
-fs.mkdirSync(boardsDir, { recursive: true });
+
+// ===== 演示数据日期整体平移（R1/R2）=====
+// 演示数据的日期以 2026-07-02 为基准，按「运行当天 − 基准」的整天数整体平移，
+// 相对间隔不变；平移量为 0 时不做任何改写，输出与原来逐字节相同。
+const BASE_DATE = '2026-07-02';
+
+function isPlainDate(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+// YYYY-MM-DD → UTC 天序号，用来算两个日历日之间的整天差。
+function dayNumber(s) {
+  const [y, m, d] = s.split('-').map(Number);
+  return Date.UTC(y, m - 1, d) / 86400000;
+}
+
+// 纯日期：按整天数平移，仍输出 YYYY-MM-DD。
+function shiftDate(s, days) {
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+// 带时刻的 ISO 串：只挪日期部分，时分秒与结尾的 Z 原样保留。
+function shiftDateTime(s, days) {
+  return shiftDate(s.slice(0, 10), days) + s.slice(10);
+}
+
+function localToday() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+
+// 今天来自 DEMO_SEED_TODAY（按本机时区的日期理解），没设就取本机当天。
+// 非法值：往标准错误打一句中文原因并以退出码 1 结束；此时还没建目录、没写任何文件。
+const envToday = process.env.DEMO_SEED_TODAY;
+let today;
+if (envToday === undefined) {
+  today = localToday();
+} else if (!isPlainDate(envToday)) {
+  process.stderr.write(`DEMO_SEED_TODAY 不是合法的 YYYY-MM-DD 日期：「${envToday}」，已停止，不生成任何演示数据。\n`);
+  process.exit(1);
+} else {
+  today = envToday;
+}
+const SHIFT = dayNumber(today) - dayNumber(BASE_DATE);
+
+// 平移量为 0 时原样返回，保证输出与现在逐字节相同。
+function shiftBoardDates(board, days) {
+  if (days === 0) return board;
+  const p = board.project;
+  if (p.createdAt) p.createdAt = shiftDateTime(p.createdAt, days);
+  if (p.updatedAt) p.updatedAt = shiftDateTime(p.updatedAt, days);
+  for (const task of board.tasks) {
+    const d = task.dates;
+    if (d) {
+      if (d.design) d.design = shiftDate(d.design, days);
+      if (d.start) d.start = shiftDate(d.start, days);
+      if (d.done) d.done = shiftDate(d.done, days);
+    }
+    for (const dec of task.decisions || []) {
+      if (dec.decidedAt) dec.decidedAt = shiftDate(dec.decidedAt, days);
+    }
+  }
+  for (const a of board.activity || []) {
+    if (a.ts) a.ts = shiftDateTime(a.ts, days);
+  }
+  return board;
+}
 
 const NOW = '2026-07-02T10:00:00Z';
 function T(o) {
@@ -104,12 +176,14 @@ const blog = {
 };
 
 function writeBoard(b) {
+  shiftBoardDates(b, SHIFT);
   b.activity = b.activity.map((a, i) => Object.assign({ id: 'a' + (i + 1) }, a));
   assertValid(b);
   const p = path.join(boardsDir, b.project.id + '.json');
   fs.writeFileSync(p, JSON.stringify(b, null, 2));
   return p;
 }
+fs.mkdirSync(boardsDir, { recursive: true });
 const shopPath = writeBoard(shop);
 const blogPath = writeBoard(blog);
 

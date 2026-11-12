@@ -329,6 +329,7 @@ async function stopTree(pid, { platform = process.platform, spawnSync = cp.spawn
     const r = spawnSync('taskkill', ['/pid', String(p), '/T', '/F'], { windowsHide: true });
     if (r.error) return { ok: false, reason: r.error.message };
     if (r.status !== 0) {
+      if (gone()) return { ok: true }; // 进程已经不在（撤旧单时旧服务先退了）：要的就是它停，不算停止失败
       const text = String((r.stderr && r.stderr.toString()) || (r.stdout && r.stdout.toString()) || `taskkill 退出码 ${r.status}`).trim();
       return { ok: false, reason: text.split('\n')[0] || `taskkill 退出码 ${r.status}` };
     }
