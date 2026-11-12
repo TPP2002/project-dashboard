@@ -135,7 +135,10 @@ test('collaborators use real CLI transactions and retain existing ownership rule
       seed('DENY-' + command.toUpperCase(), { status, collaborators: [entry(b.user)] });
       await denied(command, b, 'DENY-' + command.toUpperCase(), command === 'done' ? {} : { reason: 'No authority' });
     }
-    for (const more of [{ status: '暂缓' }, { status: '已完工' }, { blockReason: 'Blocked' }, { deps: { blockedBy: ['WORK'] } }]) {
+    // 暂缓的卡协作人也能报进度（AD-20261021-PARKED-PROGRESS），状态仍是暂缓；上限 99 由 parkedProgress.test.cjs 管。
+    seed('PARKED', { status: '暂缓', collaborators: [entry(b.user)] });
+    assert.equal((await call('progress', b, 'PARKED', { percent: 65 })).ok, true); assert.equal(task('PARKED').percent, 65); assert.equal(task('PARKED').status, '暂缓');
+    for (const more of [{ status: '已完工' }, { blockReason: 'Blocked' }, { deps: { blockedBy: ['WORK'] } }]) {
       seed('NO-PROGRESS', { collaborators: [entry(b.user)], ...more });
       await denied('progress', b, 'NO-PROGRESS', { percent: 65 });
     }
