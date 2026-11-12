@@ -51,9 +51,9 @@ let disposed = false
 let timer: ReturnType<typeof setInterval> | undefined
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 let opener: HTMLElement | null = null
-async function refresh(preserveWriteError = false) {
+async function refresh(preserveWriteError = false, background = false) {
   const epoch = ++refreshEpoch
-  loading.value = true
+  if (!background) loading.value = true
   try {
     const snapshot = await loader.load(projectId.value, props.user.projectIds)
     if (!snapshot || disposed || epoch !== refreshEpoch) return
@@ -66,23 +66,32 @@ async function refresh(preserveWriteError = false) {
       const readError = cause instanceof Error ? cause.message : '读取任务失败'
       error.value = preserveWriteError && error.value ? `${error.value}；刷新失败：${readError}` : readError
     }
-  } finally { if (epoch === refreshEpoch) loading.value = false }
+  } finally { if (!background && epoch === refreshEpoch) loading.value = false }
 }
 function flash(text: string) { notice.value = text; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { notice.value = '' }, 5000) }
 async function mutate(taskId: string, action: TaskAction | 'create', body: unknown): Promise<void> {
   if (writing.value || loading.value || !projectId.value) throw new Error('正在读取或提交，请稍后再试')
   if (action === 'create' ? !canCreate.value : !tasks.value.find(task => task.id === taskId)?.actions?.includes(action)) throw new Error('此刻不能执行此操作，请刷新查看')
+  refreshEpoch++; loader.cancel()
   writing.value = true; error.value = ''; notice.value = ''
+  let patched = false
   try {
-    if (action === 'create') await api.create(projectId.value, body as { title: string; description?: string }, writes.signal)
-    else await api.act(projectId.value, taskId, action, body, writes.signal)
-    if (!disposed) flash(action === 'join' ? '已加入协作，可以更新进度和留言了' : '已提交')
+    const echo = action === 'create'
+      ? await api.create(projectId.value, body as { title: string; description?: string }, writes.signal)
+      : await api.act(projectId.value, taskId, action, body, writes.signal)
+    if (!disposed) {
+      const updated = echo && loader.patch(projectId.value, echo)
+      if (updated) { tasks.value = updated; patched = true }
+      flash(action === 'join' ? '已加入协作，可以更新进度和留言了' : '已提交')
+    }
   } catch (cause) {
     if (!disposed) error.value = cause instanceof Error ? cause.message : '操作失败'
     throw cause
   } finally {
-    // Re-read after every attempted write, including 403/404/409. No optimistic card state.
-    if (!disposed) { await refresh(true); writing.value = false }
+    if (!disposed) {
+      if (patched) { writing.value = false; void refresh(true, true) }
+      else { await refresh(true); writing.value = false }
+    }
   }
 }
 function action(task: MemberTask, name: TaskAction) {
