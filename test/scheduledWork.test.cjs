@@ -2,7 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { runScheduled, checkedCores } = require('../core/scheduledWork.cjs');
+const { runScheduled, checkedCores, inheritedPermit } = require('../core/scheduledWork.cjs');
+const { main } = require('../cli/scheduledWork.cjs');
 const { scheduledJob } = require('../core/scheduledJobs.cjs');
 const path = require('node:path');
 
@@ -114,4 +115,126 @@ test('全量测试显式列出本仓文件，拒绝覆盖授予并发；构建�
   for (const file of ['web/index.html', 'web/env.d.ts', 'web/mock', 'cli']) {
     assert.ok(scheduledJob('build', root).targets.includes(file), `内容指纹不能漏掉构建输入 ${file}`);
   }
+});
+
+// ---- 沿用外层调度许可：已经拿着许可在跑时不再挂第二张单 ----
+
+function permitFixture(overrides = {}) {
+  const logs = [], validationCalls = [], execCalls = [], executeCalls = [];
+  const client = {
+    deriveTicketId: () => 'tk-fixture',
+    exec: async opts => { execCalls.push(opts); return { exitCode: 0 }; },
+    cancel: async () => ({ exitCode: 0 }),
+    status: async () => ({ state: 'passed' }),
+    validatePermit: opts => {
+      validationCalls.push(opts);
+      if (overrides.validateThrows) throw new Error(overrides.validateThrows);
+      return overrides.validation !== undefined ? overrides.validation : { ok: true };
+    },
+  };
+  const execute = (job, root, cores) => { executeCalls.push({ job, root, cores }); return Promise.resolve(0); };
+  const env = { SCHED_SHARE: '/share', ...overrides.env };
+  const deps = { client, execute, env };
+  return { logs, validationCalls, execCalls, executeCalls, deps };
+}
+
+async function runMain(argv, deps, logs) {
+  const original = console.error;
+  console.error = (...parts) => { logs.push(parts.map(String).join(' ')); };
+  try { return await main(argv, deps); }
+  finally { console.error = original; }
+}
+
+test('inheritedPermit 无外层许可返回 null，不触碰客户端', () => {
+  let touched = false;
+  const client = { validatePermit: () => { touched = true; return { ok: true }; } };
+  const job = { category: 'other', workType: 'build', cores: 1 };
+  assert.equal(inheritedPermit({ client, share: '/share', env: {}, job }), null);
+  assert.equal(inheritedPermit({ client, share: '/share', env: { SCHED_PERMIT: '' }, job }), null);
+  assert.equal(inheritedPermit({ client, share: '/share', env: { SCHED_PERMIT: 123 }, job }), null);
+  assert.equal(touched, false);
+});
+
+test('inheritedPermit 沿用成功给出票号与核数，失败/异常给出原因且不外抛', () => {
+  const job = { category: 'other', workType: 'build', cores: 1 };
+  const env = { SCHED_PERMIT: 'tk-0123456789abcdef0123:a1:x', SCHED_GRANTED_CORES: '4' };
+  let seen;
+  const okClient = { validatePermit: opts => { seen = opts; return { ok: true, permit: {} }; } };
+  assert.deepEqual(inheritedPermit({ client: okClient, share: '/share', env, job }),
+    { ok: true, cores: 1, ticketId: 'tk-0123456789abcdef0123' });
+  assert.equal(seen.share, '/share');
+  assert.equal(seen.env, env);
+  assert.equal(seen.category, 'other');
+  assert.deepEqual(seen.workTypes, ['build']);
+  assert.equal(seen.cores, 1);
+  const badClient = { validatePermit: () => ({ ok: false, reason: '许可类别不符' }) };
+  assert.deepEqual(inheritedPermit({ client: badClient, share: '/share', env, job }),
+    { ok: false, reason: '许可类别不符' });
+  const throwClient = { validatePermit: () => { throw new Error('共享盘不可读'); } };
+  assert.deepEqual(inheritedPermit({ client: throwClient, share: '/share', env, job }),
+    { ok: false, reason: '共享盘不可读' });
+});
+
+test('沿用外层许可：校验通过直接 execute，不再挂号，日志含票号', async () => {
+  const f = permitFixture({ validation: { ok: true }, env: {
+    SCHED_PERMIT: 'tk-0123456789abcdef0123:a1:x', SCHED_GRANTED_CORES: '4',
+  } });
+  assert.equal(await runMain(['build'], f.deps, f.logs), 0);
+  assert.equal(f.validationCalls.length, 1);
+  const v = f.validationCalls[0];
+  assert.equal(v.category, 'other');
+  assert.deepEqual(v.workTypes, ['build']);
+  assert.equal(v.cores, 1);
+  assert.equal(f.executeCalls.length, 1);
+  assert.equal(f.executeCalls[0].cores, 1);
+  assert.equal(f.execCalls.length, 0);
+  assert.ok(f.logs.some(line => line.includes('沿用外层调度许可') && line.includes('tk-0123456789abcdef0123')));
+});
+
+test('外层许可不适用：校验不通过照常挂号，日志含原因', async () => {
+  const f = permitFixture({ validation: { ok: false, reason: '许可类别不符' }, env: {
+    SCHED_PERMIT: 'tk-0123456789abcdef0123:a1:x', SCHED_GRANTED_CORES: '4',
+  } });
+  await runMain(['build'], f.deps, f.logs);
+  assert.equal(f.execCalls.length, 1);
+  assert.equal(f.executeCalls.length, 0);
+  assert.ok(f.logs.some(line => line.includes('外层调度许可不适用') && line.includes('许可类别不符')));
+});
+
+test('外层许可校验抛异常：不外抛，照常挂号', async () => {
+  const f = permitFixture({ validateThrows: '共享盘不可读', env: {
+    SCHED_PERMIT: 'tk-0123456789abcdef0123:a1:x', SCHED_GRANTED_CORES: '4',
+  } });
+  await runMain(['build'], f.deps, f.logs);
+  assert.equal(f.execCalls.length, 1);
+  assert.ok(f.logs.some(line => line.includes('外层调度许可不适用') && line.includes('共享盘不可读')));
+});
+
+test('没有外层许可：不校验、不打印，原样挂号', async () => {
+  const f = permitFixture({ env: { SCHED_GRANTED_CORES: '4' } });
+  await runMain(['build'], f.deps, f.logs);
+  assert.equal(f.validationCalls.length, 0);
+  assert.equal(f.execCalls.length, 1);
+  assert.ok(!f.logs.some(line => line.includes('沿用外层调度许可') || line.includes('外层调度许可不适用')));
+});
+
+test('核数口径：test 作业与缺失/非法 SCHED_GRANTED_CORES 都按 1 核校验', async () => {
+  for (const granted of ['1', undefined, 'abc']) {
+    const env = { SCHED_PERMIT: 'tk-0123456789abcdef0123:a1:x' };
+    if (granted !== undefined) env.SCHED_GRANTED_CORES = granted;
+    const f = permitFixture({ validation: { ok: true }, env });
+    await runMain(['test'], f.deps, f.logs);
+    assert.equal(f.validationCalls.length, 1);
+    assert.equal(f.validationCalls[0].category, 'unit-test');
+    assert.deepEqual(f.validationCalls[0].workTypes, ['test']);
+    assert.equal(f.validationCalls[0].cores, 1);
+  }
+});
+
+test('--granted 分支原有行为不变：校验不通过照旧抛调度许可拒绝', async () => {
+  const f = permitFixture({ validation: { ok: false, reason: '机器不符' }, env: {
+    SCHED_GRANTED_CORES: '1',
+  } });
+  await assert.rejects(runMain(['--granted', 'build'], f.deps, f.logs), /调度许可拒绝/);
+  assert.equal(f.executeCalls.length, 0);
 });
