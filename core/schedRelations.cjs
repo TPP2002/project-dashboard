@@ -2,7 +2,8 @@
 
 /** 交接节点按执行号归组，不把上次的已投递接到本次意图上。台账不可读时保留快照时间线并明示降级。 */
 function ticketRelations(ticket, tickets, history) {
-  const events = history.readable ? history.events.filter(event => event.ticketId === ticket.ticketId) : ticket.timeline;
+  const indexed = history.readable && history.handoffsFor;
+  const events = indexed ? [] : history.readable ? history.events.filter(event => event.ticketId === ticket.ticketId) : ticket.timeline;
   const handoffs = new Map();
   for (const attempt of ticket.attempts) if (attempt.intent) handoffs.set(attempt.attemptId, {
     attemptId: attempt.attemptId, intentAt: null, dispatchedAt: null,
@@ -20,7 +21,7 @@ function ticketRelations(ticket, tickets, history) {
   const children = tickets.filter(child => child.request.parentTicketId === ticket.ticketId)
     .sort((a, b) => a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.ticketId < b.ticketId ? -1 : 1)
     .map(child => ({ ticketId: child.ticketId, title: child.request.title, state: child.state, category: child.request.category }));
-  return { readable: history.readable, reason: history.reason, children, handoffs: [...handoffs.values()] };
+  return { readable: history.readable, reason: history.reason, children, handoffs: indexed ? history.handoffsFor(ticket) : [...handoffs.values()] };
 }
 
 module.exports = { ticketRelations };

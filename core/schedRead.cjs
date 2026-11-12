@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const c = require('./schedContract.cjs');
-const { readLedger, connectedProjects } = require('./schedLedger.cjs');
+const { connectedProjects } = require('./schedLedger.cjs');
+const { ledgerIndexFor, ledgerIndexStats } = require('./schedLedgerIndex.cjs');
 const { estimateTickets } = require('./schedEstimates.cjs');
 const { ticketCsv } = require('./schedCsv.cjs');
 const { ticketRelations } = require('./schedRelations.cjs');
@@ -113,7 +114,8 @@ function snapshot(share, nowMs) {
     if (heartbeat.machine !== config.machine) throw new Error('[sched] 心跳与派单主机配置不一致');
     const records = readTickets(share), tickets = records.map(summarize);
     const registerOnly = tickets.filter(ticket => ticket.registerOnly && ticket.state === 'running');
-    const history = readLedger(share);
+    const index = ledgerIndexFor(share); index.refresh(share);
+    const history = index.history();
     const estimates = estimateTickets({ readable: true, nowMs, tickets: records, queue: heartbeat.queue,
       machines: heartbeat.machines, locks: heartbeat.locks, heartbeatAt: heartbeat.at, cursorSeq: heartbeat.cursorSeq }, history);
     const receipts = recentReceipts(share);
@@ -210,7 +212,10 @@ function ticketDetail(share, id) {
   return validateTicket(c.readJson(path.join(directory, `${id}.json`)), id);
 }
 function relatedTickets(share, ticket) {
-  try { return ticketRelations(ticket, readTickets(share), readLedger(share)); }
+  try {
+    const tickets = readTickets(share), index = ledgerIndexFor(share); index.refresh(share);
+    return ticketRelations(ticket, tickets, index.history());
+  }
   catch (error) { return { readable: false, reason: `读不到关联单子：${error.message}`, children: null, handoffs: [] }; }
 }
 function pollStamp(share) {
@@ -222,4 +227,4 @@ function pollStamp(share) {
   return { cursorSeq, key: `${share}:${cursorSeq}:${receipts.mtimeMs}` };
 }
 
-module.exports = { snapshot, ticketPage, exportTickets, ticketDetail, relatedTickets, readConfig, readFailure, pollStamp, STATES };
+module.exports = { snapshot, ticketPage, exportTickets, ticketDetail, relatedTickets, readConfig, readFailure, pollStamp, ledgerIndexStats, STATES };
