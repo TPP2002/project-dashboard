@@ -245,6 +245,22 @@ docker compose -p dashboard-restore restart dashboard
 
 验证通过且最终数据时间点已确认后：停止原服务和外部写入者，保留原数据及最新备份；停止演练服务，将新实例 public origin 改回批准的实际来源并重新创建容器，再将代理上游或回环端口切到新实例。切换端口前确保旧实例已释放该端口。只有一个实例能成为写入主实例，两个实例不能挂载同一数据目录。回退同样先停写、备份切换后的新写入，不用原旧目录覆盖新目录。
 
+## 低带宽环境的压缩
+
+服务器带宽较小时，可在反向代理启用压缩，减少网页、脚本、样式和看板数据的传输量。以下 Caddy 配置按响应类型选择压缩，事件流不在匹配范围内：
+
+```caddyfile
+:80 {
+    encode {
+        gzip
+        match {
+            header Content-Type application/json* application/javascript* text/javascript* text/css* text/html*
+        }
+    }
+    reverse_proxy dashboard:6060
+}
+```
+
 ## 8. 主控收单清单与忽略项
 
 本轮仅静态核对源码、构建入口、数据读取路径和配置；本机能找到 Docker 命令不代表守护进程可用，也不代表执行过验收。主控需在合并后的精确源码与真实 Ubuntu 环境检查：

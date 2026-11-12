@@ -7,6 +7,8 @@ import { fetchProjects, fetchBoard, fetchHealth, postDecide, postUndecide, type 
 import { BoardStream, type ConnState } from '@/api/sse'
 import * as derive from '@/utils/derive'
 import { emitBoardEvent, type BoardEventKind } from '@/utils/boardEvents'
+import { applyBoardDelta } from '@/utils/boardDelta'
+import { createReloadQueue } from '@/utils/reloadQueue'
 
 export const useBoardStore = defineStore('board', () => {
   // ---------- state ----------
@@ -14,6 +16,7 @@ export const useBoardStore = defineStore('board', () => {
   const modules = ref<Modules>({ codex: false, cost: false, cpu: false, reader: false, audition: false })
   const boards = ref<Record<string, Board>>({})
   const etags = ref<Record<string, string>>({})
+  const versions = ref<Record<string, string>>({})
   const activityComplete = ref<Record<string, boolean>>({})
   const currentProjectId = ref<string | null>(null)
   const selectedTaskId = ref<string | null>(null)
@@ -31,7 +34,7 @@ export const useBoardStore = defineStore('board', () => {
 
   let stream: BoardStream | null = null
   let loadGeneration = 0
-  const boardRequests = new Map<string, Promise<unknown>>()
+  const boardRequests = createReloadQueue()
   const pendingActivity = new Map<string, Promise<void>>()
 
   // ---------- getters（读时派生） ----------
@@ -109,14 +112,6 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   // 同项目请求串行，防止“补全历史”与 SSE 重拉相互覆盖；前一次失败不阻止下一次刷新。
-  function queueBoardRead<T>(id: string, run: () => Promise<T>): Promise<T> {
-    const previous = boardRequests.get(id) ?? Promise.resolve()
-    const request = previous.catch(() => undefined).then(run).finally(() => {
-      if (boardRequests.get(id) === request) boardRequests.delete(id)
-    })
-    boardRequests.set(id, request)
-    return request
-  }
   function rememberEtag(key: string, etag: string | null) {
     if (etag) etags.value[key] = etag
     else delete etags.value[key]
@@ -126,14 +121,29 @@ export const useBoardStore = defineStore('board', () => {
     const old = boards.value[id]
     const complete = activityComplete.value[id] === true
     const key = `${id}:${complete ? 'all' : 'recent'}`
-    const result = await fetchBoard(id, {
+    const since = old ? versions.value[key] : undefined
+    let result = await fetchBoard(id, {
       fields: 'all', activityLimit: complete ? undefined : 200,
-      etag: old ? etags.value[key] : undefined,
+      since, etag: old ? etags.value[key] : undefined,
     })
-    if (generation !== loadGeneration || result.notModified) return null
-    const b = result.board
+    if (generation !== loadGeneration) return null
+    if (result.version) versions.value[key] = result.version
+    else delete versions.value[key]
+    if (result.notModified) return null
+    let b = result.board
+    if (result.delta) {
+      b = old && result.delta.base === since ? applyBoardDelta(old, result.delta, complete ? undefined : 200) : null
+      if (!b) {
+        delete versions.value[key]
+        result = await fetchBoard(id, { fields: 'all', activityLimit: complete ? undefined : 200 })
+        if (generation !== loadGeneration) return null
+        if (result.version) versions.value[key] = result.version
+        else delete versions.value[key]
+        b = result.board
+      }
+    }
     if (!b) throw new Error('看板响应缺少数据')
-    rememberEtag(key, result.etag)
+    if (!result.delta) rememberEtag(key, result.etag)
     boards.value = { ...boards.value, [id]: b }
     activityComplete.value[id] = complete
     if (detect) diffPulse(id, old, b)
@@ -141,7 +151,7 @@ export const useBoardStore = defineStore('board', () => {
   }
   function loadBoard(id: string, opts: { detect?: boolean } = {}) {
     const generation = loadGeneration
-    return queueBoardRead(id, () => readBoard(id, opts.detect === true, generation))
+    return boardRequests(id, opts.detect === true, detect => readBoard(id, detect, generation))
   }
 
   /** 全量历史只替换 activity，不触发增量事件；同项目并发调用共用一个 Promise。 */
@@ -150,7 +160,7 @@ export const useBoardStore = defineStore('board', () => {
     const pending = pendingActivity.get(pid)
     if (pending) return pending
     const generation = loadGeneration
-    const request = queueBoardRead(pid, async () => {
+    const request = boardRequests.barrier(pid, async () => {
       if (generation !== loadGeneration || activityComplete.value[pid]) return
       if (!boards.value[pid]) await readBoard(pid, false, generation)
       if (generation !== loadGeneration) return
@@ -164,6 +174,8 @@ export const useBoardStore = defineStore('board', () => {
         boards.value = { ...boards.value, [pid]: { ...board, activity: result.board.activity ?? [] } }
         rememberEtag(key, result.etag)
       }
+      if (result.version && result.version === versions.value[`${pid}:recent`]) versions.value[`${pid}:all`] = result.version
+      else delete versions.value[`${pid}:all`]
       activityComplete.value[pid] = true
     }).finally(() => {
       if (pendingActivity.get(pid) === request) pendingActivity.delete(pid)
@@ -249,6 +261,8 @@ export const useBoardStore = defineStore('board', () => {
     // 旧请求仍会排空，但不能写回新一轮缓存；页面观察 loading，刷新后再补自身需要的历史。
     loadGeneration++
     etags.value = {}
+    versions.value = {}
+    boardRequests.clearPending()
     activityComplete.value = {}
     pendingActivity.clear()
     loading.value = true

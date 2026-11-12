@@ -40,6 +40,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const { createHash } = require('node:crypto');
+const { versionOf, snapshotBoard, createVersionCache, makeDelta } = require('../core/boardDelta.cjs');
 const { createBoardReadCache } = require('../core/boardReadCache.cjs');
 const { createProjectIndex } = require('../core/projectIndex.cjs');
 const { createBoardPoller } = require('../core/boardPoller.cjs');
@@ -81,6 +82,7 @@ const { publicJson } = require('../core/collaborationPublic.cjs');
 // ============ 常量 ============
 
 const SERVICE = 'claude-dashboard';           // 单实例探测的服务签名
+const boardVersions = createVersionCache();
 const VERSION = '1.0';
 
 const DASH_ROOT = path.resolve(__dirname, '..');            // 这份代码的家（发布副本 / 主工位检出 / 安装目录）
@@ -384,7 +386,7 @@ function readMergedBoard(boardPath, snapshot) {
 }
 
 function replyNotModified(req, res, snapshot, endpoint, query) {
-  const params = JSON.stringify(Object.keys(query).sort().map((key) => [key, query[key]]));
+  const params = JSON.stringify(Object.keys(query).filter((key) => endpoint !== 'board' || key !== 'since').sort().map((key) => [key, query[key]]));
   const hash = createHash('sha1').update(snapshot.version + '|' + endpoint + '|' + params).digest('hex').slice(0, 16);
   const etag = `W/"${hash}"`;
   res.setHeader('ETag', etag);
@@ -687,10 +689,27 @@ function handleBoard(req, res, projectId, query = {}) {
   try {
     const snapshot = activitySnapshot(proj.board);
     if (!snapshot) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
-    if (replyNotModified(req, res, snapshot, 'board', query)) return;
     const fields = ['tasks', 'activity', 'all'].includes(query.fields) ? query.fields : 'all';
+    const version = versionOf(snapshot.version);
+    const since = typeof query.since === 'string' && /^[a-f0-9]{16}$/.test(query.since) ? query.since : null;
+    const previous = fields === 'all' && since ? boardVersions.get(proj.board, since) : null;
+    if (!previous) {
+      const conditional = fields === 'all' && query.since !== undefined ? { ...req, headers: { ...req.headers, 'if-none-match': undefined } } : req;
+      if (replyNotModified(conditional, res, snapshot, 'board', query)) return;
+    }
     const board = fields === 'tasks' ? readBoardFile(proj.board) : readMergedBoard(proj.board, snapshot);
     if (!board) return sendJson(res, 404, { ok: false, error: 'board.json 尚不存在（该项目还未建 board）' });
+    res.setHeader('X-Board-Version', version);
+    if (fields === 'all') {
+      let current = boardVersions.get(proj.board, version);
+      if (!current) { current = snapshotBoard(board); boardVersions.set(proj.board, version, current); }
+      if (previous) {
+        if (since === version) return sendJson(res, 200, { ok: true, delta: true, unchanged: true });
+        const delta = makeDelta(previous, board, current);
+        if (delta) return sendJson(res, 200, { ok: true, delta: true, base: since, ...delta });
+        replyNotModified({ ...req, headers: { ...req.headers, 'if-none-match': undefined } }, res, snapshot, 'board', query);
+      }
+    }
     const limit = positiveInteger(query.activityLimit, 0);
     const activity = fields === 'tasks' ? [] : limit ? board.activity.slice(-limit) : board.activity;
     const { _commandReceipts, ...publicBoard } = board;
@@ -1563,11 +1582,10 @@ function handleMarkLanded(req, res, projectId, taskId) {
 function streamFile(res, fullPath, status) {
   const ext = path.extname(fullPath).toLowerCase();
   const isHtml = ext === '.html';
-  // HTML 永不缓存(它引用哪个 hash chunk 变化频繁);带 hash 的 assets 也 no-cache,免得旧代码卡住用户。
-  // 治用户实测的"浏览器一直显示旧界面"问题——之前只 no-cache 不够硬,加 no-store + must-revalidate 双保险。
+  // HTML 不缓存；内容哈希资源使用长期缓存。
   res.writeHead(status || 200, {
     'content-type': MIME[ext] || 'application/octet-stream',
-    'cache-control': isHtml ? 'no-store, no-cache, must-revalidate, max-age=0' : 'no-cache, must-revalidate',
+    'cache-control': isHtml ? 'no-store, no-cache, must-revalidate, max-age=0' : path.relative(DIST_DIR, fullPath).split(path.sep)[0] === 'assets' && /^.+-[A-Za-z0-9_-]{8}\.[^.]+$/.test(path.basename(fullPath)) ? 'public, max-age=31536000, immutable' : 'no-cache, must-revalidate',
     'pragma': 'no-cache',
     'expires': '0',
   });

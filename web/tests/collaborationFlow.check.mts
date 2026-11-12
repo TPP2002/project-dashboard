@@ -249,7 +249,12 @@ test('entrypoint does not install the owner router/store before authentication',
   assert.match(main, /createApp\(CollaborationRoot\)/)
   assert.doesNotMatch(main, /createPinia|\.use\(router\)|from ['"]\.\/App\.vue/)
   const memberView = await readFile(new URL('../src/collaboration/MemberBoard.vue', import.meta.url), 'utf8')
-  assert.doesNotMatch(memberView, /useBoardStore|\/api\/(cost|sched|health|codex)|localStorage|sessionStorage/)
+  assert.doesNotMatch(memberView, /useBoardStore|\/api\/(cost|sched|health|codex)|sessionStorage/)
+  // 成员页只许把「泳道排序」这一个界面偏好存进浏览器（键 dashboard.laneSort，一读一写）；别的一律不许碰本地存储。
+  const storageUses = memberView.match(/localStorage\.[^\n]*/g) ?? []
+  assert.ok(storageUses.length <= 2, `成员页访问本地存储 ${storageUses.length} 处`)
+  for (const use of storageUses) assert.match(use, /^localStorage\.(getItem|setItem)\('dashboard\.laneSort'/)
+  assert.doesNotMatch(memberView.replace(/localStorage\.(getItem|setItem)\('dashboard\.laneSort'/g, ''), /localStorage/)
 })
 
 test('browser trust posts only a label with session headers, never accesses token storage, and refreshes before success', async () => {

@@ -2,6 +2,7 @@ import { authFetch, responseJson } from '@/collaboration/http'
 // REST 客户端：严格按 API 契约。dev 由 vite proxy 转发 /api → 真 server；
 // mock 模式由内置 mock 中间件应答（业务代码无 mock 分支）。
 import type { ActivityPage, Board, DecisionInfoField, ProjectSummary, Status } from '@/types'
+import type { BoardDelta } from '@/utils/boardDelta'
 
 const API = '/api'
 
@@ -28,17 +29,25 @@ export async function fetchBoard(id: string, opts: {
   fields?: 'tasks' | 'activity' | 'all'
   activityLimit?: number
   etag?: string | null
-} = {}): Promise<{ board: Board | null; etag: string | null; notModified: boolean }> {
+  since?: string | null
+} = {}): Promise<{ board: Board | null; delta: BoardDelta | null; version: string | null; etag: string | null; notModified: boolean }> {
   const params = new URLSearchParams()
   if (opts.fields) params.set('fields', opts.fields)
   if (opts.activityLimit !== undefined) params.set('activityLimit', String(opts.activityLimit))
+  if (opts.since) params.set('since', opts.since)
   const query = params.size ? `?${params}` : ''
   const res = await authFetch(`${API}/board/${encodeURIComponent(id)}${query}`, {
-    headers: opts.etag ? { 'If-None-Match': opts.etag } : {},
+    headers: !opts.since && opts.etag ? { 'If-None-Match': opts.etag } : {},
   })
   const etag = res.headers.get('ETag')
-  if (res.status === 304) return { board: null, etag, notModified: true }
-  return { board: await asJson<Board>(res), etag, notModified: false }
+  const version = res.headers.get('X-Board-Version')
+  if (res.status === 304) return { board: null, delta: null, version, etag, notModified: true }
+  const data = await asJson<Board | BoardDelta | { ok: true; delta: true; unchanged: true }>(res)
+  if ('delta' in data && data.delta) {
+    if ('unchanged' in data) return { board: null, delta: null, version, etag, notModified: true }
+    return { board: null, delta: data, version, etag, notModified: false }
+  }
+  return { board: data as Board, delta: null, version, etag, notModified: false }
 }
 
 export async function fetchActivity(id: string, opts: { before?: string; limit?: number } = {}): Promise<ActivityPage> {
