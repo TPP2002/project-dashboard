@@ -1585,12 +1585,12 @@ function handleMarkLanded(req, res, projectId, taskId) {
 function streamFile(res, fullPath, status) {
   const ext = path.extname(fullPath).toLowerCase();
   const isHtml = ext === '.html';
-  // HTML 不缓存；内容哈希资源使用长期缓存。
+  // HTML 不缓存；内容哈希资源使用长期缓存（这类资源不带 pragma / expires，免得有的浏览器照旧头不缓存）。
+  const immutable = !isHtml && path.relative(DIST_DIR, fullPath).split(path.sep)[0] === 'assets' && /^.+-[A-Za-z0-9_-]{8}\.[^.]+$/.test(path.basename(fullPath));
   res.writeHead(status || 200, {
     'content-type': MIME[ext] || 'application/octet-stream',
-    'cache-control': isHtml ? 'no-store, no-cache, must-revalidate, max-age=0' : path.relative(DIST_DIR, fullPath).split(path.sep)[0] === 'assets' && /^.+-[A-Za-z0-9_-]{8}\.[^.]+$/.test(path.basename(fullPath)) ? 'public, max-age=31536000, immutable' : 'no-cache, must-revalidate',
-    'pragma': 'no-cache',
-    'expires': '0',
+    'cache-control': isHtml ? 'no-store, no-cache, must-revalidate, max-age=0' : immutable ? 'public, max-age=31536000, immutable' : 'no-cache, must-revalidate',
+    ...(immutable ? {} : { 'pragma': 'no-cache', 'expires': '0' }),
   });
   const stream = fs.createReadStream(fullPath);
   // 【为什么不能只 pipe】客户端中途断开(浏览器刷新 / 关标签 / 导航走)时 res 被销毁,而 pipe
