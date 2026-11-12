@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Collaborator, MemberTask, Project, TaskAction, User } from './types'
 import { MemberLoader, memberApi } from './member'
-import { drawerActions, groupLanes } from './board'
+import { drawerActions, groupLanes, laneOf } from './board'
 import MemberTaskCard from './MemberTaskCard.vue'
 import MemberDrawer from './MemberDrawer.vue'
 import ActionDialog from './ActionDialog.vue'
@@ -10,6 +10,8 @@ import CollabIcon from './CollabIcon.vue'
 import MemberContributions from '@/components/insights/MemberContributions.vue'
 import { sortLaneByPriority, LABELS, type Priority } from '../utils/taskPriority'
 import { sortStalestFirst } from '../utils/kanbanFlow'
+import { isMine, splitMine, sortMine, readMyLane, writeMyLane } from './myLane'
+import { readViewPref, writeViewPref } from './viewPrefs'
 const props = defineProps<{ user: User }>()
 const canCreate = computed(() => props.user.role === 'member')
 const viewer = computed(() => props.user.role === 'viewer')
@@ -25,12 +27,20 @@ const voidOpen = ref(false)
 const showContrib = ref(false)
 const projectName = computed(() => projects.value.find(project => project.id === projectId.value)?.name || projectId.value)
 const selected = computed(() => tasks.value.find(task => task.id === selectedId.value))
-const laneSort = ref('priority')
-try { if (localStorage.getItem('dashboard.laneSort') === 'original') laneSort.value = 'original' } catch { /* Storage can be disabled. */ }
-watch(laneSort, value => { try { localStorage.setItem('dashboard.laneSort', value) } catch { /* Keep the in-memory choice. */ } })
-const groups = computed(() => groupLanes(tasks.value).map(lane => ({ ...lane, tasks: laneSort.value === 'priority'
+const laneSort = ref<'priority' | 'original'>(readViewPref('dashboard.laneSort', 'priority') === 'original' ? 'original' : 'priority')
+watch(laneSort, value => writeViewPref('dashboard.laneSort', value))
+const showMyLane = ref(readMyLane() === 'on')
+watch(showMyLane, value => writeMyLane(value ? 'on' : 'off'))
+const split = computed(() => !viewer.value && props.user.role === 'member' && showMyLane.value
+  ? splitMine(tasks.value, props.user.id, status => ['已完工', '已作废'].includes(laneOf(status)))
+  : { mine: [], rest: tasks.value })
+const groups = computed(() => groupLanes(split.value.rest).map(lane => ({ ...lane, tasks: laneSort.value === 'priority'
   ? sortLaneByPriority(lane.tasks, lane.name, list => ['施工中', '待收单'].includes(lane.name) ? sortStalestFirst(list) : list) : lane.tasks })))
-const lanes = computed(() => groups.value.filter(group => group.name !== '已作废'))
+const lanes = computed(() => {
+  const result: { name: string; tasks: MemberTask[] }[] = groups.value.filter(group => group.name !== '已作废')
+  if (split.value.mine.length) result.splice(1, 0, { name: '我在做', tasks: sortMine(split.value.mine, laneSort.value) })
+  return result
+})
 const voided = computed(() => groups.value.find(group => group.name === '已作废')!.tasks)
 const dialog = ref<{ action: TaskAction | 'create'; task?: MemberTask; person?: Collaborator } | null>(null)
 const api = memberApi()
@@ -112,14 +122,14 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <main class="collab member-board" :aria-busy="loading || writing">
-    <header class="member-topbar"><b>看板</b><label>排序：<select v-model="laneSort"><option value="priority">优先级</option><option value="original">原顺序</option></select></label><label class="member-project"><span class="sr-only">项目</span><select :value="projectId" :disabled="loading || writing || !projects.length" @change="onProject"><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option></select></label><span class="badge" :class="viewer ? 'n' : 'info'"><CollabIcon v-if="viewer" name="eye" />{{ viewer ? '只读访客' : '成员' }}</span><span class="spacer" /><button class="btn" :aria-pressed="showContrib" :disabled="!projectId" @click="showContrib = !showContrib"><CollabIcon name="users" />{{ showContrib ? '回到看板' : '成员贡献' }}</button><button v-if="canCreate" class="btn primary" :disabled="!projectId || loading || writing" @click="dialog = { action: 'create' }"><CollabIcon name="plus" />新建卡片</button><slot name="account" /></header>
+    <header class="member-topbar"><b>看板</b><label>排序：<select v-model="laneSort"><option value="priority">优先级</option><option value="original">原顺序</option></select></label><label v-if="!viewer && canCreate" class="my-lane-toggle"><input v-model="showMyLane" type="checkbox">显示我在做</label><label class="member-project"><span class="sr-only">项目</span><select :value="projectId" :disabled="loading || writing || !projects.length" @change="onProject"><option v-for="project in projects" :key="project.id" :value="project.id">{{ project.name }}</option></select></label><span class="badge" :class="viewer ? 'n' : 'info'"><CollabIcon v-if="viewer" name="eye" />{{ viewer ? '只读访客' : '成员' }}</span><span class="spacer" /><button class="btn" :aria-pressed="showContrib" :disabled="!projectId" @click="showContrib = !showContrib"><CollabIcon name="users" />{{ showContrib ? '回到看板' : '成员贡献' }}</button><button v-if="canCreate" class="btn primary" :disabled="!projectId || loading || writing" @click="dialog = { action: 'create' }"><CollabIcon name="plus" />新建卡片</button><slot name="account" /></header>
     <div v-if="error" class="board-error" role="alert">操作或读取失败：{{ error }} <button class="btn btn-sm" :disabled="loading || writing" @click="error = ''; refresh()">重新读取</button></div>
     <p v-if="loading && !projects.length" class="board-empty" role="status">正在核对项目授权并读取任务…</p>
     <p v-else-if="!projects.length" class="board-empty">暂无可访问的项目，请联系负责人授权。</p>
     <div v-else class="member-body">
       <div v-if="showContrib" style="flex: 1; min-width: 0; overflow: auto"><MemberContributions :key="projectId" :project-id="projectId" :project-name="projectName" /></div>
       <div v-else class="member-lanes" aria-label="任务泳道">
-        <section v-for="lane in lanes" :key="lane.name" class="member-lane"><header><i :class="{ active: lane.name === '施工中', warn: lane.name === '待拍板', done: lane.name === '已完工' }" />{{ lane.name }}<span>{{ lane.tasks.length }}</span></header><TransitionGroup name="priority-lane" tag="div" class="member-lane-scroll"><MemberTaskCard v-for="task in lane.tasks" :key="task.id" :task="task" :set-priority="priority => setPriority(task, priority)" :user-id="user.id" :selected="selectedId === task.id" :busy="loading || writing" @open="open(task)" @action="action(task, $event)" /><p v-if="!lane.tasks.length" key="empty" class="lane-empty">暂无卡片</p></TransitionGroup></section>
+        <section v-for="lane in lanes" :key="lane.name" class="member-lane" :class="{ 'my-lane': lane.name === '我在做' }"><header><i :class="{ active: lane.name === '施工中', warn: lane.name === '待拍板', done: lane.name === '已完工' }" />{{ lane.name }}<span>{{ lane.tasks.length }}</span></header><TransitionGroup name="priority-lane" tag="div" class="member-lane-scroll"><MemberTaskCard v-for="task in lane.tasks" :key="task.id" :task="task" :in-my-lane="lane.name === '我在做'" :relation="isMine(task, user.id)" :set-priority="priority => setPriority(task, priority)" :user-id="user.id" :selected="selectedId === task.id" :busy="loading || writing" @open="open(task)" @action="action(task, $event)" /><p v-if="!lane.tasks.length" key="empty" class="lane-empty">暂无卡片</p></TransitionGroup></section>
         <section class="member-lane void-lane" :class="{ collapsed: !voidOpen }"><header><button class="btn quiet" :aria-expanded="voidOpen" @click="voidOpen = !voidOpen">已作废 {{ voided.length }} 张</button></header><div v-if="voidOpen" class="member-lane-scroll"><MemberTaskCard v-for="task in voided" :key="task.id" :task="task" :set-priority="priority => setPriority(task, priority)" :user-id="user.id" :busy="loading || writing" :selected="selectedId === task.id" @open="open(task)" @action="action(task, $event)" /></div></section>
       </div>
       <MemberDrawer v-if="selected" :key="projectId + ':' + selected.id" :task="selected" :set-priority="priority => setPriority(selected!, priority)" :user="user" :busy="writing || loading" :send="text => mutate(selectedId, 'note', { text })" @close="closeDrawer" @action="action(selected, $event)" @remove="remove(selected, $event)" />

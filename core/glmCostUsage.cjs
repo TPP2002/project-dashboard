@@ -49,7 +49,9 @@ function add(row, record) {
 }
 
 /** 从全部登记代码仓搜 GLM 工单；显式 repoRoot 决定归属，host + slug 去重。 */
-function scanGlmJobs({ registryPath }) {
+function scanGlmJobs({ registryPath, memo }) {
+  const paths = new Map();
+  const normalize = (value) => { if (!paths.has(value)) paths.set(value, normalizeReal(value)); return paths.get(value); };
   const registry = readRegistry(registryPath), hosts = new Set(), jobs = [];
   for (const id of Object.keys(registry.projects || {})) {
     let host;
@@ -63,16 +65,22 @@ function scanGlmJobs({ registryPath }) {
     for (const dir of dirs) {
       if (!dir.isDirectory()) continue;
       const jobDir = path.join(host, '.codex', 'jobs', dir.name);
-      const task = readJson(path.join(jobDir, 'task.json'));
+      const taskFile = path.join(jobDir, 'task.json');
+      const task = memo ? memo.sync(taskFile, 'task-route@1', () => { const source = readJson(taskFile); return source ? { engine: source.engine, hasRepoRoot: Object.hasOwn(source, 'repoRoot'), repoRoot: source.repoRoot, model: source.model } : null; }) : readJson(taskFile);
       if (task?.engine !== 'glm') continue;
-      const rawTarget = Object.hasOwn(task, 'repoRoot') ? task.repoRoot : host;
+      const rawTarget = (memo ? task.hasRepoRoot : Object.hasOwn(task, 'repoRoot')) ? task.repoRoot : host;
       if (typeof rawTarget !== 'string' || rawTarget.includes('\0') || !path.isAbsolute(rawTarget)) continue;
-      const cost = readJson(path.join(jobDir, 'cost.json'));
+      const costFile = path.join(jobDir, 'cost.json');
+      const cost = memo ? memo.sync(costFile, 'glm-cost@1', () => readJson(costFile)) : readJson(costFile);
       if (cost?.engine !== 'glm') continue;
-      const meta = readJson(path.join(jobDir, 'meta.json'));
+      const metaFile = path.join(jobDir, 'meta.json');
+      let meta;
+      if (!memo) meta = readJson(metaFile);
+      else try { meta = memo.sync(metaFile, 'meta-dispatched@1', () => { let source; try { source = JSON.parse(fs.readFileSync(metaFile, 'utf8')); } catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null; throw error; } return source ? { dispatchedAt: source.dispatchedAt } : null; }); }
+      catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR' || error instanceof SyntaxError) meta = null; else throw error; }
       const at = meta?.dispatchedAt || cost.recordedAt;
       if (!Number.isFinite(Date.parse(at || ''))) continue;
-      jobs.push({ host, slug: dir.name, repo: normalizeReal(rawTarget), at, model: cost.model || task.model || '未知', cost });
+      jobs.push({ host, slug: dir.name, repo: normalize(rawTarget), at, model: cost.model || task.model || '未知', cost });
     }
   }
   return jobs;
@@ -95,9 +103,9 @@ function summarizeGlmJobs(jobs, { projectRepo = null, days = 30, nowMs = Date.no
     .map(([date, row]) => ({ date, ...row })) };
 }
 
-function getGlmUsage({ projectId, days = 30, registryPath, nowMs = Date.now() }) {
+function getGlmUsage({ projectId, days = 30, registryPath, nowMs = Date.now(), memo }) {
   const repo = resolveProject(projectId, { registryPath }).codeRepo;
-  return summarizeGlmJobs(scanGlmJobs({ registryPath }), { projectRepo: repo, days, nowMs });
+  return summarizeGlmJobs(scanGlmJobs({ registryPath, memo }), { projectRepo: repo, days, nowMs });
 }
 
 module.exports = { getGlmUsage, scanGlmJobs, summarizeGlmJobs };

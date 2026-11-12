@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import PerksPanel from '@/components/resources/PerksPanel.vue'
+import { fetchPerksAvailable, fetchPerksState, postPerksAction } from '@/api/perks'
+import type { PerksAction, PerksState } from '@/api/perks'
+import { statusLine, validateAccountName } from '@/utils/perksFormat'
 import ResourcePanel from '@/components/resources/ResourcePanel.vue'
 import ResourceDialog from '@/components/resources/ResourceDialog.vue'
 import { fetchResources, postResourceAction } from '@/api/resources'
@@ -45,21 +50,133 @@ async function load() {
 }
 function refreshAll() { if (!refreshing.value) void load() }
 
+const route = useRoute()
+const router = useRouter()
+const perksAvailable = ref(false)
+const isPerks = computed(() => perksAvailable.value && route.query.tab === 'perks')
+const perksStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const perksData = ref<PerksState | null>(null)
+const perksError = ref('')
+const perksNote = ref('')
+const accountNote = ref('')
+const acting = ref(false)
+const nowMs = ref(Date.now())
+const line = computed(() => perksData.value ? statusLine(perksData.value, nowMs.value, perksNote.value) : { kind: 'idle', text: '', canStop: false, canRetry: false, progress: null })
+let perksSeq = 0
+let perksTimer: ReturnType<typeof setTimeout> | null = null
+let clockTimer: ReturnType<typeof setInterval> | null = null
+let noteTimer: ReturnType<typeof setTimeout> | null = null
+let lastPerksAction: PerksAction | null = null
+let mounted = false
+let disposed = false
+function stopPerksTimer() { if (perksTimer) clearTimeout(perksTimer); perksTimer = null }
+function schedulePerks() {
+  stopPerksTimer()
+  if (!mounted || !isPerks.value || document.visibilityState !== 'visible') return
+  const busy = perksData.value?.activity || (perksData.value?.job && perksData.value.job.finishedAt === null)
+  perksTimer = setTimeout(() => { void loadPerks() }, busy ? 1000 : 5000)
+}
+async function loadPerks() {
+  const seq = ++perksSeq
+  try {
+    const result = await fetchPerksState()
+    if (seq !== perksSeq) return
+    perksData.value = result
+    perksStatus.value = 'ready'
+    perksError.value = ''
+  } catch (e) {
+    if (seq !== perksSeq) return
+    perksError.value = e instanceof Error ? e.message : '读取失败'
+    if (!perksData.value) perksStatus.value = 'error'
+  } finally { if (seq === perksSeq) schedulePerks() }
+}
+function clearNote() { perksNote.value = ''; if (noteTimer) clearTimeout(noteTimer); noteTimer = null }
+async function perksAction(body: PerksAction, dialog = false): Promise<boolean> {
+  if (acting.value) return false
+  acting.value = true
+  if (body.action === 'run' || body.action === 'login' || body.action === 'schedule') lastPerksAction = body
+  const result = await postPerksAction(body)
+  acting.value = false
+  if (!result.ok) {
+    if (dialog) perksDialogError.value = `没保存：${result.error || '操作失败'}`
+    else {
+      perksNote.value = body.action === 'stop' ? result.error || '操作失败' : `没办成：${result.error || '操作失败'}`
+      if (noteTimer) clearTimeout(noteTimer)
+      noteTimer = setTimeout(clearNote, 30_000)
+    }
+    return false
+  }
+  clearNote()
+  await loadPerks()
+  return true
+}
+function selectTab(tab: 'accounts' | 'perks') {
+  const query = { ...route.query }
+  if (tab === 'perks') query.tab = 'perks'; else delete query.tab
+  void router.replace({ query })
+}
 function onVisibilityChange() {
-  if (document.visibilityState === 'visible') void load()
+  if (document.visibilityState === 'visible') { if (isPerks.value) void loadPerks(); else void load() }
+  else { stopPerksTimer(); ++perksSeq }
 }
 let timer: ReturnType<typeof setInterval> | null = null
-onMounted(() => {
-  void load()
+onMounted(async () => {
+  perksAvailable.value = await fetchPerksAvailable()
+  if (disposed) return
+  mounted = true
+  if (isPerks.value) { if (document.visibilityState === 'visible') void loadPerks() } else void load()
   timer = setInterval(() => {
-    if (document.visibilityState === 'visible') void load()
+    if (!isPerks.value && document.visibilityState === 'visible') void load()
   }, 60_000)
+  clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   document.addEventListener('visibilitychange', onVisibilityChange)
 })
+watch(() => route.query.tab, () => {
+  if (!mounted) return
+  stopPerksTimer(); ++perksSeq
+  if (document.visibilityState === 'visible') { if (isPerks.value) void loadPerks(); else void load() }
+})
 onUnmounted(() => {
+  disposed = true
+  mounted = false
+  ++perksSeq
   if (timer) clearInterval(timer)
+  if (clockTimer) clearInterval(clockTimer)
+  if (noteTimer) clearTimeout(noteTimer)
+  stopPerksTimer()
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
+
+const perksDialogOpen = ref(false)
+const perksDialogId = ref<string | null>(null)
+const perksDialogOriginalName = ref('')
+const perksDialogDefault = ref(false)
+const perksDialogName = ref('')
+const perksDialogPlatforms = ref<string[]>([])
+const perksDialogPaused = ref(false)
+const perksDialogError = ref('')
+function openPerksDialog(id?: string) {
+  const account = perksData.value?.accounts.find(a => a.id === id)
+  perksDialogId.value = account?.id || null
+  perksDialogOriginalName.value = account?.name || ''
+  perksDialogDefault.value = account?.isDefault || false
+  perksDialogName.value = account?.name || ''
+  perksDialogPlatforms.value = account ? [...account.platformIds] : []
+  perksDialogPaused.value = account ? !account.enabled : false
+  perksDialogError.value = ''
+  perksDialogOpen.value = true
+}
+async function submitPerksDialog() {
+  const error = validateAccountName(perksDialogName.value)
+  if (error) { perksDialogError.value = error; return }
+  if (!perksDialogPlatforms.value.length) { perksDialogError.value = '至少选一家'; return }
+  const name = perksDialogName.value.trim()
+  const body: PerksAction = perksDialogId.value ? { action: 'account-update', id: perksDialogId.value, name, platformIds: perksDialogPlatforms.value, ...(!perksDialogDefault.value ? { enabled: !perksDialogPaused.value } : {}) } : { action: 'account-add', name, platformIds: perksDialogPlatforms.value }
+  if (await perksAction(body, true)) {
+    perksDialogOpen.value = false
+    if (body.action === 'account-add') accountNote.value = `已添加「${name}」。在它那一栏点「登录各家」登录。`
+  }
+}
 
 function setRow(id: string, patch: Partial<ResourceRowState>) {
   const current = rowState.value[id] || { busy: null, line: '', error: false, notice: false }
@@ -192,9 +309,15 @@ function submitClear() {
   <div class="page">
     <header class="page-head">
       <h1>账号与额度</h1>
+      <div v-if="perksAvailable" class="tabs" role="tablist" aria-label="账号与额度分页">
+        <button id="tab-acct" class="btn quiet tab-button" :class="{ on: !isPerks }" type="button" role="tab" :aria-selected="!isPerks" aria-controls="page-acct" @click="selectTab('accounts')">账号管理</button>
+        <button id="tab-perks" class="btn quiet tab-button" :class="{ on: isPerks }" type="button" role="tab" :aria-selected="isPerks" aria-controls="page-perks" @click="selectTab('perks')">每日福利</button>
+      </div>
     </header>
 
     <ResourcePanel
+      v-if="!isPerks"
+      id="page-acct"
       :status="status"
       :data="data"
       :error-line="errorLine"
@@ -211,6 +334,17 @@ function submitClear() {
       @retry-row="onRetryRow"
       @retry-group="onRetryGroup"
     />
+    <PerksPanel v-else :status="perksStatus" :data="perksData" :error-line="perksError" :line="line" :acting="acting" :account-note="accountNote"
+      @run="perksAction({ action: 'run' })" @stop="perksAction({ action: 'stop' })" @retry="lastPerksAction && perksAction(lastPerksAction)" @reload="loadPerks"
+      @login="(account, ids) => perksAction({ action: 'login', account, ids })" @schedule="on => perksAction({ action: 'schedule', on })" @add="openPerksDialog()" @manage="openPerksDialog" />
+
+    <ResourceDialog class="perks-dialog" :open="perksDialogOpen" :title="perksDialogId ? `管理「${perksDialogOriginalName}」` : '添加账号'" @close="perksDialogOpen = false">
+      <label class="res-field-row"><span>名字</span><input v-model="perksDialogName" class="field" type="text" maxlength="20" /></label>
+      <div class="res-field-row"><span>领哪几家</span><label v-for="platform in perksData?.selectablePlatforms || []" :key="platform.id" class="res-choice"><input v-model="perksDialogPlatforms" type="checkbox" :value="platform.id" /><span>{{ platform.name }}</span></label></div>
+      <label v-if="perksDialogId && !perksDialogDefault" class="res-choice"><input v-model="perksDialogPaused" type="checkbox" /><span>暂停领取</span></label>
+      <p v-if="perksDialogError" class="res-bad">{{ perksDialogError }}</p>
+      <template v-slot:actions><button class="btn btn-sm primary" type="button" :disabled="acting" @click="submitPerksDialog">{{ perksDialogId ? '保存' : '添加' }}</button><button class="btn btn-sm" type="button" @click="perksDialogOpen = false">取消</button></template>
+    </ResourceDialog>
 
     <ResourceDialog :open="addOpen" title="添加账号" @close="addOpen = false">
       <label class="res-field-row">
@@ -263,8 +397,12 @@ function submitClear() {
 
 <style scoped>
 .page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
-.page-head { display: flex; align-items: flex-start; gap: var(--s4); justify-content: space-between; }
+.page-head { display: flex; align-items: center; justify-content: flex-start; gap: var(--s2) var(--s4); flex-wrap: wrap; }
 .page-head h1 { margin: 0; font-size: var(--fs-xl); }
+.tabs { display: flex; gap: var(--s1); padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.tab-button { min-width: 92px; }
+.tab-button.on { background: var(--surface); color: var(--text); border-color: var(--line-strong); font-weight: 600; }
+@media (max-width: 900px) { .tabs .btn, .perks-dialog .btn, .perks-dialog .res-choice, .perks-dialog .res-field-row input { min-height: 44px; } }
 .res-field-row { display: grid; gap: var(--s1); font-size: var(--fs-sm); color: var(--text-2); }
 .res-hint { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
 .res-bad { margin: 0; color: var(--bad); font-size: var(--fs-sm); }

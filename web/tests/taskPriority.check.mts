@@ -47,8 +47,20 @@ test('both card surfaces wire permission-aware context menus and touch hold', ()
   assert.deepEqual(drawerActions({ actions: ['priority'] }), [])
   for (const file of ['views/Kanban.vue', 'collaboration/MemberBoard.vue']) {
     const board = source(file)
-    assert.match(board, /sortLaneByPriority/); assert.match(board, /localStorage.getItem\('dashboard.laneSort'\)/)
-    assert.match(board, /localStorage.setItem\('dashboard.laneSort'/); assert.match(board, /try.*localStorage.*catch/)
+    assert.match(board, /sortLaneByPriority/)
+    if (file === 'views/Kanban.vue') {
+      assert.match(board, /localStorage.getItem\('dashboard.laneSort'\)/)
+      assert.match(board, /localStorage.setItem\('dashboard.laneSort'/); assert.match(board, /try.*localStorage.*catch/)
+    } else {
+      assert.match(board, /import \{ readViewPref, writeViewPref \} from '\.\/viewPrefs'/)
+      assert.match(board, /readViewPref\('dashboard.laneSort'/)
+      assert.match(board, /writeViewPref\('dashboard.laneSort', value\)/)
+      assert.doesNotMatch(board, /localStorage|sessionStorage/)
+      const prefs = source('collaboration/viewPrefs.ts')
+      assert.match(prefs, /const KEYS = \['dashboard.laneSort', 'dashboard.myLane'\] as const/)
+      assert.match(prefs, /try \{ return localStorage.getItem\(key\) \?\? fallback \} catch \{ return fallback \}/)
+      assert.match(prefs, /try \{ localStorage.setItem\(key, value\) \} catch/)
+    }
     assert.match(board, /TransitionGroup name="priority-lane"/)
   }
   const css = source('styles/base.css')

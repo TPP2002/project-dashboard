@@ -119,16 +119,42 @@ function readJobFiles(jobsRoot, slug) {
 }
 
 /** 工单根目录不存在等同“尚无工单”；只枚举合法的子目录。 */
-function listJobs(jobsRoot) {
+function listJobs(jobsRoot, { memo } = {}) {
   let entries;
   try { entries = fs.readdirSync(jobsRoot, { withFileTypes: true }); }
   catch (error) {
     if (error && error.code === 'ENOENT') return [];
     throw error;
   }
+  const project = (source, fields) => {
+    if (!source || typeof source !== 'object') return source;
+    return Object.fromEntries(fields.filter((field) => Object.hasOwn(source, field)).map((field) => [field, source[field]]));
+  };
+  function readProjected(dir, name, key, fields, transform) {
+    const file = path.join(dir, name);
+    return memo.sync(file, key, () => {
+      const value = project(readJsonOptional(file), fields);
+      return value && transform ? transform(value) : value;
+    });
+  }
+  function memoFiles(slug) {
+    const dir = path.join(jobsRoot, slug), verdictPath = path.join(dir, 'verdict.json');
+    const acceptance = (value, fields) => Array.isArray(value) ? value.map((item) => project(item, fields)) : value;
+    const task = readProjected(dir, 'task.json', 'task-list@1', ['title', 'taskId', 'timeoutSec', 'acceptance'], (value) => {
+      if (Object.hasOwn(value, 'acceptance')) value.acceptance = acceptance(value.acceptance, ['id', 'required']); return value;
+    });
+    const meta = readProjected(dir, 'meta.json', 'meta-dispatched@1', ['dispatchedAt']);
+    const state = readProjected(dir, 'state.json', 'state-list@1', ['finishedAt', 'exitCode', 'pid', 'startedAt', 'threadId']);
+    const verdict = readProjected(dir, 'verdict.json', 'verdict-list@1', ['acceptance', 'selfReport', 'forbiddenTouched'], (value) => {
+      if (Object.hasOwn(value, 'acceptance')) value.acceptance = acceptance(value.acceptance, ['id', 'required', 'passed']);
+      if (Object.hasOwn(value, 'selfReport')) value.selfReport = project(value.selfReport, ['summary', 'status']);
+      return value;
+    });
+    return { slug, dir, task, meta, state, verdict, verdictExists: fs.existsSync(verdictPath) };
+  }
   return entries
     .filter((entry) => entry.isDirectory() && isValidSlug(entry.name))
-    .map((entry) => summarizeJob(readJobFiles(jobsRoot, entry.name)))
+    .map((entry) => summarizeJob(memo ? memoFiles(entry.name) : readJobFiles(jobsRoot, entry.name)))
     .sort((a, b) => String(b.dispatchedAt || '').localeCompare(String(a.dispatchedAt || '')));
 }
 

@@ -284,11 +284,22 @@ function scanFile(file, { seenIds = new Set(), subOf = null } = {}) {
   });
 }
 
+const parsedCaches = new Map();
+function rememberCache(cachePath, cache) {
+  try {
+    const { size, mtimeMs } = fs.statSync(cachePath);
+    if (!parsedCaches.has(cachePath) && parsedCaches.size >= 4) parsedCaches.delete(parsedCaches.keys().next().value);
+    parsedCaches.set(cachePath, { size, mtimeMs, cache });
+  } catch (_) { parsedCaches.delete(cachePath); }
+}
 function readCache(cachePath) {
   try {
+    const stat = fs.statSync(cachePath), old = parsedCaches.get(cachePath);
+    if (old && old.size === stat.size && old.mtimeMs === stat.mtimeMs) return old.cache;
     const c = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    if (c && c.schemaVersion === CACHE_VERSION && c.files) return c;
+    if (c && c.schemaVersion === CACHE_VERSION && c.files) { rememberCache(cachePath, c); return c; }
   } catch (_) { /* 无缓存/坏缓存/版本对不上 → 整份丢掉全量重扫 */ }
+  parsedCaches.delete(cachePath);
   return { schemaVersion: CACHE_VERSION, files: {} };
 }
 
@@ -510,7 +521,9 @@ async function getUsage({ prefix, prefixes = [prefix], otherPrefixes = [], days 
     try {
       fs.mkdirSync(path.dirname(cachePath), { recursive: true });
       atomicWriteJsonSync(cachePath, cache);
+      rememberCache(cachePath, cache);
     } catch (error) {
+      parsedCaches.delete(cachePath);
       warn(`[costUsage] 成本缓存写入失败：${cachePath}；${error.message}`);
     }
   }

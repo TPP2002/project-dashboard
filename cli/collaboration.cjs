@@ -133,7 +133,9 @@ function taskOperation(command, input, auth = createAuth(), ownerOnly = false) {
         // builder and all AI dispatch/branch metadata remain exactly as recorded.
       } else if (command === 'progress') {
         if (user.role !== 'owner' && t.assigneeUserId !== user.id && !(t.collaborators || []).some(c => c.userId === user.id)) fail(409, 'Task is not assigned to you');
-        if (t.status !== '施工中' || t.blockReason || (t.deps?.blockedBy || []).length) fail(409, 'Task is not active member work');
+        if (t.status === '暂缓') {
+          if (input.percent > 99) fail(409, '暂缓的卡进度最多 99%');
+        } else if (t.status !== '施工中' || t.blockReason || (t.deps?.blockedBy || []).length) fail(409, 'Task is not active member work');
         t.percent = input.percent;
         if (input.note !== undefined) t.nextMilestone = input.note;
       } else if (command !== 'note') {

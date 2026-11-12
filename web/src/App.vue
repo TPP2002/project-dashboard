@@ -44,7 +44,7 @@ async function refreshRunningJobs() {
   if (disposed || !store.modules.codex || !projectId || document.visibilityState !== 'visible' || jobsRequestInFlight) return
   jobsRequestInFlight = true
   try {
-    const response = await authFetch(`/api/codex/jobs?project=${encodeURIComponent(projectId)}`)
+    const response = await authFetch(`/api/codex/jobs?project=${encodeURIComponent(projectId)}&running=1`)
     if (!response.ok) {
       hasRunningJob.value = false
       return

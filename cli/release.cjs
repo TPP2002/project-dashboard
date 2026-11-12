@@ -509,18 +509,48 @@ function releaseStatus(opts = {}) {
  * 服务是常驻进程:合进主干 + `cli release` 之后,它要等下次启动才换新 —— 体检必须能说出这件事,
  * 不然又回到"合了却一直不生效、谁也不知道"的老路。
  * 探活走子进程(CLI 是同步的,Node 没有同步 HTTP);探不到就当没在跑,绝不因此判红。
- * @param {{portBase?:number, portRange?:number, dest?:string}} [opts]
+ *
+ * 【1112 扩容:连上了就多等一会儿】(AD-20261112-LAUNCHER-BUSY-REFUSE)
+ * 看板服务是单线程的,处理慢请求时几秒到十几秒不回健康接口,但操作系统照样接受连接。
+ * 原来整条链路只有一个 2000ms 的门槛,于是"正忙"被误判成"没在跑",启动器据此拒绝启动。
+ * 现在每个端口拆两段:连接建立前最多等 2000ms(连不上照旧立即判没在跑);
+ * 连接一旦建立,等完整响应的上限改成 busyWaitMs(缺省 20s)。响应到了之后的解析与判定一字不动。
+ * @param {{portBase?:number, portRange?:number, dest?:string, busyWaitMs?:number}} [opts]
  */
 function serviceStatus(opts = {}) {
   const base = opts.portBase || 6060;
   const range = opts.portRange === undefined ? 8 : opts.portRange;
+  // 正整数才算数,别的(负、零、小数、字符串、NaN)一律回缺省
+  const busyWaitMs = Number.isInteger(opts.busyWaitMs) && opts.busyWaitMs > 0 ? opts.busyWaitMs : 20000;
   const probe = `
     const http = require('http');
+    const CONNECT_MS = 2000;
+    const BUSY_MS = ${busyWaitMs};
     const get = (port) => new Promise((res) => {
-      const r = http.get({ host: '127.0.0.1', port, path: '/api/health', timeout: 2000 }, (s) => {
-        let d = ''; s.on('data', (c) => d += c); s.on('end', () => { try { res(JSON.parse(d)); } catch { res(null); } });
+      let settled = false;
+      let connectTimer = null;
+      let busyTimer = null;
+      const done = (v) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(connectTimer); clearTimeout(busyTimer);
+        res(v);
+      };
+      const r = http.get({ host: '127.0.0.1', port, path: '/api/health' }, (s) => {
+        let d = ''; s.on('data', (c) => d += c); s.on('end', () => { try { done(JSON.parse(d)); } catch { done(null); } });
+        s.on('error', () => done(null));
       });
-      r.on('error', () => res(null)); r.on('timeout', () => { r.destroy(); res(null); });
+      // 第一段:连不上(拒绝、不可达)最多等 CONNECT_MS
+      connectTimer = setTimeout(() => { r.destroy(); done(null); }, CONNECT_MS);
+      // 第二段:连接一旦建立就换成 BUSY_MS 的整响上限(服务正忙也等它回)
+      r.on('socket', (socket) => {
+        const onConnect = () => {
+          clearTimeout(connectTimer); connectTimer = null;
+          busyTimer = setTimeout(() => { r.destroy(); done(null); }, BUSY_MS);
+        };
+        if (socket.connecting) socket.once('connect', onConnect); else onConnect();
+      });
+      r.on('error', () => done(null));
     });
     (async () => {
       for (let p = ${base}; p <= ${base + range}; p++) {
@@ -531,7 +561,10 @@ function serviceStatus(opts = {}) {
     })();
   `;
   let health = null;
-  try { health = JSON.parse(execFileSync(process.execPath, ['-e', probe], { encoding: 'utf8', timeout: 30000, windowsHide: true }) || 'null'); }
+  // 子进程总超时:一个端口忙满 BUSY_MS,其余端口各自最多耗满 2000ms 的连接段,再留 5s 余量 ——
+  // 这样"忙的那个"不会被探活子进程提前杀掉(杀掉就等于判成没在跑)
+  const probeTimeoutMs = busyWaitMs + 2000 * (range + 1) + 5000;
+  try { health = JSON.parse(execFileSync(process.execPath, ['-e', probe], { encoding: 'utf8', timeout: probeTimeoutMs, windowsHide: true }) || 'null'); }
   catch { health = null; }
 
   const stamp = readStamp(opts.dest ? path.resolve(opts.dest) : releaseHome());
