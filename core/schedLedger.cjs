@@ -90,6 +90,7 @@ function durationSamples(tickets, events, nowMs, { ciAware = false } = {}) {
 
 /** 名字只来自数据；七天内出现票据事件即算出现，不要求它恰在这七天挂号。 */
 function connectedProjects(tickets, history, nowMs) {
+  if (history.connectedProjects) return history.connectedProjects(tickets, nowMs);
   if (!history.readable) return { readable: false, names: [], reason: history.reason };
   const requests = requestsByTicket(tickets, history.events), names = new Set();
   for (const event of history.events) {

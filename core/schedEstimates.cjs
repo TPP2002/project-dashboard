@@ -105,9 +105,12 @@ function estimateTickets(snapshot, history, { ciAwareSlowdown } = {}) {
   const stale = !Number.isFinite(nowMs) || !snapshot.readable || !Number.isFinite(heartbeatMs) || nowMs - heartbeatMs > 60000
     || tickets.some(ticket => ticket.lastSeq > snapshot.cursorSeq);
   if (stale || !history?.readable) return Object.fromEntries(ids.map(id => [id, unknown(stale ? 'snapshot' : 'ledger')]));
-  const events = history.events.filter(event => event.seq <= snapshot.cursorSeq);
-  const samples = durationSamples(tickets, events, nowMs), result = {};
-  const ciSamples = durationSamples(tickets, events, nowMs, { ciAware: true });
+  const events = history.durationSamples ? null : history.events.filter(event => event.seq <= snapshot.cursorSeq);
+  const takeSamples = ciAware => history.durationSamples
+    ? history.durationSamples(tickets, { cursorSeq: snapshot.cursorSeq, nowMs, ciAware })
+    : durationSamples(tickets, events, nowMs, { ciAware });
+  const samples = takeSamples(false), result = {};
+  const ciSamples = takeSamples(true);
   const simulated = machines.map(machine => {
     const protectedBy = snapshot.locks?.find(lock => lock.machine === machine.name && queue.some(entry => entry.ticketId === lock.byTicketId && entry.state === 'queued'))?.byTicketId;
     return { ...machine, block: machineBlock(machine, nowMs), changes: [], uncertain: null, releaseBudget: machine.grantedCores,

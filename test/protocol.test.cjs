@@ -197,6 +197,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   task = apply('park', { reason: '等条件', note: '已完成主体' });
   assert.equal(task.blockReason, '等条件');
   assert.equal(task.parkedNote, '已完成主体');
+  assert.equal(task.percent, 99, '进度 100 的卡转暂缓落到 99（AD-20261021-PARKED-PROGRESS）');
   assert.ok(!Object.hasOwn(task, 'parkReason'));
   apply('block', { by: 'UPSTREAM' });
   task = apply('unpark', { reason: '条件就绪' });
@@ -205,7 +206,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   apply('claim', { branch: 'feat/test', builder: '派单器' });
   task = apply('unclaim', { branch: 'feat/test', reason: '转手' }, '施工中且有 unparkReason');
   assert.deepEqual(task.gitBranch, []);
-  assert.equal(task.percent, 100);
+  assert.equal(task.percent, 99, 'unclaim 不碰进度');
   apply('claim', { branch: 'feat/test', builder: '派单器' });
   task = apply('park', { reason: '再次挂起' });
   assert.ok(!Object.hasOwn(task, 'unparkReason') && !Object.hasOwn(task, 'unparkedAt'));
