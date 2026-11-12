@@ -15,6 +15,9 @@
  * 折算)与 isPeakBeijing(高峰判定),不重新定义一分钱怎么算;只读,不改那个冻结模块。
  *
  * 零依赖(core 纪律),仅 Node 内置模块。
+ *
+ * 【WorkBuddy 口径】取 cost.json 的首轮 usage 加续聊 resumeUsage 各桶;WorkBuddy 回报的
+ * input 已含缓存,读的时候减掉 cacheRead 加 cacheWrite,四桶相加才是真实总 token。
  */
 
 const fs = require('node:fs');
@@ -117,6 +120,7 @@ async function collectJobRows(jobsRoot, { memo } = {}) {
     const startedAt = isoOrNull(state.startedAt);
     const finishedAt = isoOrNull(state.finishedAt);
     const exec = await readExecSummary(path.join(dir, 'exec.jsonl'), memo);
+    // GLM 与其他引擎沿用原逐桶取数(逐项与改前完全一致)。
     const glmBucket = (key) => {
       const initial = cost?.usage?.[key], resume = cost?.resumeUsage?.[key];
       if (task.engine === 'glm' && Number.isSafeInteger(initial) && initial >= 0) {
@@ -124,6 +128,46 @@ async function collectJobRows(jobsRoot, { memo } = {}) {
       }
       return exec && exec.usage ? exec.usage[key] : 0;
     };
+    const BUCKETS = ['input', 'output', 'cacheRead', 'cacheWrite'];
+    const nonNegSafe = (value) => Number.isSafeInteger(value) && value >= 0;
+    const plainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+    // WorkBuddy:首轮四桶取自 cost.usage(整组合法)或整组回落 exec.jsonl;续聊四桶取自
+    // cost.resumeUsage(逐桶合法);两组各自先换算「输入已含缓存」再相加。其余列不动。
+    const workbuddyBuckets = () => {
+      const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      const cu = cost?.usage;
+      const cuOk = plainObject(cu) && BUCKETS.every((key) => nonNegSafe(cu[key]));
+      const first = cuOk
+        ? Object.fromEntries(BUCKETS.map((key) => [key, cu[key]]))
+        : (exec && exec.usage
+          ? Object.fromEntries(BUCKETS.map((key) => [key, exec.usage[key]]))
+          : { ...zero });
+      const firstNoConvert = cuOk && cu.inputExcludesCache === true; // 只认取自 cost.usage 且严格等于 true
+      const ru = cost?.resumeUsage;
+      const resume = { ...zero };
+      let resumeNoConvert = false;
+      if (plainObject(ru)) {
+        for (const key of BUCKETS) resume[key] = nonNegSafe(ru[key]) ? ru[key] : 0;
+        resumeNoConvert = ru.inputExcludesCache === true;
+      }
+      // 输入已含缓存:input >= cacheRead + cacheWrite 时减掉两桶,否则原样;标了 inputExcludesCache 的组不换算。
+      const convert = (group, noConvert) => {
+        if (noConvert) return group;
+        return group.input >= group.cacheRead + group.cacheWrite
+          ? { ...group, input: group.input - group.cacheRead - group.cacheWrite }
+          : group;
+      };
+      const f = convert(first, firstNoConvert), r = convert(resume, resumeNoConvert);
+      return {
+        input: f.input + r.input,
+        output: first.output + resume.output,
+        cacheRead: first.cacheRead + resume.cacheRead,
+        cacheWrite: first.cacheWrite + resume.cacheWrite,
+      };
+    };
+    const isWb = task.engine === 'workbuddy';
+    const wb = isWb ? workbuddyBuckets() : null;
+    const bucket = (key) => isWb ? wb[key] : glmBucket(key);
     const card = typeof task.taskId === 'string' && task.taskId ? task.taskId : null;
     rows.push({
       slug,
@@ -136,10 +180,10 @@ async function collectJobRows(jobsRoot, { memo } = {}) {
       running: finishedAt === null,
       durationMs: startedAt && finishedAt ? Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)) : null,
       turns: exec ? exec.turns : 0,
-      input: glmBucket('input'),
-      output: glmBucket('output'),
-      cacheRead: glmBucket('cacheRead'),
-      cacheWrite: glmBucket('cacheWrite'),
+      input: bucket('input'),
+      output: bucket('output'),
+      cacheRead: bucket('cacheRead'),
+      cacheWrite: bucket('cacheWrite'),
       reportedUsd: exec ? exec.reportedUsd : null,
       glmCredits: task.engine === 'glm' && Number.isSafeInteger(cost?.glmQuota?.weeklyDelta)
         && cost.glmQuota.weeklyDelta >= 0 ? cost.glmQuota.weeklyDelta : null,
