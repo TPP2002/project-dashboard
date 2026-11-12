@@ -89,9 +89,10 @@ function createPerksApi(deps) {
     }
     throw { status: 502, error: '连不上每日福利服务' };
   }
+  // 回包安全检查只查口令：端口是几位数字，状态里的时间戳、计数可能碰巧含这串数字；口令是 32 位十六进制，不会碰巧出现。
   function safe(value, current) {
     const text = JSON.stringify(value);
-    return typeof text === 'string' && !text.includes(current.token) && !text.includes(String(current.port));
+    return typeof text === 'string' && !text.includes(current.token);
   }
   async function respond(repo, res, action) {
     try {

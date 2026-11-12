@@ -101,10 +101,14 @@ test('非法请求体和超长请求体不启动服务', async t => {
 });
 
 test('面板异常内容和敏感信息不会返回页面', async t => {
-  for (const value of [[], null, { secret: TOKEN }, { port: 12345 }]) {
+  for (const value of [[], null, { secret: TOKEN }]) {
     const f = await fixture(t, { fetch: async () => ({status:200, json:async () => value}) });
     assert.deepEqual(await f.request(), {status:502, body:{ok:false,error:'每日福利服务没按预期回应'}});
   }
+  const g = await fixture(t, { fetch: async () => ({status:200, json:async () => ({port: 12345})}) });
+  assert.deepEqual(await g.request(), {status:200, body:{ok:true,data:{port: 12345}}});
+  const h = await fixture(t, { fetch: async () => ({status:200, json:async () => ({startedAt: 1794412345000})}) });
+  assert.deepEqual(await h.request(), {status:200, body:{ok:true,data:{startedAt: 1794412345000}}});
   const f = await fixture(t, { fetch: async () => ({status:409, json:async () => ({error:'x'.repeat(250)})}) });
   assert.deepEqual(await f.request('action', {action:'run'}), {status:409, body:{ok:false,error:'x'.repeat(200)}});
 });
