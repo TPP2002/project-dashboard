@@ -71,6 +71,7 @@ const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
 const { createResourcesApi } = require('./resourcesApi.cjs');
 const { createPerksApi } = require('./perksApi.cjs');
+const { createPerksRepoFinder } = require('./perksRepo.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
 const { createCiJobsMonitor, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
 const { createCiBoardsReader, readCiRepository } = require('../core/schedCiBoards.cjs');
@@ -320,10 +321,18 @@ function resolveDispatcherRepo() {
   return codexRepo('rogue');
 }
 
+const perksRepoFinder = createPerksRepoFinder({ codexRepo, readRegistry: readRegistrySafe });
+
+/**
+ * 每日福利代码目录三步找，前一步找到就不看后一步：
+ *   ① 环境变量 DASHBOARD_PERKS_REPO 是非空绝对路径 → 直接用它；
+ *   ② 注册表里 id 为 perks 的项目 → 用它的代码目录（现有行为）；
+ *   ③ 都没有时，在注册表各项目登记过的目录里，找同时带 src/cli.ts、src/control.ts、src/panel/launch.ts
+ *      的那个目录，结果缓存 60 秒。三步都没找到返回 null（接口照旧回「这台电脑没接每日福利」）。
+ * 具体判定封装在 perksRepo.cjs，finder 在模块级只创建一次。
+ */
 function resolvePerksRepo() {
-  const override = String(process.env.DASHBOARD_PERKS_REPO || '').trim();
-  if (override && path.isAbsolute(override)) return override;
-  return codexRepo('perks');
+  return perksRepoFinder.resolve();
 }
 
 /** 读 board.json：ENOENT → null；解析失败 → 抛（调用方决定 404 还是 500） */
