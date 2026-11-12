@@ -62,6 +62,10 @@ const costSessionDetail = require('../core/costSessionDetail.cjs');
 const costJobDetail = require('../core/costJobDetail.cjs');
 const glmCostUsage = require('../core/glmCostUsage.cjs');
 const workbuddyCostUsage = require('../core/workbuddyCostUsage.cjs');
+const deepseekCostUsage = require('../core/deepseekCostUsage.cjs');
+const deepseekBalance = require('../core/deepseekBalance.cjs');
+const { findDemoDir } = require('../core/demoMode.cjs');
+const { createCostSources } = require('./costSources.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
@@ -92,6 +96,12 @@ const DIST_DIR = path.join(DASH_ROOT, 'web', 'dist');        // 前端生产产�
 const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯一写者）
 // registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / 示例项目·模拟器主仓）
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
+const DEMO_DIR = findDemoDir({ registryPath: REGISTRY, home: DASHBOARD_HOME });
+const costSources = createCostSources({ demoDir: DEMO_DIR, real: {
+  getUsage: costUsage.getUsage, collectJobRows: costJobDetail.collectJobRows,
+  ...deepseekCostUsage, ...glmCostUsage, ...workbuddyCostUsage,
+  getDeepseekBalance: deepseekBalance.createCachedDeepseekBalance(),
+} });
 const fileMemo = require('../core/fileMemo.cjs').createFileMemo({ persistPath: path.join(path.dirname(REGISTRY), 'jobFileMemo.json') });
 const WEBHOOK_URL = (process.env.DASHBOARD_EVENT_WEBHOOK || '').trim();
 const WEBHOOK_CONFIGURED = /^https?:\/\//.test(WEBHOOK_URL);
@@ -647,6 +657,7 @@ function handleHealth(req, res) {
     ? '双击 启动看板.bat'
     : "node '" + path.join(releaseHome(), 'server', 'server.cjs').replace(/'/g, "'\\''") + "'";
   sendJson(res, 200, {
+    ...(DEMO_DIR ? { demo: true } : {}),
     ok: true,
     service: SERVICE,
     version: VERSION,
@@ -862,13 +873,14 @@ function handleSettings(req, res) {
 }
 
 const codexApi = createCodexApi({
+  costSources,
   fileMemo,
   resolveRepo: codexRepo,
   readRegistry: readRegistrySafe,
   registryPath: REGISTRY,
   dashboardRoot: DASH_ROOT,
-  sessionsRoot: process.env.DASHBOARD_CODEX_SESSIONS
-    ? path.resolve(process.env.DASHBOARD_CODEX_SESSIONS) : undefined,
+  sessionsRoot: costSources.sessionsRoot(process.env.DASHBOARD_CODEX_SESSIONS
+    ? path.resolve(process.env.DASHBOARD_CODEX_SESSIONS) : undefined),
   readBody,
   sendJson,
   sendText,
@@ -901,6 +913,7 @@ const auditionApi = createAuditionApi({
 
 // 账号与额度（只在本机生效）：只调派单器仓的 resources 命令，不碰账号文件与密钥内容。
 const resourcesApi = createResourcesApi({
+  demo: Boolean(DEMO_DIR),
   sendJson,
   readBody,
   bodyMax: BODY_MAX,
@@ -1009,12 +1022,12 @@ function handleCostUsage(req, res, query) {
   if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   return Promise.all([
-    costUsage.getUsage({ ...selected, days, cards: costCards(proj), bindings: costBindings(proj) }),
+    costSources.getUsage({ ...selected, days, cards: costCards(proj), bindings: costBindings(proj) }),
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
-    Promise.resolve().then(() => glmCostUsage.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY, memo: fileMemo })),
+    Promise.resolve().then(() => costSources.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY, memo: fileMemo })),
     // WorkBuddy 账本只读：读不出来就这份为 null，不许拖垮整个成本接口。
-    Promise.resolve().then(() => workbuddyCostUsage.getWorkbuddyUsage({ projectId: pid, days, registryPath: REGISTRY }))
+    Promise.resolve().then(() => costSources.getWorkbuddyUsage({ projectId: pid, days, registryPath: REGISTRY }))
       .catch(() => null),
     codexApi.getDeepseekBalance().catch(() => ({
       available: false, reason: '查询异常', balance: null, sampledAt: new Date().toISOString(),
@@ -1026,7 +1039,7 @@ function handleCostUsage(req, res, query) {
       const codexTokens = codex.selected.tokens;
       sendJson(res, 200, {
         ok: true,
-        costRoots: proj.costRoots,
+        costRoots: costSources.costRoots(proj.costRoots),
         sharedDirs: usage.sharedDirs,
         usage,
         codex,
@@ -1053,28 +1066,28 @@ async function handleCostPortfolio(res, query) {
     const projects = Object.keys(readRegistrySafe().projects || {}).map((id) => resolveProjectSafe(id)).filter(Boolean);
     const prefixes = [...new Set(projects.flatMap((p) => ((p.costPrefixRoots && p.costPrefixRoots.length) ? p.costPrefixRoots : p.costRoots).map(costUsage.mapRepoToPrefix)))];
     const [uniqueUsage, codex] = await Promise.all([
-      prefixes.length ? costUsage.getUsage({ prefixes, days }) : null,
+      prefixes.length ? costSources.getUsage({ prefixes, days }) : null,
       codexApi.getCostUsage(days, ''),
     ]);
-    const glmJobs = glmCostUsage.scanGlmJobs({ registryPath: REGISTRY, memo: fileMemo });
+    const glmJobs = costSources.scanGlmJobs({ registryPath: REGISTRY, memo: fileMemo });
     const deepseekJobs = await codexApi.scanAllDeepseekJobs();
     // 账本只扫一次，各项目共用同一份；读不出来当没有，成本接口照常出。
     let workbuddyLedgers = null;
-    try { workbuddyLedgers = workbuddyCostUsage.scanWorkbuddyLedgers({ registryPath: REGISTRY }); }
+    try { workbuddyLedgers = costSources.scanWorkbuddyLedgers({ registryPath: REGISTRY }); }
     catch (e) { console.warn('[cost] WorkBuddy 账本读不进来,按没有处理:' + e.message); }
     const rows = [], seenRepos = new Set(), seenNames = new Set();
     for (const project of projects) {
       const id = project.id, selected = costPrefixes(id);
-      const usage = await costUsage.getUsage({ ...selected, days });
+      const usage = await costSources.getUsage({ ...selected, days });
       const sharedCodeRepo = seenRepos.has(project.codeRepo);
       seenRepos.add(project.codeRepo);
       const duplicateName = seenNames.has(project.name);
       seenNames.add(project.name);
       const deepseek = sharedCodeRepo ? null : codexApi.summarizeDeepseekJobs(deepseekJobs, { projectRepo: project.codeRepo, days });
-      const glm = sharedCodeRepo ? null : glmCostUsage.summarizeGlmJobs(glmJobs,
+      const glm = sharedCodeRepo ? null : costSources.summarizeGlmJobs(glmJobs,
         { projectRepo: project.codeRepo, days });
       const workbuddy = sharedCodeRepo || !workbuddyLedgers ? null
-        : workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { projectRepo: project.codeRepo, days });
+        : costSources.summarizeWorkbuddyRequests(workbuddyLedgers, { projectRepo: project.codeRepo, days });
       const codexRow = duplicateName ? null : codex.byProject.find((row) => row.project === project.name);
       rows.push({ id, name: project.name, claudeTokens: costUsage.totalClaudeTokens(usage),
         claudeUsd: usage.usd.actual, claudeOutput: usage.claudeTotals.output,
@@ -1085,7 +1098,7 @@ async function handleCostPortfolio(res, query) {
         sharedCodeRepo, duplicateName });
     }
     const workbuddyTotals = workbuddyLedgers
-      ? workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { days }).totals : null;
+      ? costSources.summarizeWorkbuddyRequests(workbuddyLedgers, { days }).totals : null;
     const totals = {
       claudeTokens: uniqueUsage ? costUsage.totalClaudeTokens(uniqueUsage) : 0,
       claudeUsd: uniqueUsage?.usd.actual || 0,
@@ -1121,7 +1134,7 @@ async function handleCostSessionDetail(req, res, query) {
   if (!proj || !selected) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   try {
-    const usage = await costUsage.getUsage({ ...selected, days, cards: costCards(proj), bindings: costBindings(proj) });
+    const usage = await costSources.getUsage({ ...selected, days, cards: costCards(proj), bindings: costBindings(proj) });
     const filters = costDetailFilters(query);
     const rows = costSessionDetail.filterSessions(usage.sessionRows, filters);
     sendJson(res, 200, {
@@ -1145,9 +1158,9 @@ async function handleCostJobDetail(req, res, query) {
   const pid = String(query.project || '');
   const proj = resolveProjectSafe(pid);
   if (!proj) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
-  const jobsRoot = path.join(proj.codeRepo, '.codex', 'jobs');
+  const jobsRoot = costSources.jobsRoot(path.join(proj.codeRepo, '.codex', 'jobs'));
   try {
-    const all = await costJobDetail.collectJobRows(jobsRoot, { memo: fileMemo });
+    const all = await costSources.collectJobRows(jobsRoot, { memo: fileMemo });
     const filters = costDetailFilters(query);
     const rows = costJobDetail.filterJobRows(all, filters);
     sendJson(res, 200, {
@@ -1684,6 +1697,10 @@ const server = http.createServer(async (req, res) => {
       res.end(req.method === 'HEAD' ? undefined : bytes); return;
     }
     if (!collaborationApi && !isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
+    if (DEMO_DIR && (pathname === '/api/perks' || pathname.startsWith('/api/perks/'))) {
+      if (pathname === '/api/perks/available' && req.method === 'GET') return sendJson(res, 200, { ok: true, available: false });
+      return sendJson(res, 403, { ok: false, error: '演示实例不提供每日福利' });
+    }
     if (collaborationApi && await collaborationApi.handle(req, res, pathname)) return;
     if (!collaborationApi && pathname === '/api/auth/session' && req.method === 'GET') return sendJson(res, 200, { ok: true, mode: 'local', user: null });
     if (pathname.startsWith('/api/')) {

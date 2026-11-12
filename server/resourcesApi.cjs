@@ -350,7 +350,7 @@ function createResourcesApi(deps) {
   function route(subpath, req, res) {
     const isRead = subpath === '' && req.method === 'GET';
     const isWrite = subpath === 'action' && req.method === 'POST';
-    if (!isRead && !isWrite) return false;
+    if (!deps.demo && !isRead && !isWrite) return false;
 
     if (isCollaboration) {
       sendJson(res, 404, { ok: false, error: '账号与额度只在本机看板里使用' });
@@ -358,6 +358,11 @@ function createResourcesApi(deps) {
     }
     if (!isLocalRequest(req)) {
       sendJson(res, 403, { ok: false, error: '请求来源不是本机' });
+      return true;
+    }
+    if (deps.demo) {
+      if (isRead) sendJson(res, 200, { ok: true, data: { formatVersion: 1, generatedAt: new Date().toISOString(), accounts: [], providers: [], ladders: { light: [], standard: [], hard: [] } } });
+      else sendJson(res, 403, { ok: false, error: '演示实例不能改账号' });
       return true;
     }
     const repo = resolveDispatcherRepo();

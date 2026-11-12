@@ -153,7 +153,7 @@ function serverHealthFixture({ index, promises, healthSource, clock = { time: 0 
     MODULE_IDS: settings.MODULE_IDS, process: { env: {}, platform: 'win32', pid: 1 },
     SETTINGS_PATH: '/settings', DIST_DIR: '/dist', WEBHOOK_CONFIGURED: true,
     MODE: 'release', SERVICE: 'claude-dashboard', VERSION: '1.0', DASH_ROOT: '/code', REGISTRY: '/registry', DASHBOARD_HOME: '/home',
-    RELEASE_COMMIT: 'old', RELEASED_AT: null, lastSchedReadOkAt: null,
+    RELEASE_COMMIT: 'old', RELEASED_AT: null, lastSchedReadOkAt: null, DEMO_DIR: null,
     state: { actualPort: 6060, startedAt: 0, subscribers: new Set() },
     Date: { now: () => clock.time }, releaseHome: () => '/release',
     releaseBehindOf: require('../core/releaseCheck.cjs').releaseBehindOf,
