@@ -54,4 +54,28 @@ async function runScheduled({ client, share, root, key, job, command, args,
   }
 }
 
-module.exports = { runScheduled, checkedCores };
+/** 外层已经拿着调度许可在跑时，内层入口沿用外层许可直接开跑，不再挂第二张单。
+ *  纯函数：只看传入的 env/client/job，不读写进程环境、不往外抛异常。
+ *  env 里没有非空 SCHED_PERMIT 返回 null；否则用被授予的核数（非正整数按 1）校验许可，
+ *  通过给出 { ok:true, cores, ticketId }，不通过或校验抛异常给出 { ok:false, reason }。 */
+function inheritedPermit({ client, share, env, job }) {
+  const permit = env.SCHED_PERMIT;
+  if (typeof permit !== 'string' || permit.length === 0) return null;
+  const granted = env.SCHED_GRANTED_CORES;
+  let cores = 1;
+  if (granted !== undefined && /^\d+$/.test(String(granted))) {
+    const value = Number(granted);
+    if (Number.isSafeInteger(value) && value >= 1) cores = Math.min(value, job.cores);
+  }
+  let validation;
+  try {
+    validation = client.validatePermit({ share, env, category: job.category,
+      workTypes: [job.workType], cores });
+  } catch (error) {
+    return { ok: false, reason: error && error.message ? error.message : String(error) };
+  }
+  if (validation.ok) return { ok: true, cores, ticketId: permit.split(':')[0] };
+  return { ok: false, reason: validation.reason };
+}
+
+module.exports = { runScheduled, checkedCores, inheritedPermit };
