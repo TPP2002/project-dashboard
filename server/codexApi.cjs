@@ -14,10 +14,10 @@ const MESSAGE_MAX = 8000;
 
 function createCodexApi({
   resolveRepo, readRegistry, dashboardRoot, sessionsRoot, registryPath,
-  readBody, sendJson, sendText, bodyMax, fileMemo,
+  readBody, sendJson, sendText, bodyMax, fileMemo, costSources,
 }) {
   const activeDispatches = new Set();
-  const getDeepseekBalance = deepseekBalance.createCachedDeepseekBalance();
+  const getDeepseekBalance = costSources ? costSources.getDeepseekBalance : deepseekBalance.createCachedDeepseekBalance();
 
   function context(res, query) {
     const projectId = query.project;
@@ -71,7 +71,8 @@ function createCodexApi({
     if (!repo) return [];
     // 这里没有会话数据,只走「进程没了」「早该收工却没收尾」两条铁证;
     // 「长时间没动静」这条软判据要扫会话文件,留给战报那条路径算。
-    return attachLiveness(listJobs(path.join(repo, '.codex', 'jobs'), { memo: fileMemo }), { nowMs: Date.now() });
+    const root = path.join(repo, '.codex', 'jobs');
+    return attachLiveness(listJobs(costSources ? costSources.jobsRoot(root) : root, { memo: fileMemo }), { nowMs: Date.now() });
   }
 
   // 每个请求绑定自己的仓库，异步续聊也不会被另一个项目的请求改写上下文。
@@ -230,9 +231,9 @@ function createCodexApi({
 
   return {
     getCostUsage: sessionApi.getCostUsage,
-    getDeepseekUsage: (days, projectId) => deepseekCostUsage.getDeepseekUsage({ days, projectId, registryPath, memo: fileMemo }),
-    scanAllDeepseekJobs: () => deepseekCostUsage.scanAllDeepseekJobs({ registryPath, memo: fileMemo }),
-    summarizeDeepseekJobs: deepseekCostUsage.summarizeDeepseekJobs,
+    getDeepseekUsage: (days, projectId) => (costSources || deepseekCostUsage).getDeepseekUsage({ days, projectId, registryPath, memo: fileMemo }),
+    scanAllDeepseekJobs: () => (costSources || deepseekCostUsage).scanAllDeepseekJobs({ registryPath, memo: fileMemo }),
+    summarizeDeepseekJobs: (costSources || deepseekCostUsage).summarizeDeepseekJobs,
     getDeepseekBalance,
     getQuota: sessionApi.getQuota,
     route,
