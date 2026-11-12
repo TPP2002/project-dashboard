@@ -219,6 +219,15 @@ test('stopTree：Windows taskkill /T /F 整树 + 确认退出；类 Unix SIGTERM
   assert.equal((await lr.stopTree(0, { platform: 'linux' })).ok, false, 'pid 不合法直接拒');
 });
 
+test('stopTree：Windows 上 taskkill 报找不到进程、进程确实已不在时算停成功；进程还在仍报败', async () => {
+  const notFound = () => ({ status: 128, stderr: Buffer.from('错误: 没有找到进程 "4244"。') });
+  const gone = (p, s) => { if (s === 0) { const e = new Error('gone'); e.code = 'ESRCH'; throw e; } };
+  assert.deepEqual(await lr.stopTree(4244, { platform: 'win32', spawnSync: notFound, kill: gone }), { ok: true });
+  const alive = await lr.stopTree(4245, { platform: 'win32', spawnSync: notFound, kill: () => {} });
+  assert.equal(alive.ok, false, '进程还在就不能当成已停');
+  assert.match(alive.reason, /没有找到进程/);
+});
+
 // ——————— 启动互斥 + 许可票号 ———————
 
 test('启动互斥：独占创建；持锁进程活着别人拿不到；进程死了陈锁可清；release 后可再抢', () => {
