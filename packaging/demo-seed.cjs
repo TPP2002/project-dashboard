@@ -9,6 +9,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { assertValid } = require('../core/boardSchema.cjs');
+const { resolveProject } = require('../core/resolveProject.cjs');
+const { mapRepoToPrefix } = require('../core/costUsage.cjs');
+const { DEMO_MARKER_FILE } = require('../core/demoMode.cjs');
 
 const home = path.resolve(process.argv[2] || path.join(require('os').tmpdir(), 'dash-demo'));
 const boardsDir = path.join(home, 'boards');
@@ -176,6 +179,10 @@ const blog = {
 };
 
 function writeBoard(b) {
+  const ids = b.project.id === 'shopfast' ? ['FEAT-1', 'FEAT-2', 'BUG-7', 'CHORE-9'] : ['B1', 'B2'];
+  for (const task of b.tasks) {
+    if (ids.includes(task.id)) task.cost = { entries: [{ date: shiftDate('2026-07-01', SHIFT), agents: { sonnet: 3, opus: 1 }, tokens: 24000, note: '开发与检查' }] };
+  }
   shiftBoardDates(b, SHIFT);
   b.activity = b.activity.map((a, i) => Object.assign({ id: 'a' + (i + 1) }, a));
   assertValid(b);
@@ -195,6 +202,23 @@ const registry = {
   },
 };
 fs.writeFileSync(path.join(home, 'registry.json'), JSON.stringify(registry, null, 2));
+fs.writeFileSync(path.join(home, DEMO_MARKER_FILE), JSON.stringify({ schemaVersion: 1 }, null, 2));
+const projectsRoot = path.join(home, 'claude-projects');
+fs.rmSync(projectsRoot, { recursive: true, force: true });
+for (const id of Object.keys(registry.projects)) {
+  const project = resolveProject(id, { registryPath: path.join(home, 'registry.json') });
+  const dir = path.join(projectsRoot, mapRepoToPrefix(project.costPrefixRoots[0]));
+  fs.mkdirSync(dir, { recursive: true });
+  for (let i = 0; i < 3; i++) {
+    const sessionId = `${id}-session-${i}`;
+    const rows = [0, 1, 2, 3].map((j) => ({
+      type: 'assistant', timestamp: `${shiftDate(today, -(i * 4 + j))}T08:00:00Z`, sessionId, isSidechain: false,
+      message: { id: `${sessionId}-${j}`, model: j % 2 ? 'claude-opus-4-1' : 'claude-sonnet-4-5',
+        usage: { input_tokens: 800, output_tokens: 1200, cache_read_input_tokens: 40000, cache_creation_input_tokens: 2000 } },
+    }));
+    fs.writeFileSync(path.join(dir, `${sessionId}.jsonl`), rows.map(JSON.stringify).join('\n') + '\n');
+  }
+}
 console.log('✔ 演示数据已生成:', home);
 console.log('  项目: shopfast(' + shop.tasks.length + ' 任务) + blog(' + blog.tasks.length + ' 任务)');
 console.log('  待拍板: 3 条(BUG-3#d1 / SEC-13#d3 / B5#bd1)');
