@@ -7,6 +7,7 @@ import type { AdminData, Device, Invite, Project } from './types'
 import ProjectChoices from './ProjectChoices.vue'
 import SecretDisplay from './SecretDisplay.vue'
 import UserAccess from './UserAccess.vue'
+import DeviceGroups from './DeviceGroups.vue'
 const data = ref<AdminData | null>(null)
 const projects = ref<Project[]>([])
 const selected = ref<string[]>([])
@@ -126,7 +127,7 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
       <p v-if="!data.invites.length">尚未创建邀请。</p>
       <h2>用户授权</h2>
       <div class="collab-grid"><UserAccess v-for="user in data.users" :key="user.id" :user="user" :projects="projects" :busy="busy" :resets="data.resets" @save="saveUser" @reset="createReset" /></div>
-      <h2>负责人设备</h2>
+      <h2>设备</h2>
       <p>设备凭据可用于登录；撤销设备会同时撤销它建立的会话。</p>
       <p>仅在自己的常用浏览器中主动开启信任，之后可减少重复登录。主动退出会取消此浏览器信任；其他设备可在下方列表撤销。</p>
       <form class="collab-card collab-form" @submit.prevent="createDevice">
@@ -135,14 +136,7 @@ onBeforeUnmount(() => { controller.abort(); secret.value = null; data.value = nu
         <small>浏览器信任无需复制凭据；设备名称留空时使用“我的常用浏览器”。</small>
         <button class="btn" :disabled="busy || !label.trim()">手动创建设备凭据</button>
       </form>
-      <div class="collab-grid">
-        <article v-for="device in data.devices" :key="device.id" class="collab-card">
-          <h3>{{ device.label }}</h3><p>{{ device.revoked ? '已撤销' : device.expiresAt && Date.parse(device.expiresAt) <= Date.now() ? '已到期' : '有效' }} · 创建于 {{ new Date(device.createdAt).toLocaleString() }}</p>
-          <p v-if="device.expiresAt">到期时间：{{ new Date(device.expiresAt).toLocaleString() }}</p>
-          <button class="btn" :disabled="busy || device.revoked" @click="revoke('devices', device.id)">撤销设备</button>
-        </article>
-      </div>
-      <p v-if="!data.devices.length">尚未创建设备凭据。</p>
+      <DeviceGroups :users="data.users" :devices="data.devices" :busy="busy" @revoke="id => revoke('devices', id)" />
     </template>
   </main>
 </template>

@@ -85,7 +85,8 @@ function publicReset(r) { return { id: r.id, userId: r.userId, expiresAt: r.expi
 // Pre-remember-device ledgers had no expiresAt. Their fixed deadline is derived
 // from creation, never from their next use; no implicit migration or renewal.
 function deviceExpiry(d) { return d.expiresAt || new Date(Date.parse(d.createdAt) + DEVICE_LIFETIME).toISOString(); }
-function publicDevice(d) { return { id: d.id, label: d.label, createdAt: d.createdAt, expiresAt: deviceExpiry(d), revoked: d.revoked }; }
+function publicDevice(d) { return { id: d.id, label: d.label, createdAt: d.createdAt, expiresAt: deviceExpiry(d), revoked: d.revoked, ...(d.revoked && d.revokedAt ? { revokedAt: d.revokedAt } : {}) }; }
+function markDeviceRevoked(d) { if (!d.revoked) { d.revoked = true; d.revokedAt = new Date().toISOString(); } }
 function validLedger(db) {
   const obj = v => v && typeof v === 'object' && !Array.isArray(v);
   const str = v => typeof v === 'string' && v.length > 0;
@@ -100,7 +101,7 @@ function validLedger(db) {
   if (db.resets !== undefined && (!Array.isArray(db.resets) || !db.resets.every(obj) || !ids(db.resets.map(r => r.id)) ||
       !db.resets.every(r => userExists(r.userId) && typeof r.tokenHash === 'string' && HEX.test(r.tokenHash) && date(r.expiresAt) && typeof r.used === 'boolean'))) return false;
   if (!db.invites.every(i => i.role === undefined || ['member', 'viewer'].includes(i.role))) return false;
-  if (!db.devices.every(d => str(d.label) && userExists(d.userId) && HEX.test(d.tokenHash) && date(d.createdAt) && (d.expiresAt === undefined || date(d.expiresAt)) && typeof d.revoked === 'boolean')) return false;
+  if (!db.devices.every(d => str(d.label) && userExists(d.userId) && HEX.test(d.tokenHash) && date(d.createdAt) && (d.expiresAt === undefined || date(d.expiresAt)) && (d.revokedAt === undefined || date(d.revokedAt)) && typeof d.revoked === 'boolean')) return false;
   if (!db.sessions.every(s => userExists(s.userId) && HEX.test(s.tokenHash) && date(s.expiresAt) && (s.deviceId === null || db.devices.some(d => d.id === s.deviceId && d.userId === s.userId)))) return false;
   if (!db.invites.every(i => HEX.test(i.tokenHash) && ids(i.projectIds) && date(i.expiresAt) && Number.isSafeInteger(i.maxUses) && i.maxUses > 0 && Number.isSafeInteger(i.uses) && i.uses >= 0 && i.uses <= i.maxUses && typeof i.revoked === 'boolean')) return false;
   return true;
@@ -286,7 +287,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
   }
   function revokeDeviceIn(db, id) {
     const d = db.devices.find(d => d.id === id);
-    if (d) d.revoked = true;
+    if (d) markDeviceRevoked(d);
     db.sessions = db.sessions.filter(s => s.deviceId !== id);
   }
   function myDevices(raw) {
@@ -365,7 +366,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     return ownerMutation(raw, db => {
       const item = db[kind].find(i => i.id === id);
       if (!item) fail(404, 'Not found');
-      item.revoked = true;
+      if (kind === 'devices') markDeviceRevoked(item); else item.revoked = true;
       if (kind === 'devices') db.sessions = db.sessions.filter(s => s.deviceId !== id);
       return {};
     });
@@ -404,7 +405,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       if (u.passwordHash !== previous.passwordHash) fail(400, 'Current password changed');
       Object.assign(u, { salt, passwordHash });
       db.sessions = db.sessions.filter(s => s.userId !== u.id || s.id === session.sessionId);
-      db.devices.filter(d => d.userId === u.id && d.id !== session.deviceId).forEach(d => { d.revoked = true; });
+      db.devices.filter(d => d.userId === u.id && d.id !== session.deviceId).forEach(markDeviceRevoked);
     });
     return {};
   }
@@ -449,7 +450,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       Object.assign(u, { salt, passwordHash });
       r.used = true;
       db.sessions = db.sessions.filter(s => s.userId !== u.id);
-      db.devices.filter(d => d.userId === u.id).forEach(d => { d.revoked = true; });
+      db.devices.filter(d => d.userId === u.id).forEach(markDeviceRevoked);
       return issue(db, u.id);
     });
   }
@@ -464,7 +465,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
       if (!u) fail(409, 'Owner changed');
       Object.assign(u, { salt, passwordHash, disabled: false });
       db.sessions = db.sessions.filter(s => s.userId !== u.id);
-      db.devices.filter(d => d.userId === u.id).forEach(d => { d.revoked = true; });
+      db.devices.filter(d => d.userId === u.id).forEach(markDeviceRevoked);
     });
   }
   return {
@@ -478,7 +479,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     withSession: (raw, fn) => withLock(lock, () => fn(requireSession(read(), raw))),
     revokeAllCredentials: () => transaction(db => {
       db.sessions = [];
-      db.devices.forEach(d => { d.revoked = true; });
+      db.devices.forEach(markDeviceRevoked);
       db.invites.forEach(i => { i.revoked = true; });
       (db.resets || []).forEach(r => { r.used = true; });
     }),
@@ -490,7 +491,7 @@ function createAuth({ home = DASHBOARD_HOME, registryPath = process.env.DASHBOAR
     restoreBackup: () => { prepare(); return withLock(lock, () => {
       const db = read(backup);
       // Recovery never resurrects an old bearer credential.
-      db.sessions = []; db.invites.forEach(i => { i.revoked = true; i.role ??= 'member'; }); db.devices.forEach(d => { d.revoked = true; });
+      db.sessions = []; db.invites.forEach(i => { i.revoked = true; i.role ??= 'member'; }); db.devices.forEach(markDeviceRevoked);
       db.resets ??= [];
       db.resets.forEach(r => { r.used = true; });
       secureWrite(file, JSON.stringify(db));

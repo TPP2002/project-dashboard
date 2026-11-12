@@ -1,0 +1,51 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { fork } = require('node:child_process');
+const { createAuth } = require('../core/collaborationAuth.cjs');
+const { emptyBoard } = require('../core/boardSchema.cjs');
+const PASSWORD = 'Device-fixture-123456';
+const LOOPBACK = ['127', '0', '0', '1'].join('.');
+const ORIGIN = `http://${LOOPBACK}:47123`;
+
+test('device revocation dates survive all relevant paths without exposing secrets', async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'device-date-'));
+  const registryPath = path.join(home, 'registry.json');
+  const ledger = path.join(home, 'private', 'collaboration-auth.json');
+  fs.writeFileSync(path.join(home, 'T1.json'), JSON.stringify(emptyBoard({ id: 'T1', name: 'T1' })));
+  fs.writeFileSync(registryPath, JSON.stringify({ projects: { T1: { mainRepo: home, board: path.join(home, 'T1.json'), name: 'T1' } } }));
+  const auth = createAuth({ home, registryPath }); await auth.bootstrap('demo', PASSWORD);
+  const owner = await auth.login('demo', PASSWORD);
+  const invitation = auth.createInvite(owner.token, { role: 'member', projectIds: ['T1'], maxUses: 1, expiresInHours: 1 });
+  const member = await auth.register({ inviteToken: invitation.token, username: 'member', password: PASSWORD });
+  const child = fork(path.resolve(__dirname, '../server/server.cjs'), [], { windowsHide: true, silent: true, env: { ...process.env, DASHBOARD_HOME: home, DASHBOARD_REGISTRY: registryPath, DASHBOARD_MODE: 'collaboration', DASHBOARD_PUBLIC_ORIGIN: ORIGIN, DASHBOARD_HOST: LOOPBACK, DASHBOARD_PORT: '0', DASHBOARD_NO_OPEN: '1', DASHBOARD_EVENT_WEBHOOK: '', DASHBOARD_POLL_MS: '500' } });
+  t.after(async () => { if (child.exitCode === null) await new Promise(resolve => { child.once('exit', resolve); child.kill(); }); fs.rmSync(home, { recursive: true, force: true }); });
+  const base = await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('startup timeout')), 15000); child.once('error', reject); child.once('exit', () => reject(new Error('server exited'))); child.on('message', m => { if (m.type === 'dashboard-ready') { clearTimeout(timer); resolve(`http://${LOOPBACK}:${m.port}`); } }); });
+  async function request(route, session, data) {
+    const response = await fetch(base + route, { method: data === undefined ? 'GET' : 'POST', headers: { Cookie: 'dashboard_session=' + session.token, ...(data === undefined ? {} : { Origin: ORIGIN, 'Content-Type': 'application/json', 'X-Dashboard-Request': '1', 'X-Dashboard-CSRF': session.csrfToken }) }, body: data === undefined ? undefined : JSON.stringify(data) });
+    const body = await response.json(); assert.equal(response.status, 200, JSON.stringify(body)); return body;
+  }
+  const read = () => JSON.parse(fs.readFileSync(ledger, 'utf8'));
+  const began = Date.now();
+  const ownerDevice = (await request('/api/auth/devices', owner, { label: '命令行·宿舍笔记本' })).device;
+  const memberDevice = (await request('/api/auth/my-devices', member, { label: '笔记本' })).device;
+  let admin = await request('/api/auth/admin', owner); let mine = await request('/api/auth/my-devices', member);
+  assert.deepEqual(Object.keys(admin.devices[0]), ['id', 'label', 'createdAt', 'expiresAt', 'revoked', 'userId']);
+  assert.deepEqual(Object.keys(mine.devices[0]), ['id', 'label', 'createdAt', 'expiresAt', 'revoked']);
+  await request(`/api/auth/devices/${ownerDevice.id}/revoke`, owner, {});
+  admin = await request('/api/auth/admin', owner); const revoked = admin.devices.find(d => d.id === ownerDevice.id);
+  assert.equal(revoked.revoked, true); assert.ok(Date.parse(revoked.revokedAt) >= began); assert.equal(new Date(revoked.revokedAt).toISOString(), revoked.revokedAt); assert.equal(read().devices.find(d => d.id === ownerDevice.id).revokedAt, revoked.revokedAt);
+  await request(`/api/auth/devices/${ownerDevice.id}/revoke`, owner, {}); assert.equal((await request('/api/auth/admin', owner)).devices.find(d => d.id === ownerDevice.id).revokedAt, revoked.revokedAt);
+  await request(`/api/auth/my-devices/${memberDevice.id}/revoke`, member, {}); mine = await request('/api/auth/my-devices', member); assert.ok(Date.parse(mine.devices.find(d => d.id === memberDevice.id).revokedAt) >= began);
+  const legacy = auth.createMyDevice(member.token, '旧设备').device; const db = read(); const record = db.devices.find(d => d.id === legacy.id); record.revoked = true; fs.writeFileSync(ledger, JSON.stringify(db));
+  assert.equal('revokedAt' in (await request('/api/auth/my-devices', member)).devices.find(d => d.id === legacy.id), false);
+  await request(`/api/auth/my-devices/${legacy.id}/revoke`, member, {}); assert.equal('revokedAt' in read().devices.find(d => d.id === legacy.id), false);
+  const passwordDevice = auth.createMyDevice(member.token, '改密设备').device;
+  await request('/api/auth/password', member, { currentPassword: PASSWORD, newPassword: PASSWORD + '-new' }); assert.ok(read().devices.find(d => d.id === passwordDevice.id).revokedAt);
+  const allDevice = auth.createDevice(owner.token, '备用设备').device; auth.revokeAllCredentials(); assert.ok(read().devices.find(d => d.id === allDevice.id).revokedAt);
+  const ownerAgain = await auth.login('demo', PASSWORD); auth.revokeInvite(ownerAgain.token, invitation.invite.id);
+  admin = auth.admin(ownerAgain.token); assert.equal('revokedAt' in admin.invites[0], false); assert.ok(admin.devices.every(d => !('token' in d) && !('tokenHash' in d)));
+});

@@ -40,6 +40,6 @@ export interface Invite {
   role?: 'member' | 'viewer'
   id: string; projectIds: string[]; expiresAt: string; maxUses: number; uses: number; revoked: boolean
 }
-export interface Device { id: string; label: string; createdAt: string; revoked: boolean; expiresAt?: string }
+export interface Device { id: string; label: string; createdAt: string; revoked: boolean; expiresAt?: string; userId?: string; revokedAt?: string }
 export interface Reset { id: string; userId: string; expiresAt: string; used: boolean }
 export interface AdminData { ok: true; users: User[]; invites: Invite[]; devices: Device[]; resets: Reset[] }
