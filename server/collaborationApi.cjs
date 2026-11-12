@@ -6,6 +6,7 @@ const { execFile } = require('node:child_process');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const bodyChannel = require('node:diagnostics_channel').channel('dashboard.owner-body');
 const { publicJson, taskView, text } = require('../core/collaborationPublic.cjs');
+const { createMemberBoardCache, groupMessages } = require('../core/memberBoardCache.cjs');
 const { createAuth, fail } = require('../core/collaborationAuth.cjs');
 const { contributionView } = require('../core/collaborationContribView.cjs');
 const { readRegistry, resolveProject } = require('../core/resolveProject.cjs');
@@ -44,11 +45,11 @@ async function body(req, maxBytes = 16384) {
   return value;
 }
 function only(value, keys) { if (Object.keys(value).some(k => !keys.includes(k))) fail(400, 'Unexpected field'); return value; }
-function boardView(board, user) {
+function boardView(board, user, groups = groupMessages(board.activity || [])) {
   return {
     schemaVersion: board.schemaVersion,
     project: { id: text(board.project.id), name: text(board.project.name), createdAt: text(board.project.createdAt), updatedAt: text(board.project.updatedAt) },
-    tasks: board.tasks.map(t => taskView(t, user, board.activity || [])),
+    tasks: board.tasks.map(t => taskView(t, user, groups.get(t.id) || [])),
     activity: (board.activity || []).filter(a => ['collaboration:claim', 'collaboration:progress'].includes(a.type) && typeof a.userId === 'string')
       .map(a => ({ ts: text(a.ts), type: a.type, taskId: text(a.taskId), userId: text(a.userId), author: text(a.author) })),
   };
@@ -69,6 +70,7 @@ function createCollaborationApi({ config, home, registryPath, summarize,
   readBoard = boardPath => JSON.parse(fs.readFileSync(boardPath, 'utf8')),
 }) {
   const auth = createAuth({ home, registryPath });
+  const memberCache = createMemberBoardCache({ summarize, view: boardView });
   const streams = new Map();
   const ownerRequests = new WeakMap();
   const ownerContext = new AsyncLocalStorage();
@@ -365,10 +367,9 @@ function createCollaborationApi({ config, home, registryPath, summarize,
         const reg = readRegistry(registryPath);
         const list = projects(session.user).map(id => {
           const proj = authorizedProject(session.user, id);
-          const b = JSON.parse(fs.readFileSync(proj.board, 'utf8'));
           // Derive only the already-authorized board; preserve the existing
           // completed/void-card denominator rather than invent another metric.
-          const { total, byStatus, progress, pendingCount, lastActivityTs } = summarize(b);
+          const { total, byStatus, progress, pendingCount, lastActivityTs } = memberCache.summary(proj.board);
           const summary = { total, byStatus, progress, pendingCount, lastActivityTs };
           return { id: text(id), name: text(reg.projects[id].name || id), summary };
         });
@@ -377,7 +378,12 @@ function createCollaborationApi({ config, home, registryPath, summarize,
       const board = pathname.match(/^\/api\/board\/([^/]+)$/);
       if (req.method === 'GET' && board) {
         const proj = authorizedProject(session.user, decodeURIComponent(board[1]));
-        json(res, 200, boardView(JSON.parse(fs.readFileSync(proj.board, 'utf8')), session.user)); return true;
+        const result = memberCache.view(proj.board, session.user);
+        const params = new URL(req.url, config.origin).searchParams;
+        if (!params.has('since')) json(res, 200, result.value);
+        else if (params.get('since') === result.version) json(res, 200, { ok: true, unchanged: true, version: result.version });
+        else json(res, 200, { ...result.value, version: result.version });
+        return true;
       }
       fail(403, 'Forbidden');
     } catch (e) {
