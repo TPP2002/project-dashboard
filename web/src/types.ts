@@ -9,6 +9,8 @@ export type Status =
 export type DecisionInfoField = 'background' | 'optionPros' | 'recommendReason'
 
 export interface Decision {
+  askKind?: string
+  decidedBy?: string
   id: string
   question: string
   options: string[]

@@ -738,6 +738,11 @@ function pending(flags) {
       allowCustom: flags.strict ? false : true,
     };
   }
+  const delegatedFields = require('../core/delegatedDecision.cjs');
+  const rawAskKind = payload.askKind !== undefined ? payload.askKind : flags['ask-kind'];
+  const askKind = rawAskKind === undefined ? undefined : delegatedFields.normalizeAskKind(rawAskKind);
+  if (rawAskKind !== undefined && !askKind) throw new Error(delegatedFields.askKindRefusal());
+  if (rawAskKind === undefined && flags[delegatedFields.ENFORCE_ASK_KIND]) throw new Error(delegatedFields.askKindRefusal());
   // 硬校验
   const errs = validatePendingPayload(payload);
   if (errs.length) {
@@ -766,6 +771,7 @@ function pending(flags) {
       allowCustom: payload.allowCustom !== false,
       answer: null,
       decidedAt: null,
+      ...(askKind === undefined ? {} : { askKind }),
     });
     if (['未开工', '待开工'].includes(t.status)) t.status = '待拍板';
     // 施工中的卡不拽回「待拍板」（它确实还在施工），但也不能一点挂起的痕迹都没有：
@@ -784,6 +790,8 @@ function pending(flags) {
 // 施工中/暂缓等其它状态一律不动，免得拍个板把卡的真实进度拽回去。
 function decide(flags) {
   const proj = resolveProj(flags);
+  const decidedBy = flags.by === undefined ? undefined : require('../core/delegatedDecision.cjs').normalizeDecidedBy(flags.by);
+  if (flags.by !== undefined && !decidedBy) throw new Error('拍板来源须为负责人拍板或对话代定');
   const id = need(flags._[0], 'decide <taskId> --did <dN> --answer <答案> [--no-promote]');
   const did = need(flags.did, '--did <dN>');
   const answer = need(flags.answer, '--answer <答案>');
@@ -794,6 +802,7 @@ function decide(flags) {
     if (!d) throw new Error(`decision ${did} 不存在`);
     if (!d.options.includes(answer) && !d.allowCustom) throw new Error(`答案「${answer}」不在选项 ${d.options.join('/')} 中`);
     d.answer = answer; d.decidedAt = today();
+    if (decidedBy !== undefined) d.decidedBy = decidedBy;
     if (promote && (t.decisions || []).every((x) => x.answer !== null) && t.status === '待拍板') t.status = '已拍板';
   }, act('decide', flags.author || '看板', `拍板 ${id}·${did}=${answer}`, id));
   return okTask(board, id, changed);

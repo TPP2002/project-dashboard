@@ -84,6 +84,7 @@ const stats = computed(() => {
           <span class="ans-body">{{ it.decision.answer }}</span>
           <span v-if="it.decision.answer !== it.decision.recommended" class="badge warn compact custom-tag icon-badge"><Icon name="pencil" :size="14" />自定义/非推荐</span>
           <span v-else class="badge n compact rec-tag">= 推荐</span>
+          <span :class="['badge', it.decision.decidedBy === 'delegated' ? 'warn' : 'n', 'compact']">{{ it.decision.decidedBy === 'owner' ? '负责人拍板' : it.decision.decidedBy === 'delegated' ? '对话代定' : (it.decision.decidedBy ?? '未标') }}</span>
         </div>
         <div v-if="(it.decision as any).recommendReason" class="reason muted">
           <b>当时的推荐理由:</b> {{ (it.decision as any).recommendReason }}

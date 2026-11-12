@@ -1258,7 +1258,7 @@ function handleDecide(req, res, projectId, taskId) {
 
     // board 仍只被 CLI 写：这里只经 execFile + 数组传参转发（无 shell、参数不拼串 → 防注入 R6）。
     const args = [CLI_INDEX, 'decide', '--project', projectId, taskId,
-      '--did', did, '--answer', answer, '--author', author, '--json'];
+      '--did', did, '--answer', answer, '--author', author, '--by', 'owner', '--json'];
     if (REGISTRY !== REGISTRY_PATH) { args.push('--registry', REGISTRY); } // 测试隔离时透传
     ownerExecFile(process.execPath, args, {
       cwd: DASH_ROOT, timeout: DECIDE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true,

@@ -27,8 +27,8 @@ const EXIT_CODES = [
 
 /** 全局 help 的分组:先给天天用的,装机维护的沉到后面。 */
 const GROUPS = [
-  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
-  ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
+  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'undecide', 'done', 'note', 'delegate', 'request-info']],
+  ['查询', ['list', 'show', 'inbox', 'cost', 'precheck', 'delegated']],
   ['卡的生命周期', ['add', 'assign', 'unassign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
@@ -189,6 +189,7 @@ const COMMANDS = {
       ['--reason <文本>', '为什么推荐它，≥30 字'],
       ['--did <dN>', '决策编号，默认按顺序自动生成'],
       ['--strict', '禁止自定义答案（默认允许负责人写自己的答案）'],
+      ['--ask-kind <类别>', '接入代理决策的项目必填；JSON 可用 askKind。类别：改目标、花钱超线、收不回的事、要他本人做、口味题、改规矩'],
     ],
     examples: [
       'pending FEAT-12 --project myproj --json-file pending.json',
@@ -206,6 +207,7 @@ const COMMANDS = {
       ['--did <dN>', '哪条决策'],
       ['--answer <文本>', '答案。不在选项内时要求这条决策允许自定义'],
       ['--no-promote', '答完最后一条也不把卡从 待拍板 推到 已拍板'],
+      ['--by <owner|delegated>', '负责人拍板或对话代定；不填记为未标'],
     ],
     examples: ['decide FEAT-12 --project myproj --did d1 --answer "锁"'],
     notes: ['默认会推进状态：全部决策都答完且卡正挂在「待拍板」时自动转「已拍板」。'],
@@ -236,6 +238,23 @@ const COMMANDS = {
       '收官时顺手把本卡「已拍板却没标落地」的决策一起标掉（`--collect` 不做这件事）。',
       '写完立刻 `show <卡号>` 复核：多对话并行时后写的可能把先写的整份盖掉。',
     ],
+  },
+  delegate: {
+    summary: '记录或推翻对话代定',
+    usage: 'delegate <卡号> --kind <类别> --symptom <现象> --chose <选择> --alt <另一条路>  或  delegate [卡号] --overturn <短号> [--reason <原因>]',
+    args: [
+      ['--kind <类别>', '界面（ui、页面、外观、视觉）；玩法与数值（gameplay、玩法、数值）；文案（copy、文字）；数据与口径（data、数据、口径）；对外（external、外部）；技术与流程（tech、技术、流程）'],
+      ['--symptom / --chose / --alt <文本>', '现象、选择与另一条路，不能包含竖线或换行'],
+      ['--juror <文本>', '可选会审意见'],
+      ['--overturn <短号> [--reason <原因>]', '推翻原记录；同类第 3 次起提醒负责人决定是否改成先问'],
+    ],
+    examples: ['delegate T1 --kind 界面 --symptom 按钮灰色 --chose 改成可点 --alt 保持灰色', 'delegate --overturn 6091de --reason 需要恢复'],
+  },
+  delegated: {
+    summary: '跨项目搜索代定或查看分类统计',
+    usage: 'delegated (--search <关键词> | --stats) [--project <id>] [--kind <类别>] [--limit <数量>] [--json]',
+    args: [['--search <关键词>', '按全部关键词搜索，可重复'], ['--stats', '按项目和类别统计'], ['--kind <类别>', '筛选类别'], ['--limit <数量>', '搜索结果最多显示数量，默认 30']],
+    examples: ['delegated --search 灰色 按钮', 'delegated --stats --kind 界面'],
   },
   note: {
     summary: '往活动流写一条留言（可挂在某张卡上，也可只挂项目）',

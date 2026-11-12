@@ -48,6 +48,7 @@ const REGISTRY = {
   unblock: ['./commands.cjs', 'unblock'],
   done: ['./commands.cjs', 'done'], cancel: ['./commands.cjs', 'cancel'], reopen: ['./commands.cjs', 'reopen'],
   note: ['./commands.cjs', 'note'],
+  delegate: ['./delegatedCmd.cjs', 'delegate'], delegated: ['./delegatedCmd.cjs', 'delegated'],
   'request-info': ['./requestInfo.cjs', 'requestInfo'],
   edit: ['./commands.cjs', 'edit'], set: ['./commands.cjs', 'set'],
   list: ['./commands.cjs', 'list'], show: ['./commands.cjs', 'show'],
@@ -85,7 +86,7 @@ const REGISTRY = {
  * 给这些命令做反查纯属白跑一个 git 子进程，而 claim-check 挂在每次 commit 上，那点开销是要还的（审计 A9）。
  */
 const NO_AUTO_PROJECT = new Set([
-  'cloud',
+  'cloud', 'delegated',
   'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol',
 ]);
 
@@ -170,7 +171,7 @@ function rejectedNotice(cmd, flags, res) {
 }
 
 function main() {
-  const [cmd, ...rest] = process.argv.slice(2);
+  let [cmd, ...rest] = process.argv.slice(2);
   // `help <命令>` / 裸 help / 无参数：全局一览或单条用法。
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
     const target = cmd === 'help' ? rest.find((a) => !a.startsWith('-')) : undefined;
@@ -195,7 +196,7 @@ function main() {
   }
   if (typeof fn !== 'function') { console.error(`✖ 命令 ${cmd} 尚未实现（${entry[0]} 未导出 ${entry[1]}）`); process.exit(3); }
 
-  const flags = parseFlags(rest);
+  let flags = parseFlags(rest);
   autoFillProject(cmd, flags);
   // Cloud management is asynchronous and never enters the board mutation/
   // replay context. Keep the existing synchronous path for all old commands.
@@ -211,15 +212,23 @@ function main() {
     });
   }
   const { entryGateRefusal, runCliOperation } = require('../core/syncReplay.cjs');
-  const refusal = entryGateRefusal(cmd, flags);
-  if (refusal) { console.error('✖ ' + refusal); rejectedNotice(cmd, flags); process.exit(1); }
   try {
+    let post;
+    if (cmd === 'delegate') { const mapped = require('./delegatedCmd.cjs').delegateToNote(flags); flags = mapped.flags; post = mapped.post; cmd = 'note'; fn = require('./commands.cjs').note; }
+    if (cmd === 'pending') require('../core/delegatedDecision.cjs').markEntryEnforcement(flags);
+    const refusal = entryGateRefusal(cmd, flags);
+    if (refusal) { console.error('✖ ' + refusal); rejectedNotice(cmd, flags); process.exit(1); }
     const res = runCliOperation(cmd, flags, fn) || { ok: true };
+    if (post) post(res);
+    const hint = require('../core/delegatedDecision.cjs').entryHint(cmd, flags);
+    if (hint && flags.json) console.error(hint);
     if (cmd === 'show' || cmd === 'brief') rejectedNotice(cmd, flags, res);
     if (res.silent) { rejectedNotice(cmd, flags); return; }
-    if (flags.json) console.log(JSON.stringify(slimJson(res)));
+    if (flags.json && cmd === 'delegated') { const { text, ...data } = res; console.log(JSON.stringify(data)); }
+    else if (flags.json) console.log(JSON.stringify(slimJson(res)));
     else if (res.text) console.log(res.text);
     else console.log(`✔ ${cmd}` + (res.task ? ` ${res.task.id} → ${res.task.status}` : ''));
+    if (hint && !flags.json) console.log(hint);
     if (cmd !== 'show' && cmd !== 'brief') rejectedNotice(cmd, flags);
   } catch (e) {
     console.error('✖ ' + e.message);

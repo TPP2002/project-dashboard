@@ -14,6 +14,7 @@ const { COLLECT_OUTCOMES, COLLECT_BRIEF_MAX } = require('./collectTrigger.cjs');
 // 施工方式的合法值收在 core/taskBuilder.cjs(同一份真相源)。builder 可选:老卡没有它,不拦;
 // 但一旦写了就必须是合法值,免得 set/backfill 把编号外的字串塞进卡里。
 const { BUILDER_VALUES } = require('./taskBuilder.cjs');
+const { ASK_KINDS } = require('./delegatedDecision.cjs');
 
 const STATUS = ['未开工', '待开工', '待拍板', '已拍板', '施工中', '可复工', '待收单', '收官', '已完工', '暂缓', '压轴', '已作废'];
 
@@ -131,6 +132,8 @@ function validateTask(t, p, errs, ids) {
   (t.commitShas || []).forEach((s, i) => { if (!SHA.test(String(s))) errs.push(`${p}.commitShas[${i}]: 非法 sha「${s}」`); });
   (t.decisions || []).forEach((d, i) => {
     const dp = `${p}.decisions[${i}]`;
+    if (d.askKind !== undefined && !Object.hasOwn(ASK_KINDS, d.askKind)) errs.push(`${dp}.askKind: 非法枚举`);
+    if (d.decidedBy !== undefined && typeof d.decidedBy !== 'string') errs.push(`${dp}.decidedBy: 应为字符串`);
     for (const k of ['id', 'question', 'recommended']) if (!d[k]) errs.push(`${dp}.${k}: 缺失`);
     if (!Array.isArray(d.options) || d.options.length === 0) errs.push(`${dp}.options: 至少一个选项`);
     if (d.answer !== null && d.answer !== undefined && Array.isArray(d.options) && !d.options.includes(d.answer) && !d.allowCustom) {
