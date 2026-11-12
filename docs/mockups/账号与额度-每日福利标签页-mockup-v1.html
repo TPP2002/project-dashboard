@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>账号与额度 · 每日福利标签页 · 样稿 v1</title>
+<style>
+:root {
+  --bg: #fbfbfa; --surface: #ffffff; --surface-2: #f6f6f5; --surface-3: #eeeeed;
+  --line: #e4e4e2; --line-strong: #d2d2cf;
+  --text: #1a1a19; --text-2: #5c5c58; --text-3: #8e8e89;
+  --ok: #2c7a45; --ok-bg: #e8f4ec;
+  --warn: #9a6b12; --warn-bg: #fdf3e0;
+  --bad: #b3382f; --bad-bg: #fdecea;
+  --info: #2b5fa8; --info-bg: #e8f0fb;
+  --r-sm: 4px; --r: 6px; --r-lg: 8px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --fs: 14px; --fs-xs: 11px; --fs-sm: 12.5px; --fs-md: 15px; --fs-xl: 22px;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  --cn: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans SC", system-ui, sans-serif;
+  --spectrum: linear-gradient(90deg, #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0d0e; --surface: #151516; --surface-2: #1b1b1d; --surface-3: #232326;
+    --line: #242426; --line-strong: #343437;
+    --text: #e7e7e8; --text-2: #9a9a9e; --text-3: #7c7c82;
+    --ok: #6fbf82; --ok-bg: #17251b;
+    --warn: #d9a441; --warn-bg: #241d10;
+    --bad: #e0736a; --bad-bg: #2a1715;
+    --info: #6d9eea; --info-bg: #141d2b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0d0e; --surface: #151516; --surface-2: #1b1b1d; --surface-3: #232326;
+  --line: #242426; --line-strong: #343437;
+  --text: #e7e7e8; --text-2: #9a9a9e; --text-3: #7c7c82;
+  --ok: #6fbf82; --ok-bg: #17251b;
+  --warn: #d9a441; --warn-bg: #241d10;
+  --bad: #e0736a; --bad-bg: #2a1715;
+  --info: #6d9eea; --info-bg: #141d2b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--cn); font-size: var(--fs); line-height: 1.5; }
+button { font: inherit; touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+/* 样稿自己的控制条，不属于看板页面 */
+.mock-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4); padding: var(--s2) var(--s4);
+  background: var(--surface-3); border-bottom: 1px solid var(--line-strong); font-size: var(--fs-sm); color: var(--text-2); }
+.mock-bar strong { color: var(--text); }
+.mock-bar .grp { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
+.mock-bar button { padding: 2px var(--s2); border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--text-2); cursor: pointer; }
+.mock-bar button.on { color: var(--text); border-color: var(--text-2); font-weight: 600; }
+
+.app { display: grid; grid-template-columns: 184px minmax(0, 1fr); min-height: calc(100vh - 41px); }
+.nav { padding: var(--s4) var(--s2); border-right: 1px solid var(--line); background: var(--surface); }
+.nav .brand { padding: 0 var(--s2) var(--s3); font-weight: 600; }
+.nav a { display: block; padding: var(--s2) var(--s3); border-radius: var(--r); color: var(--text-2); text-decoration: none; }
+.nav a.on { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.main { min-width: 0; padding: var(--s5); display: flex; flex-direction: column; gap: var(--s4); }
+h1 { margin: 0; font-size: var(--fs-xl); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); min-height: 32px;
+  padding: var(--s2) var(--s3); border: 1px solid var(--line-strong); border-radius: var(--r);
+  background: var(--surface-2); color: var(--text); cursor: pointer; font-size: var(--fs); white-space: nowrap;
+  transition: background .14s ease, border-color .14s ease, color .14s ease, opacity .14s ease; }
+@media (hover: hover) { .btn:hover { background: var(--surface-3); } .btn.primary:hover { opacity: .88; background: var(--text); } }
+.btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn.quiet { background: transparent; border-color: transparent; color: var(--text-2); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-sm { min-height: 28px; padding: var(--s1) var(--s2); font-size: var(--fs-sm); }
+.badge { display: inline-block; padding: 1px var(--s2); border-radius: var(--r-sm); font-size: var(--fs-xs); line-height: 1.7; white-space: nowrap; }
+.badge.n { background: var(--surface-3); color: var(--text-2); }
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+
+.page-head { display: flex; align-items: center; gap: var(--s2) var(--s4); flex-wrap: wrap; }
+.tabs { display: flex; gap: var(--s1); padding: var(--s1); border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--surface-2); }
+.tab-button { min-width: 92px; }
+.tab-button.on { background: var(--surface); color: var(--text); border-color: var(--line-strong); font-weight: 600; }
+
+/* 每日福利标签页 */
+.pk { display: grid; gap: var(--s3); min-width: 0; }
+.pk-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s3) var(--s4); flex-wrap: wrap; }
+.pk-day { display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap; }
+.pk-day strong { font-size: var(--fs-md); }
+.pk-stats { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pk-stats b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+.pk-ctl { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; }
+.pk-auto { display: inline-flex; align-items: center; gap: var(--s2); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+.pk-auto input { width: 16px; height: 16px; margin: 0; accent-color: var(--text); }
+
+.pk-status { position: relative; display: flex; align-items: center; gap: var(--s3); min-height: 44px;
+  padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.pk-status-text { flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
+.pk-status.idle .pk-status-text { color: var(--text-2); }
+.pk-status .btn { flex: none; }
+.pk-stop-icon { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.pk-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: transparent; }
+.pk-bar i { display: block; height: 100%; background: var(--spectrum); background-size: 200% 100%;
+  transform-origin: left center; transform: scaleX(0); }
+.pk-status.queued .pk-bar i { transform: scaleX(1); opacity: .35; }
+@media (prefers-reduced-motion: no-preference) {
+  .pk-bar i { transition: transform .4s ease; animation: pk-flow 3.4s linear infinite; }
+  @keyframes pk-flow { to { background-position: -200% 0; } }
+}
+.pk-hint { margin: 0; color: var(--warn); font-size: var(--fs-sm); }
+
+.pk-account { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); min-width: 0; }
+.pk-account-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line); }
+.pk-account-head h2 { margin: 0; font-size: var(--fs-md); }
+.pk-count { color: var(--text-2); font-size: var(--fs-sm); }
+.pk-account-head .sp { margin-left: auto; display: flex; gap: var(--s2); }
+.pk-rows { display: grid; }
+.pk-row { display: grid; grid-template-columns: minmax(120px, 1.1fr) minmax(0, 2.4fr) 168px 92px 56px; align-items: center;
+  gap: var(--s3); padding: var(--s1) var(--s3); border-top: 1px solid var(--line); min-width: 0; }
+.pk-row .btn-sm { min-height: 26px; }
+.pk-row:first-child { border-top: 0; }
+.pk-row.head { color: var(--text-3); font-size: var(--fs-xs); padding-top: var(--s2); padding-bottom: var(--s2); }
+.pk-name { font-weight: 600; color: var(--text); text-decoration: none; }
+@media (hover: hover) { .pk-name:hover { text-decoration: underline; } }
+.pk-reward { color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.pk-today { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-sm); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pk-week { display: flex; gap: 3px; }
+.pk-week i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--line-strong); }
+.pk-week i.u { background: repeating-linear-gradient(135deg, var(--text-3) 0 2px, transparent 2px 4px); border-color: var(--text-3); }
+.pk-week i.ok { background: var(--ok); border-color: var(--ok); }
+.pk-week i.act { background: var(--warn); border-color: var(--warn); border-radius: 50%; }
+.pk-legend { display: flex; flex-wrap: wrap; gap: var(--s3); padding: var(--s2) var(--s3); border-top: 1px solid var(--line);
+  color: var(--text-3); font-size: var(--fs-xs); }
+.pk-legend span { display: inline-flex; align-items: center; gap: var(--s1); }
+.pk-under { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.pk-more { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.pk-more summary { padding: var(--s2) var(--s3); cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
+.pk-more ul { margin: 0; padding: 0 var(--s3) var(--s3) var(--s6); color: var(--text-2); font-size: var(--fs-sm); }
+.pk-folds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); align-items: start; }
+
+/* 账号管理标签页：现有页面，原样不动，这里只画出头两组做对照 */
+.res { display: grid; gap: var(--s3); }
+.res-group { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.res-group-head { display: flex; align-items: center; gap: var(--s3); }
+.res-group-head h3 { margin: 0; font-size: var(--fs-md); }
+.res-group-head .btn { margin-left: auto; }
+.res-row { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; padding: var(--s3); border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--surface); }
+.res-row .id { color: var(--text-3); font-size: var(--fs-sm); }
+.res-row .meta { color: var(--text-2); font-size: var(--fs-sm); }
+.note { margin: 0; color: var(--text-3); font-size: var(--fs-sm); }
+[hidden] { display: none !important; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .nav { display: none; }
+  .main { padding: var(--s4); }
+  .pk-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; padding: var(--s2) var(--s3); }
+  .pk-row.head { display: none; }
+  .pk-reward { grid-column: 1 / -1; order: 3; }
+  .pk-week { order: 4; }
+  .pk-row .btn { order: 5; justify-self: end; min-height: 44px; min-width: 44px; }
+  .pk-folds { grid-template-columns: minmax(0, 1fr); }
+  .btn { min-height: 44px; }
+}
+</style>
+</head>
+<body>
+
+<div class="mock-bar" aria-label="样稿控制条">
+  <strong>样稿 v1</strong>
+  <div class="grp">主题
+    <button type="button" data-theme-btn="light">浅色</button>
+    <button type="button" data-theme-btn="dark">深色</button>
+  </div>
+  <div class="grp">状态行演示
+    <button type="button" data-demo="idle">空闲</button>
+    <button type="button" data-demo="queued">排队中</button>
+    <button type="button" data-demo="running">正在领取</button>
+    <button type="button" data-demo="stopping">正在停止</button>
+    <button type="button" data-demo="stopped">已停止</button>
+    <button type="button" data-demo="done">跑完了</button>
+    <button type="button" data-demo="login">登录窗口开着</button>
+  </div>
+  <span>也可以直接点页面里的「现在领一次」和「停止」走一遍。</span>
+</div>
+
+<div class="app">
+  <nav class="nav" aria-label="看板导航">
+    <div class="brand">项目看板</div>
+    <a href="#">总览</a>
+    <a href="#">待拍板</a>
+    <a href="#">看板</a>
+    <a href="#">每日成果</a>
+    <a href="#">调度台</a>
+    <a class="on" href="#">账号与额度</a>
+  </nav>
+
+  <main class="main">
+    <header class="page-head">
+      <h1>账号与额度</h1>
+      <div class="tabs" role="tablist" aria-label="账号与额度分页">
+        <button class="btn quiet tab-button" type="button" role="tab" id="tab-acct" aria-selected="false" aria-controls="page-acct">账号管理</button>
+        <button class="btn quiet tab-button on" type="button" role="tab" id="tab-perks" aria-selected="true" aria-controls="page-perks">每日福利</button>
+      </div>
+    </header>
+
+    <!-- 每日福利 -->
+    <section class="pk" id="page-perks" role="tabpanel" aria-labelledby="tab-perks">
+      <div class="pk-top">
+        <div class="pk-day">
+          <strong>11 月 12 日 周四</strong>
+          <span class="pk-stats">已领 <b id="st-done">0</b> 家 · 要你处理 <b>0</b> 家 · 还没校准 <b>10</b> 家</span>
+        </div>
+        <div class="pk-ctl">
+          <label class="pk-auto"><input type="checkbox" checked> 每天 08:30 自动领</label>
+          <button class="btn primary" type="button" id="run-btn">现在领一次</button>
+        </div>
+      </div>
+
+      <div class="pk-status idle" id="status" aria-live="polite">
+        <span class="pk-status-text" id="status-text"></span>
+        <button class="btn btn-sm" type="button" id="stop-btn" hidden><span class="pk-stop-icon" aria-hidden="true"></span>停止</button>
+        <div class="pk-bar" aria-hidden="true"><i id="bar"></i></div>
+      </div>
+
+      <p class="pk-hint">有 10 家还没校准，领取时只会把它们的网页打开一遍，领不到东西。</p>
+
+      <section class="pk-account" aria-label="主账号">
+        <header class="pk-account-head">
+          <h2>主账号</h2>
+          <span class="pk-count">领 10 家</span>
+          <div class="sp">
+            <button class="btn btn-sm" type="button" id="login-all">登录各家</button>
+            <button class="btn btn-sm" type="button">管理</button>
+          </div>
+        </header>
+        <div class="pk-rows" id="rows">
+          <div class="pk-row head"><span>平台</span><span>每天送什么</span><span>今天</span><span>近 7 天</span><span></span></div>
+        </div>
+        <div class="pk-legend">
+          <span><span class="pk-week"><i class="ok"></i></span>领到</span>
+          <span><span class="pk-week"><i class="act"></i></span>要你处理</span>
+          <span><span class="pk-week"><i class="u"></i></span>还没校准</span>
+          <span><span class="pk-week"><i></i></span>没跑</span>
+        </div>
+      </section>
+
+      <div class="pk-under">
+        <button class="btn btn-sm" type="button">添加账号</button>
+      </div>
+
+      <div class="pk-folds">
+        <details class="pk-more">
+          <summary>只能在软件里领（1）</summary>
+          <ul><li>华为云果办 OfficeAce：体验版每日登录 100 积分</li></ul>
+        </details>
+        <details class="pk-more">
+          <summary>今天的福利变动（0）</summary>
+          <ul><li>今天没有变动</li></ul>
+        </details>
+        <details class="pk-more">
+          <summary>清单上有、你还没接的</summary>
+          <ul><li>想接哪家，告诉 Claude。</li></ul>
+        </details>
+      </div>
+    </section>
+
+    <!-- 账号管理：现有页面，原样不动 -->
+    <section class="res" id="page-acct" role="tabpanel" aria-labelledby="tab-acct" hidden>
+      <p class="note">这一页就是现在的「账号与额度」，内容和操作原样不动。下面只画了头两组做对照。</p>
+      <div class="res-group">
+        <div class="res-group-head"><h3>WorkBuddy</h3><span class="pk-count">启用 1 / 共 1</span><span class="badge ok">可派单</span>
+          <button class="btn btn-sm" type="button">添加账号</button></div>
+        <div class="res-row"><strong>主号</strong><span class="id">workbuddy-1</span><span class="badge ok">登录 正常</span>
+          <span class="meta">在跑 4 单 · 最近使用 11-12 15:05</span></div>
+      </div>
+      <div class="res-group">
+        <div class="res-group-head"><h3>Qoder</h3><span class="pk-count">启用 1 / 共 1</span><span class="badge ok">可派单</span>
+          <button class="btn btn-sm" type="button">添加账号</button></div>
+        <div class="res-row"><strong>主号</strong><span class="id">qoder-1</span><span class="badge ok">登录 正常</span>
+          <span class="meta">在跑 2 单 · 最近使用 11-12 15:25</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var PLATFORMS = [
+    ['TRAE CN', '免费版每日 100 积分，另每月登录送 500 积分'],
+    ['Qoder CN', '每日 100 通用 Credits'],
+    ['WorkBuddy', '每日登录福利（Buddy 加油站），另体验版每月 500 积分'],
+    ['MiniMax Code', '每日签到 400 积分'],
+    ['华为云码道', '体验版每日 100 积分，当日有效，活动到 2026-12-31'],
+    ['豆包', '每日 200 额度，周一 400'],
+    ['WPS 灵犀', '每日 100 智点，连签第 7 天起 200'],
+    ['腾讯 ima', '每日登录送算力'],
+    ['商汤小浣熊', '免费版每日 300 积分，0 点自动发放'],
+    ['秒悟 Meoo', '每日登录 2000 积分']
+  ];
+  var rows = document.getElementById('rows');
+  PLATFORMS.forEach(function (p) {
+    var row = document.createElement('div');
+    row.className = 'pk-row';
+    row.innerHTML =
+      '<a class="pk-name" href="#"></a><span class="pk-reward"></span>' +
+      '<span class="pk-today"><span class="badge n">还没校准</span>15:21</span>' +
+      '<span class="pk-week" aria-label="近 7 天：3 天还没校准，4 天没跑"><i></i><i></i><i></i><i></i><i class="u"></i><i class="u"></i><i class="u"></i></span>' +
+      '<button class="btn btn-sm" type="button">登录</button>';
+    row.querySelector('.pk-name').textContent = p[0];
+    row.querySelector('.pk-reward').textContent = p[1];
+    rows.appendChild(row);
+  });
+
+  var status = document.getElementById('status');
+  var text = document.getElementById('status-text');
+  var stopBtn = document.getElementById('stop-btn');
+  var bar = document.getElementById('bar');
+  var timers = [];
+  var demo = 'idle';
+  var index = 0;
+  var startedAt = 0;
+  function clearTimers() { timers.forEach(function (t) { clearInterval(t); clearTimeout(t); }); timers = []; }
+  function secs() { return Math.max(0, Math.floor((Date.now() - startedAt) / 1000)); }
+  function mark() {
+    document.querySelectorAll('[data-demo]').forEach(function (b) { b.classList.toggle('on', b.dataset.demo === demo); });
+  }
+  function paint() {
+    status.className = 'pk-status' + (demo === 'idle' || demo === 'done' || demo === 'stopped' ? ' idle' : '') + (demo === 'queued' ? ' queued' : '');
+    stopBtn.hidden = !(demo === 'queued' || demo === 'running' || demo === 'login');
+    bar.style.transform = demo === 'running' || demo === 'stopping' ? 'scaleX(' + (index / PLATFORMS.length) + ')' : '';
+    if (demo === 'idle') text.textContent = '上次 15:20 跑完。';
+    if (demo === 'queued') text.textContent = '在排队，轮到就开始。已等 ' + secs() + ' 秒。';
+    if (demo === 'running') {
+      text.textContent = '正在领取：主账号 · ' + PLATFORMS[Math.max(0, index - 1)][0] +
+        '（第 ' + index + ' 家，共 ' + PLATFORMS.length + ' 家），已用 ' + secs() + ' 秒。';
+    }
+    if (demo === 'stopping') text.textContent = '正在停止…';
+    if (demo === 'stopped') text.textContent = '已停止。跑了 ' + Math.max(0, index - 1) + ' 家，剩下 ' + (PLATFORMS.length - Math.max(0, index - 1)) + ' 家没跑。';
+    if (demo === 'done') text.textContent = '跑完了：今天已领 0 家，要你处理 0 家，还没校准 10 家。';
+    if (demo === 'login') text.textContent = '登录窗口已经打开。逐个标签页登录，全部登完关掉那个 Chrome 窗口。';
+    mark();
+  }
+  function go(next) {
+    clearTimers();
+    demo = next;
+    if (next === 'queued') { startedAt = Date.now(); index = 0; timers.push(setInterval(paint, 1000)); }
+    if (next === 'running') {
+      if (!index) { index = 1; startedAt = Date.now(); }
+      timers.push(setInterval(paint, 1000));
+      timers.push(setInterval(function () { if (index < PLATFORMS.length) { index += 1; paint(); } else go('done'); }, 2600));
+    }
+    if (next === 'stopping') timers.push(setTimeout(function () { go('stopped'); }, 1800));
+    if (next === 'login') startedAt = Date.now();
+    paint();
+  }
+  document.querySelectorAll('[data-demo]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.dataset.demo === 'running') { index = 6; startedAt = Date.now() - 48000; }
+      if (b.dataset.demo === 'stopped') index = 4;
+      go(b.dataset.demo);
+    });
+  });
+  document.getElementById('run-btn').addEventListener('click', function () {
+    if (demo === 'queued' || demo === 'running' || demo === 'stopping') return;
+    go('queued');
+    timers.push(setTimeout(function () { go('running'); }, 3200));
+  });
+  document.getElementById('login-all').addEventListener('click', function () { go('login'); });
+  stopBtn.addEventListener('click', function () {
+    if (demo === 'login') { go('idle'); text.textContent = '已停止，登录窗口已关。'; return; }
+    go('stopping');
+  });
+
+  var tabs = [['tab-acct', 'page-acct'], ['tab-perks', 'page-perks']];
+  tabs.forEach(function (pair) {
+    document.getElementById(pair[0]).addEventListener('click', function () {
+      tabs.forEach(function (other) {
+        var on = other === pair;
+        var tab = document.getElementById(other[0]);
+        tab.classList.toggle('on', on);
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        document.getElementById(other[1]).hidden = !on;
+      });
+    });
+  });
+  document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.documentElement.setAttribute('data-theme', b.dataset.themeBtn);
+      document.querySelectorAll('[data-theme-btn]').forEach(function (o) { o.classList.toggle('on', o === b); });
+    });
+  });
+  go('idle');
+})();
+</script>
+</body>
+</html>
