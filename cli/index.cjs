@@ -59,6 +59,7 @@ const REGISTRY = {
   'docs-audit': ['./docsAudit.cjs', 'docsAudit'],
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
   'claim-check': ['./claimCheck.cjs', 'claimCheck'],
+  'identifier-check': ['./identifierCheck.cjs', 'identifierCheck'],
   // 发布副本(HOOK-CLI-POINTS-AT-LIVE-CHECKOUT):各仓 hook 只认它;合进主干后跑一次让新代码生效
   release: ['./release.cjs', 'release'],
   'hooks-trunk-guard': ['./hooksInstall.cjs', 'hooksTrunkGuard'],
@@ -80,13 +81,13 @@ const REGISTRY = {
 /**
  * 不吃 --project 的命令（AUD-CLI-BATCH-AND-AUTOPROJECT ③ 的例外表）。
  * 两类：① 压根没有"当前项目"这个概念的（register 用 --id、enroll 用 --id、release 发的是代码副本、
- * claim-check / hooks-global / hooks-trunk-guard 一次扫全部已注册项目）；
+ * claim-check / identifier-check / hooks-global / hooks-trunk-guard 一次扫全部已注册项目或不按项目定位）；
  * ② sync-progress / protocol 自己软探测：前者认不出就跳过，后者用项目占位符，不因共仓歧义报错。
  * 给这些命令做反查纯属白跑一个 git 子进程，而 claim-check 挂在每次 commit 上，那点开销是要还的（审计 A9）。
  */
 const NO_AUTO_PROJECT = new Set([
   'cloud',
-  'register', 'enroll', 'release', 'claim-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol',
+  'register', 'enroll', 'release', 'claim-check', 'identifier-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol',
 ]);
 
 /**

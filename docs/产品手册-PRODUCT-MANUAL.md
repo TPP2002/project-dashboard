@@ -284,6 +284,7 @@
 | `hooks-install` | 装 git hook + Claude Code hook（见 §8）。焊的是**发布副本**的路径，不是检出（§4.4）。 |
 | `release` | 把 `origin/<主干>` 的运行期代码 + 现场构建的网页界面导出成发布副本 `~/.claude/dashboard-release`（`--commit <sha>` 钉提交、`--no-fetch` 离线、`--skip-web` 只发后台、`--print-dest` 只打印目录给启动器用）。合进主干后跑一次，新代码才在各仓 hook 里生效；看板服务要等下次启动才换新。 |
 | `hooks-trunk-guard` | 给看板主工位装 `post-checkout` 提醒：切离主干只吵不拦（`--repo` / `--trunk` 可指定）。 |
+| `identifier-check [--force] [--all]` | 公开仓提交闸（与 `claim-check` 同挂在 pre-commit）：仓根带 `.public-repo` 标记的仓，`git commit` 前会拦下暂存区里含本机标识或白名单以外盘符路径的文本文件，报文件名、行号与命中名单第几条，不打印名单里的词；没有标记文件的仓不受影响。想手动把整仓查一遍用 `identifier-check --all`，临时放行用 `DASHBOARD_SKIP_IDENTIFIER_CHECK=1`。 |
 
 ---
 
