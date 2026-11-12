@@ -126,6 +126,46 @@ function upsertHookContent(existing, blockId, block) {
   return existing + sep + '\n' + block;
 }
 
+// ───────── identifier-gate：pre-commit 上第二块单例（公开仓标识闸，内容与项目 id 无关） ─────────
+// 单独一套 begin/end 锚（对齐 hooks-trunk-guard 的独立锚），不和 claim-gate 共用
+// #dashboard-hook:begin:* 系列：这样 claim-gate 的内容与既有断言一字不动，两块在 pre-commit 里
+// 各自幂等共存。没有 .public-repo 标记文件的仓连 node 进程都不起。
+const IDENT_BEGIN = '#dashboard-identifier-gate:begin';
+const IDENT_END = '#dashboard-identifier-gate:end';
+const IDENT_RE = /#dashboard-identifier-gate:begin[\s\S]*?#dashboard-identifier-gate:end[^\n]*\n?/;
+
+/** 同 upsertHookContent，但锚换成 identifier-gate 的（与 claim-gate 两块可共存于同一 pre-commit）。 */
+function upsertIdentifierContent(existing, block) {
+  if (!existing || existing.trim() === '') return '#!/bin/sh\n' + block;
+  if (IDENT_RE.test(existing)) return existing.replace(IDENT_RE, block);
+  const sep = existing.endsWith('\n') ? '' : '\n';
+  return existing + sep + '\n' + block;
+}
+
+/** identifier-gate 块正文：跳过开关 → 取仓根 → 有 .public-repo 才调 identifier-check → 按退出码分流。 */
+function identifierGateBlock() {
+  return [
+    `${IDENT_BEGIN} —— 公开仓标识闸门（dashboard hooks-install 维护，勿手改；删本块即卸载）`,
+    `# 仓根带 .public-repo 的仓，commit 前查暂存区里的本机标识与白名单以外的盘符路径`,
+    `if [ -z "\${DASHBOARD_SKIP_IDENTIFIER_CHECK:-}" ]; then`,
+    `  __TOP=$(git rev-parse --show-toplevel 2>/dev/null || echo "")`,
+    `  if [ -n "$__TOP" ] && [ -f "$__TOP/.public-repo" ]; then`,
+    `    node ${q(CLI)} identifier-check >/dev/null`,
+    `    __IRC=$?`,
+    `    # rc=2/3 = 这份看板 CLI 还没有 identifier-check(hook 已更新、看板本体没更新的过渡期):`,
+    `    # 放行并吵一声,不能因为闸门自己跑不起来就把整台机器的 commit 全堵死。其余非 0 一律真拦。`,
+    `    if [ "$__IRC" = "2" ] || [ "$__IRC" = "3" ]; then`,
+    `      echo "⚠ 标识闸门已跳过:当前看板 CLI 没有 identifier-check 命令(rc=$__IRC),请更新看板。" >&2`,
+    `    elif [ "$__IRC" != "0" ]; then`,
+    `      exit 1`,
+    `    fi`,
+    `  fi`,
+    `fi`,
+    IDENT_END,
+    '',
+  ].join('\n');
+}
+
 /**
  * 定位代码仓 hooks 目录：codeRepo 的 .git 恒为目录 → <.git>/hooks；
  * 若 .git 是文件（worktree/子模块重定向，防御）→ 解析 gitdir 后取其 hooks。
@@ -209,6 +249,12 @@ function installGitHooks(codeRepo, id, registryFwd) {
     try { fs.chmodSync(p, 0o755); } catch { /* Windows 无 x 位，无害 */ }
     written.push(name);
   }
+  // pre-commit 的 claim-gate 之后再挂 identifier-gate：单独一套锚，重复安装只替换自己那一块，
+  // 不动 claim-gate / post-commit / post-merge 三块的任何内容。
+  const prePath = path.join(hooksDir, 'pre-commit');
+  const preExisting = fs.existsSync(prePath) ? fs.readFileSync(prePath, 'utf8') : '';
+  atomicWriteFileSync(prePath, upsertIdentifierContent(preExisting, identifierGateBlock()), { fsyncData: false });
+  try { fs.chmodSync(prePath, 0o755); } catch { /* Windows 无 x 位，无害 */ }
   return { hooksDir, written };
 }
 
