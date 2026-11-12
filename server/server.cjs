@@ -88,6 +88,7 @@ const DIST_DIR = path.join(DASH_ROOT, 'web', 'dist');        // 前端生产产�
 const CLI_INDEX = path.join(DASH_ROOT, 'cli', 'index.cjs');  // CLI 入口（唯一写者）
 // registry 可被环境变量覆盖，方便测试隔离（不碰真实 registry / 示例项目·模拟器主仓）
 const REGISTRY = process.env.DASHBOARD_REGISTRY ? path.resolve(process.env.DASHBOARD_REGISTRY) : REGISTRY_PATH;
+const fileMemo = require('../core/fileMemo.cjs').createFileMemo({ persistPath: path.join(path.dirname(REGISTRY), 'jobFileMemo.json') });
 const WEBHOOK_URL = (process.env.DASHBOARD_EVENT_WEBHOOK || '').trim();
 const WEBHOOK_CONFIGURED = /^https?:\/\//.test(WEBHOOK_URL);
 // Product mode is separate from MODE (dev/release runtime identity).
@@ -826,6 +827,7 @@ function handleSettings(req, res) {
 }
 
 const codexApi = createCodexApi({
+  fileMemo,
   resolveRepo: codexRepo,
   readRegistry: readRegistrySafe,
   registryPath: REGISTRY,
@@ -970,7 +972,7 @@ function handleCostUsage(req, res, query) {
     costUsage.getUsage({ ...selected, days, cards: costCards(proj), bindings: costBindings(proj) }),
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
-    Promise.resolve().then(() => glmCostUsage.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY })),
+    Promise.resolve().then(() => glmCostUsage.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY, memo: fileMemo })),
     // WorkBuddy 账本只读：读不出来就这份为 null，不许拖垮整个成本接口。
     Promise.resolve().then(() => workbuddyCostUsage.getWorkbuddyUsage({ projectId: pid, days, registryPath: REGISTRY }))
       .catch(() => null),
@@ -1014,7 +1016,8 @@ async function handleCostPortfolio(res, query) {
       prefixes.length ? costUsage.getUsage({ prefixes, days }) : null,
       codexApi.getCostUsage(days, ''),
     ]);
-    const glmJobs = glmCostUsage.scanGlmJobs({ registryPath: REGISTRY });
+    const glmJobs = glmCostUsage.scanGlmJobs({ registryPath: REGISTRY, memo: fileMemo });
+    const deepseekJobs = await codexApi.scanAllDeepseekJobs();
     // 账本只扫一次，各项目共用同一份；读不出来当没有，成本接口照常出。
     let workbuddyLedgers = null;
     try { workbuddyLedgers = workbuddyCostUsage.scanWorkbuddyLedgers({ registryPath: REGISTRY }); }
@@ -1027,7 +1030,7 @@ async function handleCostPortfolio(res, query) {
       seenRepos.add(project.codeRepo);
       const duplicateName = seenNames.has(project.name);
       seenNames.add(project.name);
-      const deepseek = sharedCodeRepo ? null : await codexApi.getDeepseekUsage(days, id);
+      const deepseek = sharedCodeRepo ? null : codexApi.summarizeDeepseekJobs(deepseekJobs, { projectRepo: project.codeRepo, days });
       const glm = sharedCodeRepo ? null : glmCostUsage.summarizeGlmJobs(glmJobs,
         { projectRepo: project.codeRepo, days });
       const workbuddy = sharedCodeRepo || !workbuddyLedgers ? null
@@ -1104,7 +1107,7 @@ async function handleCostJobDetail(req, res, query) {
   if (!proj) return sendJson(res, 404, { ok: false, error: `未注册项目：${pid}` });
   const jobsRoot = path.join(proj.codeRepo, '.codex', 'jobs');
   try {
-    const all = await costJobDetail.collectJobRows(jobsRoot);
+    const all = await costJobDetail.collectJobRows(jobsRoot, { memo: fileMemo });
     const filters = costDetailFilters(query);
     const rows = costJobDetail.filterJobRows(all, filters);
     sendJson(res, 200, {

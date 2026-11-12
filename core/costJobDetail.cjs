@@ -19,7 +19,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const readline = require('node:readline');
+const { execSummaryOf } = require('./jobExecSummary.cjs');
 const { costRmbOf, isPeakBeijing } = require('./deepseekCostUsage.cjs');
 
 /** slug 合法性与 server/codexJobs.cjs 同口径:单个安全目录名。 */
@@ -54,42 +54,16 @@ function usageBuckets(usage) {
  * (与 deepseekCostUsage 同口径:assistant 行的用量不累加,CLI 的美元字段不参与计价)。
  * @returns {Promise<{turns:number, usage:object|null, usedModel:string|null, reportedUsd:number|null}>}
  */
-function readExecSummary(file) {
-  return new Promise((resolve) => {
-    let input;
-    try { input = fs.createReadStream(file, { encoding: 'utf8' }); } catch (_) { return resolve(null); }
-    const lines = readline.createInterface({ input, crlfDelay: Infinity });
-    let turns = 0, last = null, model = null;
-    lines.on('line', (line) => {
-      if (!line) return;
-      let event;
-      try { event = JSON.parse(line); } catch (_) { return; } // 忽略写到一半的行
-      if (event?.type === 'assistant') {
-        turns += 1;
-        if (typeof event.message?.model === 'string') model = event.message.model;
-      }
-      if (event?.type === 'result') last = { event, model };
-    });
-    const finish = () => {
-      const usage = last ? usageBuckets(last.event.usage) : null;
-      const rawUsd = last ? Number(last.event.total_cost_usd) : NaN;
-      resolve({
-        turns,
-        usage,
-        usedModel: last
-          ? (singleModelUsageName(last.event) || last.event.model || last.model || null)
-          : model,
-        reportedUsd: Number.isFinite(rawUsd) && rawUsd > 0 ? rawUsd : null, // 只展示,不参与任何计价口径
-      });
-    };
-    const onError = () => {
-      resolve(null); // 文件不存在或读到一半坏掉:这一单没有可用账目,不拖垮整张表
-      try { lines.close(); } catch (_) {}
-    };
-    lines.once('close', finish);
-    lines.once('error', onError);
-    input.once('error', onError);
-  });
+async function readExecSummary(file, memo) {
+  try {
+    const summary = await execSummaryOf(file, memo);
+    if (!summary) return null;
+    const last = summary.result;
+    const rawUsd = last ? Number(last.totalCostUsd) : NaN;
+    return { turns: summary.turns, usage: last ? usageBuckets(last.usage) : null,
+      usedModel: last ? ((last.modelUsageNames.length === 1 ? last.modelUsageNames[0] : null) || last.model || last.assistantModel || null) : summary.lastAssistantModel,
+      reportedUsd: Number.isFinite(rawUsd) && rawUsd > 0 ? rawUsd : null };
+  } catch (_) { return null; }
 }
 
 /** result.modelUsage 只有一个模型时取它;多模型时不猜怎么拆(与 resultModel 同判据)。 */
@@ -117,7 +91,7 @@ function localDayOf(ts) {
  * 「级联链」判据(纯落盘事实,不猜):同一张卡(taskId)派过多张工单 → true;
  * 没有卡的工单判不出 → null。同一张卡只有这一单 → false。
  */
-async function collectJobRows(jobsRoot) {
+async function collectJobRows(jobsRoot, { memo } = {}) {
   let entries;
   try { entries = fs.readdirSync(jobsRoot, { withFileTypes: true }); } catch (error) {
     if (missing(error)) return [];
@@ -127,14 +101,22 @@ async function collectJobRows(jobsRoot) {
   const rows = [];
   for (const slug of slugs) {
     const dir = path.join(jobsRoot, slug);
-    const task = readJsonOptional(path.join(dir, 'task.json')) || {};
-    const meta = readJsonOptional(path.join(dir, 'meta.json')) || {};
-    const state = readJsonOptional(path.join(dir, 'state.json')) || {};
-    const cost = readJsonOptional(path.join(dir, 'cost.json'));
+    const read = (name, key, fields) => {
+      const file = path.join(dir, name);
+      const load = () => { let source; if (name === 'meta.json') { try { source = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) { if (missing(error)) return null; throw error; } } else source = readJsonOptional(file); if (!source || !fields) return source;
+        return Object.fromEntries(fields.filter((field) => Object.hasOwn(source, field)).map((field) => [field, source[field]])); };
+      if (!memo) return readJsonOptional(file);
+      try { return memo.sync(file, key, load); }
+      catch (error) { if (name === 'meta.json' && (missing(error) || error instanceof SyntaxError)) return null; throw error; }
+    };
+    const task = read('task.json', 'task-detail@1', ['taskId', 'title', 'engine', 'model']) || {};
+    const meta = read('meta.json', 'meta-dispatched@1', ['dispatchedAt']) || {};
+    const state = read('state.json', 'state-times@1', ['startedAt', 'finishedAt']) || {};
+    const cost = read('cost.json', 'job-cost@1', null);
     const dispatchedAt = isoOrNull(meta.dispatchedAt);
     const startedAt = isoOrNull(state.startedAt);
     const finishedAt = isoOrNull(state.finishedAt);
-    const exec = await readExecSummary(path.join(dir, 'exec.jsonl'));
+    const exec = await readExecSummary(path.join(dir, 'exec.jsonl'), memo);
     const glmBucket = (key) => {
       const initial = cost?.usage?.[key], resume = cost?.resumeUsage?.[key];
       if (task.engine === 'glm' && Number.isSafeInteger(initial) && initial >= 0) {
