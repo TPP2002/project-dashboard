@@ -5,6 +5,8 @@ const defaultFs = require('node:fs');
 const { githubRepository, runnerMachines } = require('./schedCiJobs.cjs');
 const schedContract = require('./schedContract.cjs');
 
+const nonempty = value => typeof value === 'string' && value.trim() !== '';
+
 function readCiRepository(boardPath, runFile = execFile) {
   return new Promise((resolve, reject) => {
     runFile('git', ['-C', path.dirname(path.dirname(boardPath)), 'remote', 'get-url', 'origin'],
@@ -38,11 +40,18 @@ function createCiBoardsReader({ registryPath, readRegistry, resolveProject, runF
         const stat = await fs.promises.stat(key);
         let cached = boards.get(key);
         if (!cached || cached.mtimeMs !== stat.mtimeMs || cached.size !== stat.size) {
-          cached = { mtimeMs: stat.mtimeMs, size: stat.size, parsed: JSON.parse(await fs.promises.readFile(key, 'utf8')) };
+          // 解析完立刻投影成只留标题与分支的瘦身结果；整块解析结果用完就放手。
+          const parsed = JSON.parse(await fs.promises.readFile(key, 'utf8'));
+          const tasks = [];
+          for (const task of (Array.isArray(parsed?.tasks) ? parsed.tasks : [])) {
+            if (!nonempty(task?.plainTitle) || !Array.isArray(task.gitBranch)) continue;
+            tasks.push({ plainTitle: task.plainTitle, gitBranch: task.gitBranch.filter(nonempty) });
+          }
+          cached = { mtimeMs: stat.mtimeMs, size: stat.size, tasks };
           boards.set(key, cached);
         }
         boardErrors.delete(key);
-        return { ...cached.parsed, repository: origin.repository };
+        return { repository: origin.repository, tasks: cached.tasks };
       } catch (error) {
         if (boardErrors.get(key) !== error.message) log(`[sched-ci] 项目 ${project.id} 的标题暂不可读：${error.message}`);
         boardErrors.set(key, error.message);
