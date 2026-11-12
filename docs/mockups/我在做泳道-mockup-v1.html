@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>我在做泳道 样图</title>
+<style>
+:root{--bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;--line:#e4e4e2;--line-strong:#d2d2cf;--text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;--info:#2b5fa8;--info-bg:#e8f0fb;--mine-bg:#eef4ff;--mine-line:#c9dafc;--r:6px;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace;--spec:#4a9eff,#4ad9c4,#a86fd8,#ff5f8d,#4a9eff;--p0:#e5484d;--p1:#f08c2e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141413;--surface:#1c1c1b;--surface-2:#232322;--surface-3:#2c2c2a;--line:#33332f;--line-strong:#45453f;--text:#ececea;--text-2:#b5b5b0;--text-3:#86867f;--info:#7fb0ff;--info-bg:#1d2a3d;--mine-bg:#1a2333;--mine-line:#2f4466;--p0:#ff6b70;--p1:#ffa552}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Microsoft YaHei",sans-serif;padding:24px 16px 60px}
+.wrap{max-width:1240px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:30px 0 6px}.lead{color:var(--text-2);margin:0 0 14px}
+.who{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-2);margin:6px 0 8px}.av{width:20px;height:20px;border-radius:50%;display:inline-grid;place-items:center;font-size:10px;color:#fff;background:#2c7a45}.av.b{background:#6d8cff}.av.ai{background:#8e8e89}
+.board{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;overflow-x:auto}
+.board.four{grid-template-columns:repeat(4,minmax(150px,1fr))}
+.lane{background:var(--surface-2);border-radius:var(--r);padding:8px;min-height:220px;display:grid;gap:8px;align-content:start}
+.lane h4{margin:0;font-size:13px;color:var(--text-2);display:flex;justify-content:space-between;align-items:center}
+.lane.mine{background:var(--mine-bg);box-shadow:inset 0 0 0 1px var(--mine-line);position:relative;overflow:hidden;animation:in .35s cubic-bezier(.2,.9,.3,1.1)}
+.lane.mine::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--spec));background-size:200% 100%;animation:flow 5s linear infinite}
+.lane.mine h4{color:var(--info)}
+@keyframes flow{to{background-position:-200% 0}}@keyframes in{from{opacity:0;transform:translateX(-8px)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;display:grid;gap:5px;position:relative}
+.card.moving{animation:moved .5s ease}
+@keyframes moved{0%{box-shadow:0 0 0 2px var(--info)}100%{box-shadow:none}}
+.id{font-family:var(--mono);font-size:11px;color:var(--text-3)}.card h5{margin:0;font-size:13px;line-height:1.4}
+.row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-2);gap:6px}
+.bar{height:4px;border-radius:2px;background:var(--surface-3);overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--spec));background-size:200% 100%;animation:flow 4s linear infinite}
+.tag{font-size:11px;padding:0 6px;border-radius:8px;background:var(--surface-3);color:var(--text-2)}.tag.co{background:var(--info-bg);color:var(--info)}
+.pri{font-size:11px;padding:0 6px;border-radius:8px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent)}.pri.u{--c:var(--p0)}.pri.h{--c:var(--p1)}
+.btn{border:1px solid var(--line-strong);background:var(--surface);color:var(--text);border-radius:var(--r);padding:1px 9px;font:inherit;font-size:12px;cursor:pointer}
+.btn.primary{background:var(--info);border-color:var(--info);color:#fff}
+.empty{font-size:12px;color:var(--text-3);text-align:center;padding:18px 0}
+.split{display:grid;gap:18px}
+.toggle{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);margin-left:auto}
+.sw{width:30px;height:16px;border-radius:8px;background:var(--info);position:relative;cursor:pointer}.sw::after{content:'';position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:.2s}.sw.off{background:var(--line-strong)}.sw.off::after{right:16px}
+table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px}td,th{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--surface-2)}
+@media (prefers-reduced-motion:reduce){.lane.mine,.lane.mine::before,.bar i,.card.moving{animation:none}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>「我在做」泳道 · 样图 v1</h1>
+<p class="lead">同一块 MotionDance 看板，两个人看到的不一样：你领的卡在你这里挪到「施工中」旁边的「我在做」，在别人那里仍在「施工中」。卡片本身没变，只是每个人自己的排法。</p>
+
+<div class="split">
+<div>
+  <div class="who"><span class="av">我</span><b>你（TPP）看到的</b><span class="toggle">显示「我在做」<span class="sw" id="sw"></span></span></div>
+  <div class="board" id="mineBoard">
+    <div class="lane"><h4>待开工 <span>2</span></h4>
+      <div class="card"><span class="id">MD-031</span><h5>练习页加节拍器开关</h5><div class="row"><span>未领取</span><button class="btn primary" id="claimBtn">领取</button></div></div>
+      <div class="card"><span class="id">MD-034</span><h5>动作库按难度筛选</h5><div class="row"><span>未领取</span><button class="btn">领取</button></div></div>
+    </div>
+    <div class="lane mine" id="mineLane"><h4>我在做 <span id="mineN">2</span></h4>
+      <div class="card"><div class="row"><span class="id">MD-036</span><span class="pri u">紧急</span></div><h5>上传视频后闪退</h5><div class="row"><span>主负责</span><span>20%</span></div><div class="bar"><i style="width:20%"></i></div><div class="row"><span></span><button class="btn">更新进度</button></div></div>
+      <div class="card"><div class="row"><span class="id">MD-022</span><span class="tag co">协作</span></div><h5>评分接口接入</h5><div class="row"><span>小林主负责 · 我协作</span><span>65%</span></div><div class="bar"><i style="width:65%"></i></div></div>
+    </div>
+    <div class="lane" id="doingLane"><h4>施工中 <span>2</span></h4>
+      <div class="card"><span class="id">MD-019</span><h5>骨架识别换模型</h5><div class="row"><span><span class="av ai">AI</span> AI 施工</span><span>30%</span></div><div class="bar"><i style="width:30%"></i></div></div>
+      <div class="card"><span class="id">MD-028</span><h5>首页加练习日历</h5><div class="row"><span><span class="av b">小</span> 小林</span><span>50%</span></div><div class="bar"><i style="width:50%"></i></div></div>
+    </div>
+    <div class="lane"><h4>待拍板 <span>1</span></h4>
+      <div class="card"><span class="id">MD-030</span><h5>要不要做离线模式</h5><div class="row"><span>等你拍板</span><span>10%</span></div></div>
+    </div>
+    <div class="lane"><h4>已完工 <span>1</span></h4>
+      <div class="card"><span class="id">MD-012</span><h5>登录页改版</h5><div class="row"><span>小林</span><span>100%</span></div></div>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:6px">点「待开工」里 MD-031 的「领取」试试：卡会直接落进「我在做」。没有自己领的卡时，「我在做」整列收起，看板和现在一样。</p>
+</div>
+
+<div>
+  <div class="who"><span class="av b">小</span><b>小林看到的（同一时刻）</b></div>
+  <div class="board four">
+    <div class="lane"><h4>待开工 <span>2</span></h4>
+      <div class="card"><span class="id">MD-031</span><h5>练习页加节拍器开关</h5><div class="row"><span>未领取</span><button class="btn primary">领取</button></div></div>
+      <div class="card"><span class="id">MD-034</span><h5>动作库按难度筛选</h5><div class="row"><span>未领取</span><button class="btn primary">领取</button></div></div>
+    </div>
+    <div class="lane mine"><h4>我在做 <span>2</span></h4>
+      <div class="card"><span class="id">MD-022</span><h5>评分接口接入</h5><div class="row"><span>主负责 · TPP 协作</span><span>65%</span></div><div class="bar"><i style="width:65%"></i></div></div>
+      <div class="card"><span class="id">MD-028</span><h5>首页加练习日历</h5><div class="row"><span>主负责</span><span>50%</span></div><div class="bar"><i style="width:50%"></i></div></div>
+    </div>
+    <div class="lane"><h4>施工中 <span>2</span></h4>
+      <div class="card"><div class="row"><span class="id">MD-036</span><span class="pri u">紧急</span></div><h5>上传视频后闪退</h5><div class="row"><span><span class="av">T</span> TPP</span><span>20%</span></div><div class="bar"><i style="width:20%"></i></div></div>
+      <div class="card"><span class="id">MD-019</span><h5>骨架识别换模型</h5><div class="row"><span><span class="av ai">AI</span> AI 施工</span><span>30%</span></div><div class="bar"><i style="width:30%"></i></div></div>
+    </div>
+    <div class="lane"><h4>待拍板 <span>1</span></h4>
+      <div class="card"><span class="id">MD-030</span><h5>要不要做离线模式</h5><div class="row"><span>等负责人拍板</span><span>10%</span></div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2>需要你拍板的几件事（我的建议）</h2>
+<table>
+<tr><th>问题</th><th>建议</th><th>理由</th></tr>
+<tr><td>我当协作人的卡算不算「我在做」</td><td>算，卡上标一个「协作」小签</td><td>协作的活也是你手上的活，找起来同样费劲</td></tr>
+<tr><td>只收「施工中」，还是连我的待收单、受阻、待拍板也收进来</td><td>只收施工中</td><td>其余状态不是你在动手的阶段，留在原列才看得出卡在哪一步</td></tr>
+<tr><td>本机单人看板要不要这一列</td><td>本机看板也加，「我」= 你在网页上领的卡；AI 领的卡照旧在施工中</td><td>本机多数卡是 AI 在做，把你亲手做的单独拎出来同样有用；你没领卡时这一列自动收起</td></tr>
+<tr><td>能不能关掉</td><td>工具栏加「显示我在做」开关，默认开，记在本浏览器</td><td>偶尔想看全貌时一键关掉</td></tr>
+</table>
+</div>
+<script>
+const sw=document.getElementById('sw'),lane=document.getElementById('mineLane'),board=document.getElementById('mineBoard'),doing=document.getElementById('doingLane');
+let on=true;const mineCards=()=>[...lane.querySelectorAll('.card')];
+sw.addEventListener('click',()=>{on=!on;sw.classList.toggle('off',!on);
+  if(on){lane.style.display='';doing.querySelectorAll('.card.from-mine').forEach(c=>{c.classList.remove('from-mine');lane.appendChild(c)});board.classList.remove('four')}
+  else{mineCards().forEach(c=>{c.classList.add('from-mine');doing.insertBefore(c,doing.querySelector('.card'))});lane.style.display='none';board.classList.add('four')}
+  count()});
+function count(){document.getElementById('mineN').textContent=mineCards().length;doing.querySelector('h4 span').textContent=doing.querySelectorAll('.card').length}
+document.getElementById('claimBtn').addEventListener('click',e=>{const card=e.target.closest('.card');e.target.outerHTML='<span>20%</span>';
+  card.querySelector('.row span').textContent='主负责';card.insertAdjacentHTML('beforeend','<div class="bar"><i style="width:0%"></i></div>');
+  (on?lane:doing).appendChild(card);card.classList.add('moving');count();document.querySelector('.lane h4 span').textContent=1});
+</script>
+</body>
+</html>

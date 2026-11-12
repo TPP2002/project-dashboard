@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三处界面样稿</title>
+<style>
+/* 变量照抄 web/src/styles/base.css 的浅色与深色两档；样稿不新增颜色。 */
+:root {
+  --bg: #fbfbfa; --surface: #ffffff; --surface-2: #f6f6f5; --surface-3: #eeeeed;
+  --line: #e4e4e2; --line-strong: #d2d2cf;
+  --text: #1a1a19; --text-2: #5c5c58; --text-3: #75756f;
+  --ok: #2c7a45; --ok-bg: #e8f4ec; --warn: #9a6b12; --warn-bg: #fdf3e0;
+  --bad: #b3382f; --bad-bg: #fdecea; --info: #2b5fa8; --info-bg: #e8f0fb;
+  --on-strong: #ffffff;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 1px 3px rgba(0,0,0,.04);
+  --r: 6px; --r-lg: 8px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --fs-xs: .786rem; --fs-sm: .893rem; --fs-base: 1rem; --fs-md: 1.071rem; --fs-lg: 1.286rem; --fs-2xl: 2rem;
+  --cn: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --spec-cool: #4ad9c4, #4a9eff, #8b7bf7, #c96bd8, #4ad9c4;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d0d0e; --surface: #151516; --surface-2: #1b1b1d; --surface-3: #232326;
+    --line: #242426; --line-strong: #343437;
+    --text: #e7e7e8; --text-2: #9a9a9e; --text-3: #8a8a90;
+    --ok: #6fbf82; --ok-bg: #17251b; --warn: #d9a441; --warn-bg: #241d10;
+    --bad: #e0736a; --bad-bg: #2a1715; --info: #6d9eea; --info-bg: #141d2b;
+    --on-strong: #0d0d0e; --shadow: none;
+  }
+}
+html { font-size: 14px; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: var(--fs-base)/1.55 var(--cn); padding-bottom: var(--s6); }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 var(--s4); }
+.topic { margin: var(--s6) 0 var(--s2); font-size: var(--fs-lg); }
+.note { margin: 0 0 var(--s3); color: var(--text-2); font-size: var(--fs-sm); }
+.note b { color: var(--text); }
+.frame { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+.shell { display: grid; grid-template-columns: 184px minmax(0, 1fr); }
+nav { background: var(--surface-2); border-right: 1px solid var(--line); padding: var(--s3) var(--s2); display: flex; flex-direction: column; gap: 2px; }
+nav a { display: flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 0 var(--s3); border-radius: var(--r); color: var(--text-2); text-decoration: none; font-size: var(--fs-sm); }
+nav a.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }
+nav a .dot { margin-left: auto; min-width: 18px; height: 18px; border-radius: 9px; background: var(--bad); color: var(--on-strong); font-size: var(--fs-xs); display: grid; place-items: center; padding: 0 5px; }
+main { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s5); min-width: 0; }
+h1 { font-size: var(--fs-lg); margin: 0; }
+h2 { font-size: var(--fs-md); margin: 0 0 var(--s3); }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); padding: 2px 8px; border-radius: 10px; font-weight: 500; white-space: nowrap; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); } .pill.n { background: var(--surface-3); color: var(--text-2); }
+.pill.info { background: var(--info-bg); color: var(--info); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
+.btn { min-height: 32px; padding: 0 var(--s3); border-radius: var(--r); border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-sm); cursor: pointer; touch-action: manipulation; }
+.btn.quiet { border-color: transparent; color: var(--text-2); }
+@media (hover: hover) { .btn:hover { background: var(--surface-2); } }
+.btn:focus-visible, .tick:focus-visible, summary:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.mono { font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-3); }
+
+/* 一、设备按人分组 */
+.person { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.person + .person { margin-top: var(--s3); }
+.person > header { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.av { width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 600; background: var(--info-bg); color: var(--info); }
+.person > header b { font-size: var(--fs-base); }
+.person > header .count { margin-left: auto; color: var(--text-2); font-size: var(--fs-sm); }
+.dev { display: grid; grid-template-columns: minmax(0, 1.4fr) auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+.dev:last-child { border-bottom: 0; }
+.dev .name { display: flex; align-items: center; gap: var(--s2); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.dev .when { color: var(--text-2); }
+.dev.off .name { color: var(--text-3); font-weight: 400; }
+details.gone > summary { padding: var(--s2) var(--s3); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; }
+
+/* 二、等你做的事 */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3); }
+.tile { border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s3) var(--s4); text-decoration: none; color: inherit; display: block; }
+.tile .num { font-size: var(--fs-2xl); font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tile .lab { color: var(--text-2); font-size: var(--fs-sm); }
+.tile.new { border-color: var(--warn); background: var(--warn-bg); }
+.tile.new .num { color: var(--warn); }
+.todo { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s1) var(--s3); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); align-items: start; }
+.todo + .todo { margin-top: var(--s2); }
+.tick { width: 24px; height: 24px; border-radius: var(--r); border: 1.5px solid var(--line-strong); background: var(--surface); cursor: pointer; display: grid; place-items: center; color: transparent; padding: 0; touch-action: manipulation; }
+.tick svg.i { stroke-width: 2.2; }
+.todo .what { font-weight: 600; }
+.todo .then { color: var(--text-2); font-size: var(--fs-sm); }
+.todo .meta { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); align-items: center; }
+.todo .age { color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
+.todo.done .tick { background: var(--ok); border-color: var(--ok); color: var(--on-strong); }
+.todo.done .what { color: var(--text-3); text-decoration: line-through; font-weight: 400; }
+.undo { display: none; align-items: center; gap: var(--s2); color: var(--text-2); font-size: var(--fs-sm); }
+.todo.done .undo { display: flex; } .todo.done .age { display: none; }
+@media (prefers-reduced-motion: no-preference) { .tick { transition: background-color .12s ease, border-color .12s ease; } }
+
+/* 三、云端同步 */
+.conn { position: relative; border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s4); display: grid; grid-template-columns: auto 1fr; gap: var(--s4); align-items: center; overflow: hidden; }
+.conn::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: var(--line-strong); }
+.conn.busy::before { background: linear-gradient(90deg, var(--spec-cool)); background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) { .conn.busy::before { animation: flow 3.4s linear infinite; } }
+@keyframes flow { to { background-position: -200% 0; } }
+.badge { width: 40px; height: 40px; border-radius: var(--r-lg); display: grid; place-items: center; background: var(--info-bg); color: var(--info); }
+.badge svg.i { width: 22px; height: 22px; }
+.conn .state { font-weight: 600; display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.kv { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); color: var(--text-2); font-size: var(--fs-sm); margin-top: var(--s1); }
+table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.tablewrap { border: 1px solid var(--line); border-radius: var(--r-lg); overflow-x: auto; }
+th, td { text-align: left; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--text-3); font-weight: 500; background: var(--surface-2); font-size: var(--fs-xs); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; }
+.reject { border: 1px solid var(--line); border-left: 3px solid var(--bad); border-radius: var(--r); padding: var(--s3); display: grid; grid-template-columns: 1fr auto; gap: var(--s1) var(--s4); align-items: start; }
+.reject + .reject { margin-top: var(--s2); }
+.reject .what { font-weight: 600; }
+.reject .why { color: var(--text-2); font-size: var(--fs-sm); }
+.reject .mono { grid-column: 1 / -1; }
+
+@media (max-width: 760px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  nav a { white-space: nowrap; min-height: 44px; }
+  main { padding: var(--s4); }
+  .btn { min-height: 44px; } .tick { width: 44px; height: 44px; }
+  .dev { grid-template-columns: minmax(0, 1fr) auto; }
+  .dev .when { grid-column: 1 / -1; grid-row: 2; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reject .mono { white-space: normal; word-break: break-all; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 9.1 4.5 4.5 0 0 0 7 18z"/></symbol>
+  <symbol id="board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+  <symbol id="home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7"/><path d="M6 10v9h12v-9"/></symbol>
+  <symbol id="hand" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M8.5 13l2.5 2.5 4.5-5"/></symbol>
+  <symbol id="term" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m7 10 3 2-3 2M12.5 14.5H16"/></symbol>
+  <symbol id="ok" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+</svg>
+
+<div class="wrap">
+
+<h2 class="topic">一、成员与邀请页：设备按人分组</h2>
+<p class="note"><b>从哪进：</b>云端协作看板 → 成员与邀请 → 设备。<b>和现在的差别：</b>现在所有人的设备混成一排，只有设备名；改成一人一组，组头写名字和台数，已撤销的收在组底。</p>
+<div class="frame"><main>
+  <h1>设备</h1>
+  <section class="person">
+    <header><span class="av">你</span><b>你</b><span class="pill info">负责人</span><span class="count">2 台有效</span></header>
+    <div class="dev"><span class="name"><svg class="i"><use href="#term"/></svg>本机同步·书房台式机</span><span class="pill ok">有效</span><span class="when">10-20 创建 · 明年 01-18 到期</span><button class="btn">撤销</button></div>
+    <div class="dev"><span class="name"><svg class="i"><use href="#term"/></svg>命令行·笔记本</span><span class="pill ok">有效</span><span class="when">11-02 创建 · 明年 01-31 到期</span><button class="btn">撤销</button></div>
+  </section>
+  <section class="person">
+    <header><span class="av">周</span><b>小周</b><span class="pill n">成员</span><span class="count">1 台有效</span></header>
+    <div class="dev"><span class="name"><svg class="i"><use href="#term"/></svg>命令行·宿舍笔记本</span><span class="pill ok">有效</span><span class="when">10-27 创建 · 明年 01-25 到期</span><button class="btn">撤销</button></div>
+    <div class="dev"><span class="name"><svg class="i"><use href="#term"/></svg>命令行·实验室台式机</span><span class="pill warn">已到期</span><span class="when">08-01 创建 · 10-30 到期</span><button class="btn">撤销</button></div>
+    <details class="gone"><summary>已撤销 1 台</summary>
+      <div class="dev off"><span class="name"><svg class="i"><use href="#term"/></svg>命令行·旧笔记本</span><span class="pill n">已撤销</span><span class="when">09-12 创建 · 10-27 撤销</span><span></span></div>
+    </details>
+  </section>
+  <section class="person">
+    <header><span class="av">林</span><b>阿林</b><span class="pill n">成员</span><span class="count">还没有设备</span></header>
+  </section>
+</main></div>
+
+<h2 class="topic">二、等你做的事</h2>
+<p class="note"><b>从哪进：</b>总览多一个数字「等你做的事」，点进去是清单页；左侧导航也有入口。<b>怎么用：</b>做完一件点前面的方框，这件沉到「已做完」；5 秒内可以撤销。对话下次读那张卡时会看到你已经做了。</p>
+<div class="frame"><div class="shell">
+  <nav>
+    <a href="#"><svg class="i"><use href="#home"/></svg>总览</a>
+    <a href="#"><svg class="i"><use href="#board"/></svg>看板</a>
+    <a href="#" class="on"><svg class="i"><use href="#hand"/></svg>等你做的事<span class="dot" id="navN">3</span></a>
+  </nav>
+  <main>
+    <section>
+      <h2>总览上的入口</h2>
+      <div class="tiles">
+        <a class="tile" href="#"><div class="num">4</div><div class="lab">等你拍板</div></a>
+        <a class="tile new" href="#todoList"><div class="num" id="tileN">3</div><div class="lab">等你做的事</div></a>
+        <a class="tile" href="#"><div class="num">7</div><div class="lab">施工中</div></a>
+        <a class="tile" href="#"><div class="num">2</div><div class="lab">待收单</div></a>
+      </div>
+    </section>
+    <section id="todoList">
+      <h1>等你做的事</h1>
+      <div style="margin-top:var(--s3)" id="open">
+        <div class="todo"><button class="tick" aria-label="标记为已做完"><svg class="i"><use href="#ok"/></svg></button>
+          <div><div class="what">在支付平台商户后台扫码登录一次</div><div class="then">你做完以后：对话接着跑支付沙箱联调</div></div>
+          <span class="age">等了 3 天</span><span class="undo">已做完<button class="btn quiet">撤销</button></span>
+          <div class="meta"><span class="pill n">闪购 · 电商 App</span><span class="mono">FEAT-2</span></div></div>
+        <div class="todo"><button class="tick" aria-label="标记为已做完"><svg class="i"><use href="#ok"/></svg></button>
+          <div><div class="what">告诉对话：大促压测可以占用线上数据库的时段是几点到几点</div><div class="then">你做完以后：对话按这个时段排压测</div></div>
+          <span class="age">等了 1 天</span><span class="undo">已做完<button class="btn quiet">撤销</button></span>
+          <div class="meta"><span class="pill n">闪购 · 电商 App</span><span class="mono">FEAT-14</span></div></div>
+        <div class="todo"><button class="tick" aria-label="标记为已做完"><svg class="i"><use href="#ok"/></svg></button>
+          <div><div class="what">给评论系统的登录回调填一个域名</div><div class="then">你做完以后：对话配好回调并合并</div></div>
+          <span class="age">今天</span><span class="undo">已做完<button class="btn quiet">撤销</button></span>
+          <div class="meta"><span class="pill n">个人博客</span><span class="mono">B3</span></div></div>
+      </div>
+      <details class="gone" style="margin-top:var(--s3)"><summary>已做完 1 件</summary>
+        <div class="todo done"><button class="tick" aria-label="已做完" disabled><svg class="i"><use href="#ok"/></svg></button>
+          <div><div class="what">给云服务器续费</div><div class="then">11-10 做完 · 对话已接着升级部署</div></div><span></span>
+          <div class="meta"><span class="pill n">闪购 · 电商 App</span><span class="mono">CHORE-9</span></div></div>
+      </details>
+    </section>
+  </main>
+</div></div>
+
+<h2 class="topic">三、云端同步状态</h2>
+<p class="note"><b>从哪进：</b>本机看板左侧导航多一项「云端」，有没读的退回时带红点和条数。<b>和现在的差别：</b>现在这些只有敲命令才看得到。顶上那道流光只在正在发送时走，平时是一条静止的灰线。这次只做「看」和「知道了」，不做开关同步和登录。</p>
+<div class="frame"><div class="shell">
+  <nav>
+    <a href="#"><svg class="i"><use href="#home"/></svg>总览</a>
+    <a href="#"><svg class="i"><use href="#board"/></svg>看板</a>
+    <a href="#" class="on"><svg class="i"><use href="#cloud"/></svg>云端<span class="dot">2</span></a>
+  </nav>
+  <main>
+    <h1>云端同步</h1>
+    <section class="conn busy" aria-live="polite">
+      <div class="badge"><svg class="i"><use href="#cloud"/></svg></div>
+      <div>
+        <div class="state">已连接<span class="pill warn">正在发送 3 条</span></div>
+        <div class="kv"><span>上次拉取 17:09:20</span><span>这台电脑的凭据还有 67 天到期</span></div>
+      </div>
+    </section>
+    <section>
+      <h2>各项目</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>项目</th><th>状态</th><th>待发</th><th>上次拉取</th></tr></thead>
+        <tbody>
+          <tr><td><b>闪购 · 电商 App</b></td><td><span class="pill bad">2 条被退回</span></td><td class="num">0</td><td>17:09:20</td></tr>
+          <tr><td><b>个人博客</b></td><td><span class="pill warn">待发 3 条</span></td><td class="num">3</td><td>17:09:18</td></tr>
+          <tr><td><b>设计素材库</b></td><td><span class="pill ok">一致</span></td><td class="num">0</td><td>17:09:19</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+    <section>
+      <h2>被云端退回的操作</h2>
+      <div class="reject">
+        <div><div class="what">闪购 · 电商 App：认领「订单履约状态机」没成</div><div class="why">这张卡已被成员小周认领。要一起干，请在网页上改用「加入协作」。</div></div>
+        <button class="btn">知道了</button>
+        <div class="mono">FEAT-8 · 11-08 23:07 发起</div>
+      </div>
+      <div class="reject">
+        <div><div class="what">闪购 · 电商 App：认领「秒杀库存超卖」没成</div><div class="why">这张卡已被成员小周认领。要一起干，请在网页上改用「加入协作」。</div></div>
+        <button class="btn">知道了</button>
+        <div class="mono">BUG-11 · 11-08 23:07 发起</div>
+      </div>
+    </section>
+  </main>
+</div></div>
+
+</div>
+<script>
+// 样稿演示：勾掉一件，数字跟着减；撤销就加回来。
+(function () {
+  var open = document.getElementById('open');
+  function sync() {
+    var n = open.querySelectorAll('.todo:not(.done)').length;
+    document.getElementById('navN').textContent = n;
+    document.getElementById('tileN').textContent = n;
+  }
+  open.addEventListener('click', function (e) {
+    var row = e.target.closest('.todo'); if (!row) return;
+    if (e.target.closest('.tick')) row.classList.add('done');
+    else if (e.target.closest('.undo .btn')) row.classList.remove('done');
+    sync();
+  });
+})();
+</script>
+</body>
+</html>
