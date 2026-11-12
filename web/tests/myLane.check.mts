@@ -119,3 +119,25 @@ test('both boards gate, split, sort and render the personal lane using existing 
   assert.match(css, /my-lane-enter \.35s/)
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*\.member-lanes \.member-lane\.my-lane, \.board-scroll \.column\.my-lane, \.my-lane::before \{ animation: none; \}/)
 })
+
+test('personal lane headings use the info tone without an owner status tile', () => {
+  const owner = source('views/Kanban.vue'), member = source('collaboration/MemberBoard.vue')
+  assert.match(owner, /column\.status === '我在做' \? 'info' : statusTone\(column\.status\)/)
+  assert.match(owner, /<StatusTile v-if="column\.status !== '我在做'"/)
+  assert.match(member, /my-lane[^\n]*lane\.name === '我在做'/)
+  const css = source('styles/base.css')
+  assert.match(css, /\.member-lane\.my-lane > header\s*\{[^}]*color:\s*var\(--info\)/)
+  assert.match(css, /\.member-lane\.my-lane > header > i\s*\{[^}]*background:\s*var\(--info\)/)
+})
+
+test('personal lane toggle retains native input and accessible switch styling', () => {
+  for (const board of [source('views/Kanban.vue'), source('collaboration/MemberBoard.vue')]) {
+    assert.match(board, /class="my-lane-toggle"><input v-model="showMyLane" type="checkbox">显示我在做/)
+  }
+  const css = source('styles/base.css')
+  assert.match(css, /\.my-lane-toggle input\s*\{[^}]*width:\s*30px;[^}]*height:\s*16px;[^}]*background-color:\s*var\(--line-strong\)/)
+  assert.match(css, /\.my-lane-toggle input:checked\s*\{[^}]*background-color:\s*var\(--info\)/)
+  assert.match(css, /\.my-lane-toggle input:focus-visible\s*\{/)
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{[^}]*\.my-lane-toggle input[^}]*transition:\s*none/s)
+  assert.doesNotMatch(css, /transition:\s*all\b/)
+})

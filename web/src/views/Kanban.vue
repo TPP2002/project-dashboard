@@ -95,8 +95,8 @@ function statusTone(status: string) {
     <div v-else class="board-scroll" aria-label="任务状态泳道">
       <section v-for="column in columns" :key="column.status" class="column card" :class="{ 'my-lane': column.status === '我在做' }">
         <header class="column-head">
-          <span class="badge tiled" :class="statusTone(column.status)">
-            <StatusTile :status="column.status" :size="20" decorative />{{ column.status }}
+          <span class="badge tiled" :class="column.status === '我在做' ? 'info' : statusTone(column.status)">
+            <StatusTile v-if="column.status !== '我在做'" :status="column.status" :size="20" decorative />{{ column.status }}
           </span>
           <span class="badge count-badge" :class="isOverLimit(column.tasks.length, column.limit) ? 'bad' : 'n'">{{ column.tasks.length }}<span v-if="column.limit"> / {{ column.limit }}</span></span>
         </header>
