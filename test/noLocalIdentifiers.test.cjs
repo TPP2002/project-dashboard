@@ -36,7 +36,8 @@ function readForbiddenTokens(file = FORBIDDEN_FILE) {
 }
 
 function readTrackedTextFiles() {
-  const result = spawnSync('git', ['ls-files', '-z'], {
+  // 已跟踪的加上「没跟踪、也没被忽略」的：新文件一旦 git add 就进公开仓，收单时就得拦下。
+  const result = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     cwd: ROOT, encoding: 'utf8', windowsHide: true,
   });
   assert.ifError(result.error);
@@ -77,6 +78,14 @@ test('A2 正向：确定存在的标识必须命中，且测试自身也参与�
   const violations = findViolations(['dashboard'], readTrackedTextFiles());
   assert.ok(violations.length > 0, '扫描必须能发现真实命中，不能恒返回空数组');
   assert.ok(violations.includes('test/noLocalIdentifiers.test.cjs: dashboard'));
+});
+
+test('扫描范围：还没纳入版本管理、也没被忽略的新文件同样要扫', () => {
+  const probe = `test/untracked-probe-${process.pid}.txt`;
+  fs.writeFileSync(path.join(ROOT, probe), 'probe', 'utf8');
+  try {
+    assert.ok(readTrackedTextFiles().some(({ file }) => file === probe), '新建的未跟踪文件必须在扫描清单里');
+  } finally { fs.rmSync(path.join(ROOT, probe), { force: true }); }
 });
 
 test('A2 反向：不存在的合成标识必须无命中', () => {
