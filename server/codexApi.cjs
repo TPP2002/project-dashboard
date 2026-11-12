@@ -14,9 +14,10 @@ const MESSAGE_MAX = 8000;
 
 function createCodexApi({
   resolveRepo, readRegistry, dashboardRoot, sessionsRoot, registryPath,
-  readBody, sendJson, sendText, bodyMax,
+  readBody, sendJson, sendText, bodyMax, fileMemo,
 }) {
   const activeDispatches = new Set();
+  const getDeepseekBalance = deepseekBalance.createCachedDeepseekBalance();
 
   function context(res, query) {
     const projectId = query.project;
@@ -70,7 +71,7 @@ function createCodexApi({
     if (!repo) return [];
     // 这里没有会话数据,只走「进程没了」「早该收工却没收尾」两条铁证;
     // 「长时间没动静」这条软判据要扫会话文件,留给战报那条路径算。
-    return attachLiveness(listJobs(path.join(repo, '.codex', 'jobs')), { nowMs: Date.now() });
+    return attachLiveness(listJobs(path.join(repo, '.codex', 'jobs'), { memo: fileMemo }), { nowMs: Date.now() });
   }
 
   // 每个请求绑定自己的仓库，异步续聊也不会被另一个项目的请求改写上下文。
@@ -83,8 +84,9 @@ function createCodexApi({
   // 成本与额度扫描会话文件，不需要工单仓库。
   const sessionApi = sessionApiFor();
 
-  function handleJobs(res, ctx) {
-    sendJson(res, 200, attachLiveness(listJobs(ctx.jobsRoot), { nowMs: Date.now() }));
+  function handleJobs(res, ctx, query) {
+    const jobs = attachLiveness(listJobs(ctx.jobsRoot, { memo: fileMemo }), { nowMs: Date.now() });
+    sendJson(res, 200, query.running === '1' ? jobs.filter((job) => job.running === true) : jobs);
   }
 
   function handleJob(res, query, ctx) {
@@ -217,7 +219,7 @@ function createCodexApi({
     const ctx = context(res, query);
     if (!ctx) return true;
     if (sessionApiFor(ctx.repo).route(action, req, res, query)) return true;
-    if (action === 'jobs' && req.method === 'GET') { handleJobs(res, ctx); return true; }
+    if (action === 'jobs' && req.method === 'GET') { handleJobs(res, ctx, query); return true; }
     if (action === 'job' && req.method === 'GET') { handleJob(res, query, ctx); return true; }
     if (action === 'task' && req.method === 'GET') { handleTask(res, query, ctx); return true; }
     if (action === 'say' && req.method === 'POST') { handleSay(req, res, ctx); return true; }
@@ -228,8 +230,10 @@ function createCodexApi({
 
   return {
     getCostUsage: sessionApi.getCostUsage,
-    getDeepseekUsage: (days, projectId) => deepseekCostUsage.getDeepseekUsage({ days, projectId, registryPath }),
-    getDeepseekBalance: () => deepseekBalance.fetchDeepseekBalance(),
+    getDeepseekUsage: (days, projectId) => deepseekCostUsage.getDeepseekUsage({ days, projectId, registryPath, memo: fileMemo }),
+    scanAllDeepseekJobs: () => deepseekCostUsage.scanAllDeepseekJobs({ registryPath, memo: fileMemo }),
+    summarizeDeepseekJobs: deepseekCostUsage.summarizeDeepseekJobs,
+    getDeepseekBalance,
     getQuota: sessionApi.getQuota,
     route,
   };
