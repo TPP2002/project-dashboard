@@ -5,7 +5,7 @@ const path = require('node:path');
 const { spawn: defaultSpawn } = require('node:child_process');
 
 const ENTRY = ['--import', 'tsx', 'src/cli.ts', 'panel', '--serve'];
-const ACCOUNT_RE = /^(main|acct-[0-9]{1,6})$/;
+const ACCOUNT_RE = /^(main|(?:acct|pool)-[0-9]{1,6})$/;
 const PLATFORM_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const TOKEN_RE = /^[0-9a-f]{16,64}$/;
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
