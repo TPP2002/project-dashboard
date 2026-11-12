@@ -62,6 +62,7 @@ const accountNote = ref('')
 const acting = ref(false)
 const nowMs = ref(Date.now())
 const line = computed(() => perksData.value ? statusLine(perksData.value, nowMs.value, perksNote.value) : { kind: 'idle', text: '', canStop: false, canRetry: false, progress: null })
+const perksBusy = computed(() => Boolean(perksData.value?.activity || (perksData.value?.job && perksData.value.job.finishedAt === null)))
 let perksSeq = 0
 let perksTimer: ReturnType<typeof setTimeout> | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -73,8 +74,7 @@ function stopPerksTimer() { if (perksTimer) clearTimeout(perksTimer); perksTimer
 function schedulePerks() {
   stopPerksTimer()
   if (!mounted || !isPerks.value || document.visibilityState !== 'visible') return
-  const busy = perksData.value?.activity || (perksData.value?.job && perksData.value.job.finishedAt === null)
-  perksTimer = setTimeout(() => { void loadPerks() }, busy ? 1000 : 5000)
+  perksTimer = setTimeout(() => { void loadPerks() }, perksBusy.value ? 1000 : 5000)
 }
 async function loadPerks() {
   const seq = ++perksSeq
@@ -334,7 +334,7 @@ function submitClear() {
       @retry-row="onRetryRow"
       @retry-group="onRetryGroup"
     />
-    <PerksPanel v-else :status="perksStatus" :data="perksData" :error-line="perksError" :line="line" :acting="acting" :account-note="accountNote"
+    <PerksPanel v-else :status="perksStatus" :data="perksData" :error-line="perksError" :line="line" :acting="acting" :busy="perksBusy" :account-note="accountNote"
       @run="perksAction({ action: 'run' })" @stop="perksAction({ action: 'stop' })" @retry="lastPerksAction && perksAction(lastPerksAction)" @reload="loadPerks"
       @login="(account, ids) => perksAction({ action: 'login', account, ids })" @schedule="on => perksAction({ action: 'schedule', on })" @add="openPerksDialog()" @manage="openPerksDialog" />
 
@@ -399,8 +399,8 @@ function submitClear() {
 .page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
 .page-head { display: flex; align-items: center; justify-content: flex-start; gap: var(--s2) var(--s4); flex-wrap: wrap; }
 .page-head h1 { margin: 0; font-size: var(--fs-xl); }
-.tabs { display: flex; gap: var(--s1); padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
-.tab-button { min-width: 92px; }
+.tabs { display: flex; gap: var(--s1); padding: var(--s1); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); max-width: 100%; }
+.tab-button { flex: 0 1 92px; min-width: 0; }
 .tab-button.on { background: var(--surface); color: var(--text); border-color: var(--line-strong); font-weight: 600; }
 @media (max-width: 900px) { .tabs .btn, .perks-dialog .btn, .perks-dialog .res-choice, .perks-dialog .res-field-row input { min-height: 44px; } }
 .res-field-row { display: grid; gap: var(--s1); font-size: var(--fs-sm); color: var(--text-2); }

@@ -37,13 +37,16 @@ export function statusLine(state: PerksState, nowMs: number, note: string): Perk
     return result('running', `正在领取，已用 ${seconds} 秒。`, true)
   }
   if (activity?.kind === 'login') {
-    const text = !activity.own ? '登录窗口开着。登完关掉那个 Chrome 窗口，或点「停止」。' : job?.label === '登录各家' ? '登录窗口已经打开。逐个标签页登录，全部登完关掉那个 Chrome 窗口。' : `${job?.label || ''}的登录页已经打开，登完关掉那个 Chrome 窗口。`
+    const text = !activity.own ? '登录窗口开着。登完关掉那个 Chrome 窗口，或点「停止」。' : job?.label === '登录各家' ? '登录窗口已经打开。逐个标签页登录，全部登完关掉那个 Chrome 窗口。' : job?.label ? `「${job.label}」的登录页已经打开，登完关掉那个 Chrome 窗口。` : '登录页已经打开，登完关掉那个 Chrome 窗口。'
     return result('login', text, true)
   }
   if (activity?.kind === 'probe') return result('busy', '正在处理…')
   if (note) return result('note', note)
   if (job && job.finishedAt !== null) {
-    if (job.stopped) return result('stopped', job.kind === 'run' && lastRun?.outcome === 'stopped' ? `已停止。跑了 ${lastRun.ran} 家，剩下 ${lastRun.total - lastRun.ran} 家没跑。` : '已停止。')
+    if (job.stopped) {
+      const mine = job.kind === 'run' && lastRun?.outcome === 'stopped' && Date.parse(lastRun.startedAt) >= job.startedAt
+      return result('stopped', mine ? `已停止。跑了 ${lastRun.ran} 家，剩下 ${lastRun.total - lastRun.ran} 家没跑。` : job.kind === 'run' ? '已停止，还没开始领。' : '已停止。')
+    }
     if (job.exitCode !== 0) return result('failed', `没办成：${job.reason}`, false, true)
     if (job.kind === 'run') return result('done', `跑完了：今天已领 ${state.summary.done} 家，要你处理 ${state.summary.action} 家，还没校准 ${state.summary.unverified} 家。`)
     if (job.kind === 'login') return result('done', '登录窗口已关。点「现在领一次」试试能不能领到。')
