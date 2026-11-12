@@ -136,8 +136,8 @@ test('release:连发两次不留 .new/.old 残渣;推了新 master 后再发布,
   const t = setup();
   release({ source: t.work, dest: t.dest, 'skip-web': true });
   release({ source: t.work, dest: t.dest, 'skip-web': true });
-  assert.ok(!fs.existsSync(t.dest + '.new'), '无 .new 残渣');
-  assert.ok(!fs.existsSync(t.dest + '.old'), '无 .old 残渣');
+  assert.ok(!fs.readdirSync(t.dir, { withFileTypes: true }).some(e => e.isDirectory() && e.name.startsWith(path.basename(t.dest) + '.new')), '无 .new 残渣');
+  assert.ok(!fs.readdirSync(t.dir, { withFileTypes: true }).some(e => e.isDirectory() && e.name.startsWith(path.basename(t.dest) + '.old')), '无 .old 残渣');
   assert.ok(!fs.existsSync(t.dest + '.boot'), '无 .boot 残渣');
 
   const sha2 = pushFromElsewhere(t, 'cli/index.cjs', "console.log('cli v2');\n", 'v2');

@@ -121,7 +121,7 @@ test('构建失败 = 整单失败:旧副本原封不动,不留 .new 残渣', () 
   const after = JSON.parse(read(path.join(t.dest, 'RELEASE.json')));
   assert.deepEqual(after, before, '发布失败不许动旧副本的印章');
   assert.match(read(path.join(t.dest, 'web', 'dist', 'index.html')), /上一版界面/, '旧界面必须原封不动');
-  assert.ok(!fs.existsSync(t.dest + '.new'), '失败要清掉 .new,不留残渣');
+  assert.ok(!fs.readdirSync(t.dir, { withFileTypes: true }).some(e => e.isDirectory() && (e.name.startsWith(path.basename(t.dest) + '.new') || e.name.startsWith(path.basename(t.dest) + '.old'))), '失败要清掉暂存目录,不留残渣');
   clean(t.dir);
 });
 

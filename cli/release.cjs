@@ -98,6 +98,81 @@ function detectTrunk(repo) {
 
 function rmrf(p) { fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 
+function privateDir(dest, kind) {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  for (;;) {
+    const dir = `${dest}.${kind}-${process.pid}-${crypto.randomBytes(4).toString('hex').slice(0, 6)}`;
+    try { fs.mkdirSync(dir); return dir; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  }
+}
+
+function pidAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return e.code === 'ESRCH' ? false : true; }
+}
+
+function lockInfo(lock) {
+  try {
+    const stat = fs.statSync(lock);
+    let data = null;
+    try { data = JSON.parse(fs.readFileSync(lock, 'utf8')); } catch { /* 可能正在写入 */ }
+    return { stat, data };
+  } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+}
+
+function takeSwapLock(dest, sha, waitMs) {
+  const lock = dest + '.swap.lock';
+  const owner = { pid: process.pid, startedAt: new Date().toISOString(), commit: sha, token: crypto.randomBytes(16).toString('hex') };
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    let fd;
+    try { fd = fs.openSync(lock, 'wx'); }
+    catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      const info = lockInfo(lock);
+      if (!info) continue;
+      const dead = info.data && pidAlive(info.data.pid) === false;
+      const unreadableOld = (!info.data || typeof info.data !== 'object' || pidAlive(info.data.pid) === null) && Date.now() - info.stat.mtimeMs > 60000;
+      if (dead || unreadableOld) {
+        const again = lockInfo(lock);
+        if (again && again.stat.ino === info.stat.ino && again.stat.mtimeMs === info.stat.mtimeMs && JSON.stringify(again.data) === JSON.stringify(info.data)) {
+          try { fs.unlinkSync(lock); } catch (err) { if (err.code !== 'ENOENT') throw err; }
+        }
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        const started = info.data && Date.parse(info.data.startedAt);
+        const seconds = Math.max(0, Math.floor((Date.now() - (Number.isFinite(started) ? started : info.stat.mtimeMs)) / 1000));
+        throw new Error(`另一个发布正在换上副本，持有者 pid ${info.data && info.data.pid || '未知'}，已持锁 ${seconds} 秒`);
+      }
+      sleepMs(Math.min(200, Math.max(1, deadline - Date.now())));
+      continue;
+    }
+    try { fs.writeFileSync(fd, JSON.stringify(owner)); }
+    catch (e) { try { fs.unlinkSync(lock); } catch { /* 写锁失败 */ } throw e; }
+    finally { fs.closeSync(fd); }
+    return () => {
+      const info = lockInfo(lock);
+      if (info && info.data && info.data.pid === owner.pid && info.data.token === owner.token) fs.unlinkSync(lock);
+    };
+  }
+}
+
+function cleanDeadStages(dest, own) {
+  const base = path.basename(dest);
+  let entries;
+  try { entries = fs.readdirSync(path.dirname(dest), { withFileTypes: true }); } catch { return; }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(base + '.')) continue;
+    const match = entry.name.slice(base.length).match(/^\.(?:new|old|boot)-(\d+)-[a-z0-9]+$/);
+    const target = path.join(path.dirname(dest), entry.name);
+    if (match && !own.includes(target) && pidAlive(Number(match[1])) === false) {
+      try { rmrf(target); } catch { /* 下次再清 */ }
+    }
+  }
+}
+
 /**
  * 把某个 commit 的一批文件导到目标目录(临时索引,不碰来源仓的索引与工作区)。
  * @param {string} source 来源检出
@@ -333,9 +408,7 @@ function staleReleaseLogic(runningRoot, source, sha) {
  * @param {{source:string, sha:string, refLabel:string, dest:string, files:string[], flags:object, changed:string[]}} a
  */
 function bootstrapRelease({ source, sha, refLabel, dest, files, flags, changed }) {
-  const stage = dest + '.boot';
-  rmrf(stage);
-  fs.mkdirSync(stage, { recursive: true });
+  const stage = privateDir(dest, 'boot');
   try {
     exportFiles(source, sha, files, stage);
     const args = [
@@ -645,9 +718,9 @@ function release(flags = {}, deps = {}) {
     };
   }
 
-  const newDir = dest + '.new', oldDir = dest + '.old';
-  rmrf(newDir); rmrf(oldDir);
-  fs.mkdirSync(newDir, { recursive: true });
+  const newDir = privateDir(dest, 'new');
+  let oldDir = null;
+  try {
   exportFiles(source, sha, files, newDir);
 
   // 前端:同一个 commit 现场构建(d1=A)。失败 = 整单失败,dest 还没被碰过,旧副本原封不动
@@ -681,15 +754,40 @@ function release(flags = {}, deps = {}) {
   };
   atomicWriteJsonSync(path.join(newDir, STAMP_NAME), stamp);
 
-  // 换名:dest → .old,.new → dest;第二步失败就把旧的放回去,绝不让 dest 空着
-  const had = fs.existsSync(dest);
-  if (had) renameRetry(dest, oldDir);
-  try { renameRetry(newDir, dest); }
-  catch (e) {
-    if (had) { try { renameRetry(oldDir, dest); } catch { /* 连回滚都失败,下面的报错会说明 */ } }
-    throw e;
+  const required = flags['skip-web'] ? files : [...files, `${WEB_DIST_REL}/index.html`];
+  const missing = required.filter(rel => {
+    try { return !fs.statSync(path.join(newDir, ...rel.split('/'))).isFile(); } catch { return true; }
+  });
+  if (missing.length) throw new Error(`暂存副本不完整：${missing.slice(0, 5).join('、')}`);
+
+  const rawWait = flags['lock-wait-ms'];
+  const parsedWait = typeof rawWait === 'number' ? rawWait : (typeof rawWait === 'string' && /^\d+$/.test(rawWait) ? Number(rawWait) : NaN);
+  const waitMs = Number.isSafeInteger(parsedWait) && parsedWait > 0 ? parsedWait : 120000;
+  const unlock = takeSwapLock(dest, sha, waitMs);
+  try {
+    cleanDeadStages(dest, [newDir]);
+    const current = readStamp(dest);
+    if (current && typeof current.commit === 'string' && current.commit !== sha &&
+        safeGit(source, ['merge-base', '--is-ancestor', sha, current.commit]) !== null) {
+      return { ok: true, dest, stamp: current, superseded: true,
+        text: `✔ 发布副本已是更新的提交 ${current.commit.slice(0, 12)}，本次提交 ${sha.slice(0, 12)}` };
+    }
+    // 换名第二步失败时恢复旧副本。
+    const had = fs.existsSync(dest);
+    if (had) {
+      oldDir = privateDir(dest, 'old');
+      fs.rmdirSync(oldDir);
+      renameRetry(dest, oldDir);
+    }
+    try { renameRetry(newDir, dest); }
+    catch (e) {
+      if (had) { try { renameRetry(oldDir, dest); oldDir = null; } catch { /* 保留旧副本供恢复 */ } }
+      throw e;
+    }
+    if (oldDir) { try { rmrf(oldDir); oldDir = null; } catch { /* 留给后续清理 */ } }
+  } finally {
+    unlock();
   }
-  try { rmrf(oldDir); } catch { /* 删不掉的 .old 下次发布会再试 */ }
 
   const webLine = web && web.skipped
     ? `  ⚠ 前端未构建(${web.reason})——这份副本起不出网页界面,只够 CLI/hook 用\n`
@@ -709,6 +807,9 @@ function release(flags = {}, deps = {}) {
     '  注意:已在跑的服务不会自己换新,下次双击启动器时会自动重起(SERVER-RUNS-ON-LIVE-CHECKOUT d2=A)。' +
     staleLine;
   return { ok: true, dest, stamp, text };
+  } finally {
+    try { rmrf(newDir); } catch { /* 留给后续清理 */ }
+  }
 }
 
 module.exports = {
