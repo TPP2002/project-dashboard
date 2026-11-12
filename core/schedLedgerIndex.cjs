@@ -34,23 +34,24 @@ function createLedgerIndex(options = {}) {
   const fs = options.fs ?? nativeFs;
   let share = null, files = [], initialized = false, readable = false, reason = null;
   let bytesRead = 0, fullRebuilds = 0;
-  let pending, requests, submissions, handoffs, marks, starts, permits, samples, programs, versions;
-  let previousSeq, foldedSeq, foldedAt, retainFrom, highNow;
+  let pending, requests, submissions, handoffs, marks, starts, permits, samples, ids, requestPool;
+  let durationCache, groupCache, freshIds, projectCache, maxEventAt;
+  let previousSeq, foldedSeq, foldedAt, retainFrom, highNow, prunedThrough, oldMarkAdded;
   function clear() {
     pending = []; requests = new Map(); submissions = new Map(); handoffs = new Map(); marks = [];
     starts = new Map(); permits = new Map(); samples = new Map(); previousSeq = 0; foldedSeq = 0; foldedAt = -Infinity;
-    programs = new Map(); versions = new Map();
-    retainFrom = -Infinity; highNow = -Infinity;
+    ids = new Map(); requestPool = new Map(); durationCache = null; groupCache = null; freshIds = new Set(); projectCache = null; maxEventAt = -Infinity;
+    retainFrom = -Infinity; highNow = -Infinity; prunedThrough = -Infinity; oldMarkAdded = false;
   }
   clear();
-  const signatureEqual = (a, b) => a.name === b.name && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
+  const signatureEqual = (a, b) => a.name === b.name && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
   function listing() {
     const directory = path.join(c.schedPaths(share).root, 'ledger');
     return fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).map(entry => {
       if (!entry.isFile() || !/^\d{4}-\d{2}-\d{2}\.jsonl$/.test(entry.name)) throw new Error('台账目录含未知文件');
       c.isoTime(`${entry.name.slice(0, 10)}T00:00:00.000Z`);
-      const stat = fs.statSync(path.join(directory, entry.name));
-      return { name: entry.name, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
+      const stat = fs.statSync(path.join(directory, entry.name), { bigint: true });
+      return { name: entry.name, size: Number(stat.size), mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs };
     });
   }
   function readRange(file, start, length) {
@@ -68,25 +69,25 @@ function createLedgerIndex(options = {}) {
   }
   function accept(event) {
     previousSeq = event.seq;
+    const at = Date.parse(event.at);
+    maxEventAt = Math.max(maxEventAt, at);
+    let id = event.ticketId;
+    if (groupCache && id) {
+      if (!ids.has(id)) freshIds.add(id);
+      else if (!freshIds.has(id)) { groupCache = null; durationCache = null; freshIds.clear(); }
+    }
+    if (id) { if (ids.has(id)) id = ids.get(id); else ids.set(id, id); }
+    let request;
     if (event.type === 'submitted') {
-      const request = requestOf(event.data.request);
-      if (!submissions.has(event.ticketId) || submissions.get(event.ticketId).seq < event.seq) submissions.set(event.ticketId, { seq: event.seq, request });
-      const rows = versions.get(event.ticketId) ?? [];
-      rows.push([event.seq, Date.parse(event.at), request]); versions.set(event.ticketId, rows);
+      const raw = event.data.request, key = JSON.stringify([raw.project, raw.category, raw.work.type]);
+      request = requestPool.get(key);
+      if (!request) { request = Object.freeze({ project: raw.project, category: raw.category, work: Object.freeze({ type: raw.work.type }) }); requestPool.set(key, request); }
+      submissions.set(id, request);
     }
-    if (event.ticketId && event.attemptId && ['started', 'finished', 'granted'].includes(event.type)) {
-      const key = keyFor(event);
-      let program = programs.get(key);
-      if (!program) programs.set(key, program = { ticketId: event.ticketId, attemptId: event.attemptId, rows: [] });
-      // Compact execution instructions, without event objects, payloads or checksums.
-      // They allow a valid append to an older day (including sequence gaps) to
-      // recompose affected history without rereading any unchanged file bytes.
-      program.rows.push([event.seq, Date.parse(event.at), ['started', 'finished', 'granted'].indexOf(event.type), event.data.permit?.ciAware === true]);
-    }
-    if (event.ticketId) marks.push([Date.parse(event.at), event.ticketId]);
+    if (id) { marks.push(at, id); if (at < retainFrom) oldMarkAdded = true; }
     if (['dispatch-intent', 'dispatched'].includes(event.type)) {
-      let byAttempt = handoffs.get(event.ticketId);
-      if (!byAttempt) handoffs.set(event.ticketId, byAttempt = new Map());
+      let byAttempt = handoffs.get(id);
+      if (!byAttempt) handoffs.set(id, byAttempt = new Map());
       let step = byAttempt.get(event.attemptId);
       if (!step) byAttempt.set(event.attemptId, step = { attemptId: event.attemptId, intentAt: null, dispatchedAt: null, machine: null, submissionId: null,
         firstSeq: event.seq, intentSeq: 0, dispatchedSeq: 0, submissionSeq: 0 });
@@ -99,7 +100,9 @@ function createLedgerIndex(options = {}) {
         step.submissionSeq = event.seq;
       }
     }
-    pending.push(event);
+    const type = ['submitted', 'granted', 'started', 'finished'].indexOf(event.type);
+    pending.push(event.seq, at, type, id, event.attemptId, type === 0 ? request : type === 1 && event.data.permit?.ciAware === true);
+    projectCache = null;
   }
   function parse(bytes, previousNewline = true) {
     if (!isUtf8(bytes)) throw new Error('台账不是有效 UTF-8');
@@ -123,18 +126,9 @@ function createLedgerIndex(options = {}) {
     fullRebuilds++; clear();
     for (const file of next) {
       const before = pending.length, bytes = readRange(file, 0, file.size);
-      parse(bytes); file.firstSeq = pending[before]?.seq ?? null; file.lastSeq = previousSeq;
+      parse(bytes); file.firstSeq = pending[before] ?? null; file.lastSeq = previousSeq;
       remember(file, bytes);
     }
-  }
-  function recompose() {
-    requests.clear(); starts.clear(); permits.clear(); samples.clear(); foldedSeq = 0; foldedAt = -Infinity;
-    pending = [];
-    for (const [ticketId, rows] of versions) for (const [seq, ms, request] of rows) pending.push({ seq, at: new Date(ms).toISOString(),
-      ticketId, attemptId: 'submitted', type: 'submitted', data: { request } });
-    for (const { ticketId, attemptId, rows } of programs.values()) for (const [seq, ms, opcode, ciAware] of rows) pending.push({
-      seq, at: new Date(ms).toISOString(), ticketId, attemptId, type: ['started', 'finished', 'granted'][opcode], data: { permit: { ciAware } } });
-    pending.sort((a, b) => a.seq - b.seq);
   }
   function refresh(nextShare, force = false) {
     let next;
@@ -147,10 +141,10 @@ function createLedgerIndex(options = {}) {
       if (!full) for (let i = 0; i < files.length; i++) {
         const old = files[i], file = next[i];
         if (!file || file.name !== old.name || (!signatureEqual(file, old) && file.size <= old.size)) { full = true; break; }
+        if (i < files.length - 1 && !signatureEqual(file, old)) { full = true; break; }
       }
       if (full) rebuild(next);
       else {
-        let inserted = false;
         for (let i = 0; i < next.length; i++) {
           const file = next[i], old = files[i];
           if (old && signatureEqual(file, old)) { Object.assign(file, { tail: old.tail, newline: old.newline, firstSeq: old.firstSeq, lastSeq: old.lastSeq }); continue; }
@@ -160,17 +154,14 @@ function createLedgerIndex(options = {}) {
           const globalSeq = previousSeq, pendingBefore = pending.length;
           if (old) previousSeq = old.lastSeq;
           parse(bytes.subarray(tailSize), old ? old.newline : true);
-          const added = pending.slice(pendingBefore);
-          file.firstSeq = old?.firstSeq ?? added[0]?.seq ?? null;
+          file.firstSeq = old?.firstSeq ?? pending[pendingBefore] ?? null;
           file.lastSeq = previousSeq;
           const nextOld = files.slice(i + 1).find(entry => entry.firstSeq !== null);
           if (nextOld && file.lastSeq >= nextOld.firstSeq) throw new Error('台账校验和或事件顺序不合法');
           previousSeq = Math.max(globalSeq, previousSeq);
-          if (old && i < files.length - 1 && added.length) inserted = true;
           remember(file, bytes, old);
         }
         if (full) rebuild(next);
-        else if (inserted) recompose();
       }
       let lastSeq = 0;
       for (const file of next) if (file.firstSeq !== null) {
@@ -179,7 +170,7 @@ function createLedgerIndex(options = {}) {
       }
       files = next; initialized = true; readable = true; reason = null;
       // Appends older than the active project window must not resurrect expired marks.
-      marks = marks.filter(([at]) => at >= retainFrom);
+      pruneMarks(oldMarkAdded);
     } catch (error) {
       if (fullRebuilds === rebuildsBefore) fullRebuilds++;
       clear(); files = next ?? []; initialized = next !== undefined; readable = false; reason = `读不到调度台账：${error.message}`;
@@ -195,7 +186,17 @@ function createLedgerIndex(options = {}) {
     }
     highNow = Math.max(highNow, nowMs);
     retainFrom = Math.max(retainFrom, highNow - 8 * DAY);
-    marks = marks.filter(([at]) => at >= retainFrom);
+    pruneMarks();
+  }
+  function pruneMarks(force = false) {
+    if (retainFrom === -Infinity || (!force && retainFrom - prunedThrough < DAY)) return;
+    let write = 0;
+    for (let i = 0; i < marks.length; i += 2) if (marks[i] >= retainFrom) {
+      marks[write++] = marks[i]; marks[write++] = marks[i + 1];
+    }
+    marks.length = write;
+    prunedThrough = retainFrom;
+    oldMarkAdded = false;
   }
   function addSample(target, ticketId, bucket, sample) {
     let byBucket = target.get(ticketId);
@@ -204,36 +205,68 @@ function createLedgerIndex(options = {}) {
     recent.push(sample); recent.sort(newest); if (recent.length > SAMPLE_LIMIT) recent.length = SAMPLE_LIMIT;
     byBucket.set(bucket, recent);
   }
-  function apply(event, startMap, permitMap, target) {
-    if (!event.ticketId || !event.attemptId) return;
-    const key = keyFor(event), at = Date.parse(event.at);
-    if (event.type === 'granted') permitMap.set(key, event.data.permit?.ciAware === true);
-    if (event.type === 'started' && !startMap.has(key)) startMap.set(key, at);
-    if (event.type !== 'finished' || !startMap.has(key)) return;
+  function apply(seq, at, type, id, attempt, value, startMap, permitMap, target) {
+    if (!id || !attempt || type < 1) return;
+    const key = JSON.stringify([id, attempt]);
+    if (type === 1) permitMap.set(key, value);
+    if (type === 2 && !startMap.has(key)) startMap.set(key, at);
+    if (type !== 3 || !startMap.has(key)) return;
     const elapsed = at - startMap.get(key); startMap.delete(key);
     if (elapsed < 0 || !Number.isFinite(elapsed)) return;
     const bucket = permitMap.has(key) ? permitMap.get(key) : key;
-    addSample(target, event.ticketId, bucket, { elapsed, at: event.at, ms: at, seq: event.seq });
+    const sample = { elapsed, ms: at, seq };
+    addSample(target, id, bucket, sample);
+    return { bucket, sample };
   }
   function durationSamples(tickets, { cursorSeq = Infinity, nowMs, ciAware = false }) {
     if (!(cursorSeq >= 1) || !(nowMs >= -8640000000000000)) return new Map();
     ensureQuery(cursorSeq, nowMs);
     if (!readable) return new Map();
+    if (!pending.length && !tickets.length && cursorSeq >= previousSeq && nowMs >= maxEventAt && durationCache?.[ciAware ? 1 : 0]) {
+      return new Map([...durationCache[ciAware ? 1 : 0]].map(([key, value]) => [key, { ...value }]));
+    }
+    if (pending.length && groupCache && (cursorSeq < previousSeq || nowMs < maxEventAt)) {
+      groupCache = null; durationCache = null; freshIds.clear();
+    }
     let folded = 0;
-    for (const event of pending) {
-      if (event.seq > cursorSeq || !(Date.parse(event.at) <= nowMs)) break;
-      if (event.type === 'submitted') requests.set(event.ticketId, requestOf(event.data.request));
-      apply(event, starts, permits, samples);
-      foldedSeq = event.seq; foldedAt = Math.max(foldedAt, Date.parse(event.at)); folded++;
+    for (let i = 0; i < pending.length; i += 6) {
+      const [seq, at, type, id, attempt, value] = pending.slice(i, i + 6);
+      if (seq > cursorSeq || !(at <= nowMs)) break;
+      if (type === 0) {
+        if (groupCache && freshIds.has(id) && requests.has(id)) { groupCache = null; durationCache = null; }
+        requests.set(id, value);
+      }
+      const added = apply(seq, at, type, id, attempt, value, starts, permits, samples);
+      if (added && groupCache && freshIds.has(id)) {
+        const request = requests.get(id);
+        if (!request) { groupCache = null; durationCache = null; }
+        else {
+          const which = added.bucket === true ? 1 : 0, groups = groupCache[which];
+          if (groups) {
+            const key = sampleKey(request), recent = groups.get(key) ?? [];
+            recent.push(added.sample); recent.sort(newest); if (recent.length > SAMPLE_LIMIT) recent.length = SAMPLE_LIMIT;
+            groups.set(key, recent); durationCache[which] = null;
+          }
+        }
+      }
+      foldedSeq = seq; foldedAt = Math.max(foldedAt, at); folded += 6;
     }
     if (folded) pending = pending.slice(folded);
+    if (!pending.length) freshIds.clear();
+    const cachedGroups = !tickets.length && cursorSeq >= previousSeq && nowMs >= maxEventAt ? groupCache?.[ciAware ? 1 : 0] : null;
+    if (cachedGroups) {
+      const result = summarize(cachedGroups);
+      durationCache[ciAware ? 1 : 0] = new Map([...result].map(([key, value]) => [key, { ...value }]));
+      return result;
+    }
     const finalRequests = new Map(tickets.map(ticket => [ticket.ticketId, ticket.request]));
     for (const [id, request] of requests) finalRequests.set(id, request);
-    const startMap = new Map(starts), permitMap = new Map(permits), extra = new Map();
-    for (const event of pending) {
-      if (event.seq > cursorSeq) break;
-      if (event.type === 'submitted') finalRequests.set(event.ticketId, requestOf(event.data.request));
-      if (Date.parse(event.at) <= nowMs) apply(event, startMap, permitMap, extra);
+    const startMap = pending.length ? new Map(starts) : starts, permitMap = pending.length ? new Map(permits) : permits, extra = new Map();
+    for (let i = 0; i < pending.length; i += 6) {
+      const [seq, at, type, id, attempt, value] = pending.slice(i, i + 6);
+      if (seq > cursorSeq) break;
+      if (type === 0) finalRequests.set(id, value);
+      if (at <= nowMs) apply(seq, at, type, id, attempt, value, startMap, permitMap, extra);
     }
     const snapshotPermits = new Map(tickets.flatMap(ticket => ticket.attempts.map(attempt =>
       [JSON.stringify([ticket.ticketId, attempt.attemptId]), attempt.permit?.ciAware === true])));
@@ -248,6 +281,16 @@ function createLedgerIndex(options = {}) {
         groups.set(key, group);
       }
     }
+    const result = summarize(groups);
+    if (!tickets.length && cursorSeq >= previousSeq && nowMs >= maxEventAt) {
+      if (!durationCache) durationCache = [null, null];
+      if (!groupCache) groupCache = [null, null];
+      groupCache[ciAware ? 1 : 0] = groups;
+      durationCache[ciAware ? 1 : 0] = new Map([...result].map(([key, value]) => [key, { ...value }]));
+    }
+    return result;
+  }
+  function summarize(groups) {
     return new Map([...groups].map(([key, recent]) => {
       const durations = recent.map(sample => sample.elapsed).sort((a, b) => a - b), middle = Math.floor(durations.length / 2);
       return [key, { sampleCount: durations.length, medianMs: durations.length % 2 ? durations[middle] : (durations[middle - 1] + durations[middle]) / 2 }];
@@ -256,14 +299,21 @@ function createLedgerIndex(options = {}) {
   function connectedProjects(tickets, nowMs) {
     ensureQuery(Infinity, nowMs, true);
     if (!readable) return { readable: false, names: [], reason };
-    const finalRequests = new Map(tickets.map(ticket => [ticket.ticketId, ticket.request]));
-    for (const [id, { request }] of submissions) finalRequests.set(id, request);
-    const names = new Set();
-    for (const [at, id] of marks) {
+    if (!tickets.length && projectCache && nowMs >= projectCache.from && nowMs < projectCache.next && nowMs <= projectCache.expiry)
+      return { readable: true, names: [...projectCache.names], reason: null };
+    const finalRequests = tickets.length ? new Map(tickets.map(ticket => [ticket.ticketId, ticket.request])) : submissions;
+    if (tickets.length) for (const [id, request] of submissions) finalRequests.set(id, request);
+    const names = new Set(); let next = Infinity, expiry = Infinity;
+    for (let i = 0; i < marks.length; i += 2) {
+      const at = marks[i], id = marks[i + 1];
       const project = finalRequests.get(id)?.project;
       if (project && at >= nowMs - WEEK && at <= nowMs) names.add(project);
+      if (at > nowMs) next = Math.min(next, at);
+      else if (at >= nowMs - WEEK) expiry = Math.min(expiry, at + WEEK);
     }
-    return { readable: true, names: [...names].sort(), reason: null };
+    const sorted = [...names].sort();
+    if (!tickets.length && Number.isFinite(nowMs)) projectCache = { from: nowMs, next, expiry, names: sorted };
+    return { readable: true, names: [...sorted], reason: null };
   }
   function handoffsFor(ticket) {
     const result = new Map();
@@ -282,8 +332,13 @@ function createLedgerIndex(options = {}) {
     // Accessors stay live if a query needs a rewind rebuild or encounters a read error.
     return { get readable() { return readable; }, get reason() { return reason; }, events: [], durationSamples, connectedProjects, handoffsFor };
   }
+  function recentMarkCount() {
+    let count = 0;
+    for (let i = 0; i < marks.length; i += 2) if (marks[i] >= retainFrom) count++;
+    return count;
+  }
   return { refresh, durationSamples, connectedProjects, history,
-    stats: () => ({ files: files.length, bytesRead, fullRebuilds, retainedEvents: pending.length, recentMarks: marks.length }) };
+    stats: () => ({ files: files.length, bytesRead, fullRebuilds, retainedEvents: pending.length / 6, recentMarks: recentMarkCount() }) };
 }
 
 let currentShare = null, currentIndex = null;
