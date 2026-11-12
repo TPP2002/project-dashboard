@@ -65,6 +65,7 @@ const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
 const { createResourcesApi } = require('./resourcesApi.cjs');
+const { createPerksApi } = require('./perksApi.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
 const { createCiJobsMonitor, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
 const { createCiBoardsReader, readCiRepository } = require('../core/schedCiBoards.cjs');
@@ -305,6 +306,12 @@ function resolveDispatcherRepo() {
   const override = String(process.env.DASHBOARD_DISPATCHER_REPO || '').trim();
   if (override && path.isAbsolute(override)) return override;
   return codexRepo('rogue');
+}
+
+function resolvePerksRepo() {
+  const override = String(process.env.DASHBOARD_PERKS_REPO || '').trim();
+  if (override && path.isAbsolute(override)) return override;
+  return codexRepo('perks');
 }
 
 /** 读 board.json：ENOENT → null；解析失败 → 抛（调用方决定 404 还是 500） */
@@ -872,6 +879,11 @@ const resourcesApi = createResourcesApi({
   resolveDispatcherRepo,
   isCollaboration: Boolean(collaborationApi),
   isLocalRequest,
+});
+
+const perksApi = createPerksApi({
+  sendJson, readBody, bodyMax: BODY_MAX, resolvePerksRepo,
+  isCollaboration: Boolean(collaborationApi), isLocalRequest,
 });
 
 // 自愈所需：复用现有调度读取路径，记录最近一次【成功】读到调度共享盘快照的时刻；
@@ -1685,6 +1697,7 @@ const server = http.createServer(async (req, res) => {
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
       if (sub === 'parallel' && req.method === 'GET') return handleParallel(req, res, parsed.query || {});
       if (sub === 'resources' && resourcesApi.route(segs.slice(2).join('/'), req, res)) return;
+      if (sub === 'perks' && perksApi.route(segs.slice(2).join('/'), req, res)) return;
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'audition' && auditionApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;

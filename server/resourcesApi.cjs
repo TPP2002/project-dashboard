@@ -199,6 +199,12 @@ function createResourcesApi(deps) {
   const readTimeoutMs = deps.readTimeoutMs ?? 60000;
   const actionTimeoutMs = deps.actionTimeoutMs ?? 90000;
   const loginWaitMs = deps.loginWaitMs ?? 20000;
+  const readCacheMs = deps.readCacheMs ?? 10000;
+  const now = deps.now || Date.now;
+  let readCache = null;
+  let readers = null;
+  let cacheGeneration = 0;
+  const invalidateRead = () => { readCache = null; cacheGeneration++; };
 
   // 写命令互斥：同一时刻只允许一个写命令处在等待窗内。
   let writeBusy = false;
@@ -226,37 +232,47 @@ function createResourcesApi(deps) {
   }
 
   function handleRead(repo, res) {
+    if (readCache && now() - readCache.at < readCacheMs) { sendJson(res, 200, readCache.body); return; }
+    if (readers) { readers.push(res); return; }
+    readers = [res];
+    const generation = cacheGeneration;
+    const finish = (status, body) => {
+      if (!readers) return;
+      const waiting = readers; readers = null;
+      if (status === 200 && readCacheMs > 0 && generation === cacheGeneration) readCache = { at: now(), body };
+      for (const response of waiting) sendJson(response, status, body);
+    };
     const started = startChild(repo, ['list', '--json'], LIST_STDOUT_BYTES);
     if (started.error) {
-      sendJson(res, 500, { ok: false, error: '启动派单器命令失败:' + reasonOf(started.error) });
+      finish(500, { ok: false, error: '启动派单器命令失败:' + reasonOf(started.error) });
       return;
     }
     const { child, out, err } = started;
     let settled = false;
-    const finish = (status, body) => { if (settled) return; settled = true; sendJson(res, status, body); };
+    const complete = (status, body) => { if (settled) return; settled = true; finish(status, body); };
     const timer = setTimeout(() => {
       killChild(child);
-      finish(504, { ok: false, error: '派单器命令超时' });
+      complete(504, { ok: false, error: '派单器命令超时' });
     }, readTimeoutMs);
     child.on('error', (error) => {
       clearTimeout(timer);
-      finish(500, { ok: false, error: '启动派单器命令失败:' + reasonOf(error) });
+      complete(500, { ok: false, error: '启动派单器命令失败:' + reasonOf(error) });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        finish(502, { ok: false, error: lastLine(out.text()) || lastLine(err.text()) });
+        complete(502, { ok: false, error: lastLine(out.text()) || lastLine(err.text()) });
         return;
       }
       if (out.overflowed()) {
-        finish(502, { ok: false, error: '派单器返回的内容读不懂' });
+        complete(502, { ok: false, error: '派单器返回的内容读不懂' });
         return;
       }
       let data;
       try { data = JSON.parse(out.text().trim()); }
-      catch { finish(502, { ok: false, error: '派单器返回的内容读不懂' }); return; }
+      catch { complete(502, { ok: false, error: '派单器返回的内容读不懂' }); return; }
       if (!data || typeof data !== 'object' || data.formatVersion !== 1) {
-        finish(502, { ok: false, error: '账号数据的格式版本看板不认识' });
+        complete(502, { ok: false, error: '账号数据的格式版本看板不认识' });
         return;
       }
       if (Array.isArray(data.accounts)) {
@@ -268,7 +284,7 @@ function createResourcesApi(deps) {
           return copy;
         });
       }
-      finish(200, { ok: true, data });
+      complete(200, { ok: true, data });
     });
   }
 
@@ -305,6 +321,7 @@ function createResourcesApi(deps) {
     const timer = setTimeout(() => {
       if (isLogin) {
         // 等待窗内没退出：不杀子进程，返回 pending，后台继续，释放写锁，登录中集合留到子进程退出。
+        invalidateRead();
         unlock();
         detachChild(child);
         finish(200, { ok: true, pending: true, lastLine: lastLine(out.text()) });
@@ -316,11 +333,13 @@ function createResourcesApi(deps) {
     }, waitMs);
     child.on('error', (error) => {
       clearTimeout(timer);
+      invalidateRead();
       release();
       finish(500, { ok: false, error: '启动派单器命令失败:' + reasonOf(error) });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      invalidateRead();
       release();
       const line = lastLine(out.text()) || lastLine(err.text());
       if (code === 0) finish(200, { ok: true, code: 0, lastLine: line });
