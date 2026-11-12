@@ -3,6 +3,7 @@
    深浅两套 + 八种光谱，组件只使用语义变量。
    ============================================================ */
 :root {
+  --my-lane-bg: #eef4ff; --my-lane-line: #c9dafc;
   --p0: #e5484d; --p1: #f08c2e; --p2: #3e7bd6; --p3: #8e8e89;
   /* —— 浅色（默认） —— */
   --bg: #fbfbfa; --surface: #ffffff; --surface-2: #f6f6f5; --surface-3: #eeeeed;
@@ -105,7 +106,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --p0: #ff6b70; --p1: #ffa552; --p2: #7fb0ff; --p3: #9a9a93;
+    --p0: #ff6b70; --my-lane-bg: #1a2333; --my-lane-line: #2f4466; --p1: #ffa552; --p2: #7fb0ff; --p3: #9a9a93;
     --bg: #0d0d0e; --surface: #151516; --surface-2: #1b1b1d; --surface-3: #232326;
     --line: #242426; --line-strong: #343437;
     --text: #e7e7e8; --text-2: #9a9a9e; --text-3: #6a6a6f;
@@ -132,7 +133,7 @@
 }
 
 :root[data-theme="dark"] {
-  --p0: #ff6b70; --p1: #ffa552; --p2: #7fb0ff; --p3: #9a9a93;
+  --p0: #ff6b70; --my-lane-bg: #1a2333; --my-lane-line: #2f4466; --p1: #ffa552; --p2: #7fb0ff; --p3: #9a9a93;
   --bg: #0d0d0e; --surface: #151516; --surface-2: #1b1b1d; --surface-3: #232326;
   --line: #242426; --line-strong: #343437;
   --text: #e7e7e8; --text-2: #9a9a9e; --text-3: #6a6a6f;
@@ -423,3 +424,20 @@ tbody tr:hover { background: var(--surface-2); }
 /* Preserve staggered entry without retaining its transform over Vue's FLIP moves. */
 .column-body.stagger-list > .tcard { animation-fill-mode: backwards; }
 @media (prefers-reduced-motion: reduce) { .priority-lane-move { transition: none !important; } }
+
+.member-lanes .member-lane.my-lane, .board-scroll .column.my-lane {
+  position: relative; background: var(--my-lane-bg); border-color: var(--my-lane-line);
+  animation: my-lane-enter .35s ease-out;
+}
+.my-lane::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  border-radius: var(--r) var(--r) 0 0; pointer-events: none;
+  background: linear-gradient(90deg, var(--spec-top)); background-size: 200% 100%;
+  animation: my-lane-flow 5s linear infinite;
+}
+.my-lane-toggle { display: inline-flex; align-items: center; gap: var(--s1); }
+@keyframes my-lane-flow { to { background-position: -200% 0; } }
+@keyframes my-lane-enter { from { opacity: 0; transform: translateX(-8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .member-lanes .member-lane.my-lane, .board-scroll .column.my-lane, .my-lane::before { animation: none; }
+}

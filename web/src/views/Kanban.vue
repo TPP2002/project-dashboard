@@ -8,27 +8,42 @@ import { useBoardStore } from '@/stores/board'
 import * as derive from '@/utils/derive'
 import { appearance } from '@/utils/appearance'
 import { sortStalestFirst, isOverLimit } from '@/utils/kanbanFlow'
-import { DONE_STATUSES } from '@/api/schema'
+import { DONE_STATUSES, VOID_STATUSES } from '@/api/schema'
 import TaskCard from '@/components/TaskCard.vue'
 import DoneToggle from '@/components/DoneToggle.vue'
 
+import { isCollaborationOwner, collaborationOwnerUser } from '@/collaboration/http'
+import { isMine, splitMine, sortMine, readMyLane, writeMyLane } from '@/collaboration/myLane'
 const store = useBoardStore()
+const showMyLane = ref(readMyLane() === 'on')
+watch(showMyLane, value => writeMyLane(value ? 'on' : 'off'))
+const ownerId = () => collaborationOwnerUser()?.id ?? ''
 const board = computed(() => store.currentBoard)
 const pid = computed(() => store.currentProjectId || '')
 // 默认折叠"已完工"泳道,只显示活跃泳道;doneCount 供开关显示折叠数。
 const showDone = ref(false)
-const laneSort = ref('priority')
+const laneSort = ref<'priority' | 'original'>('priority')
 try { if (localStorage.getItem('dashboard.laneSort') === 'original') laneSort.value = 'original' } catch { /* Storage can be disabled. */ }
 watch(laneSort, value => { try { localStorage.setItem('dashboard.laneSort', value) } catch { /* Keep the in-memory choice. */ } })
 const doneCount = computed(() => (board.value?.tasks ?? []).filter((task) => DONE_STATUSES.has(task.status)).length)
-const columns = computed(() => derive.groupByStatus(board.value)
+const split = computed(() => isCollaborationOwner() && showMyLane.value
+  ? splitMine(board.value?.tasks ?? [], ownerId(), status => DONE_STATUSES.has(status) || VOID_STATUSES.has(status))
+  : { mine: [], rest: board.value?.tasks ?? [] })
+const columns = computed(() => {
+  const grouped = derive.groupByStatus(board.value ? { ...board.value, tasks: split.value.rest } : board.value)
+  if (split.value.mine.length) {
+    const queued = grouped.findIndex(column => column.status === '待开工')
+    grouped.splice(queued < 0 ? 0 : queued + 1, 0, { status: '我在做', tasks: sortMine(split.value.mine, laneSort.value) })
+  }
+  return grouped
   .filter((column) => column.tasks.length > 0 && (showDone.value || !DONE_STATUSES.has(column.status)))
   // 完工泳道按完工日倒序（最新完工在最上面），找"最近干完的那张"不用翻全列（体检 U2）。
   // 待收单泳道同样按最久没动排前——等得最久的排最上，负责人先派人收等了最久的那张。
   .map((column) => DONE_STATUSES.has(column.status)
     ? { ...column, tasks: [...column.tasks].sort((left, right) => (right.dates?.done || '').localeCompare(left.dates?.done || '')) }
     : column.status === '施工中' || column.status === '待收单' ? { ...column, tasks: sortStalestFirst(column.tasks) } : column)
-  .map(column => ({ ...column, tasks: laneSort.value === 'priority' ? sortLaneByPriority(column.tasks, column.status) : column.tasks, limit: appearance.wipLimits[column.status] || 0 })))
+  .map(column => ({ ...column, tasks: column.status !== '我在做' && laneSort.value === 'priority' ? sortLaneByPriority(column.tasks, column.status) : column.tasks, limit: column.status === '我在做' ? 0 : appearance.wipLimits[column.status] || 0 }))
+})
 const progress = computed(() => derive.progress(board.value))
 
 function statusTone(status: string) {
@@ -48,6 +63,7 @@ function statusTone(status: string) {
       </div>
       <div class="head-actions">
         <label>排序：<select v-model="laneSort"><option value="priority">优先级</option><option value="original">原顺序</option></select></label>
+        <label v-if="isCollaborationOwner()" class="my-lane-toggle"><input v-model="showMyLane" type="checkbox">显示我在做</label>
         <span class="badge info">{{ progress.done }}/{{ progress.total }} 完工</span>
         <span class="progress-value">{{ progress.percent }}%</span>
         <DoneToggle v-if="doneCount" v-model="showDone" :count="doneCount" />
@@ -77,7 +93,7 @@ function statusTone(status: string) {
     </div>
 
     <div v-else class="board-scroll" aria-label="任务状态泳道">
-      <section v-for="column in columns" :key="column.status" class="column card">
+      <section v-for="column in columns" :key="column.status" class="column card" :class="{ 'my-lane': column.status === '我在做' }">
         <header class="column-head">
           <span class="badge tiled" :class="statusTone(column.status)">
             <StatusTile :status="column.status" :size="20" decorative />{{ column.status }}
@@ -86,7 +102,7 @@ function statusTone(status: string) {
         </header>
         <TransitionGroup name="priority-lane" tag="div" class="column-body stagger-list">
           <!-- TaskCard 属第 4 批，本批只提供规范化容器。 -->
-          <TaskCard v-for="task in column.tasks" :key="task.id" :task="task" :project-id="pid" />
+          <TaskCard v-for="task in column.tasks" :key="task.id" :task="task" :project-id="pid" :in-my-lane="column.status === '我在做'" :relation="isMine(task, ownerId())" />
         </TransitionGroup>
       </section>
     </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { statusTone } from '@/api/schema'
 import type { Task } from '@/types'
 import { useBoardStore } from '@/stores/board'
 import { relTime } from '@/utils/format'
@@ -20,7 +21,7 @@ import type { Priority } from '@/utils/taskPriority'
 import PriorityBadge from './PriorityBadge.vue'
 import PriorityPicker from './PriorityPicker.vue'
 
-const props = defineProps<{ task: Task; projectId: string }>()
+const props = defineProps<{ task: Task; projectId: string; inMyLane?: boolean; relation?: 'lead' | 'collab' | null }>()
 const collaborationTask = computed(() => ({ ...props.task, aiWork: props.task.aiWork ?? aiWork(props.task) }))
 const projectColor = computed(() => projectColorCss(props.projectId))
 const root = ref<HTMLElement | null>(null)
@@ -96,6 +97,7 @@ const progressAge = computed(() => {
         <Icon name="bell" :size="14" />{{ pending() }}
       </span>
     </div>
+    <div v-if="inMyLane" class="tcard-meta"><span class="badge" :class="statusTone(task.status)">{{ task.status }}</span><span v-if="relation === 'collab'" class="badge info">协作</span></div>
     <!-- 三层结构:编号在上、人话标题居主位、技术说明退到小字(没写人话标题的老卡直接显示技术说明) -->
     <div class="ttitle">{{ task.plainTitle || task.title }}</div>
     <div v-if="task.plainTitle && task.title" class="tdesc" :title="task.title">{{ task.title }}</div>
