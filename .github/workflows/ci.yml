@@ -40,7 +40,7 @@ permissions:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -60,5 +60,14 @@ jobs:
         run: npm ci --no-audit --no-fund
         working-directory: web
 
+      # 类型检查与构建也在这里跑：只在本机排队时，一堵就等到超时，把没毛病的改动判成失败(2026-11-12)。
+      - name: 类型检查(vue-tsc)
+        run: npm run typecheck
+
       - name: node --test(全量)
         run: npm test
+
+      # 构建放在测试后面：产物不影响测试；测试红了也照样跑，两个结论都看得到。
+      - name: 前端构建(vite build)
+        if: ${{ !cancelled() }}
+        run: npm run build
