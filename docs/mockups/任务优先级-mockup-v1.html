@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>任务优先级 样图</title>
+<style>
+:root{--bg:#fbfbfa;--surface:#fff;--surface-2:#f6f6f5;--surface-3:#eeeeed;--line:#e4e4e2;--line-strong:#d2d2cf;--text:#1a1a19;--text-2:#5c5c58;--text-3:#8e8e89;--info:#2b5fa8;--info-bg:#e8f0fb;--warn:#9a6b12;--warn-bg:#fdf3e0;--r:6px;--mono:ui-monospace,"Cascadia Mono",Consolas,monospace;--spec:#4a9eff,#4ad9c4,#a86fd8,#ff5f8d,#4a9eff;
+--p0:#e5484d;--p1:#f08c2e;--p2:#3e7bd6;--p3:#8e8e89;--p4:#b5b5b0;--shadow:0 10px 30px rgba(0,0,0,.14),0 2px 6px rgba(0,0,0,.08)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141413;--surface:#1c1c1b;--surface-2:#232322;--surface-3:#2c2c2a;--line:#33332f;--line-strong:#45453f;--text:#ececea;--text-2:#b5b5b0;--text-3:#86867f;--info:#7fb0ff;--info-bg:#1d2a3d;--warn:#e8b75a;--warn-bg:#33291a;--p0:#ff6b70;--p1:#ffa552;--p2:#7fb0ff;--p3:#9a9a93;--p4:#6c6c66;--shadow:0 10px 30px rgba(0,0,0,.5)}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,"Microsoft YaHei",sans-serif;padding:24px 16px 80px}
+.wrap{max-width:1180px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:34px 0 6px}.lead{color:var(--text-2);margin:0 0 14px}
+.tip{font-size:13px;color:var(--info);background:var(--info-bg);border-radius:var(--r);padding:8px 12px;margin:10px 0}
+.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media(max-width:820px){.board{grid-template-columns:1fr}}
+.lane{background:var(--surface-2);border-radius:var(--r);padding:8px;min-height:240px}
+.lane h4{margin:0 0 8px;font-size:13px;color:var(--text-2);display:flex;justify-content:space-between}
+.cards{display:grid;gap:8px;position:relative}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:9px 10px 9px 13px;display:grid;gap:6px;position:relative;cursor:context-menu;user-select:none;transition:box-shadow .15s,border-color .15s}
+.card:hover{border-color:var(--line-strong)}
+.card.picking{border-color:var(--info);box-shadow:0 0 0 2px var(--info-bg)}
+.card::before{content:'';position:absolute;left:-1px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--pc,transparent)}
+.card[data-p="0"]{--pc:var(--p0)}.card[data-p="1"]{--pc:var(--p1)}.card[data-p="2"]{--pc:var(--p2)}.card[data-p="3"]{--pc:var(--p3)}.card[data-p="4"]{--pc:transparent}
+.top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.id{font-family:var(--mono);font-size:11px;color:var(--text-3)}.card h5{margin:0;font-size:13px;line-height:1.45}
+.row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text-2)}
+.bar{height:4px;border-radius:2px;background:var(--surface-3);overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--spec));background-size:200% 100%;animation:bar 4s linear infinite}
+@keyframes bar{to{background-position:-200% 0}}
+/* 优先级徽标:自绘图形,不用 emoji */
+.pri{display:inline-flex;align-items:center;gap:4px;font-size:11px;line-height:18px;padding:0 7px 0 5px;border-radius:9px;color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);white-space:nowrap}
+.pri svg{width:12px;height:12px;flex:none}
+.pri[data-p="0"]{--c:var(--p0)}.pri[data-p="1"]{--c:var(--p1)}.pri[data-p="2"]{--c:var(--p2)}.pri[data-p="3"]{--c:var(--p3)}.pri[data-p="4"]{--c:var(--p3);background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong)}
+.pri[data-p="0"] .ring{transform-origin:6px 6px;animation:ping 1.6s ease-out infinite}
+@keyframes ping{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.25);opacity:0}}
+.pri[data-p="1"] .chev{animation:rise 1.8s ease-in-out infinite}
+@keyframes rise{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.5px)}}
+/* 侧栏 */
+.pop{position:fixed;width:184px;height:236px;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--shadow);z-index:20;display:grid;grid-template-rows:auto 1fr auto;overflow:hidden;
+  opacity:0;transform:translateX(var(--from,-10px)) scale(.96);transform-origin:var(--origin,left center);pointer-events:none;transition:opacity .16s ease,transform .22s cubic-bezier(.2,.9,.3,1.2)}
+.pop.open{opacity:1;transform:none;pointer-events:auto}
+.pop::after{content:'';position:absolute;top:var(--arrow,40px);width:10px;height:10px;background:var(--surface);border:1px solid var(--line-strong);transform:rotate(45deg)}
+.pop.right::after{left:-6px;border-right:0;border-top:0}.pop.left::after{right:-6px;border-left:0;border-bottom:0}
+.pop header{padding:9px 12px 6px;font-size:12px;color:var(--text-2);border-bottom:1px solid var(--line);position:relative;z-index:1;background:var(--surface)}
+.pop header b{display:block;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wheel{position:relative;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none;overscroll-behavior:contain;outline:none}
+.wheel::-webkit-scrollbar{display:none}
+.wheel .pad{height:46px}
+.opt{height:36px;scroll-snap-align:center;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:14px;color:var(--text-3);cursor:pointer;transition:color .15s,transform .15s}
+.opt .dot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none;transition:transform .15s}
+.opt[data-p="0"]{--c:var(--p0)}.opt[data-p="1"]{--c:var(--p1)}.opt[data-p="2"]{--c:var(--p2)}.opt[data-p="3"]{--c:var(--p3)}.opt[data-p="4"] .dot{background:transparent;box-shadow:inset 0 0 0 1.5px var(--p3)}
+.opt.cur{color:var(--text);font-weight:600;transform:scale(1.06)}.opt.cur .dot{transform:scale(1.25)}
+.opt small{margin-left:auto;font-size:11px;font-weight:400;color:var(--text-3)}
+.lens{position:absolute;left:8px;right:8px;top:50%;height:36px;margin-top:-18px;border-radius:7px;background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);pointer-events:none}
+.wheelbox{position:relative;overflow:hidden}
+.wheelbox::before,.wheelbox::after{content:'';position:absolute;left:0;right:0;height:40px;z-index:2;pointer-events:none}
+.wheelbox::before{top:0;background:linear-gradient(var(--surface),transparent)}.wheelbox::after{bottom:0;background:linear-gradient(transparent,var(--surface))}
+.wheelbox .wheel{position:absolute;inset:0;z-index:1}
+.pop footer{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-top:1px solid var(--line);font-size:11px;color:var(--text-3);background:var(--surface);position:relative;z-index:1}
+.btn{border:1px solid var(--line-strong);background:var(--surface);color:var(--text);border-radius:var(--r);padding:2px 10px;font:inherit;font-size:12px;cursor:pointer;min-height:24px}
+.btn.primary{background:var(--info);border-color:var(--info);color:#fff}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:6px 14px;border-radius:16px;font-size:13px;opacity:0;transition:.2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.drawer{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:12px;display:grid;gap:10px;max-width:520px}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r);overflow:hidden}.seg span{padding:3px 10px;font-size:12px;cursor:pointer;border-right:1px solid var(--line)}.seg span:last-child{border-right:0}.seg span.on{background:var(--text);color:var(--bg)}
+.filter{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text-2);margin-bottom:10px}
+.chip{border:1px solid var(--line-strong);border-radius:12px;padding:1px 9px;cursor:pointer;background:var(--surface)}.chip.on{background:var(--info-bg);border-color:var(--info);color:var(--info)}
+table{border-collapse:collapse;font-size:13px;width:100%;max-width:760px}td,th{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--surface-2);font-weight:600}
+@media (prefers-reduced-motion:reduce){.pop,.opt{transition:none}.pri .ring,.pri .chev,.bar i{animation:none}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>任务优先级 · 样图 v1</h1>
+<p class="lead">五档：紧急、高、中、低、可选。卡片左边一道色条加一个小徽标，泳道里按优先级从高到低排，同一档保持原来的先后顺序。</p>
+
+<h2>一、看板：右键卡片设置优先级</h2>
+<div class="tip">在下面任意一张卡上点右键试试：卡旁边会滑出一个固定大小的小侧栏，滚轮或手指上下滑，停在哪一档就是哪一档，点「确定」或直接点选项生效；按 Esc 或点空白处取消。键盘：上下方向键选，回车确定。</div>
+<div class="filter">只看：<span class="chip on" data-f="all">全部</span><span class="chip" data-f="0">紧急</span><span class="chip" data-f="1">高</span><span class="chip" data-f="2">中</span><span class="chip" data-f="3">低</span><span class="chip" data-f="4">可选</span></div>
+<div class="board" id="board">
+  <div class="lane"><h4>待开工 <span class="n"></span></h4><div class="cards">
+    <div class="card" data-p="2" data-seq="1"><div class="top"><span class="id">MD-031</span></div><h5>练习页加节拍器开关</h5><div class="row"><span>未领取</span><span>0%</span></div></div>
+    <div class="card" data-p="0" data-seq="2"><div class="top"><span class="id">MD-036</span></div><h5>上传视频后闪退</h5><div class="row"><span>未领取</span><span>0%</span></div></div>
+    <div class="card" data-p="4" data-seq="3"><div class="top"><span class="id">MD-034</span></div><h5>动作库按难度筛选</h5><div class="row"><span>未领取</span><span>0%</span></div></div>
+    <div class="card" data-p="3" data-seq="4"><div class="top"><span class="id">MD-035</span></div><h5>设置页文案统一</h5><div class="row"><span>未领取</span><span>0%</span></div></div>
+  </div></div>
+  <div class="lane"><h4>施工中 <span class="n"></span></h4><div class="cards">
+    <div class="card" data-p="2" data-seq="5"><div class="top"><span class="id">MD-027</span></div><h5>录像回放加慢放</h5><div class="row"><span>我</span><span>40%</span></div><div class="bar"><i style="width:40%"></i></div></div>
+    <div class="card" data-p="1" data-seq="6"><div class="top"><span class="id">MD-022</span></div><h5>评分接口接入</h5><div class="row"><span>小林</span><span>65%</span></div><div class="bar"><i style="width:65%"></i></div></div>
+    <div class="card" data-p="2" data-seq="7"><div class="top"><span class="id">MD-019</span></div><h5>骨架识别换模型</h5><div class="row"><span>AI 施工</span><span>30%</span></div><div class="bar"><i style="width:30%"></i></div></div>
+  </div></div>
+  <div class="lane"><h4>待拍板 <span class="n"></span></h4><div class="cards">
+    <div class="card" data-p="1" data-seq="8"><div class="top"><span class="id">MD-030</span></div><h5>要不要做离线模式</h5><div class="row"><span>等你拍板</span><span>10%</span></div></div>
+  </div></div>
+</div>
+
+<h2>二、详情抽屉里也能改（右键不好发现，手机上没有右键）</h2>
+<div class="drawer">
+  <div class="top"><span class="id">MD-022</span><span class="pri" data-p="1" id="drawerPri"></span></div>
+  <b>评分接口接入</b>
+  <div class="row"><span>优先级</span><span class="seg" id="seg"><span data-p="0">紧急</span><span data-p="1" class="on">高</span><span data-p="2">中</span><span data-p="3">低</span><span data-p="4">可选</span></span></div>
+  <div class="row"><span class="id">活动 · 刚刚 · TPP 把优先级从「中」改成「高」</span></div>
+</div>
+<p class="lead" style="margin-top:8px">手机上长按卡片，弹出同一个侧栏。每次改动都在卡片活动里记一笔：谁、什么时候、从哪档改成哪档。</p>
+
+<h2>三、需要你拍板的几件事（我的建议）</h2>
+<table>
+<tr><th>问题</th><th>建议</th><th>理由</th></tr>
+<tr><td>谁能改优先级</td><td>负责人和该项目的成员都能改，只读访客不能；AI 用命令行建卡时可以给一个初始档，之后由人改</td><td>「万一有人想设置」——成员最清楚自己手上哪个急；每次改动留痕，改错了一眼能看出是谁</td></tr>
+<tr><td>已有的卡默认哪一档</td><td>全部当「中」，卡上不显示徽标，只有改过的才显示</td><td>一百多张卡不用一张张补；「中」不显示能让紧急、高更跳眼</td></tr>
+<tr><td>泳道怎么排</td><td>按优先级从高到低排，同一档保持原来的先后顺序</td><td>一眼看出先做哪个；不想要可以在顶部「排序」里切回原顺序</td></tr>
+<tr><td>紧急有没有动效</td><td>紧急的徽标有一圈慢慢扩散的波纹，高有一个轻微上浮的箭头，其余静止</td><td>只给最需要注意的两档加动，免得满屏都在动</td></tr>
+</table>
+</div>
+
+<div class="pop" id="pop" role="dialog" aria-label="设置优先级">
+  <header>设置优先级<b id="popTitle"></b></header>
+  <div class="wheelbox"><div class="lens"></div><div class="wheel" id="wheel" tabindex="0">
+    <div class="pad"></div>
+    <div class="opt" data-p="0"><span class="dot"></span>紧急<small>马上做</small></div>
+    <div class="opt" data-p="1"><span class="dot"></span>高<small>先做</small></div>
+    <div class="opt" data-p="2"><span class="dot"></span>中<small>正常</small></div>
+    <div class="opt" data-p="3"><span class="dot"></span>低<small>有空做</small></div>
+    <div class="opt" data-p="4"><span class="dot"></span>可选<small>不做也行</small></div>
+    <div class="pad"></div>
+  </div></div>
+  <footer><span>滚轮或上下滑</span><button class="btn primary" id="ok">确定</button></footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const NAMES=['紧急','高','中','低','可选'];
+const ICON=[
+  '<svg viewBox="0 0 12 12"><circle class="ring" cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="6" cy="6" r="3" fill="currentColor"/></svg>',
+  '<svg viewBox="0 0 12 12"><path class="chev" d="M2.5 7.5 6 4l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  '<svg viewBox="0 0 12 12"><rect x="2.5" y="5" width="7" height="2" rx="1" fill="currentColor"/></svg>',
+  '<svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  '<svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6"/></svg>'];
+const badge=p=>`<span class="pri" data-p="${p}">${ICON[p]}${NAMES[p]}</span>`;
+let filter='all';
+function paint(card){
+  card.querySelector('.pri')?.remove();
+  const p=+card.dataset.p;
+  if(p!==2) card.querySelector('.top').insertAdjacentHTML('beforeend',badge(p));
+}
+function sortLane(box,animate){
+  const cards=[...box.children];
+  const before=new Map(cards.map(c=>[c,c.getBoundingClientRect().top]));
+  cards.sort((a,b)=>a.dataset.p-b.dataset.p||a.dataset.seq-b.dataset.seq).forEach(c=>box.appendChild(c));
+  cards.forEach(c=>{c.style.display=filter==='all'||c.dataset.p===filter?'':'none'});
+  if(!animate||matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  cards.forEach(c=>{const dy=before.get(c)-c.getBoundingClientRect().top;if(!dy)return;
+    c.animate([{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:280,easing:'cubic-bezier(.2,.8,.3,1)'});});
+}
+function refresh(animate){document.querySelectorAll('.lane').forEach(l=>{const box=l.querySelector('.cards');sortLane(box,animate);l.querySelector('.n').textContent=[...box.children].filter(c=>c.style.display!=='none').length})}
+document.querySelectorAll('.card').forEach(paint);refresh(false);
+
+const pop=document.getElementById('pop'),wheel=document.getElementById('wheel'),opts=[...wheel.querySelectorAll('.opt')];
+let target=null,cur=2,settle;
+function mark(){const mid=wheel.scrollTop+wheel.clientHeight/2;let best=0,d=1e9;opts.forEach((o,i)=>{const c=o.offsetTop+o.offsetHeight/2,x=Math.abs(c-mid);if(x<d){d=x;best=i}});cur=best;opts.forEach((o,i)=>o.classList.toggle('cur',i===best))}
+function scrollTo(i,smooth){const o=opts[i];wheel.scrollTo({top:o.offsetTop+o.offsetHeight/2-wheel.clientHeight/2,behavior:smooth?'smooth':'auto'})}
+wheel.addEventListener('scroll',()=>{mark()},{passive:true});
+function open(card){
+  close(false);target=card;card.classList.add('picking');
+  document.getElementById('popTitle').textContent=card.querySelector('.id').textContent+' '+card.querySelector('h5').textContent;
+  const r=card.getBoundingClientRect(),W=184,H=236,gap=12;
+  const right=r.right+gap+W<=innerWidth-8;
+  const left=right?r.right+gap:Math.max(8,r.left-gap-W);
+  const top=Math.min(Math.max(8,r.top+r.height/2-60),innerHeight-H-8);
+  pop.style.left=left+'px';pop.style.top=top+'px';
+  pop.classList.toggle('right',right);pop.classList.toggle('left',!right);
+  pop.style.setProperty('--from',right?'-12px':'12px');pop.style.setProperty('--origin',right?'left center':'right center');
+  pop.style.setProperty('--arrow',Math.min(Math.max(14,r.top+r.height/2-top-5),H-24)+'px');
+  requestAnimationFrame(()=>{pop.classList.add('open');scrollTo(+card.dataset.p,false);mark();wheel.focus({preventScroll:true})});
+}
+function close(){pop.classList.remove('open');target?.classList.remove('picking');target=null}
+function commit(){
+  if(!target)return;const old=+target.dataset.p;const card=target;close();
+  if(old===cur)return;card.dataset.p=cur;paint(card);refresh(true);
+  toast(`${card.querySelector('.id').textContent} 优先级：${NAMES[old]} → ${NAMES[cur]}`);
+}
+document.getElementById('board').addEventListener('contextmenu',e=>{const c=e.target.closest('.card');if(!c)return;e.preventDefault();open(c)});
+let press;document.getElementById('board').addEventListener('touchstart',e=>{const c=e.target.closest('.card');if(!c)return;press=setTimeout(()=>open(c),500)},{passive:true});
+['touchend','touchmove'].forEach(t=>document.addEventListener(t,()=>clearTimeout(press),{passive:true}));
+opts.forEach((o,i)=>o.addEventListener('click',()=>{if(i===cur)commit();else scrollTo(i,true)}));
+document.getElementById('ok').addEventListener('click',commit);
+wheel.addEventListener('keydown',e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();scrollTo(Math.min(4,Math.max(0,cur+(e.key==='ArrowDown'?1:-1))),true)}else if(e.key==='Enter'){commit()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
+document.addEventListener('mousedown',e=>{if(target&&!pop.contains(e.target))close()});
+addEventListener('scroll',()=>target&&close(),{passive:true});addEventListener('resize',()=>target&&close());
+document.querySelectorAll('.chip').forEach(ch=>ch.addEventListener('click',()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===ch));filter=ch.dataset.f;refresh(false)}));
+const seg=document.getElementById('seg'),dp=document.getElementById('drawerPri');
+function drawer(p){seg.querySelectorAll('span').forEach(s=>s.classList.toggle('on',+s.dataset.p===p));dp.outerHTML=badge(p).replace('<span class="pri"','<span id="drawerPri" class="pri"');}
+seg.addEventListener('click',e=>{const s=e.target.closest('span[data-p]');if(!s)return;seg.querySelectorAll('span').forEach(x=>x.classList.toggle('on',x===s));document.getElementById('drawerPri').outerHTML=badge(+s.dataset.p).replace('<span class="pri"','<span id="drawerPri" class="pri"')});
+document.getElementById('drawerPri').outerHTML=badge(1).replace('<span class="pri"','<span id="drawerPri" class="pri"');
+let tt;function toast(s){const t=document.getElementById('toast');t.textContent=s;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),1800)}
+</script>
+</body>
+</html>

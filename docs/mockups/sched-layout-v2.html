@@ -1,0 +1,177 @@
+<title>调度台布局改版</title>
+<style>
+  :root{
+    --bg:#0f1216; --card:#171b21; --card2:#1c2128; --line:#2a3038; --text:#e6edf3;
+    --dim:#8b949e; --accent:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+    --codex:#a371f7; --glm:#2ea043; --deep:#1f6feb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:13px/1.6 "Microsoft YaHei",system-ui,sans-serif}
+  .wrap{max-width:1280px;margin:0 auto;padding:16px}
+  .note{background:#1b2530;border:1px solid #2d4a66;border-left:3px solid var(--accent);padding:10px 14px;margin-bottom:14px;border-radius:4px}
+  .note b{color:var(--accent)}
+  h2.sec{font-size:13px;color:var(--dim);margin:18px 0 8px;font-weight:600;letter-spacing:.05em}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+
+  /* 顶条:我要用电脑 —— 只留按钮,不占窗口 */
+  .topbar{display:flex;align-items:center;gap:12px;background:var(--card2);border:1px solid var(--line);
+          border-radius:6px;padding:10px 14px;margin-bottom:12px;flex-wrap:wrap}
+  .topbar .label{font-weight:600;white-space:nowrap}
+  .topbar .hint{color:var(--dim);font-size:12px}
+  .btns{display:flex;gap:6px;flex-wrap:wrap}
+  .btn{background:#21262d;border:1px solid #30363d;color:var(--text);border-radius:5px;
+       padding:5px 12px;cursor:pointer;font-size:12px;white-space:nowrap}
+  .btn:hover{border-color:var(--accent)}
+  .btn.on{background:#1f3d2b;border-color:var(--ok);color:#7ee787}
+  .sep{width:1px;height:20px;background:var(--line);margin:0 2px}
+  .status{margin-left:auto;color:var(--ok);font-size:12px;white-space:nowrap}
+
+  /* 机器行 */
+  .machines{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:6px}
+  .m{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+  .m .n{font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+  .bar{height:6px;background:#0d1117;border-radius:3px;overflow:hidden;margin:6px 0 4px}
+  .bar i{display:block;height:100%}
+  .kv{display:flex;justify-content:space-between;color:var(--dim);font-size:12px}
+  .tag{font-size:11px;padding:1px 7px;border-radius:9px;border:1px solid}
+  .tag.ok{color:#7ee787;border-color:#238636;background:#12261a}
+  .tag.busy{color:#e3b341;border-color:#9e6a03;background:#241c08}
+
+  /* 台账 —— 挪到机器下面,主位 */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--dim);font-weight:600;background:#12161c}
+  .filters{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+  .sel{background:#0d1117;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:3px 8px;font-size:12px}
+  .pill{font-size:11px;padding:1px 7px;border-radius:9px}
+  .p-pass{background:#12261a;color:#7ee787} .p-run{background:#0d2942;color:#79c0ff}
+  .p-queue{background:#241c08;color:#e3b341} .p-cancel{background:#2b2b2b;color:#9aa4ae}
+
+  /* 三个平台窗口 */
+  .platforms{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .pf{background:var(--card);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .pf h3{margin:0;padding:8px 12px;font-size:12px;display:flex;justify-content:space-between;align-items:center;
+         border-bottom:1px solid var(--line)}
+  .pf.codex h3{background:#1d1630;color:#d2a8ff} .pf.glm h3{background:#10231a;color:#7ee787}
+  .pf.deep h3{background:#0d2137;color:#79c0ff}
+  .pf .body{padding:8px 12px;min-height:96px}
+  .job{padding:6px 0;border-bottom:1px dashed #232a32}
+  .job:last-child{border-bottom:none}
+  .job .t{font-size:12px;margin-bottom:2px}
+  .job .m2{color:var(--dim);font-size:11px}
+  .empty{color:var(--dim);font-size:12px;padding:14px 0;text-align:center}
+  .cols{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;align-items:start}
+  .small{color:var(--dim);font-size:11px;margin-top:4px}
+</style>
+
+<div class="wrap">
+  <div class="note">
+    <b>布局改版稿</b> —— 按你说的四点改:①「我要用电脑」挪到最上面一条,<b>只留按钮、不占窗口</b>;
+    ②<b>台账往上挪</b>到机器下面的主位;③新增 <b>GLM / DeepSeek 两个施工中窗口</b>(与 Codex 并排);
+    ④排队保持原样不动。下面是改完的样子。
+  </div>
+
+  <!-- ① 我要用电脑:顶部一条,只有按钮 -->
+  <div class="topbar">
+    <span class="label">🖥️ 我要用电脑</span>
+    <div class="btns">
+      <button class="btn">留 2 核</button>
+      <button class="btn">留 4 核</button>
+      <button class="btn">留 8 核</button>
+      <button class="btn">全让给我</button>
+    </div>
+    <div class="sep"></div>
+    <div class="btns">
+      <button class="btn">1 小时后取消</button>
+      <button class="btn on">3 小时后取消</button>
+      <button class="btn">手动取消前一直留</button>
+    </div>
+    <span class="status">● 已留 4 核 · 21:40 自动取消</span>
+  </div>
+
+  <!-- 机器 -->
+  <h2 class="sec">机器</h2>
+  <div class="machines">
+    <div class="m">
+      <div class="n">主机 Dx-2025…1051 <span class="tag busy">CI 在跑</span></div>
+      <div class="bar"><i style="width:72%;background:linear-gradient(90deg,#1f6feb,#58a6ff)"></i></div>
+      <div class="kv"><span>已派 12 核 / 配额 17</span><span>未接入 1.4 核</span></div>
+    </div>
+    <div class="m">
+      <div class="n">副机 DESKTOP-B3NF3BA <span class="tag ok">空闲</span></div>
+      <div class="bar"><i style="width:25%;background:linear-gradient(90deg,#238636,#3fb950)"></i></div>
+      <div class="kv"><span>已派 3 核 / 配额 12</span><span>未接入 0.2 核</span></div>
+    </div>
+    <div class="m">
+      <div class="n">Mac SSUN-TYAO <span class="tag">离线</span></div>
+      <div class="bar"><i style="width:0%;background:#30363d"></i></div>
+      <div class="kv"><span>—</span><span>数据过期</span></div>
+    </div>
+  </div>
+
+  <!-- ② 台账挪上来 -->
+  <h2 class="sec">台账 <span style="color:#6e7681;font-weight:400">(挪到主位;筛选与导出都在这一行)</span></h2>
+  <div class="card">
+    <div class="filters">
+      <select class="sel"><option>全部项目</option></select>
+      <select class="sel"><option>全部机器</option></select>
+      <select class="sel"><option>全部施工方</option><option>Codex</option><option>GLM</option><option>DeepSeek</option></select>
+      <select class="sel"><option>全部结果</option></select>
+      <button class="btn" style="margin-left:auto">⬇ 导出 CSV</button>
+    </div>
+    <table>
+      <tr><th>单号</th><th>标题</th><th>施工方</th><th>机器</th><th>核</th><th>状态</th><th>耗时</th><th>结束</th></tr>
+      <tr><td>tk-84b5…72f0</td><td>集群作业 lint:content</td><td>—</td><td>主机</td><td>2</td><td><span class="pill p-pass">通过</span></td><td>5.1s</td><td>21:06</td></tr>
+      <tr><td>tk-da70…177d</td><td>统一调度 T4a 挂起与恢复</td><td><span style="color:#d2a8ff">Codex</span></td><td>—</td><td>0</td><td><span class="pill p-run">施工中</span></td><td>1h12m</td><td>—</td></tr>
+      <tr><td>tk-506f…13d8</td><td>验收整组重跑</td><td><span style="color:#d2a8ff">Codex</span></td><td>主机</td><td>1</td><td><span class="pill p-pass">通过</span></td><td>3m40s</td><td>20:58</td></tr>
+      <tr><td>tk-af50…31a6</td><td>集群作业 typecheck</td><td>—</td><td>副机</td><td>2</td><td><span class="pill p-cancel">已撤单</span></td><td>—</td><td>20:41</td></tr>
+      <tr><td>tk-6f82…db26</td><td>统一调度 T5 本机拦截</td><td><span style="color:#7ee787">GLM</span></td><td>—</td><td>0</td><td><span class="pill p-pass">通过</span></td><td>48m</td><td>20:12</td></tr>
+    </table>
+    <div class="small">第 1 / 7 页 · 共 163 条 · 导出按当前筛选</div>
+  </div>
+
+  <!-- ③ 三个平台窗口 + 排队 -->
+  <div class="cols" style="margin-top:18px">
+    <div>
+      <h2 class="sec">施工中的外派单 <span style="color:#6e7681;font-weight:400">(按施工方分窗口)</span></h2>
+      <div class="platforms">
+        <div class="pf codex">
+          <h3>Codex <span>2 单</span></h3>
+          <div class="body">
+            <div class="job"><div class="t">T4a 挂起与恢复</div><div class="m2">施工中 1h12m · 0 核</div></div>
+            <div class="job"><div class="t">T5 本机拦截</div><div class="m2">施工中 26m · 0 核</div></div>
+          </div>
+        </div>
+        <div class="pf glm">
+          <h3>GLM <span>1 单</span></h3>
+          <div class="body">
+            <div class="job"><div class="t">T2b 旧账本前置</div><div class="m2">已完工 · 等收单</div></div>
+          </div>
+        </div>
+        <div class="pf deep">
+          <h3>DeepSeek <span>0 单</span></h3>
+          <div class="body"><div class="empty">暂无在跑的单</div></div>
+        </div>
+      </div>
+      <div class="small">※ 这三块要靠派单器在登记时写下「施工方」才有数据 —— 那是游戏仓那边要补的一步。</div>
+    </div>
+
+    <div>
+      <h2 class="sec">排队 <span style="color:#6e7681;font-weight:400">(位置不动)</span></h2>
+      <div class="card">
+        <table>
+          <tr><th>单号</th><th>申请</th><th>预计等待</th></tr>
+          <tr><td>tk-3095…cf44</td><td>2 核 · 副机</td><td>约 4 分钟</td></tr>
+          <tr><td>tk-061b…ece5</td><td>4 核 · 不限</td><td>暂无法预估<div class="small">主机 CI 在跑</div></td></tr>
+        </table>
+      </div>
+      <h2 class="sec">最近指令</h2>
+      <div class="card">
+        <table>
+          <tr><td>撤单 tk-af50…</td><td><span class="pill p-pass">已执行</span></td></tr>
+          <tr><td>留 4 核 · 3 小时</td><td><span class="pill p-pass">已执行</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>

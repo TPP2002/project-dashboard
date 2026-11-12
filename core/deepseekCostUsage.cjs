@@ -7,7 +7,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const readline = require('node:readline');
+const { execSummaryOf } = require('./jobExecSummary.cjs');
 const { readRegistry, resolveProject } = require('./resolveProject.cjs');
 const { normalizeReal } = require('./safePath.cjs');
 
@@ -77,27 +77,11 @@ function readJson(file) {
 }
 
 /** 流式保留最后一条 result 和当时的模型名，不把整份执行日志装入内存。 */
-function readLastResult(file) {
-  return new Promise((resolve, reject) => {
-    const input = fs.createReadStream(file, { encoding: 'utf8' });
-    const lines = readline.createInterface({ input, crlfDelay: Infinity });
-    let last = null, model = null;
-    lines.on('line', (line) => {
-      let event;
-      try { event = JSON.parse(line); } catch (_) { return; } // 忽略尚未写完的行。
-      if (event?.type === 'assistant' && typeof event.message?.model === 'string') model = event.message.model;
-      if (event?.type === 'result') last = { event, model };
-    });
-    const onError = (error) => {
-      if (missing(error)) resolve(null);
-      else reject(error);
-      lines.close();
-    };
-    // readline 会转发输入流错误；两层都接住，缺日志不能变成未处理异常。
-    lines.once('error', onError);
-    input.once('error', onError);
-    lines.once('close', () => resolve(last));
-  });
+async function readLastResult(file, memo) {
+  try {
+    const summary = await execSummaryOf(file, memo), result = summary?.result;
+    return result ? { event: { usage: result.usage, modelUsage: Object.fromEntries(result.modelUsageNames.map((name) => [name, null])), model: result.model }, model: result.assistantModel } : null;
+  } catch (error) { if (missing(error)) return null; throw error; }
 }
 
 function resultModel(last, task) {
@@ -113,8 +97,10 @@ function resultModel(last, task) {
  * 每个真实代码仓只扫一次；显式 repoRoot 必须为有效绝对路径，不能误回落发起仓。
  * @returns {Promise<Array<{slug:string,hostRepo:string,dispatchedAt:string,model:string,usage:Object,costRmb:number,peak:boolean}>>}
  */
-async function scanDeepseekJobs({ registryPath, currentCodeRepo }) {
-  const current = normalizeReal(currentCodeRepo);
+async function scanJobs({ registryPath, currentCodeRepo, memo, all = false }) {
+  const paths = new Map();
+  const normalize = (value) => { if (!paths.has(value)) paths.set(value, normalizeReal(value)); return paths.get(value); };
+  const current = all ? null : normalize(currentCodeRepo);
   const registry = readRegistry(registryPath), visited = new Set(), jobs = [];
   for (const id of Object.keys(registry.projects || {})) {
     const { codeRepo: hostRepo } = resolveProject(id, { registryPath });
@@ -126,40 +112,53 @@ async function scanDeepseekJobs({ registryPath, currentCodeRepo }) {
     catch (error) { if (missing(error)) continue; throw error; }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const dir = path.join(jobsRoot, entry.name), task = readJson(path.join(dir, 'task.json'));
+      const dir = path.join(jobsRoot, entry.name), taskFile = path.join(dir, 'task.json');
+      const task = memo ? memo.sync(taskFile, 'task-route@1', () => {
+        const source = readJson(taskFile);
+        return source ? { engine: source.engine, hasRepoRoot: Object.hasOwn(source, 'repoRoot'), repoRoot: source.repoRoot, model: source.model } : null;
+      }) : readJson(taskFile);
       if (!task || task.engine !== 'deepseek') continue;
-      const target = Object.hasOwn(task, 'repoRoot') ? task.repoRoot : hostRepo;
+      const target = (memo ? task.hasRepoRoot : Object.hasOwn(task, 'repoRoot')) ? task.repoRoot : hostRepo;
       if (typeof target !== 'string' || target.includes('\0') || !path.isAbsolute(target)) continue;
-      if (normalizeReal(target) !== current) continue;
-      const meta = readJson(path.join(dir, 'meta.json'));
+      const repo = normalize(target);
+      if (!all && repo !== current) continue;
+      const metaFile = path.join(dir, 'meta.json');
+      let meta;
+      if (!memo) meta = readJson(metaFile);
+      else try { meta = memo.sync(metaFile, 'meta-dispatched@1', () => { let source; try { source = JSON.parse(fs.readFileSync(metaFile, 'utf8')); } catch (error) { if (missing(error)) return null; throw error; } return source ? { dispatchedAt: source.dispatchedAt } : null; }); }
+      catch (error) { if (missing(error) || error instanceof SyntaxError) meta = null; else throw error; }
       const dispatchedAt = meta?.dispatchedAt;
       if (typeof dispatchedAt !== 'string' || !Number.isFinite(Date.parse(dispatchedAt))) continue;
-      const last = await readLastResult(path.join(dir, 'exec.jsonl'));
+      const last = await readLastResult(path.join(dir, 'exec.jsonl'), memo);
       if (!last) continue;
       const model = resultModel(last, task), usage = last.event.usage;
       // 约定近似口径：以派单开始时刻判整单时段，不拆分跨高峰边界的执行过程。
       const peak = isPeakBeijing(dispatchedAt), costRmb = costRmbOf(usage, model, peak);
       if (costRmb === null) continue;
-      jobs.push({ slug: entry.name, hostRepo, dispatchedAt, model, usage, costRmb, peak });
+      jobs.push({ slug: entry.name, hostRepo, dispatchedAt, model, usage, costRmb, peak, ...(all ? { repo } : {}) });
     }
   }
   return jobs;
 }
+
+function scanDeepseekJobs(options) { return scanJobs(options); }
+function scanAllDeepseekJobs(options) { return scanJobs({ ...options, all: true }); }
 
 function emptySummary() {
   return { tokens: 0, costRmb: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheHitRate: 0 };
 }
 
 /** 最近 days 个本地自然日（含今天）。nowMs 可注入以固定窗口；金额汇总前不逐单舍入。 */
-async function getDeepseekUsage({ projectId, days = 30, registryPath, nowMs = Date.now() }) {
-  const { codeRepo } = resolveProject(projectId, { registryPath });
+function summarizeDeepseekJobs(jobs, { projectRepo, days = 30, nowMs = Date.now() }) {
+  const current = normalizeReal(projectRepo);
   const today = new Date(nowMs), cutoff = new Date(nowMs);
   if (!Number.isFinite(today.getTime())) throw new TypeError('无效的成本统计时间');
   const count = Math.max(1, Math.min(365, parseInt(days, 10) || 30));
   cutoff.setDate(cutoff.getDate() - (count - 1));
   const firstDay = localDate(cutoff), lastDay = localDate(today);
   const daily = new Map(), byModel = {}, totals = { ...emptySummary(), jobs: 0 };
-  for (const job of await scanDeepseekJobs({ registryPath, currentCodeRepo: codeRepo })) {
+  for (const job of jobs) {
+    if (job.repo !== current) continue;
     const date = localDate(job.dispatchedAt);
     if (date < firstDay || date > lastDay) continue;
     const t = usageBuckets(job.usage);
@@ -184,4 +183,12 @@ async function getDeepseekUsage({ projectId, days = 30, registryPath, nowMs = Da
   return { byDay: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)), totals, byModel };
 }
 
-module.exports = { DEEPSEEK_PRICE, isPeakBeijing, priceForDeepseek, costRmbOf, scanDeepseekJobs, getDeepseekUsage };
+async function getDeepseekUsage({ projectId, days = 30, registryPath, nowMs = Date.now(), memo }) {
+  const { codeRepo } = resolveProject(projectId, { registryPath });
+  if (!Number.isFinite(new Date(nowMs).getTime())) throw new TypeError('无效的成本统计时间');
+  const jobs = await scanDeepseekJobs({ registryPath, currentCodeRepo: codeRepo, memo });
+  const repo = normalizeReal(codeRepo);
+  return summarizeDeepseekJobs(jobs.map((job) => ({ ...job, repo })), { projectRepo: codeRepo, days, nowMs });
+}
+
+module.exports = { DEEPSEEK_PRICE, isPeakBeijing, priceForDeepseek, costRmbOf, scanDeepseekJobs, scanAllDeepseekJobs, summarizeDeepseekJobs, getDeepseekUsage };

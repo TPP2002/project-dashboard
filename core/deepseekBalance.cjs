@@ -61,4 +61,28 @@ async function fetchDeepseekBalance({
   }
 }
 
-module.exports = { readDeepseekKey, evaluateDeepseekBalance, fetchDeepseekBalance };
+function createCachedDeepseekBalance({ fetchBalance = fetchDeepseekBalance, now = Date.now,
+  freshMs = 60000, staleMs = 600000, failureMs = 15000 } = {}) {
+  let success = null, successAt = 0, failure = null, failureAt = 0, inFlight = null;
+  function refresh() {
+    if (inFlight) return inFlight;
+    inFlight = Promise.resolve().then(() => fetchBalance()).then((result) => {
+      if (result?.available === true) { success = result; successAt = now(); failure = null; }
+      else { failure = result; failureAt = now(); }
+      return result;
+    }).finally(() => { inFlight = null; });
+    return inFlight;
+  }
+  return function getBalance() {
+    const time = now();
+    if (success && time - successAt <= freshMs) return Promise.resolve(success);
+    if (success && time - successAt <= staleMs) {
+      refresh().catch(() => {});
+      return Promise.resolve(success);
+    }
+    if (failure && time - failureAt <= failureMs) return Promise.resolve(failure);
+    return refresh();
+  };
+}
+
+module.exports = { readDeepseekKey, evaluateDeepseekBalance, fetchDeepseekBalance, createCachedDeepseekBalance };
