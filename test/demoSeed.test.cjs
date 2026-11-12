@@ -73,6 +73,9 @@ function collectDates(board) {
     (task.decisions || []).forEach((dec, j) => {
       if (dec.decidedAt) out.push([`tasks[${i}].decisions[${j}].decidedAt`, dec.decidedAt]);
     });
+    (task.cost?.entries || []).forEach((entry, j) => {
+      if (entry.date) out.push([`tasks[${i}].cost.entries[${j}].date`, entry.date]);
+    });
   });
   (board.activity || []).forEach((a, i) => {
     if (a.ts) out.push([`activity[${i}].ts`, a.ts]);
@@ -92,6 +95,7 @@ function stripDates(board) {
       delete task.dates.done;
     }
     for (const dec of task.decisions || []) delete dec.decidedAt;
+    for (const entry of task.cost?.entries || []) delete entry.date;
   }
   for (const a of c.activity || []) delete a.ts;
   return c;

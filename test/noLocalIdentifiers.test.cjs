@@ -14,26 +14,14 @@ const { TextDecoder } = require('node:util');
 const { DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
-const BINARY_EXTENSIONS = new Set(['.png', '.pdf', '.ico', '.exe', '.docx']);
+const {
+  BINARY_EXTENSIONS, TEXT_ALLOWLIST, readForbiddenTokens, findViolations,
+  PATH_PLACEHOLDERS, STANDARD_WINDOWS_SOFTWARE_PATHS, findBadPaths,
+} = require('../core/localIdentifierScan.cjs');
 const FORBIDDEN_FILE = path.join(DASHBOARD_HOME, 'opensource-forbidden.txt');
 const MAIN_TEST = 'A2: 全部被 git 跟踪的文本文件不含本机路径、项目显示名或主机名';
 // 合成无命中夹具，避免扫描测试自身时命中夹具的源码字面量。
 const ABSENT_TOKEN = ['zzz', 'not-in-this-repo', 'zzz'].join('-');
-const TEXT_ALLOWLIST = new Map([
-  // 本仓的公开 clone 地址保留；只放行地址本身，README 的其它内容仍扫描。
-  ['README.md', ['https://github.com/TPP2002/project-dashboard.git']],
-]);
-
-function readForbiddenTokens(file = FORBIDDEN_FILE) {
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file));
-    return text.split(/\r?\n/).map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#'));
-  } catch {
-    // 名单为可选的本机数据；读取或解码失败统一交由主用例 skip。
-    return [];
-  }
-}
 
 function readTrackedTextFiles() {
   // 已跟踪的加上「没跟踪、也没被忽略」的：新文件一旦 git add 就进公开仓，收单时就得拦下。
@@ -46,19 +34,6 @@ function readTrackedTextFiles() {
   assert.ok(files.length > 0, 'git ls-files 必须实际返回被跟踪文件');
   return files.filter((file) => !BINARY_EXTENSIONS.has(path.extname(file).toLowerCase()))
     .map((file) => ({ file, content: fs.readFileSync(path.join(ROOT, file), 'utf8') }));
-}
-
-function findViolations(tokens, files) {
-  const violations = [];
-  for (let { file, content } of files) {
-    for (const allowed of TEXT_ALLOWLIST.get(file) || []) content = content.replaceAll(allowed, '');
-    // 同时识别源码/JSON 中的反斜杠转义，不让同一路径换个写法就绕过断言。
-    const normalized = content.replace(/\\+/g, '\\').toLowerCase();
-    for (const identifier of tokens) {
-      if (normalized.includes(identifier.toLowerCase())) violations.push(`${file}: ${identifier}`);
-    }
-  }
-  return violations;
 }
 
 test(MAIN_TEST, (t) => {
@@ -138,48 +113,6 @@ test('名单读取：兼容注释与空行，缺失、空内容、不可读或�
   fs.writeFileSync(file, '\ufeff# 注释\r\n\r\n dashboard \r\nDASHBOARD\r\n', 'utf8');
   assert.deepEqual(readForbiddenTokens(file), ['dashboard', 'DASHBOARD']);
 });
-
-// 来自被跟踪文本的占位符清点；相似名字的示例也单列，不能用模糊前缀放行。
-const PATH_PLACEHOLDERS = [
-  'c:/path/to', 'c:/users/demo', 'c:/users/t', 'c:/users/someone', 'c:/users/你的用户名',
-  'c:/正斜杠/绝对', 'd:/work', 'd:/code', 'd:/unrelated',
-  'f:/code-repo', 'f:/board-repo', 'f:/app-repo', 'f:/app-repo-evil', 'f:/quest-repo',
-  'f:/legacy-repo', 'f:/quant-repo', 'f:/shop-repo', 'f:/myapp', 'f:/docs-site', 'f:/projects',
-];
-
-// 这四条标准 Windows 浏览器安装路径不含个人、账号或项目信息，因此仅按完整路径放行，禁止扩大为安装目录前缀。
-const STANDARD_WINDOWS_SOFTWARE_PATHS = new Set([
-  'c:/program files/google/chrome/application/chrome.exe',
-  'c:/program files (x86)/google/chrome/application/chrome.exe',
-  'c:/program files (x86)/microsoft/edge/application/msedge.exe',
-  'c:/program files/microsoft/edge/application/msedge.exe',
-]);
-
-/** 纯扫描：输入 { file, content } 数组，返回「文件:行号: 路径」，不读盘、不依赖名单。 */
-function findBadPaths(files) {
-  const violations = [];
-  for (const { file, content } of files) {
-    for (const [index, rawLine] of content.split(/\r?\n/).entries()) {
-      // 源码/JSON 的多重反斜杠先归一化；词边界排除 URL、STDOUT 和 ref 的末字母。
-      const line = rawLine.replace(/\\+/g, '\\');
-      for (const match of line.matchAll(/(?<![A-Za-z0-9_])[A-Za-z]:[\\/]+/g)) {
-        const tail = line.slice(match.index + match[0].length);
-        const quote = line[match.index - 1];
-        // 紧挨引号的路径保留空格和括号；其余按文档/注释中的词及标点边界取路径。
-        const end = quote && ['"', "'", '`'].includes(quote) ? tail.indexOf(quote) : -1;
-        const segment = end >= 0 ? tail.slice(0, end) : tail.split(/[\s"'`<>|,;:()[\]{}，。、；：（）]/)[0];
-        const hit = match[0] + segment;
-        // 裸盘符没有有效段；孤立的单字符控制转义是假路径，不跳过正常 n/r/t 开头目录。
-        if (!segment || /^[A-Za-z]:\\[nrtbfv0]$/.test(hit)) continue;
-        const normalized = hit.replace(/\\/g, '/').toLowerCase();
-        const allowed = STANDARD_WINDOWS_SOFTWARE_PATHS.has(normalized)
-          || PATH_PLACEHOLDERS.some((prefix) => normalized === prefix || normalized.startsWith(prefix + '/'));
-        if (!allowed) violations.push(`${file}:${index + 1}: ${hit}`);
-      }
-    }
-  }
-  return violations;
-}
 
 test('路径形状闸：正向，合成非占位符路径必须违规并给出文件行号', () => {
   // 动态拼接避免违规夹具的源码字面量使真实仓库扫描永远报红。
