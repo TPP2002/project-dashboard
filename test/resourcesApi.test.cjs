@@ -87,6 +87,8 @@ async function fixture(t, options = {}) {
     readTimeoutMs: options.readTimeoutMs,
     actionTimeoutMs: options.actionTimeoutMs,
     loginWaitMs: options.loginWaitMs,
+    readCacheMs: options.readCacheMs ?? 0,
+    now: options.now,
   });
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -119,6 +121,34 @@ async function fixture(t, options = {}) {
     setHandler(next) { handler = next; },
   };
 }
+
+test('读取单飞、缓存、过期和写入作废', async (t) => {
+  let clock = 100;
+  const f = await fixture(t, { readCacheMs: 10000, now: () => clock,
+    handler: (child, args) => setTimeout(() => emit(child, 0, args.includes('list') ? JSON.stringify(snapshotPayload()) : 'ok'), 20) });
+  const [a, b] = await Promise.all([f.read(), f.read()]);
+  assert.deepEqual(a.body, b.body);
+  assert.equal(f.calls.length, 1);
+  await f.read(); assert.equal(f.calls.length, 1);
+  clock += 10001; await f.read(); assert.equal(f.calls.length, 2);
+  await f.act({ action: 'refresh' }); await f.read(); assert.equal(f.calls.length, 4);
+});
+
+test('读取失败不缓存，禁用缓存时仍保留单飞', async (t) => {
+  const f = await fixture(t, { readCacheMs: 10000, handler: child => emit(child, 1, 'failed') });
+  await f.read(); await f.read(); assert.equal(f.calls.length, 2);
+  const g = await fixture(t, { readCacheMs: 0, handler: child => emit(child, 0, JSON.stringify(snapshotPayload())) });
+  await g.read(); await g.read(); assert.equal(g.calls.length, 2);
+});
+
+test('失败的写入和转后台登录都使读取缓存失效', async (t) => {
+  const f = await fixture(t, { readCacheMs: 10000, loginWaitMs: 15,
+    handler: (child, args) => { if (args.includes('list')) emit(child, 0, JSON.stringify(snapshotPayload())); else if (args.includes('refresh')) emit(child, 1, 'failed'); } });
+  await f.read(); await f.act({ action: 'refresh' }); await f.read();
+  assert.equal(f.calls.length, 3);
+  await f.act({ action: 'login', id: 'qoder-1' }); await f.read();
+  assert.equal(f.calls.length, 5);
+});
 
 // —— (a) 读成功 ——
 test('读成功：删掉 home 与 keyFile，参数与 cwd 都对', async (t) => {
