@@ -32,7 +32,7 @@ const GROUPS = [
   ['卡的生命周期', ['add', 'assign', 'unassign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
-    'release', 'claim-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud']],
+    'release', 'claim-check', 'identifier-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud']],
   ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot', 'archive-activity']],
 ];
 
@@ -575,6 +575,19 @@ const COMMANDS = {
     ],
     examples: ['claim-check'],
     notes: ['临时放行用环境变量 DASHBOARD_SKIP_CLAIM_CHECK=1。'],
+  },
+  'identifier-check': {
+    summary: '公开仓提交闸：查暂存区的本机标识与白名单以外的盘符路径',
+    usage: 'identifier-check [--force] [--all]',
+    args: [
+      ['--force', '不看仓根 .public-repo 标记，照查一遍'],
+      ['--all', '改查工作区全部文件；手动全仓查一遍用它'],
+    ],
+    examples: ['identifier-check', 'identifier-check --all'],
+    notes: [
+      '仓根带 .public-repo 标记的仓，commit 前自动拦下含本机标识或非白名单盘符路径的暂存文本文件，报文件名、行号与命中名单第几条，不打印名单里的词。',
+      '默认只查 git add 过的暂存内容；没有标记文件的仓不受影响，临时放行用 DASHBOARD_SKIP_IDENTIFIER_CHECK=1。',
+    ],
   },
   doctor: {
     summary: '体检：钩子装没装、提交有没有漏记、分支台账脏不脏',
