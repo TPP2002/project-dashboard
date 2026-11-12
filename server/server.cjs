@@ -1888,8 +1888,13 @@ function tryListen(port, attemptsLeft) {
     if (!COLLABORATION) openBrowser(localUrl);  // 协作模式在服务器上跑,不开本机浏览器
   });
   server.once('error', (err) => {
-    if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0 && port < 65535) {
-      console.log(`端口 ${port} 被占用，尝试 ${port + 1} ...`);
+    const code = err && err.code;
+    if ((code === 'EADDRINUSE' || code === 'EACCES') && attemptsLeft > 0 && port < 65535) {
+      if (code === 'EACCES') {
+        console.log(`端口 ${port} 被系统保留或独占，尝试 ${port + 1} ...`);
+      } else {
+        console.log(`端口 ${port} 被占用，尝试 ${port + 1} ...`);
+      }
       setTimeout(() => tryListen(port + 1, attemptsLeft - 1), 50);
     } else {
       console.error(`\n[致命] 无法启动服务：${err && (err.message || err)}`);
