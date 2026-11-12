@@ -63,6 +63,40 @@ test('brief 一屏给齐七件事:人话标题/技术说明/文件域/依赖及�
   assert.match(text, /^# FEAT-12/m, 'markdown 一屏,抬头是卡号');
 });
 
+test('brief 原样打印多行卡片描述，放在技术说明与文件范围之间且只出现一次', (t) => {
+  const { P } = setup(t);
+  const description = '  必读：先查看登录规则。\n\n会话种类：施工。\n依据：连续输错后，暂时锁定；保留解锁入口。';
+  cmds.add({ _: ['FEAT-12'], title: SPEC, 'plain-title': PLAIN, desc: description + ' \n\t', ...P });
+  const text = brief({ _: ['FEAT-12'], ...P }).text;
+  assert.ok(text.includes(description), '描述全文保留原有缩进、空行和全角标点');
+  assert.ok(text.includes(`\n\n## 卡片描述\n\n${description}\n\n## 会改哪些文件`));
+  assert.ok(text.indexOf('## 技术说明') < text.indexOf('## 卡片描述'));
+  assert.ok(text.indexOf('## 卡片描述') < text.indexOf('## 会改哪些文件'));
+  assert.equal(text.split(description).length - 1, 1, '描述全文只出现一次');
+});
+
+test('brief 没给描述时不打印卡片描述一节', (t) => {
+  const { P } = setup(t);
+  cmds.add({ _: ['FEAT-12'], title: SPEC, 'plain-title': PLAIN, ...P });
+  assert.ok(!brief({ _: ['FEAT-12'], ...P }).text.includes('卡片描述'));
+});
+
+test('brief 描述只有空格和换行时不打印卡片描述一节', (t) => {
+  const { P } = setup(t);
+  cmds.add({ _: ['FEAT-12'], title: SPEC, 'plain-title': PLAIN, desc: '  \n \n  ', ...P });
+  assert.ok(!brief({ _: ['FEAT-12'], ...P }).text.includes('卡片描述'));
+});
+
+test('inbox --tid 与 claim --brief 也打印同一张卡的描述全文', (t) => {
+  const { P } = setup(t);
+  const description = '必读：登录规则。\n会话种类：施工。\n依据：锁定期间仍可解锁。';
+  cmds.add({ _: ['FEAT-12'], title: SPEC, 'plain-title': PLAIN, desc: description, ...P });
+  askAndAnswer(P, 'FEAT-12', '锁多久?', '锁 30 分钟');
+  assert.ok(inbox({ tid: 'FEAT-12', ...P }).text.includes(description));
+  const result = cmds.claim({ _: ['FEAT-12'], branch: 'feat/lock', builder: '派单器', brief: true, ...P });
+  assert.ok(result.text.includes(description));
+});
+
 test('最近留言只收 note 命令写的,记账流水不进来(否则整段技术说明会再吐一遍)', (t) => {
   const { P } = setup(t);
   // add 与 set 的流水也记成 type:'note',其中「新建任务 …」那条带着整段技术说明

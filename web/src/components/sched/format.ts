@@ -58,8 +58,25 @@ export function ciQueuedLabel(job: CiJob, now: number) {
   const queuedMs = age(job.queuedAt, now)
   const dataAge = age(job.updatedAt ?? null, now)
   const stale = job.staleSince ? dataAge === null ? '数据时间未知' : `数据 ${Math.floor(dataAge / 1000)} 秒前` : null
+  const blocked = Array.isArray(job.candidateMachines) && job.candidateMachines.length === 0 ? '没有在线 runner 能接' : null
   return [job.project || job.repository, job.workflow, job.job, job.cardTitle || job.title,
-    queuedMs === null ? '排队时长未知' : `排队 ${Math.floor(queuedMs / 60_000)} 分钟`, stale].filter(Boolean).join(' · ')
+    queuedMs === null ? '排队时长未知' : `排队 ${Math.floor(queuedMs / 60_000)} 分钟`, blocked, stale].filter(Boolean).join(' · ')
+}
+/** 唯一候选在线才把排队作业挪到那台机器的卡上；读不准、多台或没有候选都留在主机卡。 */
+export function ciQueuedForCard(queued: CiJob[], machine: string, host: string, onlineMachines: string[] = []): CiJob[] {
+  return queued.filter(job => {
+    const candidates = job.candidateMachines
+    const owner = Array.isArray(candidates) && candidates.length === 1 && onlineMachines.includes(candidates[0]) ? candidates[0] : host
+    return owner === machine
+  })
+}
+/** 同一台机器一个 runner 时直接点名，其余情况用通用说法。 */
+export function ciQueueHeading(jobs: CiJob[]) {
+  const first = jobs[0]?.candidateRunners
+  const only = Array.isArray(first) && first.length === 1 ? first[0] : null
+  const same = only !== null && jobs.every(job => Array.isArray(job.candidateRunners)
+    && job.candidateRunners.length === 1 && job.candidateRunners[0] === only)
+  return same ? `排队等 ${only}(${jobs.length})` : `排队等 runner(${jobs.length})`
 }
 export function ciRunnersDiffer(observed: string[] | null | undefined, jobs: CiJob[]) {
   if (!Array.isArray(observed) || !observed.every(runner => typeof runner === 'string')) return false

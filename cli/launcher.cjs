@@ -32,6 +32,7 @@ const { resolveSchedShare } = require('../core/settings.cjs');
 const { DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 const lr = require('../core/launcherRuntime.cjs');
 const { serviceStatus } = require('./release.cjs');
+const { createWatchdog } = require('./watchdog.cjs');
 
 /** 看护进程文件（core/launcherRuntime.cjs）自身；hold/启动器都以绝对路径 argv 拉起它。 */
 const WATCH_RUNTIME = path.resolve(__dirname, '..', 'core', 'launcherRuntime.cjs');
@@ -171,9 +172,10 @@ function openBrowser(url, { platform = process.platform, env = process.env, spaw
 
 /**
  * 启动编排主流程。deps 全部可注入（单测钉行为用）；生产一个不传，走真实实现。
+ * state 由 main 传入：settled 记「服务已起稳」，errors 收集所有拒绝/失败原因。
  * @returns {Promise<number>} 进程退出码（server/hold 退出码透传）
  */
-async function main(argv = process.argv.slice(2), deps = {}) {
+async function orchestrate(argv, deps, state) {
   const d = {
     platform: process.platform,
     hostname: os.hostname(),
@@ -204,6 +206,7 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     retireOwn: lr.retireOwnInstance,
     startConfirmMs: START_CONFIRM_MS,
     readRecord: lr.readRecord,
+    installWatchdog: () => createWatchdog({ home: d.home, repoRoot: d.codeRoot }).install(),
     writeRecord: lr.writeRecordLocked,   // 接主登记走 record.write.lock 短临界区（R9）
     kill: (pid, signal) => process.kill(pid, signal),
     acquireMutex: (file) => lr.acquireLaunchMutex(file, { kill: d.kill }),
@@ -211,7 +214,8 @@ async function main(argv = process.argv.slice(2), deps = {}) {
     err: console.error,
     ...deps,
   };
-  const { log, err } = d;
+  const { log } = d;
+  const err = (s) => { state.errors.push(String(s)); d.err(s); };
 
   if (argv.includes('--help') || argv.includes('-h')) { log(USAGE); return 0; }
   const { standalone } = parseLauncherArgs(argv);
@@ -393,7 +397,18 @@ async function main(argv = process.argv.slice(2), deps = {}) {
         runPromise.then(() => 'exited'),
       ]);
       waiter.stop();
-      if (outcome === 'started') log('看板服务已起稳：本次启动编排完成，放行后续双击（它们会重新检查并发布最新版本）。');
+      if (outcome === 'started') {
+        state.settled = true;
+        log('看板服务已起稳：本次启动编排完成，放行后续双击（它们会重新检查并发布最新版本）。');
+        const skipWatchdog = d.platform !== 'win32' ? '当前系统不是 Windows'
+          : standalone ? '独立模式' : d.env.DASHBOARD_NO_WATCHDOG === '1' ? '已设置跳过看护'
+          : d.env.DASHBOARD_HOME ? '数据目录非默认' : d.env.NODE_TEST_CONTEXT !== undefined ? '测试环境' : null;
+        if (skipWatchdog) log(`${skipWatchdog}，不自动装看护；要装请手动 node cli/watchdog.cjs install`);
+        else {
+          try { d.installWatchdog(); log('看护已就绪（每 5 分钟探活）'); }
+          catch (e) { log(`看护安装失败：${e.message}`); }
+        }
+      }
       else if (outcome === 'timeout') log('⚠ 迟迟未见服务起稳的登记（可能在排队）：先放行启动锁，不锁死编排；本窗口继续等待。');
       releaseOnce();
       return await runPromise;
@@ -449,12 +464,54 @@ async function main(argv = process.argv.slice(2), deps = {}) {
   }
 }
 
+/**
+ * 启动失败弹窗：只在双击入口（launcher-silent.vbs 已设 DASHBOARD_LAUNCH_NOTIFY=1）且 Windows 上弹；
+ * 看护计划任务不经过 launcher-silent.vbs、不设这个变量，所以它拉起时保持静默。
+ * 通知本身出错绝不影响启动器的返回码（消息只为一件事：让负责人看见失败原因）。
+ */
+function notifyLaunchFailure(message, {
+  platform = process.platform,
+  env = process.env,
+  spawn = cp.spawn.bind(cp),
+  script = path.join(__dirname, '..', 'scripts', 'launcher-notify.vbs'),
+} = {}) {
+  try {
+    if (!env || env.DASHBOARD_LAUNCH_NOTIFY !== '1' || platform !== 'win32') return;
+    const text = String(message)
+      .replace(/\r?\n/g, ' ')
+      .replace(/"/g, "'")
+      .replace(/^\s*✖\s*/, '')
+      .slice(0, 1000);
+    spawn('wscript.exe', ['//Nologo', script, text, '项目看板'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  } catch { /* 弹不出窗口也不能改启动器的结果 */ }
+}
+
+/**
+ * 生产入口：跑编排；启动失败（返回非 0 且没起稳，或直接抛异常）时通知负责人。
+ * 服务【已起稳】之后的退出不算启动失败 —— 那时负责人已经看到看板了，不用再弹窗。
+ */
+async function main(argv = process.argv.slice(2), deps = {}) {
+  const state = { settled: false, errors: [] };
+  const d = { ...deps, env: deps.env ?? process.env };
+  const notify = deps.notifyFailure ?? notifyLaunchFailure;
+  let code;
+  try {
+    code = await orchestrate(argv, d, state);
+  } catch (e) {
+    state.errors.push(String(e && e.message));
+    notify(state.errors.join(' '));
+    throw e;
+  }
+  if (code !== 0 && !state.settled && state.errors.length) notify(state.errors.join(' '));
+  return code;
+}
+
 if (require.main === module) {
   main().then((code) => { process.exitCode = code ?? 0; })
     .catch((e) => { console.error('✖ ' + (e && e.message)); process.exitCode = 1; });
 }
 
 module.exports = {
-  main, parseLauncherArgs, loadSchedClient, verifySchedulingReady, openBrowser,
+  main, notifyLaunchFailure, parseLauncherArgs, loadSchedClient, verifySchedulingReady, openBrowser,
   probeOptsFromEnv, sameDataScope, probeOwnScope, HEARTBEAT_MAX_AGE_MS, USAGE, WATCH_RUNTIME,
 };

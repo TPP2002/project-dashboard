@@ -417,6 +417,7 @@ test('会话、详情、额度与成本 API 返回同一份有界扫描结果', 
   assert.equal(portfolio.scope, 'all');
   assert.equal(portfolio.rows.find((row) => row.id === 'rogue').codexTokens, 321);
   assert.equal(portfolio.totals.codexTokens, 321, '全部项目的 Codex 总量只聚一次');
+  assert.equal(portfolio.totals.workbuddy.requests, 0, '合计是扁平字段,页面直接读 requests/credits');
 });
 
 // ── 失联工单的复派闸(CODEX-STALLED-JOB-REDISPATCH,2026-09-02 拍板"只对两条铁证放开")──

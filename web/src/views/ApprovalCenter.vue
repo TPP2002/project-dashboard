@@ -141,7 +141,6 @@ async function submit(item: PendingItem) {
     <header class="page-head">
       <div>
         <h1><Icon name="bell" class="head-ic" :size="20" />待拍板</h1>
-        <p>每张卡把问题、全部选项、利弊和推荐理由一次摊开；选中后直接确认。</p>
       </div>
       <div class="head-actions">
         <span class="badge warn">{{ items.length }} 条</span>
@@ -288,7 +287,6 @@ async function submit(item: PendingItem) {
 <style scoped>
 .page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
-.page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
 .author { display: flex; align-items: center; gap: var(--s2); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
 .author .field { width: 124px; }

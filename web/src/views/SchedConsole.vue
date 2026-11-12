@@ -18,6 +18,7 @@ const store = useSchedStore()
 const heartbeatAge = computed(() => age(store.snapshot?.dispatcher.heartbeat.at ?? null, store.now))
 const online = computed(() => store.snapshot?.machines.filter(machine => machine.online) ?? [])
 const offline = computed(() => store.snapshot?.machines.filter(machine => !machine.online) ?? [])
+const onlineMachines = computed(() => online.value.map(machine => machine.name))
 const unassigned = computed(() => store.snapshot?.running.filter(ticket => !ticket.registerOnly && !store.snapshot?.machines.some(machine => machine.name === ticket.machine)) ?? [])
 const cancel = (ticketId: string) => store.command({ kind: 'cancel', data: { ticketId } })
 const jump = (ticketId: string) => store.command({ kind: 'jump-queue', data: { ticketId } })
@@ -34,13 +35,14 @@ onUnmounted(store.stop)
     <header class="sched-page-head">
       <h1>调度台</h1>
       <div class="sched-pills">
-        <span v-if="store.readable" class="sched-pill" :class="heartbeatAge !== null && heartbeatAge <= 60000 ? 'ok' : 'bad'">
-          {{ heartbeatAge !== null && heartbeatAge <= 60000 ? '派单员在线' : '派单员失联' }} · 心跳 {{ heartbeatAge === null ? '未知' : Math.floor(heartbeatAge / 1000) + ' 秒前' }}
+        <span v-if="store.readable" class="sched-pill" :class="heartbeatAge !== null && heartbeatAge <= 120000 ? 'ok' : 'bad'">
+          {{ heartbeatAge !== null && heartbeatAge <= 120000 ? '派单员在线' : '派单员失联' }} · 心跳 {{ heartbeatAge === null ? '未知' : Math.floor(heartbeatAge / 1000) + ' 秒前' }}
         </span><span class="sched-pill">台账永久 · 日志 90 天</span>
       </div>
     </header>
     <div v-if="store.snapshotError" class="sched-banner bad" role="alert"><div><strong>读不到调度共享盘</strong><p>{{ store.snapshotError }}</p></div>
       <button class="sched-btn" :disabled="store.loading" @click="store.refreshSnapshot">重新读取</button></div>
+    <div v-else-if="store.reconnecting" class="sched-banner info" role="status">正在重连调度台…(第 {{ store.reconnectAttempt }}/3 次)</div>
     <p v-else-if="!store.snapshot" class="sched-empty" role="status">正在读取调度共享盘…</p>
     <p v-if="store.storageError" class="warn" role="status">{{ store.storageError }}</p>
     <p v-if="store.commandError" class="bad" role="alert">{{ store.commandError }}</p>
@@ -66,14 +68,14 @@ onUnmounted(store.stop)
         <p v-if="!store.snapshot.connectedProjects.readable" class="warn" role="status">{{ store.snapshot.connectedProjects.reason }}</p>
         <p v-else-if="store.snapshot.connectedProjects.names.length" class="connected-projects"><span v-for="name in store.snapshot.connectedProjects.names" :key="name" class="sched-tag info">{{ name }}</span></p>
         <p v-else class="sched-empty">最近 7 天没有项目在台账中出现</p>
-        <p class="sched-note">按最近 7 天的台账统计。未接入调度的占用按外部负载统计，不区分来源</p>
+        <p class="sched-note">按最近 7 天的台账统计</p>
       </details>
       <p v-if="store.snapshot.historyError" class="warn" role="status">{{ store.snapshot.historyError }}；暂无法预估</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
+        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       <details v-if="offline.length" class="sched-offline"><summary>离线机器 {{ offline.length }} 台（不参与派单）</summary>
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
+          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       </details>
       <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
         :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />
@@ -98,6 +100,7 @@ onUnmounted(store.stop)
 .sched-pills { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
 .sched-pill { border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 10px; font-size: var(--fs-sm); color: var(--text-2); background: var(--surface); white-space: nowrap; }
 .sched-pill.ok { color: var(--ok); }.sched-pill.bad { color: var(--bad); }
+.sched-page .sched-banner.info { border-color: var(--info); background: color-mix(in srgb, var(--info) 12%, transparent); }
 .sched-howto { color: var(--text-3); font-size: var(--fs-sm); }.sched-howto summary, .sched-offline summary { cursor: pointer; }
 .sched-flow { display: flex; gap: 6px; flex-wrap: wrap; margin: var(--s2) 0; }
 .sched-flow > div { flex: 1; min-width: 150px; padding: 6px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }

@@ -45,7 +45,6 @@ function statusTone(status: string) {
     <header v-if="board" class="page-head">
       <div class="title-group">
         <h1>{{ board.project.name }}</h1>
-        <p>按状态查看任务；已完工泳道默认收起，避免活跃工作被淹没。</p>
       </div>
       <div class="head-actions">
         <label>排序：<select v-model="laneSort"><option value="priority">优先级</option><option value="original">原顺序</option></select></label>
@@ -97,7 +96,6 @@ function statusTone(status: string) {
 <style scoped>
 .page { width: 100%; height: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); overflow-x: hidden; }
 .page-head { position: relative; display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: var(--s3); padding-bottom: var(--s3); }
-.title-group p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
 .progress-value { font-family: var(--mono); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
 .board-progress { flex-basis: 100%; }

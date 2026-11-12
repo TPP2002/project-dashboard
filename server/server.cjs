@@ -41,6 +41,9 @@ const path = require('path');
 const url = require('url');
 const { createHash } = require('node:crypto');
 const { createBoardReadCache } = require('../core/boardReadCache.cjs');
+const { createProjectIndex } = require('../core/projectIndex.cjs');
+const { createBoardPoller } = require('../core/boardPoller.cjs');
+const { createHealthSource } = require('../core/healthSource.cjs');
 // 静态文件要用它善后:客户端中途断开时 pipe 不会关源流,句柄泄到进程退出(见 streamFile 头注)。
 const { pipeline } = require('node:stream');
 const { execFile } = require('child_process');
@@ -57,15 +60,21 @@ const sessionBindings = require('../core/sessionBindings.cjs');
 const costSessionDetail = require('../core/costSessionDetail.cjs');
 const costJobDetail = require('../core/costJobDetail.cjs');
 const glmCostUsage = require('../core/glmCostUsage.cjs');
+const workbuddyCostUsage = require('../core/workbuddyCostUsage.cjs');
 const { createCodexApi } = require('./codexApi.cjs');
 const { createReaderApi } = require('./readerApi.cjs');
 const { createAuditionApi } = require('./auditionApi.cjs');
+const { createResourcesApi } = require('./resourcesApi.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
-const { createCiJobsMonitor, githubRepository, runnerMachines, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
+const { createCiJobsMonitor, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
+const { createCiBoardsReader, readCiRepository } = require('../core/schedCiBoards.cjs');
+const { createCiPollGate } = require('../core/ciPollGate.cjs');
 const schedContract = require('../core/schedContract.cjs');
+const { createSchedReadExecutor } = require('../core/schedReadExecutor.cjs');
+const { createActivityAutoArchive } = require('../core/activityAutoArchive.cjs');
 const { buildParallelPlan } = require('./parallelPlan.cjs');
-const { hookInstalledFor } = require('../core/hookProbe.cjs');
-const { readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
+const { hookForwardsProject } = require('../core/hookProbe.cjs');
+const { SETTINGS_PATH, readSettings, writeSettings, normalizeWebhookEvents, MODULE_IDS, normalizeModules, resolveModules, resolveSchedShare } = require('../core/settings.cjs');
 const { configuration, createCollaborationApi } = require('./collaborationApi.cjs');
 const { publicJson } = require('../core/collaborationPublic.cjs');
 
@@ -144,6 +153,41 @@ const state = {
   webhookCursor: new Map(), // projectId → 已处理活动的最大 ISO ts（含失败与未勾选的活动）
   webhookSending: new Map(), // 同项目串行发送；只合并期间的变更标记，不保存重试队列
 };
+const ciPollGate = createCiPollGate();
+
+const projectIndex = createProjectIndex({ registryPath: REGISTRY, resolveProject });
+const index = {
+  ...projectIndex,
+  async refresh() {
+    const changed = await projectIndex.refresh();
+    if (changed) void healthSource.refresh();
+    return changed;
+  },
+};
+const healthSource = createHealthSource({
+  index,
+  readStamp: MODE === 'release'
+    ? async () => JSON.parse(await fs.promises.readFile(path.join(releaseHome(), 'RELEASE.json'), 'utf8'))
+    : null,
+  readDetails: readHealthDetails,
+  initialDetails: {
+    hooksInstalled: {}, distBuilt: false,
+    webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents() },
+    modules: healthModules({}),
+  },
+});
+const boardPoller = createBoardPoller({
+  index, intervalMs: POLL_MS,
+  onFirstSeen(id, mtime) {
+    state.mtimes.set(id, mtime);
+    void notifyWebhook(id); // 同时建立活动基线，下一次变动才会推送。
+  },
+  onChanged(id, mtime) {
+    state.mtimes.set(id, mtime);
+    broadcast('board:changed', { projectId: id, mtime });
+    void notifyWebhook(id);
+  },
+});
 
 // Each cache has independent entry/source-byte/idle budgets. These are not JS heap limits.
 const summaryCache = createBoardReadCache({ maxEntries: 50 });
@@ -193,6 +237,18 @@ function isSameOriginRequest(req) {
   return String(origin).toLowerCase() === `http://${host}`;
 }
 
+/**
+ * 只在本机生效的接口（账号与额度）用这道闸：Host 头必须是本进程监听的
+ * 127.0.0.1:<port> 或 localhost:<port>，判据与 isSameOriginRequest 的 validHosts 同一口径。
+ * GET 也查——防域名重绑把本机读写接口暴露给外部网页。
+ */
+function isLocalRequest(req) {
+  const port = state.actualPort;
+  const host = String(req.headers.host || '').toLowerCase();
+  const validHosts = port ? [`127.0.0.1:${port}`, `localhost:${port}`] : [];
+  return validHosts.includes(host);
+}
+
 /** decodeURIComponent 遇畸形 % 序列会抛，包一层返回 null */
 function safeDecode(s) {
   try { return decodeURIComponent(s); } catch (_) { return null; }
@@ -237,6 +293,17 @@ function dispatchCwd(pid) {
  */
 function codexRepo(projectId) {
   return dispatchCwd(projectId);
+}
+
+/**
+ * 派单器仓（账号与额度页要跑它的 resources 命令）。
+ * 环境变量 DASHBOARD_DISPATCHER_REPO 非空且是绝对路径时优先，否则复用 codexRepo('rogue')。
+ * @returns {string|null} 仓绝对路径；找不到时 null，调用方须回 503 而不是拿它去 spawn。
+ */
+function resolveDispatcherRepo() {
+  const override = String(process.env.DASHBOARD_DISPATCHER_REPO || '').trim();
+  if (override && path.isAbsolute(override)) return override;
+  return codexRepo('rogue');
 }
 
 /** 读 board.json：ENOENT → null；解析失败 → 抛（调用方决定 404 还是 500） */
@@ -361,19 +428,55 @@ function deriveSummary(board) {
  * 多项目可共用代码仓，仅认 "dashboard" 字样会把其它项目的 hook 误判成本项目已装。
  * 任何异常都当 false，绝不抛。
  */
-function hooksInstalledMap(projects) {
-  const out = {};
-  for (const id of projects) {
-    let installed = false;
-    try {
-      const proj = resolveProjectSafe(id);
-      if (proj) {
-        installed = hookInstalledFor(proj.codeRepo, id);
-      }
-    } catch (_) { installed = false; }
-    out[id] = installed;
+async function readHealthHook(project, id) {
+  if (!project) return false;
+  const gitPath = path.join(project.codeRepo, '.git');
+  let gitDir = gitPath;
+  if (!(await fs.promises.stat(gitPath)).isDirectory()) {
+    const match = (await fs.promises.readFile(gitPath, 'utf8')).match(/gitdir:\s*(.+)/);
+    if (!match || !match[1].trim()) return false;
+    const raw = match[1].trim();
+    gitDir = path.isAbsolute(raw) ? raw : path.resolve(project.codeRepo, raw);
   }
-  return out;
+  return hookForwardsProject(await fs.promises.readFile(path.join(gitDir, 'hooks', 'post-commit'), 'utf8'), id);
+}
+
+function healthModules(settings) {
+  if (process.env.DASHBOARD_MODULES === undefined) return normalizeModules(settings.modules);
+  const enabled = new Set(process.env.DASHBOARD_MODULES.split(',').map(id => id.trim()));
+  return Object.fromEntries(MODULE_IDS.map(id => [id, enabled.has('all') || enabled.has(id)]));
+}
+
+async function readHealthDetails(previous) {
+  const next = {};
+  await Promise.all([
+    (async () => {
+      const projects = index.ids().map(id => [id, index.get(id)]);
+      next.hooksInstalled = Object.fromEntries(await Promise.all(projects.map(async ([id, project]) => {
+        try { return [id, await readHealthHook(project, id)]; }
+        catch (error) {
+          return [id, error.code === 'ENOENT' ? false : previous.hooksInstalled?.[id] ?? false];
+        }
+      })));
+    })(),
+    (async () => {
+      try { await fs.promises.access(path.join(DIST_DIR, 'index.html')); next.distBuilt = true; }
+      catch (error) { if (error.code === 'ENOENT') next.distBuilt = false; }
+    })(),
+    (async () => {
+      let settings;
+      try {
+        const raw = JSON.parse(await fs.promises.readFile(SETTINGS_PATH, 'utf8'));
+        settings = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+      } catch (error) {
+        if (error.code !== 'ENOENT') return;
+        settings = {};
+      }
+      next.webhook = { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(settings.webhookEvents) };
+      next.modules = healthModules(settings);
+    })(),
+  ]);
+  return next;
 }
 
 // ============ SSE ============
@@ -387,7 +490,7 @@ function sseWrite(res, event, data) {
 function broadcast(event, data) {
   if (collaborationApi) collaborationApi.broadcast(event, data);
   for (const res of state.subscribers) {
-    if (!sseWrite(res, event, data)) state.subscribers.delete(res);
+    if (!sseWrite(res, event, data) && state.subscribers.delete(res)) ciPollGate.clientDisconnected();
   }
 }
 
@@ -400,10 +503,13 @@ function handleStream(req, res) {
   });
   // 首个事件：hello（带当前项目列表，前端可据此立即拉一遍）
   sseWrite(res, 'hello', { ts: Date.now(), pid: process.pid, projects: Object.keys(readRegistrySafe().projects || {}) });
+  const wasStopped = !ciPollGate.shouldPoll();
   state.subscribers.add(res);
+  ciPollGate.clientConnected();
+  if (wasStopped) refreshCi();
 
   // 断开清理：close / error / aborted 都归位，Set.delete 幂等（重复删无副作用）
-  const cleanup = () => { state.subscribers.delete(res); };
+  const cleanup = () => { if (state.subscribers.delete(res)) ciPollGate.clientDisconnected(); };
   req.on('close', cleanup);
   req.on('error', cleanup);
   res.on('close', cleanup);
@@ -493,37 +599,31 @@ async function notifyWebhook(id) {
  * 首次见到某项目只记基线不广播（避免启动瞬间刷一波）。全程 try/catch，绝不让定时器崩。
  */
 function pollBoards() {
+  return boardPoller.tick();
+}
+
+let settingsFingerprint;
+let settingsStatInFlight = false;
+function pollServices() {
   if (collaborationApi) collaborationApi.sweep();
   schedApi.poll(broadcast, resolveModules().cpu);
-  let reg;
-  try { reg = readRegistrySafe(); } catch (_) { return; }
-  const ids = Object.keys(reg.projects || {});
-  for (const id of ids) {
-    const proj = resolveProjectSafe(id);
-    if (!proj) continue;
-    let mtime = null;
-    try { mtime = fs.statSync(proj.board).mtimeMs; }
-    catch (e) { mtime = null; } // ENOENT 等 → 视为"无文件"
-    if (!state.mtimes.has(id)) {
-      state.mtimes.set(id, mtime);
-      void notifyWebhook(id); // 同时建立活动基线，下一次变动才会推送。
-      continue;
+  if (settingsStatInFlight) return;
+  settingsStatInFlight = true;
+  void fs.promises.stat(SETTINGS_PATH).then(
+    meta => `${meta.mtimeMs}:${meta.size}`,
+    () => null,
+  ).then(fingerprint => {
+    if (fingerprint !== settingsFingerprint) {
+      settingsFingerprint = fingerprint;
+      void healthSource.refresh();
     }
-    if (state.mtimes.get(id) !== mtime) {
-      state.mtimes.set(id, mtime);
-      broadcast('board:changed', { projectId: id, mtime });
-      void notifyWebhook(id);
-    }
-  }
+  }).finally(() => { settingsStatInFlight = false; });
 }
 
 // ============ API 处理 ============
 
 function handleHealth(req, res) {
-  const projects = Object.keys(readRegistrySafe().projects || {});
-  const latestStamp = MODE === 'release' ? readStamp(releaseHome()) : null;
-  const latestReleaseCommit = typeof latestStamp?.commit === 'string' && latestStamp.commit.trim()
-    ? latestStamp.commit : null;
+  const { projects, latestReleaseCommit, hooksInstalled, distBuilt, webhook, modules } = healthSource.current();
   const launchHint = MODE !== 'release' ? undefined : process.platform === 'win32'
     ? '双击 启动看板.bat'
     : "node '" + path.join(releaseHome(), 'server', 'server.cjs').replace(/'/g, "'\\''") + "'";
@@ -535,11 +635,11 @@ function handleHealth(req, res) {
     pid: process.pid,
     uptimeMs: Date.now() - state.startedAt,
     projects,
-    hooksInstalled: hooksInstalledMap(projects),
+    hooksInstalled,
     sseSubscribers: state.subscribers.size,
-    distBuilt: fs.existsSync(path.join(DIST_DIR, 'index.html')),
-    webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(readSettings().webhookEvents) },
-    modules: resolveModules(),
+    distBuilt,
+    webhook,
+    modules,
     // 报家门（SERVER-RUNS-ON-LIVE-CHECKOUT）：谁都能一眼看出"在跑的是哪份代码、哪个提交"，
     // 启动器据此判断要不要换新，体检据此提醒"合了主干还没生效"。
     mode: MODE,
@@ -551,6 +651,7 @@ function handleHealth(req, res) {
     latestReleaseCommit,
     launchHint,
     releasedAt: RELEASED_AT,
+    lastSchedReadOkAt,   // 最近一次成功读到调度共享盘快照的时刻（自愈/巡检用，没有则 null）
   });
 }
 
@@ -713,6 +814,10 @@ function handleSettings(req, res) {
       if (Object.hasOwn(body, 'webhookEvents')) patch.webhookEvents = normalizeWebhookEvents(body.webhookEvents);
       if (Object.hasOwn(body, 'modules')) patch.modules = { ...normalizeModules(readSettings().modules), ...body.modules };
       const settings = writeSettings(patch);
+      healthSource.patch({
+        modules: healthModules(settings),
+        webhook: { configured: WEBHOOK_CONFIGURED, events: normalizeWebhookEvents(settings.webhookEvents) },
+      });
       return sendJson(res, 200, { ok: true, settings: {
         webhookEvents: normalizeWebhookEvents(settings.webhookEvents), modules: normalizeModules(settings.modules),
       } });
@@ -757,45 +862,38 @@ const auditionApi = createAuditionApi({
   registry: REGISTRY, registryPath: REGISTRY_PATH, pollBoards: () => pollBoards(),
 });
 
-const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, resolveShare: resolveSchedShare });
+// 账号与额度（只在本机生效）：只调派单器仓的 resources 命令，不碰账号文件与密钥内容。
+const resourcesApi = createResourcesApi({
+  sendJson,
+  readBody,
+  bodyMax: BODY_MAX,
+  resolveDispatcherRepo,
+  isCollaboration: Boolean(collaborationApi),
+  isLocalRequest,
+});
 
-/** board 位于项目的 .dashboard 目录；仅异步读取 origin，绝不改 Git 或执行 shell。 */
-function readCiRepository(boardPath, runFile = execFile) {
-  return new Promise((resolve, reject) => {
-    runFile('git', ['-C', path.dirname(path.dirname(boardPath)), 'remote', 'get-url', 'origin'],
-      { encoding: 'utf8', windowsHide: true, timeout: 10_000, maxBuffer: 16 * 1024 }, (error, stdout) => {
-        if (error) return reject(error);
-        resolve(githubRepository(stdout));
-      });
-  });
-}
-const ciRepositoriesByBoard = new Map();
-// 共用注册表的项目路径；板损坏只缺标题，临时读不到 origin 时保留该项目上次的仓库归属。
-async function readCiBoards() {
-  const projects = Object.keys(readRegistry(REGISTRY).projects || {}).map(resolveProjectSafe).filter(Boolean);
-  const paths = new Set(projects.map(project => project.board));
-  for (const board of ciRepositoriesByBoard.keys()) if (!paths.has(board)) ciRepositoriesByBoard.delete(board);
-  return Promise.all(projects.map(async project => {
-    try { ciRepositoriesByBoard.set(project.board, await readCiRepository(project.board)); }
-    catch (error) { console.warn(`[sched-ci] 项目 ${project.id} 的远端暂不可读：${error.message}`); }
-    const repository = ciRepositoriesByBoard.get(project.board) ?? null;
-    try { return { ...JSON.parse(await fs.promises.readFile(project.board, 'utf8')), repository }; }
-    catch (error) {
-      console.warn(`[sched-ci] 项目 ${project.id} 的标题暂不可读：${error.message}`);
-      return { repository, tasks: [] };
+// 自愈所需：复用现有调度读取路径，记录最近一次【成功】读到调度共享盘快照的时刻；
+// 不新增任何读盘——只在既有 snapshot 读取成功时记下时间戳，供 /api/health 暴露。
+let lastSchedReadOkAt = null;
+const schedExecutor = createSchedReadExecutor();
+const recordingSchedExecutor = {
+  async run(request, ctrl) {
+    const result = await schedExecutor.run(request, ctrl);
+    if (request && request.action === 'snapshot' && result && result.readable) {
+      lastSchedReadOkAt = new Date().toISOString();
     }
-  }));
-}
-async function readCiRunnerMachines() {
-  try {
-    const file = schedContract.schedPaths(resolveSchedShare()).heartbeat;
-    const heartbeat = schedContract.validateHeartbeat(JSON.parse(await fs.promises.readFile(file, 'utf8')));
-    return runnerMachines(heartbeat.machines);
-  } catch { return new Map(); }
-}
+    return result;
+  },
+  sweep: (share) => schedExecutor.sweep(share),
+  close: () => schedExecutor.close(),
+};
+const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, resolveShare: resolveSchedShare, executor: recordingSchedExecutor });
+
+const ciBoards = createCiBoardsReader({ registryPath: REGISTRY, readRegistry, resolveProject: resolveProjectSafe });
 // DASHBOARD_CI_RUNNER_MAP 是 JSON 对象：runner 名 -> 机器名，或 { machine, project? }。
 // DASHBOARD_CI_REPOSITORIES 用逗号分隔 owner/repo，提供时整体覆盖注册项目的仓库清单。
-const ciJobs = createCiJobsMonitor({ now: Date.now, readBoards: readCiBoards, readRunnerMachines: readCiRunnerMachines,
+const ciJobs = createCiJobsMonitor({ now: Date.now, readBoards: ciBoards.readBoards, readRunnerMachines: () => ciBoards.readRunnerMachines(resolveSchedShare()),
+  concurrency: Number(process.env.DASHBOARD_CI_GH_CONCURRENCY),
   runnerOverrides: process.env.DASHBOARD_CI_RUNNER_MAP || '{}', repositoryOverrides: process.env.DASHBOARD_CI_REPOSITORIES });
 
 /** 旧租约已无生产者，不能把空目录解释为机器空闲，也不再接受失效预留。 */
@@ -811,13 +909,14 @@ function handleRetiredCpu(req, res) {
 function costPrefixes(pid) {
   const proj = resolveProjectSafe(pid);
   if (!proj) return null;
-  const prefixes = [...new Set(proj.costRoots.map(costUsage.mapRepoToPrefix))];
+  const prefixRoots = (proj.costPrefixRoots && proj.costPrefixRoots.length) ? proj.costPrefixRoots : proj.costRoots;
+  const prefixes = [...new Set(prefixRoots.map(costUsage.mapRepoToPrefix))];
   const otherPrefixes = new Set();
   for (const otherPid of Object.keys(readRegistrySafe().projects || {})) {
     if (otherPid === pid) continue;
     const other = resolveProjectSafe(otherPid);
     if (!other) continue;
-    for (const root of other.costRoots) otherPrefixes.add(costUsage.mapRepoToPrefix(root));
+    for (const root of ((other.costPrefixRoots && other.costPrefixRoots.length) ? other.costPrefixRoots : other.costRoots)) otherPrefixes.add(costUsage.mapRepoToPrefix(root));
   }
   return { prefixes, otherPrefixes: [...otherPrefixes] };
 }
@@ -872,11 +971,14 @@ function handleCostUsage(req, res, query) {
     codexApi.getCostUsage(days, proj.name || pid),
     codexApi.getDeepseekUsage(days, pid),
     Promise.resolve().then(() => glmCostUsage.getGlmUsage({ projectId: pid, days, registryPath: REGISTRY })),
+    // WorkBuddy 账本只读：读不出来就这份为 null，不许拖垮整个成本接口。
+    Promise.resolve().then(() => workbuddyCostUsage.getWorkbuddyUsage({ projectId: pid, days, registryPath: REGISTRY }))
+      .catch(() => null),
     codexApi.getDeepseekBalance().catch(() => ({
       available: false, reason: '查询异常', balance: null, sampledAt: new Date().toISOString(),
     })),
   ])
-    .then(([usage, codex, deepseek, glm, deepseekBalance]) => {
+    .then(([usage, codex, deepseek, glm, workbuddy, deepseekBalance]) => {
       const quota = codexApi.getQuota();
       const claudeTokens = costUsage.totalClaudeTokens(usage);
       const codexTokens = codex.selected.tokens;
@@ -888,6 +990,7 @@ function handleCostUsage(req, res, query) {
         codex,
         deepseek,
         glm,
+        workbuddy,
         deepseekBalance,
         quota,
         combined: {
@@ -906,12 +1009,16 @@ async function handleCostPortfolio(res, query) {
   const days = Math.max(1, Math.min(365, parseInt(query.days, 10) || 30));
   try {
     const projects = Object.keys(readRegistrySafe().projects || {}).map((id) => resolveProjectSafe(id)).filter(Boolean);
-    const prefixes = [...new Set(projects.flatMap((p) => p.costRoots.map(costUsage.mapRepoToPrefix)))];
+    const prefixes = [...new Set(projects.flatMap((p) => ((p.costPrefixRoots && p.costPrefixRoots.length) ? p.costPrefixRoots : p.costRoots).map(costUsage.mapRepoToPrefix)))];
     const [uniqueUsage, codex] = await Promise.all([
       prefixes.length ? costUsage.getUsage({ prefixes, days }) : null,
       codexApi.getCostUsage(days, ''),
     ]);
     const glmJobs = glmCostUsage.scanGlmJobs({ registryPath: REGISTRY });
+    // 账本只扫一次，各项目共用同一份；读不出来当没有，成本接口照常出。
+    let workbuddyLedgers = null;
+    try { workbuddyLedgers = workbuddyCostUsage.scanWorkbuddyLedgers({ registryPath: REGISTRY }); }
+    catch (e) { console.warn('[cost] WorkBuddy 账本读不进来,按没有处理:' + e.message); }
     const rows = [], seenRepos = new Set(), seenNames = new Set();
     for (const project of projects) {
       const id = project.id, selected = costPrefixes(id);
@@ -923,14 +1030,19 @@ async function handleCostPortfolio(res, query) {
       const deepseek = sharedCodeRepo ? null : await codexApi.getDeepseekUsage(days, id);
       const glm = sharedCodeRepo ? null : glmCostUsage.summarizeGlmJobs(glmJobs,
         { projectRepo: project.codeRepo, days });
+      const workbuddy = sharedCodeRepo || !workbuddyLedgers ? null
+        : workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { projectRepo: project.codeRepo, days });
       const codexRow = duplicateName ? null : codex.byProject.find((row) => row.project === project.name);
       rows.push({ id, name: project.name, claudeTokens: costUsage.totalClaudeTokens(usage),
         claudeUsd: usage.usd.actual, claudeOutput: usage.claudeTotals.output,
         unpricedModels: usage.unpricedModels, sharedDirs: usage.sharedDirs,
         codexTokens: codexRow?.tokens || 0, codexBuckets: codexRow?.buckets || null,
         deepseekRmb: deepseek?.totals.costRmb || 0, deepseekJobs: deepseek?.totals.jobs || 0,
-        glm: glm?.totals || null, sharedCodeRepo, duplicateName });
+        glm: glm?.totals || null, workbuddy: workbuddy?.totals || null,
+        sharedCodeRepo, duplicateName });
     }
+    const workbuddyTotals = workbuddyLedgers
+      ? workbuddyCostUsage.summarizeWorkbuddyRequests(workbuddyLedgers, { days }).totals : null;
     const totals = {
       claudeTokens: uniqueUsage ? costUsage.totalClaudeTokens(uniqueUsage) : 0,
       claudeUsd: uniqueUsage?.usd.actual || 0,
@@ -943,6 +1055,8 @@ async function handleCostPortfolio(res, query) {
       glmCreditJobs: rows.reduce((sum, row) => sum + (row.glm?.creditJobs || 0), 0),
       glmUncertainCredits: rows.reduce((sum, row) => sum + (row.glm?.uncertainCredits || 0), 0),
       glmTokens: rows.reduce((sum, row) => sum + (row.glm?.tokens || 0), 0),
+      workbuddy: workbuddyTotals,
+      workbuddyLastCheck: workbuddyLedgers?.lastCheck || null,
     };
     const unassignedCodexTokens = codex.byProject.filter((row) => !seenNames.has(row.project))
       .reduce((sum, row) => sum + row.tokens, 0);
@@ -1176,7 +1290,7 @@ function handleDispatch(req, res) {
     let child;
     try {
       child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false, // 故意可见:负责人点「派单」要看到这个终端窗口,改成 true 窗口会被藏起来
       });
       child.unref();
     } catch (e) {
@@ -1233,7 +1347,7 @@ function handleDispatchProject(req, res) {
       'chcp 65001 >nul && claude ' + JSON.stringify(prompt)];
     try {
       const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false, // 故意可见:负责人点「派单」要看到这个终端窗口,改成 true 窗口会被藏起来
       });
       child.unref();
     } catch (e) {
@@ -1288,7 +1402,7 @@ function handleDispatchTask(req, res) {
     const cmdArgs = ['/c', 'start', '看板派单-' + tid, 'cmd', '/k', 'claude', trigger];
     try {
       const child = require('node:child_process').spawn('cmd.exe', cmdArgs, {
-        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false,
+        cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: false, // 故意可见:负责人点「派单」要看到这个终端窗口,改成 true 窗口会被藏起来
       });
       child.unref();
     } catch (e) {
@@ -1513,13 +1627,21 @@ function serveStatic(req, res, pathname) {
 // ============ 主入口：路由 ============
 
 const server = http.createServer(async (req, res) => {
-  if (!collaborationApi && !isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
   let parsed;
   try { parsed = url.parse(req.url, true); }
   catch (_) { return sendJson(res, 400, { ok: false, error: '非法 URL' }); }
   const pathname = parsed.pathname || '/';
 
   try {
+    if (pathname === '/board-member.cjs') {
+      if (!['GET', 'HEAD'].includes(req.method)) return sendJson(res, 405, { ok: false, error: '仅支持 GET/HEAD' });
+      const bytes = fs.readFileSync(path.join(DASH_ROOT, 'cli', 'boardMember.cjs'));
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="board-member.cjs"', 'Cache-Control': 'no-cache',
+        'Content-Length': bytes.length });
+      res.end(req.method === 'HEAD' ? undefined : bytes); return;
+    }
+    if (!collaborationApi && !isSameOriginRequest(req)) return sendJson(res, 403, { ok: false, error: '跨站请求被拒' });
     if (collaborationApi && await collaborationApi.handle(req, res, pathname)) return;
     if (!collaborationApi && pathname === '/api/auth/session' && req.method === 'GET') return sendJson(res, 200, { ok: true, mode: 'local', user: null });
     if (pathname.startsWith('/api/')) {
@@ -1528,6 +1650,7 @@ const server = http.createServer(async (req, res) => {
       const segs = rawSegs.map(safeDecode);
       if (segs.some((s) => s === null)) return sendJson(res, 400, { ok: false, error: '非法 URL 编码' });
       const sub = segs[1];
+      if (sub === 'health' && req.method === 'GET') return handleHealth(req, res);
       const modules = resolveModules();
 
       if (sub === 'codex' && !modules.codex) return sendJson(res, 404, { ok: false, error: 'Codex 模块未启用（在菜单设置里打开，或 settings.json 的 modules.codex 设为 true）' });
@@ -1537,7 +1660,6 @@ const server = http.createServer(async (req, res) => {
       if (sub === 'reader' && !modules.reader) return sendJson(res, 404, { ok: false, error: '审阅台模块未启用（在菜单设置里打开，或 settings.json 的 modules.reader 设为 true）' });
       if (sub === 'audition' && !modules.audition) return sendJson(res, 404, { ok: false, error: '试听台模块未启用，请在菜单设置里打开' });
 
-      if (sub === 'health' && req.method === 'GET') return handleHealth(req, res);
       if (sub === 'settings' && req.method === 'POST') return handleSettings(req, res);
       if (sub === 'projects' && req.method === 'GET') return handleProjects(req, res);
       if (sub === 'stream' && req.method === 'GET') return handleStream(req, res);
@@ -1559,6 +1681,7 @@ const server = http.createServer(async (req, res) => {
       if (sub === 'dispatch-project' && req.method === 'POST') return handleDispatchProject(req, res);
       if (sub === 'dispatch-task' && req.method === 'POST') return handleDispatchTask(req, res);
       if (sub === 'parallel' && req.method === 'GET') return handleParallel(req, res, parsed.query || {});
+      if (sub === 'resources' && resourcesApi.route(segs.slice(2).join('/'), req, res)) return;
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'audition' && auditionApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
@@ -1596,7 +1719,7 @@ function probeHealth(port) {
 async function findExistingInstance() {
   // 显式端口 0 用于隔离自检，由系统分配并持有端口，不扫描或接管其它实例。
   if (PORT_BASE === 0) return null;
-  for (let p = PORT_BASE; p <= PORT_BASE + PORT_RANGE; p++) {
+  for (let p = PORT_BASE; p <= Math.min(PORT_BASE + PORT_RANGE, 65535); p++) {
     const h = await probeHealth(p);
     if (h && h.service === SERVICE && sameDataScope(h)) return { port: p, health: h };
   }
@@ -1658,11 +1781,11 @@ function openBrowser(targetUrl) {
   try {
     const { spawn } = require('child_process');
     if (process.platform === 'win32') {
-      spawn('cmd', ['/c', 'start', '', targetUrl], { detached: true, stdio: 'ignore' }).unref();
+      spawn('cmd', ['/c', 'start', '', targetUrl], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     } else if (process.platform === 'darwin') {
-      spawn('open', [targetUrl], { detached: true, stdio: 'ignore' }).unref();
+      spawn('open', [targetUrl], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     } else {
-      spawn('xdg-open', [targetUrl], { detached: true, stdio: 'ignore' }).unref();
+      spawn('xdg-open', [targetUrl], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
     }
   } catch (_) { /* 开不了浏览器不算错，用户手动访问即可 */ }
 }
@@ -1684,18 +1807,46 @@ server.on('close', () => {
   closeSchedReads();
 });
 
+function refreshCi() {
+  if (resolveModules().cpu && ciPollGate.shouldPoll()) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
+}
 function startIntervals() {
+  boardPoller.start();
+  void healthSource.start();
   const poll = setInterval(() => {
     sweepBoardReadCaches();
-    try { pollBoards(); } catch (_) {}
+    try { pollServices(); } catch (_) {}
   }, POLL_MS);
   const beat = setInterval(() => broadcast('ping', { ts: Date.now() }), HEARTBEAT_MS);
-  const refreshCi = () => {
-    if (resolveModules().cpu) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
-  };
   const ciPoll = setInterval(refreshCi, CI_POLL_MS);
   ciPoll.unref();
   server.once('close', () => { clearInterval(poll); clearInterval(beat); clearInterval(ciPoll); });
+  server.once('close', () => { boardPoller.stop(); healthSource.stop(); });
+
+  // 自动按月归档旧活动：DASHBOARD_AUTO_ARCHIVE=0 关掉整个功能（见 core/activityAutoArchive.cjs）。
+  // 对注册表每个项目依次起一个静默子进程跑 archive-activity，只保留本月与上月的活动。
+  if (process.env.DASHBOARD_AUTO_ARCHIVE !== '0') {
+    try {
+      const activityAutoArchive = createActivityAutoArchive({
+        listProjects: () => index.ids(),
+        spawnArchive: (id, before) => new Promise((resolve, reject) => {
+          execFile(process.execPath, [CLI_INDEX, 'archive-activity', '--project', id, '--before', before, '--json'],
+            { windowsHide: true, timeout: 300000, maxBuffer: 1024 * 1024, encoding: 'utf8' },
+            (err, stdout) => {
+              if (err) { reject(err); return; }
+              let data;
+              try { data = JSON.parse(stdout); } catch (e) { reject(e); return; }
+              resolve({ moved: data && data.moved || 0, files: data && data.files || [] });
+            });
+        }),
+      });
+      activityAutoArchive.start();
+      server.once('close', () => activityAutoArchive.stop());
+    } catch (e) {
+      console.warn(`[activity-archive] 初始化失败，跳过自动归档：${e && e.message}`);
+    }
+  }
+
   refreshCi();
   poll.unref(); beat.unref(); // 别因定时器卡住进程退出
 }
@@ -1725,7 +1876,8 @@ function tryListen(port, attemptsLeft) {
     console.log(COLLABORATION
       ? '协作模式不自动打开浏览器;请从对外地址访问。按 Ctrl+C 关闭。\n'
       : '浏览器应已自动打开；未打开请手动访问上面地址。按 Ctrl+C 关闭。\n');
-    pollBoards();       // 立即建立 mtime 基线
+    try { pollServices(); } catch (_) {}
+    void pollBoards();  // 立即建立 mtime 基线
     startIntervals();   // 启动轮询 + 心跳
     if (PORT_BASE === 0 && process.connected && typeof process.send === 'function') {
       process.send({ type: 'dashboard-ready', service: SERVICE, port: state.actualPort, pid: process.pid });
@@ -1733,7 +1885,7 @@ function tryListen(port, attemptsLeft) {
     if (!COLLABORATION) openBrowser(localUrl);  // 协作模式在服务器上跑,不开本机浏览器
   });
   server.once('error', (err) => {
-    if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0) {
+    if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0 && port < 65535) {
       console.log(`端口 ${port} 被占用，尝试 ${port + 1} ...`);
       setTimeout(() => tryListen(port + 1, attemptsLeft - 1), 50);
     } else {
@@ -1745,6 +1897,8 @@ function tryListen(port, attemptsLeft) {
 }
 
 async function main() {
+  await index.refresh();
+  await healthSource.start();
   // A collaboration instance never probes, reuses or terminates another service.
   if (collaborationApi) return tryListen(PORT_BASE, 0);
   const inst = await findExistingInstance();

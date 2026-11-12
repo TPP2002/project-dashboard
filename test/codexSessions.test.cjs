@@ -85,6 +85,23 @@ test('project 推导兼容主仓、worktree、自身路径、大小写和混合�
   assert.equal(inferProjectName('D:\\unrelated\\repo', projects, dashboard), '其它');
 });
 
+test('project 推导:mainRepo 是 junction 时,会话 cwd 走真实路径或联接路径都认得该项目', (t) => {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-junction-')));
+  t.after(() => {
+    fs.rmSync(path.join(d, 'alias'), { force: true });
+    fs.rmSync(path.join(d, 'real'), { recursive: true, force: true });
+    fs.rmSync(d, { recursive: true, force: true });
+  });
+  const real = path.join(d, 'real');
+  const alias = path.join(d, 'alias');
+  fs.mkdirSync(real);
+  fs.symlinkSync(real, alias, 'junction');
+  const projects = { moved: { name: '被挪走的项目', mainRepo: alias } };
+  assert.equal(inferProjectName(path.join(real, 'sub'), projects, ''), '被挪走的项目');
+  assert.equal(inferProjectName(path.join(alias, 'sub'), projects, ''), '被挪走的项目');
+  assert.equal(inferProjectName(path.join(d, 'unrelated'), projects, ''), '其它');
+});
+
 test('active 只看最后事件时间戳，阈值内外无需 sleep', () => {
   assert.equal(isSessionActive('2026-09-01T14:03:01.000Z', NOW), true);
   assert.equal(isSessionActive('2026-09-01T14:02:59.000Z', NOW), false);

@@ -79,6 +79,7 @@ const cases = {
   park: { args: ['park', 'T1', '--reason', '等上游', '--note', '保留说明'] },
   unpark: { setup: f => cmds.park({ ...f.a.P, _: ['T1'], reason: '等上游' }), args: ['unpark', 'T1', '--reason', '上游已完成'] },
   block: { args: ['block', 'T1', '--by', 'T2', '--reason', '上游依赖'] },
+  unblock: { setup: f => cmds.block({ ...f.a.P, _: ['T1'], by: 'T2', reason: '上游' }), args: ['unblock', 'T1', '--reason', '上游已完成'] },
   done: { setup: f => { addPending(f); decide(f); cmds.cost({ ...f.a.P, _: ['T1'], agents: 'test:1', tokens: '10' }); },
     args: ['done', 'T1', '--commit', 'abcdef123456', '--pr', '42'] },
   cancel: { args: ['cancel', 'T1', '--reason', '需求撤回'] },
@@ -89,10 +90,10 @@ const cases = {
   'mark-landed': { setup: f => { addPending(f); decide(f); }, args: ['mark-landed', 'T1', '--all', '--commit', 'abcdef1'] },
   cost: { args: ['cost', 'T1', '--agents', 'test:2', '--tokens', '500', '--credits', '10', '--credit-unit', '积分', '--note', '本次用量'] },
 };
-// assign deliberately defers assignment to the authenticated actor; its source/destination
-// differences and the real CLI outbox-to-replay journey are covered by cloudCliAssign.
-test('the equivalence matrix plus actor-dependent assign covers every declared replay command except set', () => {
-  assert.deepEqual([...Object.keys(cases), 'assign'].sort(), REPLAY_COMMANDS.filter(c => c !== 'set').sort());
+// Actor-dependent assign/unassign defer assignee changes to authenticated replay;
+// their source/destination differences are covered by cloudCliAssign/cloudCliUnassign.
+test('the equivalence matrix plus actor-dependent commands covers every declared replay command except set', () => {
+  assert.deepEqual([...Object.keys(cases), 'assign', 'unassign'].sort(), REPLAY_COMMANDS.filter(c => c !== 'set').sort());
 });
 for (const [command, spec] of Object.entries(cases)) {
   test(`replay ${command}: real source CLI, independent destination, deleted input and all affected cards/activity equal`, t => {

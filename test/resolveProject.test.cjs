@@ -69,6 +69,61 @@ test('costRoots:登记尚不存在的多级工位目录也能解析', (t) => {
   assert.deepEqual(resolveProject('cluster', { registryPath: reg }).costRoots, [future]);
 });
 
+test('costPrefixRoots:mainRepo 是 junction、不写 costRoots 时,原写法与真实路径两种都保留(既有 costRoots 测试一字未动)', (t) => {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rp-')));
+  t.after(() => {
+    const alias = path.join(d, 'alias');
+    fs.rmSync(alias, { force: true });
+    fs.rmSync(path.join(d, 'real'), { recursive: true, force: true });
+    fs.rmSync(d, { recursive: true, force: true });
+  });
+  const reg = path.join(d, 'registry.json');
+  const real = path.join(d, 'real');
+  const alias = path.join(d, 'alias');
+  fs.mkdirSync(real);
+  fs.symlinkSync(real, alias, 'junction');
+  fs.writeFileSync(reg, JSON.stringify({ projects: { moved: { mainRepo: alias } } }));
+  const r = resolveProject('moved', { registryPath: reg });
+  // costRoots 维持原口径:解联接、只认真实路径
+  assert.deepEqual(r.costRoots, [real]);
+  // costPrefixRoots:真实路径在前,登记原写法(联接路径)在后,去重保序
+  assert.deepEqual(r.costPrefixRoots, [real, alias]);
+});
+
+test('costPrefixRoots:costRoots 显式登记 junction 时,真实路径与登记原写法逐项并列', (t) => {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rp-')));
+  t.after(() => {
+    const alias = path.join(d, 'alias');
+    fs.rmSync(alias, { force: true });
+    fs.rmSync(path.join(d, 'real'), { recursive: true, force: true });
+    fs.rmSync(path.join(d, 'other'), { recursive: true, force: true });
+    fs.rmSync(d, { recursive: true, force: true });
+  });
+  const reg = path.join(d, 'registry.json');
+  const real = path.join(d, 'real');
+  const alias = path.join(d, 'alias');
+  const other = path.join(d, 'other');
+  fs.mkdirSync(real);
+  fs.mkdirSync(other);
+  fs.symlinkSync(real, alias, 'junction');
+  fs.writeFileSync(reg, JSON.stringify({ projects: { moved: { mainRepo: d, costRoots: [alias, other] } } }));
+  const r = resolveProject('moved', { registryPath: reg });
+  assert.deepEqual(r.costRoots, [real, other]);
+  assert.deepEqual(r.costPrefixRoots, [real, alias, other]);
+});
+
+test('costPrefixRoots:无 junction 的项目与 costRoots 逐项相等', (t) => {
+  const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rp-')));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const reg = path.join(d, 'registry.json');
+  const repo = path.join(d, 'repo');
+  fs.mkdirSync(repo);
+  fs.writeFileSync(reg, JSON.stringify({ projects: { plain: { mainRepo: repo } } }));
+  const r = resolveProject('plain', { registryPath: reg });
+  assert.deepEqual(r.costRoots, [repo]);
+  assert.deepEqual(r.costPrefixRoots, r.costRoots);
+});
+
 test('costRoots:丢弃非字符串和空串,过滤后为空则回落 mainRepo', (t) => {
   const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rp-')));
   t.after(() => fs.rmSync(d, { recursive: true, force: true }));

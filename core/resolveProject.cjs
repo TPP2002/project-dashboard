@@ -24,6 +24,17 @@
  * 对话可能开在板目录、共享盘或专用工位，费用归属要认登记的对话目录清单，不能靠代码仓猜。
  * 缺省仍只用 mainRepo：这是保留所有未登记项目原有数字的兼容承诺，不能顺带加入 codeRepo。
  * 显式清单按登记顺序规范化、去重；尚未建出的工位也可登记，由 normalizeReal 解析已有祖先。
+ *
+ * 【costRoots 与 costPrefixRoots 为什么分开】(DASH-COSTROOTS-JUNCTION-1101)
+ * 负责人把项目目录挪到另一块盘、原处留 junction 后，成本页开销全变 0。
+ * 病根是 Claude/Codex 的流水目录按"对话当时的工作目录"编码：从联接路径开的对话，
+ * 目录名按联接路径编；而 costRoots 全被 normalizeReal 解成了真实路径，两边前缀对不上，一条都匹配不到。
+ * 于是拆两个字段、各管一摊，互不污染：
+ *   - costRoots：只管"计费去重"。一律走 normalizeReal（解联接、取真实路径），
+ *     同目录的多个别名只计一次；旧口径与 test/resolveProject.test.cjs 的断言一字不动。
+ *   - costPrefixRoots：只管"匹配会话流水目录"。除 normalizeReal 的真实路径外，
+ *     还并排保留登记原写法（path.resolve），让从联接路径开、从真实路径开的对话都能对上前缀。
+ * 两者回落口径完全一致：无显式清单都回落 mainRepo；非数组/空数组/过滤后为空也都回落 mainRepo。
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -92,7 +103,7 @@ function detectProjectIds(opts = {}) {
  * 解析 projectId → 路径集合。
  * @param {string} projectId
  * @param {{registryPath?: string}} [opts]
- * @returns {{id:string,name:string,mainRepo:string,codeRepo:string,costRoots:string[],board:string,lock:string,docsRoot:string,indexPath:string|null}}
+ * @returns {{id:string,name:string,mainRepo:string,codeRepo:string,costRoots:string[],costPrefixRoots:string[],board:string,lock:string,docsRoot:string,indexPath:string|null}}
  */
 function resolveProject(projectId, opts = {}) {
   if (!projectId || projectId === true) throw new Error('必须指定 --project <id>（本函数不按 cwd 猜；CLI 入口已先替你反查过一次，反查不到才会落到这句）');
@@ -103,10 +114,22 @@ function resolveProject(projectId, opts = {}) {
     throw new Error(`未注册的项目 "${projectId}"。已注册：${known}。请先 cli register。`);
   }
   const mainRepo = normalizeReal(entry.mainRepo);
-  const costRoots = Array.isArray(entry.costRoots) && entry.costRoots.length
-    ? [...new Set(entry.costRoots.filter((root) => typeof root === 'string' && root.trim()).map(normalizeReal))]
-    : [mainRepo];
+  // 显式清单过滤后的"源清单"：与 costRoots 的回落口径完全一致（非数组/空数组都回落 mainRepo）。
+  // costRoots 用它解联接去重计费；costPrefixRoots 用它额外并排保留登记原写法，用于匹配会话目录。
+  const costRootSource = Array.isArray(entry.costRoots) && entry.costRoots.length
+    ? entry.costRoots.filter((root) => typeof root === 'string' && root.trim())
+    : [entry.mainRepo];
+  const costRoots = [...new Set(costRootSource.map(normalizeReal))];
   if (!costRoots.length) costRoots.push(mainRepo);
+  // 匹配会话流水目录用的前缀根：对每项先放真实路径(normalizeReal)、再放登记原写法(path.resolve)，
+  // 整体字符串精确去重、保持首次出现顺序。无联接的项目两者相同，costPrefixRoots 与 costRoots 逐项相等。
+  const costPrefixRoots = [];
+  const addPrefixRoot = (p) => { if (p && !costPrefixRoots.includes(p)) costPrefixRoots.push(p); };
+  for (const raw of costRootSource) {
+    try { addPrefixRoot(normalizeReal(raw)); } catch { /* 解不出真实路径就只用原写法 */ }
+    try { addPrefixRoot(path.resolve(raw)); } catch { /* path.resolve 几乎不会抛，兜底忽略 */ }
+  }
+  if (!costPrefixRoots.length) { addPrefixRoot(mainRepo); addPrefixRoot(path.resolve(entry.mainRepo)); }
   const board = entry.board ? normalizeReal(entry.board) : path.join(mainRepo, '.dashboard', 'board.json');
   return {
     id: projectId,
@@ -118,6 +141,7 @@ function resolveProject(projectId, opts = {}) {
     // codeRepo：跑 git / 找正本的消费方读这个（缺省 = mainRepo，见文件头注）。
     codeRepo: entry.codeRepo ? normalizeReal(entry.codeRepo) : mainRepo,
     costRoots,
+    costPrefixRoots,
     board,
     lock: board + '.lock',
     docsRoot: entry.docsRoot ? normalizeReal(entry.docsRoot) : mainRepo,

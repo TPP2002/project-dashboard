@@ -92,7 +92,7 @@ test('暂存碰撞不删别人的文件；目标目录缺失不降级成非原�
   assert.deepEqual(fs.readdirSync(paths.staging), ['.dashboard-collision.tmp']);
 });
 
-test('派单员心跳可带 CI 车道字段(ciRunners/ciReserveCores),缺省仍合法;别的未知字段照拒(0914 看板读不到共享盘的病根)', () => {
+test('派单员心跳可带 CI 车道字段(ciRunners/ciReserveCores),缺省仍合法;别的未知字段记录但不拒读', () => {
   const { heartbeat } = require('./fixtures/sched/support.cjs');
   const plain = heartbeat();
   assert.doesNotThrow(() => c.validateHeartbeat(plain));
@@ -105,7 +105,8 @@ test('派单员心跳可带 CI 车道字段(ciRunners/ciReserveCores),缺省仍�
   assert.throws(() => c.validateHeartbeat(bad));
   const unknown = heartbeat();
   unknown.machines[0] = { ...unknown.machines[0], somethingElse: 1 };
-  assert.throws(() => c.validateHeartbeat(unknown), { message: '[sched] 未知字段:somethingElse' });
+  assert.doesNotThrow(() => c.validateHeartbeat(unknown));
+  assert.deepEqual(c.heartbeatUnknownFields(unknown), ['machines[].somethingElse']);
 });
 
 test('派单员心跳可带实测退回字段 actualUsageCreditCores(退回 >0 才写),缺省仍合法;负数与非数字照拒(1010 看板读不到共享盘的病根)', () => {
@@ -153,4 +154,36 @@ test('派单员心跳可带执行端作业槽实测 agentSlots(缺键或 null �
   const extra = heartbeat();
   extra.machines[0] = { ...extra.machines[0], agentSlots: { capacity: 4, occupied: 1, free: 3 } };
   assert.throws(() => c.validateHeartbeat(extra), { message: '[sched] 未知字段:free' });
+});
+
+test('派单员心跳机器条目可带执行端工具读数 tools(1027 看板第三次整页读不到调度共享盘的病根)', () => {
+  const { heartbeat } = require('./fixtures/sched/support.cjs');
+  for (const tools of [{ bash: true }, { bash: false }, {}]) {
+    const ok = heartbeat();
+    ok.machines[0] = { ...ok.machines[0], tools };
+    assert.doesNotThrow(() => c.validateHeartbeat(ok), `tools=${JSON.stringify(tools)} 应合法`);
+  }
+  const bad = heartbeat();
+  bad.machines[0] = { ...bad.machines[0], tools: { bash: 'yes' } };
+  assert.throws(() => c.validateHeartbeat(bad));
+});
+
+test('机器条目 tools 认任意合规工具名(bash、py:<项目id>),值必须是布尔;名字不合规或值非布尔整份拒读(SCHED-SPARE-PY-DEPS-VERIFY-1028)', () => {
+  const { heartbeat } = require('./fixtures/sched/support.cjs');
+  for (const tools of [
+    { bash: true, 'py:mama': true }, { 'py:mama': false }, { bash: false, 'py:better-numbers': true },
+    { ['py:' + 'a'.repeat(32)]: true },
+  ]) {
+    const ok = heartbeat();
+    ok.machines[0] = { ...ok.machines[0], tools };
+    assert.doesNotThrow(() => c.validateHeartbeat(ok), `tools=${JSON.stringify(tools)} 应合法`);
+  }
+  for (const tools of [
+    { 'py:mama': 'yes' }, { 'Py:mama': true }, { 'py:': true }, { 'py:mama:x': true },
+    { 'a b': true }, { ['py:' + 'a'.repeat(33)]: true },
+  ]) {
+    const bad = heartbeat();
+    bad.machines[0] = { ...bad.machines[0], tools };
+    assert.throws(() => c.validateHeartbeat(bad), `tools=${JSON.stringify(tools)} 应整份拒读`);
+  }
 });

@@ -73,7 +73,7 @@ function recentHumanNotes(board, taskId, limit = 3) {
 }
 
 /**
- * 开工任务书正文。
+ * 开工任务书正文，卡片描述原样印出。
  * @param {object} input
  * @param {string} input.pid 项目 id
  * @param {string} [input.projName] 项目显示名
@@ -122,6 +122,13 @@ function buildBrief({ pid, projName, board, task, cli, includeNextSteps = true }
   L.push('## 技术说明（给模型的详细说明，正本）');
   L.push('');
   L.push(specText(t) || '（空）');
+
+  if (typeof t.description === 'string' && t.description.trim()) {
+    L.push('');
+    L.push('## 卡片描述');
+    L.push('');
+    L.push(String(t.description).trimEnd());
+  }
 
   L.push('');
   L.push('## 会改哪些文件');

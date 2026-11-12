@@ -35,6 +35,8 @@ const routes = [
   { path: '/sched', name: 'sched', component: () => import('@/views/SchedConsole.vue'), meta: { title: '调度台', icon: 'cpu', module: 'cpu' } },
   // 成本监管:本机对话流水的真实 token 消耗(按天/按模型/主·子agent)+ 各卡施工成本登记(0901)。
   { path: '/cost', name: 'cost', component: () => import('@/views/CostMonitor.vue'), meta: { title: '成本', icon: 'coins', module: 'cost' } },
+  // 账号与额度:只在本机生效,读派单器 resources list --json,页面不碰账号文件与密钥。
+  { path: '/resources', name: 'resources', component: () => import('@/views/ResourceAccounts.vue'), meta: { title: '账号与额度', icon: 'plug' } },
   { path: '/codex', name: 'codex', component: () => import('@/views/CodexPanel.vue'), meta: { title: 'Codex', icon: 'bot', module: 'codex' } },
   // 派活前先看这页:现在能同时开几张卡。纯规则算,不花额度。
   { path: '/parallel', name: 'parallel', component: () => import('@/views/ParallelPlan.vue'), meta: { title: '能同时派几张', icon: 'checks' } },

@@ -33,7 +33,6 @@ function prog(tasks: Task[]) {
     <header class="page-head">
       <div>
         <h1><Icon name="layers" class="head-ic" :size="20" />波次视图</h1>
-        <p>按批次看进度：每一波做完多少、还剩谁没动。</p>
       </div>
       <div class="head-actions">
         <span class="pill" v-if="store.currentBoard">{{ store.currentBoard.project.name }}</span>
@@ -73,7 +72,6 @@ function prog(tasks: Task[]) {
 <style scoped>
 .page { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s5); }
-.page-head p { margin: var(--s1) 0 0; color: var(--text-2); font-size: var(--fs-md); }
 .head-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--s2); }
 /* 波次卡自动分栏：每列不窄于 480，窄屏自然回到单栏。
    align-items: start 让高矮不一的波次卡各自保持自然高度，不被同行最高的那张撑开。 */

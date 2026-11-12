@@ -1,5 +1,7 @@
 'use strict';
 
+const { normalizeReal } = require('../core/safePath.cjs');
+
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ROLLOUT_RE = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f-]{36})\.jsonl$/i;
 const HEAD_BYTES = 256 * 1024;
@@ -116,11 +118,34 @@ function pathIsInside(candidate, root) {
   return Boolean(candidate && root && (candidate === root || candidate.startsWith(root + '/')));
 }
 
+// 真实路径按 mainRepo 字符串缓存 60 秒，避免每个会话文件都重复解联接路径。
+const REAL_ROOT_CACHE_TTL_MS = 60 * 1000;
+const realRootCache = new Map();
+function resolveRealRoot(mainRepo) {
+  if (typeof mainRepo !== 'string' || !mainRepo) return null;
+  const now = Date.now();
+  const cached = realRootCache.get(mainRepo);
+  if (cached && cached.expires > now) return cached.value;
+  let real = null;
+  try { real = normalizeReal(mainRepo); } catch { real = null; }
+  realRootCache.set(mainRepo, { value: real, expires: now + REAL_ROOT_CACHE_TTL_MS });
+  return real;
+}
+
 function inferProjectName(cwd, projects = {}, dashboardRoot = '') {
   const candidate = normalizeWindowsPath(cwd);
-  const roots = Object.values(projects || {})
-    .filter((project) => project && project.mainRepo)
-    .map((project) => ({ name: project.name || '其它', root: normalizeWindowsPath(project.mainRepo) }));
+  const roots = [];
+  for (const project of Object.values(projects || {})) {
+    if (!project || !project.mainRepo) continue;
+    const name = project.name || '其它';
+    const original = normalizeWindowsPath(project.mainRepo);
+    if (original) roots.push({ name, root: original });
+    // 登记原写法之外，也按真实路径认：负责人把目录挪走、原处留 junction 时，
+    // 从真实路径或联接路径开的会话都能归到本项目(DASH-COSTROOTS-JUNCTION-1101)。
+    const real = resolveRealRoot(project.mainRepo);
+    const realRoot = real ? normalizeWindowsPath(real) : null;
+    if (realRoot && realRoot !== original) roots.push({ name, root: realRoot });
+  }
   if (dashboardRoot) roots.push({ name: '项目管理看板', root: normalizeWindowsPath(dashboardRoot) });
   roots.sort((a, b) => b.root.length - a.root.length);
   return roots.find((entry) => pathIsInside(candidate, entry.root))?.name || '其它';

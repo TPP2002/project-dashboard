@@ -10,8 +10,36 @@ const runnerFixture = new Map([['runner-1', 'machine-a'], ['runner-2', 'machine-
 const runningPath = `${base}/actions/runs?status=in_progress&per_page=20`;
 const queuedPath = `${base}/actions/runs?status=queued&per_page=20`;
 const historyPath = `${base}/actions/runs?status=completed&per_page=100`;
+const runnersPath = `${base}/actions/runners?per_page=100`;
 const jobsPath = (id, page = 1) => `${base}/actions/runs/${id}/jobs?per_page=100&page=${page}`;
 const attemptPath = (id, attempt = 1, page = 1) => `${base}/actions/runs/${id}/attempts/${attempt}/jobs?per_page=100&page=${page}`;
+for (const concurrency of [undefined, 2]) test(`全仓 gh 并发上限 ${concurrency ?? 4}`, async () => {
+  let active = 0, peak = 0;
+  const monitor = c.createCiJobsMonitor({ concurrency, repositoryOverrides: 'o/a,o/b,o/c', gh: async endpoint => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setImmediate(resolve));
+    active--;
+    if (endpoint.includes('status=in_progress')) return { workflow_runs: Array.from({ length: 6 }, (_, i) => run({ id: i + 1, pull_requests: [] })) };
+    if (endpoint.includes('status=')) return { workflow_runs: [] };
+    return { jobs: [] };
+  } });
+  await monitor.refresh();
+  assert.ok(peak <= (concurrency ?? 4), `peak=${peak}`);
+});
+
+test('闲置仓跳过三拍，活动仓每拍查询，重新发现活动后恢复', async () => {
+  let tick = 0; const calls = [];
+  const monitor = c.createCiJobsMonitor({ repositoryOverrides: 'o/idle,o/busy', gh: async endpoint => {
+    calls.push([tick, endpoint]);
+    if (endpoint.includes('status=in_progress')) return { workflow_runs: endpoint.includes('/busy/') || tick >= 5 ? [run({ pull_requests: [] })] : [] };
+    if (endpoint.includes('status=')) return { workflow_runs: [] };
+    return { jobs: [] };
+  } });
+  for (tick = 1; tick <= 6; tick++) await monitor.refresh();
+  for (const n of [2, 3, 4]) assert.equal(calls.filter(([t, p]) => t === n && p.includes('/idle/')).length, 0);
+  for (const n of [1, 5, 6]) assert.ok(calls.some(([t, p]) => t === n && p.includes('/idle/')));
+  for (let n = 1; n <= 6; n++) assert.ok(calls.some(([t, p]) => t === n && p.includes('/busy/')));
+});
 const run = (extra = {}) => ({ id: 1, name: 'CI', head_branch: 'feat/window', status: 'in_progress',
   event: 'pull_request', pull_requests: [{ number: 9 }], ...extra });
 const job = (extra = {}) => ({ id: 11, name: 'fast', runner_name: 'runner-1', status: 'in_progress',
@@ -29,6 +57,7 @@ function fixture() {
     [`${base}/pulls/9`, { title: '让检查进度一眼可见' }],
     [historyPath, { workflow_runs: [run({ id: 2, status: 'completed' })] }],
     [jobsPath(2), { total_count: 1, jobs: [successful()] }],
+    [runnersPath, { runners: [] }],
   ]);
   const monitor = c.createCiJobsMonitor({ now: () => now,
     readBoards: async () => [{ repository: 'owner/repo', tasks: [{ gitBranch: ['feat/window'], plainTitle: '看清机器正在忙什么' }] }],
@@ -62,7 +91,9 @@ test('最后一条历史失败仍复用此前完整明细，恢复只补缺项�
     const calls = [];
     const monitor = c.createCiJobsMonitor({ now: () => now, repositoryOverrides: 'owner/repo', gh: async path => {
       calls.push(path);
-      if (path === runningPath || path === queuedPath) return { workflow_runs: [] };
+      if (path === runningPath) return { workflow_runs: [run({ id: 900, pull_requests: [] })] };
+      if (path === queuedPath) return { workflow_runs: [] };
+      if (path === jobsPath(900)) return { jobs: [] };
       if (path === historyPath) return { workflow_runs: [run({ id: 2, status: 'completed', run_attempt: 1 }), run({ id: 3, status: 'completed', run_attempt: 1 })] };
       if (path === attemptPath(2) || path === jobsPath(2)) return { total_count: 1, jobs: [successful()] };
       if (path === attemptPath(3) || path === jobsPath(3)) {
@@ -94,7 +125,9 @@ test('历史缓存区分仓库/run/attempt，移出100条窗口及删除仓库�
     gh: async path => {
       calls.push(path);
       if (path.includes('status=completed')) return { workflow_runs: ids.map(id => run({ id, status: 'completed', run_attempt: attempt })) };
+      if (path.includes('status=in_progress')) return { workflow_runs: [run({ id: 900, pull_requests: [] })] };
       if (path.includes('/actions/runs?')) return { workflow_runs: [] };
+      if (path.includes('/runs/900/jobs')) return { jobs: [] };
       return { total_count: 1, jobs: [successful()] };
     } });
   await monitor.refresh(); now += c.HISTORY_MS; await monitor.refresh();
@@ -424,6 +457,7 @@ test('排队查询失败与在跑查询失败同样保留整拍，不重试；�
     [queuedPath, { workflow_runs: [run({ id: 3, status: 'queued', pull_requests: [] })] }],
     [historyPath, { workflow_runs: [] }], [jobsPath(1), { jobs: [job()] }],
     [jobsPath(3), { jobs: [job({ id: 13, status: 'queued', created_at: iso(-3420_000) })] }],
+    [runnersPath, { runners: [] }],
   ]);
   const monitor = c.createCiJobsMonitor({ now: () => now, repositoryOverrides: 'owner/repo', gh: async endpoint => {
     calls.push(endpoint);
@@ -445,4 +479,105 @@ test('排队查询失败与在跑查询失败同样保留整拍，不重试；�
   }
   failure = null; responses.set(queuedPath, { workflow_runs: [] });
   assert.deepEqual(await monitor.refresh(), { machines: [], queued: [], updatedAt: iso(60_000), staleSince: null });
+});
+
+const queuedJob = (extra = {}) => ({ id: 31, name: 'fast', status: 'queued', created_at: iso(-600_000),
+  started_at: null, completed_at: null, conclusion: null, runner_name: null,
+  labels: ['self-hosted', 'Windows', 'lane'], ...extra });
+const onlineRunner = (name, labels = ['self-hosted', 'windows', 'lane']) =>
+  ({ name, status: 'online', busy: true, labels: labels.map(value => ({ name: value })) });
+
+/** 排队作业 + runner 清单夹具；homes 可给函数，用来模拟上一拍和下一拍心跳不同。 */
+function queuedFixture(options = {}) {
+  const calls = [], jobs = options.jobs === undefined ? [queuedJob()] : options.jobs;
+  const homes = () => new Map(typeof options.homes === 'function' ? options.homes() : options.homes ?? [['r1', 'spare']]);
+  const monitor = c.createCiJobsMonitor({ now: () => AT, repositoryOverrides: 'owner/repo',
+    readRunnerMachines: async () => homes(), runnerOverrides: options.overrides ?? {},
+    gh: async endpoint => {
+      calls.push(endpoint);
+      if (endpoint === runnersPath) {
+        if (options.runnersError) throw new Error('fixture runners failed');
+        return { runners: options.runners ?? [onlineRunner('r1')] };
+      }
+      if (endpoint === runningPath) return { workflow_runs: [] };
+      if (endpoint === queuedPath) return { workflow_runs: jobs.length ? [run({ id: 3, status: 'queued', pull_requests: [] })] : [] };
+      if (endpoint === jobsPath(3)) return { total_count: jobs.length, jobs };
+      if (endpoint === historyPath) return { workflow_runs: [] };
+      throw new Error(`未登记的请求：${endpoint}`);
+    } });
+  return { monitor, calls };
+}
+
+test('排队作业按在线 runner 的标签归到能接它的机器，标签大小写不敏感', async () => {
+  const { monitor, calls } = queuedFixture({ jobs: [queuedJob({ labels: ['self-hosted', 'Windows', 'lane'] })],
+    runners: [{ name: 'r1', status: 'online', busy: true,
+      labels: [{ name: 'SELF-HOSTED' }, { name: 'windows' }, { name: 'X64' }, { name: 'lane' }] }],
+    homes: [['r1', 'spare']] });
+  const data = await monitor.refresh(), [item] = data.queued;
+  assert.deepEqual([item.candidateMachines, item.candidateRunners, item.machine, item.runner],
+    [['spare'], ['r1'], null, null]);
+  assert.equal(item.phase, 'queued');
+  assert.equal(calls.filter(endpoint => endpoint === runnersPath).length, 1);
+});
+
+test('runner 离线或缺标签时两个候选字段都是空数组', async () => {
+  const { monitor } = queuedFixture({ jobs: [queuedJob({ id: 41 }), queuedJob({ id: 42 })],
+    runners: [{ name: 'r1', status: 'offline', labels: onlineRunner('r1').labels },
+      { name: 'r2', status: 'online', labels: [{ name: 'self-hosted' }, { name: 'windows' }] }],
+    homes: [['r1', 'spare'], ['r2', 'spare']] });
+  const data = await monitor.refresh();
+  assert.deepEqual(data.queued.map(item => [item.candidateMachines, item.candidateRunners]),
+    [[[], []], [[], []]]);
+});
+
+test('两台机器各一个 runner 都给候选；同一台机器两个 runner 只归一台机器', async () => {
+  const runners = [onlineRunner('r1'), onlineRunner('r2')];
+  const two = await queuedFixture({ runners, homes: [['r1', 'host'], ['r2', 'spare']] }).monitor.refresh();
+  assert.deepEqual([two.queued[0].candidateMachines, two.queued[0].candidateRunners], [['host', 'spare'], ['r1', 'r2']]);
+  const one = await queuedFixture({ runners, homes: [['r1', 'host'], ['r2', 'host']] }).monitor.refresh();
+  assert.deepEqual([one.queued[0].candidateMachines, one.queued[0].candidateRunners], [['host'], ['r1', 'r2']]);
+});
+
+test('匹配到 runner 但归属未知时机器候选为 null，runner 候选照常给出', async () => {
+  const { monitor } = queuedFixture({ homes: [] });
+  const [item] = (await monitor.refresh()).queued;
+  assert.deepEqual([item.candidateMachines, item.candidateRunners], [null, ['r1']]);
+});
+
+test('心跳不再列出 runner 时沿用上一拍记住的归属', async () => {
+  let homes = [['r1', 'spare']];
+  const { monitor } = queuedFixture({ homes: () => homes });
+  const first = await monitor.refresh();
+  homes = [];
+  const second = await monitor.refresh();
+  assert.deepEqual(first.queued[0].candidateMachines, ['spare']);
+  assert.deepEqual([second.queued[0].candidateMachines, second.queued[0].candidateRunners], [['spare'], ['r1']]);
+});
+
+test('runner 覆盖为 null 时该 runner 的归属记忆清空，机器候选回到 null', async () => {
+  const { monitor } = queuedFixture({ overrides: { r1: null } });
+  const [item] = (await monitor.refresh()).queued;
+  assert.deepEqual([item.candidateMachines, item.candidateRunners], [null, ['r1']]);
+});
+
+test('runner 清单读失败不影响排队作业，也不标错误和过期', async () => {
+  const { monitor } = queuedFixture({ runnersError: true });
+  const data = await monitor.refresh();
+  assert.equal(data.queued.length, 1);
+  assert.deepEqual([data.queued[0].candidateMachines, data.queued[0].candidateRunners], [null, []]);
+  assert.equal(data.error, undefined);
+  assert.equal(data.staleSince, null);
+});
+
+test('没有排队作业时不请求 runner 清单', async () => {
+  const { monitor, calls } = queuedFixture({ jobs: [] });
+  assert.deepEqual((await monitor.refresh()).queued, []);
+  assert.ok(calls.includes(queuedPath));
+  assert.equal(calls.filter(endpoint => endpoint === runnersPath).length, 0);
+});
+
+test('作业标签不含 self-hosted 时不当作自托管排队，机器候选为 null', async () => {
+  const { monitor } = queuedFixture({ jobs: [queuedJob({ labels: ['Windows', 'lane'] })] });
+  const [item] = (await monitor.refresh()).queued;
+  assert.deepEqual([item.candidateMachines, item.candidateRunners], [null, []]);
 });

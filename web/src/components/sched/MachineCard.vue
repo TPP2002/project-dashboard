@@ -3,9 +3,9 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched'
 import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
-import { age, ciJobLabel, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, ticketTone } from './format'
+import { age, ciJobLabel, ciQueueHeading, ciQueuedForCard, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, ticketTone } from './format'
 import { agentSlotsDisplay, formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
-const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean }>()
+const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean; onlineMachines?: string[] }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
 const fresh = computed(() => freshness(props.machine, props.now))
 const capacity = computed(() => machineCapacity(props.machine, fresh.value.stale))
@@ -19,7 +19,7 @@ const ownCiJobs = computed(() => ciData.value?.machines.find(group => group.mach
 // 未知 runner 不猜归属；在主机卡里单列一次，避免每张机器卡重复展示。
 const unknownCiJobs = computed(() => props.machine.name === props.host
   ? ciData.value?.machines.find(group => group.machine === null)?.jobs ?? [] : [])
-const queuedCiJobs = computed(() => props.machine.name === props.host ? ciData.value?.queued ?? [] : [])
+const queuedCiJobs = computed(() => ciQueuedForCard(ciData.value?.queued ?? [], props.machine.name, props.host, props.onlineMachines ?? []))
 const ciRunningCount = computed(() => ownCiJobs.value.length + unknownCiJobs.value.length)
 const ciCount = computed(() => ciRunningCount.value + queuedCiJobs.value.length)
 const ciMismatch = computed(() => !!ciData.value?.updatedAt && ciRunnersDiffer(props.machine.ciRunners, ownCiJobs.value))
@@ -87,7 +87,7 @@ onUnmounted(() => {
             <li v-for="job in unknownCiJobs" :key="`unknown-${job.repository ?? ''}:${job.id}`" :title="ciJobLabel(job, now)">
               {{ ciJobLabel(job, now) }}
             </li>
-            <li v-if="queuedCiJobs.length" class="machine-ci-queued">排队等 runner({{ queuedCiJobs.length }})</li>
+            <li v-if="queuedCiJobs.length" class="machine-ci-queued">{{ ciQueueHeading(queuedCiJobs) }}</li>
             <li v-for="job in queuedCiJobs" :key="`queued-${job.repository ?? ''}:${job.id}`" :title="ciQueuedLabel(job, now)">
               {{ ciQueuedLabel(job, now) }}
             </li>
@@ -102,8 +102,8 @@ onUnmounted(() => {
     </div>
     <div class="machine-metrics">
       <span>配额 <b>{{ formatCores(machine.quotaCores) }}</b> 核</span>
-      <span>已派任务 <b>{{ formatCores(machine.grantedCores) }}</b> 核</span>
-      <span>未接入调度的占用 <b>{{ formatCores(machine.externalLoadCores) }}</b> 核</span>
+      <span title="已派出去的各张单申请核数的合计，不是实际在用的核数">已派任务申请 <b>{{ formatCores(machine.grantedCores) }}</b> 核</span>
+      <span title="整台机器此刻在用的核数，已派任务用掉的也算在内">整机在用 <b>{{ formatCores(machine.externalLoadCores) }}</b> 核</span>
       <span v-if="machine.reservation">预留 已兑现 <b>{{ formatCores(machine.reservation.fulfilledCores) }}</b> / 申请 <b>{{ formatCores(machine.reservation.requestedCores) }}</b></span>
       <span>可用核（派单依据）<b>{{ formatCores(machine.availableCores, { floor: true }) }}</b> 核</span>
       <span>作业槽 <b>{{ slots.numbers }}</b></span>

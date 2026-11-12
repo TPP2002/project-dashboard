@@ -14,6 +14,7 @@ const STATES = ['queued', 'granted', 'running', 'paused', 'slow', 'unsatisfiable
 const ACTIVE = ['granted', 'running', 'paused', 'slow'];
 const TIMING_KEYS = ['queuedMs', 'runningMs', 'pausedMs', 'slowMs'];
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+const warnedHeartbeatFields = new Set();
 
 function badRequest(message) { return Object.assign(new Error(message), { status: 400 }); }
 function readFailure(error) {
@@ -116,7 +117,14 @@ function snapshot(share, nowMs) {
     const estimates = estimateTickets({ readable: true, nowMs, tickets: records, queue: heartbeat.queue,
       machines: heartbeat.machines, locks: heartbeat.locks, heartbeatAt: heartbeat.at, cursorSeq: heartbeat.cursorSeq }, history);
     const receipts = recentReceipts(share);
+    const unknownHeartbeatFields = c.heartbeatUnknownFields(heartbeat);
+    const unknownKey = unknownHeartbeatFields.join(',');
+    if (unknownKey && !warnedHeartbeatFields.has(unknownKey)) {
+      warnedHeartbeatFields.add(unknownKey);
+      console.warn(`[sched] 派单员心跳有看板不认识的字段:${unknownKey},页面照常显示,看板该跟进`);
+    }
     return { ok: true, share, readable: true, format,
+      ...(unknownHeartbeatFields.length ? { unknownHeartbeatFields } : {}),
       dispatcher: { config, heartbeat, heartbeatAgeMs: Math.max(0, nowMs - Date.parse(heartbeat.at)) },
       machines: heartbeat.machines, queue: heartbeat.queue, locks: heartbeat.locks,
       running: tickets.filter(ticket => ACTIVE.includes(ticket.state)),

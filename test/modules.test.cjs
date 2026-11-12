@@ -113,6 +113,12 @@ test('默认模块全关，菜单保存后立即放行；关闭后立即拦截',
   assert.deepEqual(stored.modules, { ...OFF, cost: true });
   assert.equal(stored.webhookEvents.done, false);
   fs.writeFileSync(path.join(srv.dir, 'settings.json'), JSON.stringify({ ...stored, modules: { reader: true } }));
+  const deadline = Date.now() + 5000;
+  while (!(await srv.json('/api/health')).body.modules.reader) {
+    const remaining = deadline - Date.now();
+    assert.ok(remaining > 0, '等待外部设置更新超时');
+    await new Promise(resolve => setTimeout(resolve, Math.min(100, remaining)));
+  }
   assert.deepEqual((await srv.json('/api/health')).body.modules, { ...OFF, reader: true });
 });
 
