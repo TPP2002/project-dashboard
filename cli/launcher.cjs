@@ -13,8 +13,10 @@
  *   ① 归属【预检】：未知归属/跨模式/开发实例在这里就明确拒接 —— 不安装、不构建、不碰别人的服务；
  *      但【复用/换新】绝不在这里决定（那必须等这次发布之后按新印章判，否则双击永远复用旧版）。
  *   ② 首次依赖安装：严格模式走正式调度 exec（Windows 上 cmd /c npm），独立模式本地直跑（同一命令形态）。
- *   ③ 发布构建：默认语义与旧启动器逐字一致（发布副本自己的 CLI 优先 → 排队构建 → 同源 → 失败回落旧副本）；
- *      只有【显式 --standalone】才把 --standalone 传进发布命令，允许它直连本次 SHA 导出树的 vite。
+ *   ③ 发布构建：发布入口的选法与旧启动器一致（严格模式优先发布副本自己的 CLI，独立模式用本检出的），
+ *      两种模式都把 --standalone 传进发布命令，界面构建直连本次 SHA 导出树的 vite、直接跑不排队
+ *      （依据负责人 2026-11-11「发布看板是小活、直接跑不排队」）；同源、失败回落旧副本照旧。
+ *      严格模式里只有首次依赖安装与常驻服务仍然挂号，界面构建这一小步不再占调度台。
  *   ④ 复用/换新判定：基于【这次发布之后】的印章重探重判 —— 主干更新了就退旧起新，没更新才复用
  *      （与旧启动器"每次先 release 再按版本换新"的语义一致）；退旧必须确认旧树真的退了才起新单。
  *   ⑤ 起常驻服务：严格模式只申请 1 核、走真实 hold（先授予才拉起服务，看护进程负责账/进程一致）；
@@ -68,7 +70,7 @@ function pollUntil(fn, ms, intervalMs = 200) {
 
 const USAGE = [
   '用法: node cli/launcher.cjs [--standalone]',
-  '  默认严格模式：整条启动链（首次依赖安装、现场发布构建、常驻服务）一律经调度台登记；',
+  '  默认严格模式：首次依赖安装与常驻服务经调度台登记；现场发布构建直接跑（小活不排队）；',
   '    调度客户端不可用、共享盘不可读或派单员心跳超龄时明确拒绝新启动：不安装、不构建、不起服务、不动已在跑的实例。',
   '  --standalone 显式独立模式：整条链路不经调度台（供无调度台的用户显式选择，不做任何自动降级）。',
   '  启动看板.bat / dashboard.sh 是薄入口：只检查 Node 后调用本文件。',
@@ -299,19 +301,15 @@ async function orchestrate(argv, deps, state) {
     // —— ③ 发布（旧副本回落语义与旧启动器逐字一致；绝不先停旧服务再安装/构建） ——
     log('[2/3] 正在检查并发布最新版本（主干没更新一两秒就过；有更新要现场构建界面）……');
     // 发布入口按模式选（R8 实机反证 tk-ba08a92baad4ad4815c0）：缺省严格模式照旧【优先发布副本自己的
-    // CLI】（同 SHA 现场构建、工作检出不直接提供 server，一字不改）。显式独立模式必须改用【本检出的】
-    // 源码 CLI：旧副本的发布工具根本不认识 --standalone，自举时把这个旗标丢掉、退回排队构建 ——
-    // 没有调度台就发布失败，启动器随后"回落上一份副本"起了旧版（8656702），升级悄悄失效。
-    // --standalone 语义只存在于当前源码 CLI，它是这一个新模式的入口（可逆的调用细节）；
-    // 不做版本兼容层、不猜旗标、不伪造调度许可；不带独立参数时路由一字不动。
+    // CLI】（同 SHA 现场构建、工作检出不直接提供 server）。显式独立模式必须改用【本检出的】源码 CLI：
+    // 旧副本的发布工具可能不认识 --standalone，自举时把这个旗标丢掉、退回排队构建 —— 没有调度台就发布
+    // 失败，启动器随后"回落上一份副本"起了旧版（8656702），升级悄悄失效。
+    // 两种模式都追加 --standalone：负责人 2026-11-11 定「发布看板、截图这类只占一个核、一两分钟跑完的
+    // 小活直接跑，不挂号」，界面构建因此直连 vite，不再走 queuedWebBuild 去调度台排队（1113 现场：
+    // 排队占着启动锁 40 分钟）。严格模式里首次依赖安装与常驻服务照旧挂号，调度台可用性第一闸也不动。
     const relCli = standalone ? path.join(d.codeRoot, 'cli', 'index.cjs') : path.join(d.relHome, 'cli', 'index.cjs');
     const releaseArgs = [fs.existsSync(relCli) ? relCli : path.join(d.codeRoot, 'cli', 'index.cjs'),
-      'release', '--source', d.codeRoot];
-    if (standalone) {
-      // 只有【明确的独立选择】才把 --standalone 传进发布命令：release 会因此直连本次 SHA 导出树的 vite，
-      // 旧版升级同样得到本次新 SHA。旧工具不认识这个旗标会退回排队构建 —— 那条路只属于旧版严格模式。
-      releaseArgs.push('--standalone');
-    }
+      'release', '--source', d.codeRoot, '--standalone'];
     const relCode = d.runRelease({ command: process.execPath, args: releaseArgs });
     if (relCode !== 0) {
       if (fs.existsSync(path.join(d.relHome, 'server', 'server.cjs'))) {
@@ -342,6 +340,14 @@ async function orchestrate(argv, deps, state) {
       d.openBrowser(`http://127.0.0.1:${route.health.port}/`, { platform: d.platform, env: d.env });
       return 0;
     }
+    // 先查后退：发布副本里没有 server 就起不了新服务 —— 这一步必须在退旧实例【之前】。
+    // 反例（1113 现场）：先 retireOwn 退了在跑的旧实例，下一步才发现 server 不存在，新旧都没了。
+    // 缺失时不退旧单、不停旧进程、不写登记、不挂 hold、不拉看护，明确失败；旧看板照常可用。
+    const serverPath = path.join(d.relHome, 'server', 'server.cjs');
+    if (!fs.existsSync(serverPath)) {
+      err(`✖ 发布副本里没有 server（${serverPath}），起不了服务；正在跑的旧看板没动。`);
+      return 1;
+    }
     if (route.kind === 'restart-own-old') {
       log(`检测到本启动器登记的旧版本实例（pid ${route.record.serverPid}），按既有换新语义退旧单、停旧进程，再起新单。`);
       const retired = await d.retireOwn({ record: route.record, client, share, stopTree: d.stopTree, log, platform: d.platform });
@@ -352,11 +358,7 @@ async function orchestrate(argv, deps, state) {
     }
 
     // —— ⑤ 起常驻服务 ——
-    const serverPath = path.join(d.relHome, 'server', 'server.cjs');
-    if (!fs.existsSync(serverPath)) {
-      err(`✖ 发布副本里没有 server（${serverPath}），起不了服务。`);
-      return 1;
-    }
+    // server 的存在性已在退旧之前核对过（缺失时旧实例原地不动、明确失败）——这里不重复报同一件事。
     log(`[3/3] 正在启动看板服务（代码来自：${d.relHome}）。关掉看板：在本窗口按 Ctrl+C，或直接关掉窗口。`);
     // 归属登记先落盘：探活/复用/换新全靠它；看护进程凭 --key 补记 watcherPid/serverPid，登记换主绝不拼改。
     const lifecycle = {

@@ -504,7 +504,8 @@ test('严格启动：hold 只申请 1 核、先落归属登记、root=检出、w
   assert.equal(holds.length, 1);
   assert.equal(releaseCalls[0].args[0], path.join(e.relHome, 'cli', 'index.cjs'),
     '缺省严格模式优先用发布副本自己的发布 CLI（同 SHA 现场构建，行为不变）');
-  assert.ok(!releaseCalls[0].args.includes('--standalone'), '缺省严格模式绝不夹带独立旗标');
+  assert.equal(releaseCalls[0].args[releaseCalls[0].args.length - 1], '--standalone',
+    '严格模式发布也带 --standalone：界面构建直接跑、不排队（负责人 2026-11-11）');
   const h1 = holds[0];
   assert.equal(h1.cores, 1, '常驻只申请 1 核（实据见 docs/launcher-hold-1014.md）');
   assert.equal(h1.project, 'dashboard');
