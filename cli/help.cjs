@@ -160,12 +160,13 @@ const COMMANDS = {
   },
   'collect-brief': {
     summary: '把完整收单员指令存到卡上，网页卡抽屉一键复制',
-    usage: 'collect-brief <卡号> --project <id> (--text <文本> | --file <文件路径>) [--author <身份>]',
+    usage: 'collect-brief <卡号> --project <id> (--text <文本> | --file <文件路径>) [--author <身份>] [--allow-ask "<理由>"]',
     args: [
       ['<卡号>', '要存指令的卡，一般是刚派完工单的那张'],
       ['--text <文本>', '指令全文，直接写在命令行里'],
       ['--file <文件路径>', '指令全文放这个文件里，按 utf8 读；长文本首选它，免命令行转义'],
       ['--author <身份>', '谁存的，可选'],
+      ['--allow-ask "<理由>"', '接了代理决策的项目(主仓有 docs/授权页.md)建卡、存收单指令时会扫要负责人拍板的句子,确属误拦用它放行'],
     ],
     examples: ['collect-brief MY-CARD --project myproj --file brief.txt'],
     notes: [
@@ -345,7 +346,7 @@ const COMMANDS = {
   // ——— 卡的生命周期 ———
   add: {
     summary: '新建一张卡（必须同时给技术说明、人话标题、建议档位）',
-    usage: 'add <卡号> --project <id> --title <技术说明> --plain-title <人话标题> --model <档位> [--scope <glob>...] [--status <状态>] [--wave <n>] [--desc <一句话>]\n'
+    usage: 'add <卡号> --project <id> --title <技术说明> --plain-title <人话标题> --model <档位> [--scope <glob>...] [--status <状态>] [--wave <n>] [--desc <一句话>] [--allow-ask "<理由>"]\n'
       + 'add --project <id> --json-file <清单.json>   # 一份清单建一批',
     args: [
 
@@ -359,6 +360,7 @@ const COMMANDS = {
       ['--wave <n>', '波次。施工中新冒出来的卡一律留 0，别继承父卡的波次'],
       ['--desc <文本>', '一句话补充说明'],
       ['--json-file <路径>', '一份清单建一批：数组每项 {id,title,plainTitle,model,scope,deps,wave,desc}'],
+      ['--allow-ask "<理由>"', '接了代理决策的项目(主仓有 docs/授权页.md)建卡、存收单指令时会扫要负责人拍板的句子,确属误拦用它放行'],
     ],
     examples: [
       'add FEAT-12 --project myproj --model "opus·中" --title "登录失败连续 5 次锁定账号 30 分钟…" --plain-title "连续输错密码要能自动锁一会儿，防有人硬猜"',
