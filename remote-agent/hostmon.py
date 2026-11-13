@@ -206,7 +206,7 @@ def group_tasks(procs, *, own_pid, boot_ms, clk_tck, cwd_of=None):
     for key, members in list(groups.items()):
         if key == 'system': continue
         task = render(key,members)
-        if task['kind']=='service' and task['cpuPct'] < 1 and task['rssMb'] < 200:
+        if task['kind']=='service' and task['cpuPct'] < 10 and task['rssMb'] < 200:
             groups.setdefault('system',[]).extend(members)
         elif task['kind']=='job': jobs.append(task)
         else: services.append(task)

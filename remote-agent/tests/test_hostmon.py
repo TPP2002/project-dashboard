@@ -138,6 +138,10 @@ class HostmonTest(unittest.TestCase):
         self.assertEqual(tasks[1]['cpuPct'],250.0)
         self.assertEqual(tasks[-1]['pids'],2)
 
+    def test_group_idle_service_is_system(self):
+        ps = [self.proc(675,1,['/lib/systemd/systemd-oomd'],'/system.slice/systemd-oomd.service',4,7), self.proc(12,1,['postgres'],'/system.slice/postgresql.service',15,40)]
+        self.assertEqual([t['id'] for t in self.group(ps)],['unit:postgresql.service','system'])
+
     def test_group_kernel(self):
         ps = [self.proc(7,2,[],comm='kworker')]
         self.assertEqual(self.group(ps)[-1]['pids'],1)
