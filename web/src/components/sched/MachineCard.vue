@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched'
 import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
-import { age, ciJobLabel, ciQueueHeading, ciQueuedForCard, ciQueuedLabel, ciRunnersDiffer, duration, freshness, stamp, ticketLabel, ticketTone } from './format'
+import { age, ciJobLabel, ciQueueHeading, ciQueuedForCard, ciQueuedLabel, ciRunnersDiffer, ciThrottleNote, duration, freshness, stamp, ticketLabel, ticketTone } from './format'
 import { agentSlotsDisplay, formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
 const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean; onlineMachines?: string[] }>()
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
@@ -24,7 +24,10 @@ const ciRunningCount = computed(() => ownCiJobs.value.length + unknownCiJobs.val
 const ciCount = computed(() => ciRunningCount.value + queuedCiJobs.value.length)
 const ciMismatch = computed(() => !!ciData.value?.updatedAt && ciRunnersDiffer(props.machine.ciRunners, ownCiJobs.value))
 const ciAge = computed(() => age(ciData.value?.updatedAt ?? null, props.now))
-const ciStale = computed(() => ciFailed.value || !!ciData.value?.staleSince || (ciAge.value !== null && ciAge.value > 60_000))
+// 只在主机卡用一句话说明为什么刷得慢；放慢档下数据旧一点是预期，过期的门槛跟着放慢的间隔走。
+const ciThrottle = computed(() => props.machine.name === props.host ? ciThrottleNote(ciData.value?.throttle, props.now) : null)
+const ciStale = computed(() => ciFailed.value || !!ciData.value?.staleSince
+  || (ciAge.value !== null && ciAge.value > (ciData.value?.throttle ? ciData.value.throttle.intervalMs * 2 + 60_000 : 60_000)))
 let ciTimer: number | undefined, ciRequest: AbortController | null = null, mounted = false
 async function refreshCiJobs() {
   if (ciRequest) return
@@ -74,10 +77,11 @@ onUnmounted(() => {
     <div class="machine-ci-window">
       <p v-if="ciUnavailable" class="sched-note">{{ ciUnavailable }}</p>
       <template v-else>
-        <p v-if="ciStale" class="sched-note warn" role="status">
+        <p v-if="ciThrottle" class="sched-note" :class="{ warn: ciThrottle.warn }" role="status">{{ ciThrottle.text }}</p>
+        <p v-else-if="ciStale" class="sched-note warn" role="status">
           {{ ciAge === null ? '暂时读不到检查作业' : `数据 ${Math.floor(ciAge / 1000)} 秒前` }}
         </p>
-        <p v-else-if="ciData?.error" class="sched-note warn" role="status">部分检查作业暂时读不到，其余仍在更新</p>
+        <p v-if="!ciThrottle && !ciStale && ciData?.error" class="sched-note warn" role="status">部分检查作业暂时读不到，其余仍在更新</p>
         <small v-if="ciMismatch" class="sched-muted">与派单员观测不一致</small>
         <details v-if="ciCount" class="machine-ci-details">
           <summary>CI:在跑 {{ ciRunningCount }} · 排队 {{ queuedCiJobs.length }}</summary>

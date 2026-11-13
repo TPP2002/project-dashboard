@@ -9,9 +9,14 @@ export interface CiJob {
 }
 export interface CiMachineJobs { machine: string | null; jobs: CiJob[] }
 export interface CiRepositoryStatus { repository: string; updatedAt: string | null; staleSince: string | null }
+/** 额度吃紧时后端给出的放慢/暂停说明;额度充足时整份快照不带这个键。 */
+export interface CiThrottle {
+  level: 'slow' | 'paused'; intervalMs: number
+  nextAt: string | null; resetAt: string | null; remaining: number | null; limit: number | null
+}
 export interface CiJobsData {
   machines: CiMachineJobs[]; queued: CiJob[]; updatedAt: string | null; staleSince: string | null; error?: string
-  repositories?: CiRepositoryStatus[]
+  repositories?: CiRepositoryStatus[]; throttle?: CiThrottle
 }
 export type CiJobsSnapshot = CiJobsData | { unavailable: string }
 
@@ -19,7 +24,14 @@ const record = (value: unknown): value is Record<string, unknown> => !!value && 
 const nullableText = (value: unknown) => value === null || typeof value === 'string'
 const nullableTime = (value: unknown) => value === null || (typeof value === 'string' && Number.isFinite(Date.parse(value)))
 const nullableMs = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value))
+const nullableCount = (value: unknown) => value === null || (Number.isSafeInteger(value) && (value as number) >= 0)
 const textArray = (value: unknown) => Array.isArray(value) && value.every(item => typeof item === 'string')
+function validThrottle(value: unknown): boolean {
+  return record(value) && (value.level === 'slow' || value.level === 'paused')
+    && typeof value.intervalMs === 'number' && Number.isFinite(value.intervalMs) && value.intervalMs > 0
+    && nullableTime(value.nextAt) && nullableTime(value.resetAt)
+    && nullableCount(value.remaining) && nullableCount(value.limit)
+}
 function validJob(value: unknown, machine: unknown, phase: CiJob['phase']): boolean {
   if (!record(value) || !Number.isSafeInteger(value.id) || (value.id as number) <= 0 || value.machine !== machine || value.phase !== phase) return false
   if (phase === 'queued' && (value.runner !== null || value.startedAt !== null || value.elapsedMs !== null || value.remainingMs !== null)) return false
@@ -37,6 +49,7 @@ export function isCiJobsSnapshot(value: unknown): value is CiJobsSnapshot {
   if (!record(value)) return false
   if ('unavailable' in value) return typeof value.unavailable === 'string' && value.unavailable.length > 0
   return nullableTime(value.updatedAt) && nullableTime(value.staleSince) && (value.error === undefined || typeof value.error === 'string')
+    && (value.throttle === undefined || validThrottle(value.throttle))
     && (value.repositories === undefined || (Array.isArray(value.repositories) && value.repositories.every(item => record(item)
       && typeof item.repository === 'string' && nullableTime(item.updatedAt) && nullableTime(item.staleSince))))
     && Array.isArray(value.machines) && value.machines.every(group => record(group) && nullableText(group.machine)
