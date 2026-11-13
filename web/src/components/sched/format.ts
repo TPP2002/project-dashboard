@@ -1,5 +1,5 @@
 import type { CommandInput, MachineSnapshot, TicketSummary, TicketState } from '@/api/sched'
-import type { CiJob } from '@/api/schedCiJobs'
+import type { CiJob, CiThrottle } from '@/api/schedCiJobs'
 
 export const stateLabels: Record<TicketState, string> = { queued: '排队中', granted: '已授予，等待开跑', running: '运行中',
   paused: '暂停中', slow: '低速继续', unsatisfiable: '无法满足', passed: '通过', failed: '失败', cancelled: '已撤单', voided: '已作废' }
@@ -83,6 +83,22 @@ export function ciRunnersDiffer(observed: string[] | null | undefined, jobs: CiJ
   const actual = new Set(jobs.flatMap(job => job.runner === null ? [] : [job.runner]))
   const heartbeat = new Set(observed)
   return actual.size !== heartbeat.size || [...actual].some(runner => !heartbeat.has(runner))
+}
+/** 额度吃紧时的一句话解释;读不到额度就只说是为省额度,不编数字。时间一律按本机时区两位补零。 */
+export function ciThrottleNote(throttle: CiThrottle | null | undefined, nowMs: number): { text: string; warn: boolean } | null {
+  if (!throttle) return null
+  const minutes = Math.max(1, Math.round(throttle.intervalMs / 60000))
+  if (throttle.level === 'paused') {
+    const at = throttle.nextAt === null ? null : new Date(throttle.nextAt)
+    const resume = at && Number.isFinite(at.getTime())
+      ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} 恢复`
+      : '稍后恢复'
+    return { text: `GitHub 查询额度快用完了,检查作业暂停刷新,${resume}`, warn: true }
+  }
+  if (throttle.remaining !== null && throttle.limit !== null) {
+    return { text: `GitHub 查询额度剩 ${throttle.remaining}/${throttle.limit},检查作业改为每 ${minutes} 分钟刷新`, warn: false }
+  }
+  return { text: `为省 GitHub 查询额度,检查作业改为每 ${minutes} 分钟刷新`, warn: false }
 }
 export function commandLabel(input: CommandInput) {
   if (input.kind === 'jump-queue') return `插队 ${input.data.ticketId}`

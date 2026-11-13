@@ -4,12 +4,39 @@ const { execFile } = require('node:child_process');
 const POLL_MS = 30_000;
 const HISTORY_MS = 10 * 60_000;
 const GH_TIMEOUT_MS = 10_000;
+// 额度读数一分钟一读；同一轮次明细最多复用五分钟；标题十分钟重读一次（与历史采样同节拍）。
+const RATE_READ_MS = 60_000;
+const LIVE_JOBS_MAX_AGE_MS = 300_000;
+const PR_TITLE_MS = 10 * 60_000;
+const PR_RETRY_MS = 10 * 60_000;
+const PR_KEEP_MS = 60 * 60_000;
+const PAUSE_MARGIN_MS = 5_000;
+const PAUSE_FALLBACK_MS = 900_000;
 const WORKFLOWS = Object.freeze({ MainGate: '主干守门', CI: 'PR 检查', Nightly: '夜跑' });
 const JOBS = Object.freeze({ fast: '全量单测', e2e: '界面测试', 'draft-gate': '草稿闸', 'night-bot': '混沌夜跑' });
 const nonempty = value => typeof value === 'string' && value.trim() !== '';
 const timestamp = value => nonempty(value) && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
 const sampleKey = (workflow, job, repository) => JSON.stringify(repository === undefined ? [workflow, job] : [repository, workflow, job]);
 const label = (names, name, fallback) => Object.hasOwn(names, name) ? names[name] : nonempty(name) ? name : fallback;
+
+/**
+ * 按剩余额度定档：额度充足照旧 30 秒一拍，剩得少就按档放慢，见底就停到恢复时刻。
+ * 读不到额度（或读数不合法）一律按 normal 走，不能因为读不到就停。
+ */
+function ciPollPlan({ remaining, limit, resetAt, nowMs, pausedUntil } = {}) {
+  const finite = value => typeof value === 'number' && Number.isFinite(value);
+  if (finite(pausedUntil) && pausedUntil > nowMs) {
+    return { level: 'paused', intervalMs: pausedUntil - nowMs, nextAt: pausedUntil };
+  }
+  if (!finite(remaining) || !finite(limit) || limit <= 0) return { level: 'normal', intervalMs: POLL_MS, nextAt: null };
+  const ratio = remaining / limit;
+  if (ratio >= 0.4) return { level: 'normal', intervalMs: POLL_MS, nextAt: null };
+  if (ratio >= 0.2) return { level: 'slow', intervalMs: 120_000, nextAt: null };
+  if (ratio >= 0.1) return { level: 'slow', intervalMs: 300_000, nextAt: null };
+  const reset = finite(resetAt) ? resetAt : timestamp(resetAt);
+  const nextAt = reset === null ? nowMs + PAUSE_FALLBACK_MS : reset + PAUSE_MARGIN_MS;
+  return { level: 'paused', intervalMs: nextAt - nowMs, nextAt };
+}
 
 function repositoryName(value) {
   return nonempty(value) && /^[\w.-]+\/[\w.-]+$/.test(value)
@@ -152,6 +179,36 @@ function createGhApi(runFile = execFile) {
   });
 }
 
+/**
+ * 额度读数只认 resources.core；rate_limit 接口本身不计入额度，任何失败都当读不到。
+ * 不读、不打印令牌，只走 gh 自己的登录态。
+ */
+function readQuota() {
+  return new Promise(resolve => {
+    execFile('gh', ['api', 'rate_limit'], { encoding: 'utf8', windowsHide: true, timeout: GH_TIMEOUT_MS }, (error, stdout) => {
+      if (error) return resolve(null);
+      try {
+        const core = JSON.parse(stdout)?.resources?.core;
+        resolve({ remaining: core?.remaining, limit: core?.limit,
+          resetAt: Number.isFinite(core?.reset) ? new Date(core.reset * 1000).toISOString() : null });
+      } catch { resolve(null); }
+    });
+  });
+}
+
+/** 注入的读数可能是半截对象；缺的字段一律当读不到，不拿 0 冒充。 */
+function rateReading(value) {
+  const count = item => typeof item === 'number' && Number.isFinite(item) ? item : null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return { remaining: count(value.remaining), limit: count(value.limit),
+    resetAt: typeof value.resetAt === 'string' && Number.isFinite(Date.parse(value.resetAt)) ? value.resetAt : null };
+}
+
+/** gh 的报错里出现限额字样就当作撞限额；其余错误照旧交给采集层标过期。 */
+function rateLimited(error) {
+  return /rate limit|HTTP 403|HTTP 429/i.test(`${error?.message ?? ''} ${error?.stderr ?? ''}`);
+}
+
 function apiList(value, field) {
   if (!Array.isArray(value?.[field])) throw new Error('检查服务返回的数据不完整');
   return value[field];
@@ -176,11 +233,14 @@ async function mapLimited(items, visit) {
 }
 
 /** 不启动定时器、不写磁盘；调用方注入时钟和 gh。refresh 合并并发调用，snapshot 始终即时返回。 */
-function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = async () => [],
-  readRunnerMachines = async () => new Map(), runnerOverrides = {}, repositoryOverrides, concurrency = 4 } = {}) {
+function createCiJobsMonitor({ gh, now = Date.now, readBoards = async () => [],
+  readRunnerMachines = async () => new Map(), runnerOverrides = {}, repositoryOverrides, concurrency = 4,
+  readRateLimit } = {}) {
   const states = new Map();
   const limit = Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 16 ? concurrency : 4;
-  const rawGh = gh, waiting = [];
+  const rawGh = gh ?? createGhApi(), waiting = [];
+  // 老调用方都直接注入 gh：没给读数入口就一个额外请求都不发，额度充足时的行为与改前一致。
+  const quota = typeof readRateLimit === 'function' ? readRateLimit : gh === undefined ? readQuota : async () => null;
   let inFlight = 0;
   gh = async endpoint => {
     if (inFlight >= limit) await new Promise(resolve => waiting.push(resolve));
@@ -188,9 +248,51 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
     try { return await rawGh(endpoint); }
     finally { if (waiting.length) waiting.shift()(); else inFlight--; }
   };
-  let pending = null, pendingAt = null, boards = [], mapping = new Map(), readAt = null, failedAt = null, unavailable = false;
+  let pending = null, pendingAt = null, pausedFlight = null;
+  let boards = [], mapping = new Map(), readAt = null, failedAt = null, unavailable = false;
+  let collectAt = null, pausedUntil = null, rateCache = null, rateRead = null;
   // 心跳只列正在跑活的 runner，空闲的不在里面；这里记住见过的归属，只在内存里，不写盘。
   const knownRunners = new Map();
+  // PR 标题与在跑轮次的作业明细跨拍保留，同样只在内存里。
+  const prTitles = new Map();
+
+  /** 读不到额度时的档位按 normal 走；缓存过期不在这里重读，交给真正要采集的那一拍。 */
+  function planAt(nowMs) {
+    if (pausedUntil !== null && pausedUntil <= nowMs) pausedUntil = null;
+    const reading = rateCache?.value ?? null;
+    const next = ciPollPlan({ remaining: reading?.remaining, limit: reading?.limit, resetAt: reading?.resetAt, nowMs, pausedUntil });
+    // 恢复时刻已经过去就不算暂停：下一拍照常采集，由新读数重新定档。
+    return next.level === 'paused' && !(next.nextAt > nowMs) ? { level: 'normal', intervalMs: POLL_MS, nextAt: null } : next;
+  }
+
+  /** 额度读数缓存一分钟；并发调用共用一次读数，撞限额时可强制绕过缓存。 */
+  function readRateNow(force = false) {
+    const at = now();
+    if (!force && rateCache && at - rateCache.at < RATE_READ_MS) return Promise.resolve(rateCache.value);
+    if (rateRead) return rateRead;
+    const flight = (async () => {
+      let value = null;
+      try { value = rateReading(await quota()); } catch { value = null; }
+      rateCache = { at: now(), value };
+      return value;
+    })();
+    rateRead = flight.finally(() => { rateRead = null; });
+    return rateRead;
+  }
+
+  async function readyPlan() {
+    if (!rateCache || now() - rateCache.at >= RATE_READ_MS) await readRateNow();
+    return planAt(now());
+  }
+
+  /** 撞到限额：立刻绕过缓存重读一次；读得到恢复时刻就等到那一刻，读不到就保守停十五分钟。 */
+  async function pauseForRateLimit() {
+    const at = now();
+    pausedUntil = at + PAUSE_FALLBACK_MS;
+    const reading = await readRateNow(true);
+    const reset = timestamp(reading?.resetAt);
+    if (reset !== null && reset > at) pausedUntil = reset + PAUSE_MARGIN_MS;
+  }
 
   async function runnerList(base) {
     try { return apiList(await gh(`${base}/actions/runners?per_page=100`), 'runners'); } catch { return null; }
@@ -215,6 +317,41 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
     }
   }
 
+  /**
+   * 同一轮次（同一 attempt）的作业明细在 updated_at 没变且不到五分钟时直接复用；
+   * 变了或太旧才重取。历史采样走自己的 completed 缓存，不受这里影响。
+   */
+  async function liveJobs(base, run, state) {
+    const key = `${apiId(run.id)}:${run.run_attempt ?? ''}`;
+    const at = now();
+    const cached = state.liveJobs.get(key);
+    if (cached && nonempty(run.updated_at) && cached.updatedAt === run.updated_at && at - cached.fetchedAt < LIVE_JOBS_MAX_AGE_MS) {
+      return cached.jobs;
+    }
+    const jobs = await jobsFor(base, run);
+    state.liveJobs.set(key, { updatedAt: run.updated_at, jobs, fetchedAt: at });
+    return jobs;
+  }
+
+  /** 标题取不到十分钟内不重试；取到的十分钟后重读一次，改名也能跟上。 */
+  async function pullTitle(base, key, number) {
+    const at = now();
+    const cached = prTitles.get(key);
+    if (cached && (cached.retryAt === null ? at - cached.fetchedAt < PR_TITLE_MS : at < cached.retryAt)) {
+      cached.seenAt = at;
+      return cached.title;
+    }
+    let title = null;
+    try {
+      const result = await gh(`${base}/pulls/${number}`);
+      title = nonempty(result?.title) ? result.title : null;
+    } catch (error) {
+      if (rateLimited(error)) await pauseForRateLimit();
+    }
+    prTitles.set(key, { title, fetchedAt: at, retryAt: title === null ? at + PR_RETRY_MS : null, seenAt: at });
+    return title;
+  }
+
   async function collectRepository(repository, state) {
     const base = `repos/${repository}`;
     try {
@@ -227,17 +364,32 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       }
       const pulls = new Map();
       const entries = await mapLimited([...runs.values()], async run => {
-        const jobs = await jobsFor(base, run);
+        const jobs = await liveJobs(base, run, state);
         const pull = run.pull_requests?.[0];
-        let prTitle = nonempty(pull?.title) ? pull.title : null;
-        if (pull && !prTitle) {
+        let prTitle = null;
+        if (pull && nonempty(pull.title)) {
+          // 轮次里自带的标题优先，顺手刷新缓存，改名立即生效；没有编号也照旧可用。
+          prTitle = pull.title;
+          if (Number.isSafeInteger(pull.number) && pull.number > 0) {
+            const key = `${repository}#${pull.number}`;
+            prTitles.set(key, { title: prTitle, fetchedAt: now(), retryAt: null, seenAt: now() });
+          }
+        } else if (pull) {
           const number = apiId(pull.number);
-          if (!pulls.has(number)) pulls.set(number, gh(`${base}/pulls/${number}`));
-          const result = await pulls.get(number);
-          prTitle = nonempty(result?.title) ? result.title : null;
+          const key = `${repository}#${number}`;
+          // 同一拍里同一 PR 只发一次；跨拍由 prTitles 兜住。
+          if (!pulls.has(key)) pulls.set(key, pullTitle(base, key, number));
+          prTitle = await pulls.get(key);
         }
         return { repository, run, jobs, prTitle };
       });
+      // 本拍轮次清单里没有的作业明细、一小时没再出现的标题都要回收，缓存不能只增不减。
+      const live = new Set(entries.map(entry => `${apiId(entry.run.id)}:${entry.run.run_attempt ?? ''}`));
+      for (const key of state.liveJobs.keys()) if (!live.has(key)) state.liveJobs.delete(key);
+      const seenAt = now();
+      for (const [key, entry] of prTitles) {
+        if (key.startsWith(`${repository}#`) && seenAt - entry.seenAt >= PR_KEEP_MS) prTitles.delete(key);
+      }
       // 有排队作业才读 runner 清单；读不到就当没有候选，不污染整仓的成败。
       const runners = entries.some(entry => entry.jobs.some(job => job.status === 'queued')) ? await runnerList(base) : null;
       for (const entry of entries) entry.runners = runners;
@@ -273,12 +425,14 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
         idleTicks: runs.size ? 0 : 3 });
     } catch (error) {
       if (error?.code === 'ENOENT') { unavailable = true; return; }
+      // 撞到限额就先停到恢复时刻，本仓照旧记过期与错误，别把旧数据当成新拍的。
+      if (rateLimited(error)) await pauseForRateLimit();
       state.staleSince ||= new Date(now()).toISOString();
       state.error = '暂时读不到检查作业';
     }
   }
 
-  async function collect() {
+  async function collect({ paused = false } = {}) {
     try {
       let nextBoards;
       try { nextBoards = await readBoards(); }
@@ -294,11 +448,14 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
       boards = nextBoards;
       for (const name of states.keys()) if (!names.includes(name)) states.delete(name);
       for (const name of names) if (!states.has(name)) {
-        states.set(name, { entries: [], history: new Map(), completedJobs: new Map(), historyAt: null, updatedAt: null, staleSince: null, error: null, idleTicks: 0 });
+        states.set(name, { entries: [], history: new Map(), completedJobs: new Map(), liveJobs: new Map(),
+          historyAt: null, updatedAt: null, staleSince: null, error: null, idleTicks: 0 });
       }
       readAt = new Date(now()).toISOString(); failedAt = null; unavailable = false;
       // 单仓自己保留失败拍；其它仓继续采集，且完成后立即可从 snapshot 读取。
       await mapLimited(names.map(name => [name, states.get(name)]), ([repository, state]) => {
+        // 暂停拍只刷新仓库清单与时间戳，一个作业都不查；没有仓库时页面也知道这一拍看过了。
+        if (paused) return;
         if (!state.pending && state.idleTicks > 0) { state.idleTicks--; return; }
         state.pending ||= collectRepository(repository, state).finally(() => { state.pending = null; });
         return state.pending;
@@ -309,13 +466,25 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
     return snapshot();
   }
 
+  /** 放慢或暂停时告诉页面为什么刷得慢；数字只给整数，时间转成 ISO。 */
+  function throttleOf(plan, reading) {
+    const count = value => typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null;
+    return { level: plan.level, intervalMs: plan.intervalMs,
+      nextAt: plan.nextAt === null ? null : new Date(plan.nextAt).toISOString(),
+      remaining: count(reading?.remaining), limit: count(reading?.limit),
+      resetAt: typeof reading?.resetAt === 'string' ? reading.resetAt : null };
+  }
+
   function snapshot() {
     if (unavailable) return { unavailable: '本机没有 gh' };
-    const nowMs = now(), machines = new Map(), queued = [], statuses = [];
+    const nowMs = now(), plan = planAt(nowMs), window = plan.intervalMs * 2;
+    const throttle = plan.level === 'normal' ? null : throttleOf(plan, rateCache?.value ?? null);
+    const machines = new Map(), queued = [], statuses = [];
     for (const [repository, state] of states) {
       const updated = timestamp(state.updatedAt);
-      const staleSince = failedAt || state.staleSince || (updated !== null && nowMs - updated > POLL_MS * 2
-        ? new Date(updated + POLL_MS * 2).toISOString() : null);
+      // 判过期的宽限期跟着当前档位走：放慢档下数据旧一点是预期，不冒充过期。
+      const staleSince = failedAt || state.staleSince || (updated !== null && nowMs - updated > window
+        ? new Date(updated + window).toISOString() : null);
       statuses.push({ repository, updatedAt: state.updatedAt, staleSince });
       const current = partitionJobs(state.entries, { boards, mapping, runnerHomes: knownRunners, estimates: state.history, nowMs });
       queued.push(...current.queued.map(job => ({ ...job, updatedAt: state.updatedAt, staleSince })));
@@ -330,20 +499,45 @@ function createCiJobsMonitor({ gh = createGhApi(), now = Date.now, readBoards = 
     return { machines: [...machines].map(([machine, jobs]) => ({ machine, jobs })), queued,
       updatedAt: statuses.length ? dates.at(-1) ?? null : readAt, staleSince,
       ...(statuses.length > 1 ? { repositories: statuses } : {}),
+      ...(throttle ? { throttle } : {}),
       ...(failedAt || [...states.values()].some(state => state.error) ? { error: '暂时读不到检查作业' } : {}) };
   }
 
+  function start(nowMs) {
+    pendingAt = nowMs;
+    const flight = (async () => {
+      // 第一拍还不知道额度：先读一次再定档，别白跑一整轮。
+      const plan = await readyPlan(), at = now();
+      if (plan.level === 'paused' && at < plan.nextAt) return collect({ paused: true });
+      if (plan.level === 'slow' && collectAt !== null && at - collectAt < plan.intervalMs) return snapshot();
+      collectAt = at;
+      return collect();
+    })().finally(() => { if (pending === flight) pending = null; });
+    pending = flight;
+    return flight;
+  }
+
   function refresh() {
-    // 同一拍合并请求；下一拍只跳过仍在采集的仓库，健康仓库继续更新。
-    if (!pending || now() - pendingAt >= POLL_MS) {
-      pendingAt = now();
-      const flight = collect().finally(() => { if (pending === flight) pending = null; });
-      pending = flight;
+    // normal 档的门控与改前逐字一致；slow 拉开间隔，paused 不查作业、只刷新清单与时间戳。
+    // 一律回 Promise：调用方会对返回值挂 catch。
+    const at = now(), plan = planAt(at);
+    if (plan.level === 'paused') {
+      if (at >= plan.nextAt) return start(at);
+      if (pausedFlight) return pausedFlight;
+      const flight = collect({ paused: true }).finally(() => { if (pausedFlight === flight) pausedFlight = null; });
+      pausedFlight = flight;
+      return flight;
     }
+    if (plan.level === 'slow') {
+      if (pending) return pending;
+      return collectAt !== null && at - collectAt < plan.intervalMs ? Promise.resolve(snapshot()) : start(at);
+    }
+    if (!pending || at - pendingAt >= POLL_MS) return start(at);
     return pending;
   }
   return { refresh, snapshot };
 }
 
-module.exports = { POLL_MS, HISTORY_MS, GH_TIMEOUT_MS, githubRepository, repositories, runnerMachines,
-  runnerMapping, median, historicalMedians, groupJobs, createGhApi, createCiJobsMonitor };
+module.exports = { POLL_MS, HISTORY_MS, GH_TIMEOUT_MS, RATE_READ_MS, LIVE_JOBS_MAX_AGE_MS, ciPollPlan,
+  githubRepository, repositories, runnerMachines, runnerMapping, median, historicalMedians, groupJobs,
+  createGhApi, createCiJobsMonitor };
