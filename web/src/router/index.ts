@@ -33,6 +33,7 @@ const routes = [
   { path: '/search', name: 'search', component: () => import('@/views/SearchFilter.vue'), meta: { title: '搜索', icon: 'search' } },
   { path: '/cpu', name: 'cpu', redirect: '/sched' },
   { path: '/sched', name: 'sched', component: () => import('@/views/SchedConsole.vue'), meta: { title: '调度台', icon: 'cpu', module: 'cpu' } },
+  { path: '/sched/remote/:name', name: 'sched-remote', component: () => import('@/views/RemoteHostPerf.vue'), meta: { title: '租用服务器', icon: 'cpu', module: 'cpu' } },
   // 成本监管:本机对话流水的真实 token 消耗(按天/按模型/主·子agent)+ 各卡施工成本登记(0901)。
   { path: '/cost', name: 'cost', component: () => import('@/views/CostMonitor.vue'), meta: { title: '成本', icon: 'coins', module: 'cost' } },
   // 账号与额度:只在本机生效,读派单器 resources list --json,页面不碰账号文件与密钥。
