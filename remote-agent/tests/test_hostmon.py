@@ -142,6 +142,11 @@ class HostmonTest(unittest.TestCase):
         ps = [self.proc(675,1,['/lib/systemd/systemd-oomd'],'/system.slice/systemd-oomd.service',4,7), self.proc(12,1,['postgres'],'/system.slice/postgresql.service',15,40)]
         self.assertEqual([t['id'] for t in self.group(ps)],['unit:postgresql.service','system'])
 
+    def test_service_quota_allows_scan_burst(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),'hostmon.service'),encoding='utf-8') as f: unit=f.read()
+        quota=[int(line.split('=',1)[1].rstrip('%')) for line in unit.splitlines() if line.startswith('CPUQuota=')]
+        self.assertTrue(quota and quota[0] >= 100, quota)
+
     def test_group_kernel(self):
         ps = [self.proc(7,2,[],comm='kworker')]
         self.assertEqual(self.group(ps)[-1]['pids'],1)

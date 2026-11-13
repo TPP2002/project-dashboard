@@ -10,7 +10,7 @@ RestartSec=3
 RuntimeDirectory=hostmon
 RuntimeDirectoryPreserve=yes
 StateDirectory=hostmon
-CPUQuota=25%
+CPUQuota=100%
 MemoryMax=256M
 
 [Install]
