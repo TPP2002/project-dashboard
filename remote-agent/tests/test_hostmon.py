@@ -20,6 +20,17 @@ class HostmonTest(unittest.TestCase):
     def test_cpu_zero(self):
         self.assertEqual(hostmon.cpu_usage([0]*8, [0]*8), (0, 0, 0))
 
+    def test_parse_proc_stat_cpu_lines_only(self):
+        text = ('cpu  8240 1710 13991 4146165 3466 0 553 0 0 0\n'
+                'cpu0 318 1 494 127656 137 0 5 0 0 0\n'
+                'cpu1 319 2 495 127657 138 0 6 0 0 0\n'
+                'intr 1 2 3 4\nctxt 100\nsoftirq 12 3\n'
+                'cpufreq 1 2 3\n')
+        self.assertEqual(hostmon.parse_proc_stat(text), {
+            'cpu':[8240,1710,13991,4146165,3466,0,553,0],
+            'cpu0':[318,1,494,127656,137,0,5,0],
+            'cpu1':[319,2,495,127657,138,0,6,0]})
+
     def test_busy_cores(self):
         sampler = hostmon.Sampler.__new__(hostmon.Sampler)
         sampler.src='daemon'; sampler.host={'logicalCores':32}; sampler.mhz=None; sampler.mhz_at=1000
@@ -58,6 +69,7 @@ class HostmonTest(unittest.TestCase):
     def test_stat(self):
         x = hostmon.parse_pid_stat('11655 (cat) R 11646 11646 11646 0 -1 4194304 98 0 0 0 0 0 0 0 20 0 1 0 131213 11878400 512 18446744073709551615')
         self.assertEqual((x['name'], x['state'], x['ppid'], x['num_threads'], x['starttime']), ('cat','R',11646,1,131213))
+        self.assertEqual(x['rss_pages'],512)
 
     def test_stat_odd_name(self):
         x = hostmon.parse_pid_stat('42 (my (odd) proc) S 1 42 42 0 -1 0 0 0 0 0 7 3 0 0 20 0 4 0 900 0 0')
@@ -124,8 +136,9 @@ class HostmonTest(unittest.TestCase):
     def test_scan_process_started_at_and_mounts(self):
         sampler=hostmon.Sampler.__new__(hostmon.Sampler)
         sampler.clock=100; sampler.page=4096; sampler.boot_ms=0; sampler.proc_prev={}; sampler.cache={}
+        sampler.kthreads=set(); sampler.scan_count=0
         sampler.pwd=SimpleNamespace(getpwuid=lambda uid:SimpleNamespace(pw_name='root'))
-        values={'/proc/42/stat':'42 (job) S 1 42 42 0 -1 0 0 0 0 0 7 3 0 0 20 0 4 0 900 0 0',
+        values={'/proc/42/stat':'42 (job) S 1 42 42 0 -1 0 0 0 0 0 7 3 0 0 20 0 4 0 900 0 6000',
                 '/proc/42/statm':'100 6000', '/proc/42/cgroup':'0::/user.slice/session-1.scope',
                 '/proc/42/cmdline':'python3\0train.py\0', '/proc/mounts':'/dev/vda3 / ext4 rw 0 0\n/dev/vda2 /boot/efi vfat rw 0 0\n/dev/loop0 /snap squashfs ro 0 0'}
         sampler.read=lambda path:values[path]
@@ -138,6 +151,7 @@ class HostmonTest(unittest.TestCase):
             sampler.read=missing_cgroup
             without_cgroup=sampler.scan(13000)
         self.assertEqual(result['processes'][0]['startedAt'],'1970-01-01T00:00:09Z')
+        self.assertEqual(result['processes'][0]['rssMb'],round(6000*4096/1048576,1))
         self.assertEqual([(m['mount'],m['totalMb'],m['usedMb'],m['availMb']) for m in result['fs']],[('/',4,1,1),('/boot/efi',4,1,1)])
         self.assertEqual(without_cgroup['totals']['processes'],1)
         self.assertEqual(without_cgroup['tasks'][0]['rootPid'],42)
@@ -180,7 +194,12 @@ class HostmonTest(unittest.TestCase):
             clock[0] += 1; daemon.tick()
             with open(os.path.join(d,'latest.json'),encoding='utf8') as f: second=json.load(f)
             self.assertEqual((first['seq'],second['seq']),(1,2))
-            self.assertTrue({'hello','point','procs','procsSeq','minute','minuteSeq'} <= set(second))
+            self.assertTrue({'hello','point','procsSeq','minute','minuteSeq'} <= set(second))
+            self.assertNotIn('procs',first)
+            self.assertNotIn('procs',second)
+            with open(os.path.join(d,'procs.json'),encoding='utf8') as f: process_data=json.load(f)
+            self.assertEqual(process_data['t'],first['t'])
+            self.assertNotEqual(process_data['t'],second['t'])
             self.assertFalse(any(n.startswith('.hostmon-') for n in os.listdir(d)))
             clock[0] += 60; daemon.tick()
             loaded=hostmon.Daemon(d,d,Sampler(),lambda:clock[0])
@@ -200,10 +219,11 @@ class HostmonTest(unittest.TestCase):
             clock[0] += seconds
             elapsed=round((clock[0]-1000)*4)
             if elapsed==1: latest.update(seq=2,point={'t':int(clock[0]*1000),'src':'daemon'},t=int(clock[0]*1000)); state['mtime']+=1
-            if elapsed==2: latest.update(procsSeq=1,procs={'t':int(clock[0]*1000)}); state['mtime']+=1
+            if elapsed==2: latest.update(procsSeq=1); state['mtime']+=1
             if elapsed==44: latest.update(t=int(clock[0]*1000),seq=3); state['mtime']+=1
         def read(path):
             if path.endswith('latest.json'): return dict(latest)
+            if path.endswith('procs.json'): return {'t':1000500}
             return {'points':[]}
         opts=SimpleNamespace(run_dir='run',state_dir='state',backfill_minutes=10)
         hostmon.run_stream(opts,lambda:clock[0],sleep,read,lambda path:state['mtime'],Sampler,lines.append,max_iterations=70)
@@ -241,6 +261,133 @@ class HostmonTest(unittest.TestCase):
         lines=[]
         hostmon.run_stream(opts,lambda:1000,lambda s:None,lambda p:None,lambda p:0,Failing,lines.append,max_iterations=1)
         self.assertEqual(json.loads(lines[-1])['code'],'sample-failed')
+
+    def test_stream_bad_process_file_waits_for_next_sequence(self):
+        clock=[1000.0]; lines=[]; reads=[]; state={'mtime':0}
+        latest={'t':1000000,'seq':1,'procsSeq':0,'minuteSeq':0,'hello':{'host':{}},'point':{},'minute':None}
+        def sleep(seconds):
+            clock[0]+=seconds
+            if clock[0] in (1000.25,1001.0):
+                latest['procsSeq']+=1; state['mtime']+=1
+        def read(path):
+            if path.endswith('latest.json'): return dict(latest)
+            if path.endswith('procs.json'):
+                reads.append(clock[0])
+                if len(reads)==1: raise ValueError('bad JSON')
+                return {'t':1001000,'totals':{},'tasks':[],'processes':[],'omitted':0,'fs':[]}
+            return {'points':[]}
+        opts=SimpleNamespace(run_dir='run',state_dir='state',backfill_minutes=10)
+        hostmon.run_stream(opts,lambda:clock[0],sleep,read,lambda p:state['mtime'],lambda:None,lines.append,max_iterations=6)
+        self.assertEqual(reads,[1000.25,1001.0])
+        procs=[r for r in map(json.loads,lines) if r['type']=='procs']
+        self.assertEqual(len(procs),1)
+        self.assertEqual(procs[0]['t'],1001000)
+
+    def test_read_proc_large_file(self):
+        expected='界'*30000 + 'tail'
+        with tempfile.TemporaryDirectory() as d:
+            path=os.path.join(d,'input')
+            with open(path,'wb') as f: f.write(expected.encode('utf-8'))
+            self.assertEqual(hostmon.read_proc(path),expected)
+
+    def test_scan_reuses_process_metadata(self):
+        sampler=hostmon.Sampler.__new__(hostmon.Sampler)
+        sampler.clock=100; sampler.page=4096; sampler.boot_ms=0; sampler.proc_prev={}; sampler.cache={}
+        sampler.kthreads=set(); sampler.scan_count=0
+        sampler.pwd=SimpleNamespace(getpwuid=lambda uid:SimpleNamespace(pw_name='root'))
+        base='/proc/42/'
+        values={base+'stat':'42 (job) S 1 42 42 0 -1 0 0 0 0 0 7 3 0 0 20 0 4 0 900 0 6000',base+'cgroup':'0::/user.slice/session-1.scope',base+'cmdline':'python3\0train.py\0','/proc/mounts':''}
+        reads=[]
+        def read(path): reads.append(path); return values[path]
+        sampler.read=read
+        with patch.object(hostmon.os,'listdir',return_value=['42']), patch.object(hostmon.os,'stat',return_value=SimpleNamespace(st_uid=0)), patch.object(hostmon.os,'readlink',return_value='/srv/app'):
+            sampler.scan(10000)
+            self.assertNotIn(base+'statm',reads)
+            reads.clear()
+            result=sampler.scan(13000)
+        self.assertEqual(reads.count(base+'stat'),1)
+        self.assertEqual(reads.count(base+'cgroup'),0)
+        self.assertEqual(reads.count(base+'cmdline'),0)
+        self.assertNotIn(base+'statm',reads)
+        self.assertEqual(result['processes'][0]['rssMb'],round(6000*4096/1048576,1))
+
+    def test_scan_caches_missing_cgroup(self):
+        sampler=hostmon.Sampler.__new__(hostmon.Sampler)
+        sampler.clock=100; sampler.page=4096; sampler.boot_ms=0; sampler.proc_prev={}; sampler.cache={}
+        sampler.kthreads=set(); sampler.scan_count=0
+        sampler.pwd=SimpleNamespace(getpwuid=lambda uid:SimpleNamespace(pw_name='root'))
+        base='/proc/42/'; reads=[]
+        values={base+'stat':'42 (job) S 1 42 42 0 -1 0 0 0 0 0 7 3 0 0 20 0 4 0 900 0 6000',base+'cmdline':'python3\0train.py\0','/proc/mounts':''}
+        def read(path):
+            reads.append(path)
+            if path == base+'cgroup': raise OSError('unavailable')
+            return values[path]
+        sampler.read=read
+        with patch.object(hostmon.os,'listdir',return_value=['42']), patch.object(hostmon.os,'stat',return_value=SimpleNamespace(st_uid=0)), patch.object(hostmon.os,'readlink',return_value='/srv/app'):
+            sampler.scan(10000); sampler.scan(13000)
+        self.assertEqual(reads.count(base+'cgroup'),1)
+        self.assertEqual(sampler.cache[(42,900)]['cgroup'],'')
+
+    def test_group_executable_computed_once(self):
+        ps=[self.proc(10,1,['/usr/sbin/sshd'],comm='sshd'),self.proc(11,1,['/usr/sbin/sshd'],comm='sshd')]
+        basename=hostmon.os.path.basename
+        with patch.object(hostmon.os.path,'basename',wraps=basename) as wrapped:
+            self.group(ps)
+        self.assertEqual(wrapped.call_count,2)
+        self.assertEqual([p['exe'] for p in ps],['sshd','sshd'])
+
+    def test_atomic_write_uses_single_serialization(self):
+        value={'text':'汉字','items':[1,2,{'ok':True}]}
+        with tempfile.TemporaryDirectory() as d:
+            path=os.path.join(d,'sample.json')
+            hostmon.atomic_write_json(path,value)
+            with open(path,encoding='utf-8') as f: self.assertEqual(json.load(f),value)
+            self.assertEqual(os.listdir(d),['sample.json'])
+        with open(hostmon.__file__,encoding='utf-8') as f: source=f.read()
+        self.assertNotIn('json.dump(',source)
+
+    def test_kernel_thread_cache_refresh_and_pid_reuse(self):
+        sampler=hostmon.Sampler.__new__(hostmon.Sampler)
+        sampler.clock=100; sampler.page=4096; sampler.boot_ms=0; sampler.proc_prev={}; sampler.cache={}
+        sampler.kthreads=set(); sampler.scan_count=0
+        sampler.pwd=SimpleNamespace(getpwuid=lambda uid:SimpleNamespace(pw_name='root'))
+        names=['7','42']; reads=[]
+        values={'/proc/7/stat':'7 (worker) S 2 7 7 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 900 0 0',
+                '/proc/42/stat':'42 (job) S 1 42 42 0 -1 0 0 0 0 0 7 3 0 0 20 0 4 0 900 0 6000',
+                '/proc/42/cgroup':'0::/user.slice/session-1.scope','/proc/42/cmdline':'sshd\0','/proc/mounts':''}
+        def read(path): reads.append(path); return values[path]
+        sampler.read=read
+        with patch.object(hostmon.os,'listdir',side_effect=lambda path:list(names)), patch.object(hostmon.os,'stat',return_value=SimpleNamespace(st_uid=0)), patch.object(hostmon.os,'readlink',return_value='/srv/app'):
+            sampler.scan(10000)
+            reads.clear(); sampler.scan(13000)
+            self.assertEqual(reads.count('/proc/7/stat'),0)
+            self.assertEqual(reads.count('/proc/42/stat'),1)
+            for i in range(3,21): sampler.scan(10000+i*3000)
+            reads.clear(); sampler.scan(73000)
+            self.assertEqual(reads.count('/proc/7/stat'),1)
+            names.remove('7'); sampler.scan(76000)
+            self.assertNotIn('7',sampler.kthreads)
+            names.append('7'); reads.clear(); sampler.scan(79000)
+            self.assertEqual(reads.count('/proc/7/stat'),1)
+
+    def test_scan_reuses_derived_process_values(self):
+        sampler=hostmon.Sampler.__new__(hostmon.Sampler)
+        sampler.clock=100; sampler.page=4096; sampler.boot_ms=0; sampler.proc_prev={}; sampler.cache={}
+        sampler.kthreads=set(); sampler.scan_count=0
+        sampler.pwd=SimpleNamespace(getpwuid=lambda uid:SimpleNamespace(pw_name='root'))
+        values={'/proc/42/stat':'42 (python3) S 1 42 42 0 -1 0 0 0 0 0 7 3 0 0 20 0 4 0 900 0 6000',
+                '/proc/42/cgroup':'0::/user.slice/session-1.scope','/proc/42/cmdline':'/usr/bin/python3\0train.py\0','/proc/mounts':''}
+        sampler.read=lambda path:values[path]
+        with patch.object(hostmon.os,'listdir',return_value=['42']), patch.object(hostmon.os,'stat',return_value=SimpleNamespace(st_uid=0)), patch.object(hostmon.os,'readlink',return_value='/srv/app'):
+            sampler.scan(10000)
+            basename=hostmon.os.path.basename; iso=hostmon.iso_time
+            with patch.object(hostmon.os.path,'basename',wraps=basename) as names, patch.object(hostmon,'iso_time',wraps=iso) as dates:
+                result=sampler.scan(13000)
+            self.assertEqual(names.call_count,0)
+            self.assertFalse(any(call.args[0] == 9000 for call in dates.call_args_list))
+            self.assertEqual(result['processes'][0]['startedAt'],'1970-01-01T00:00:09Z')
+            self.assertEqual(sampler.cache[(42,900)]['exe'],'python3')
+            self.assertEqual(result['tasks'][0]['label'],'python3 train.py')
 
     def test_minute(self):
         points = [{'t':60000+i*1000,'cpu':i,'busyCores':i,'iowait':0,'steal':0,'mem':{'usedMb':100,'availMb':200},'disk':{'readBps':0,'writeBps':0,'busyPct':0},'net':{'rxBps':0,'txBps':0},'load':[0,0,0]} for i in range(60)]

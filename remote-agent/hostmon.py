@@ -15,8 +15,9 @@ import tempfile
 def parse_proc_stat(text):
     result = {}
     for line in text.splitlines():
+        if not line.startswith('cpu'): continue
         fields = line.split()
-        if fields and re.fullmatch(r'cpu\d*', fields[0]):
+        if fields and (fields[0] == 'cpu' or fields[0][3:].isdigit()):
             result[fields[0]] = [int(x) for x in fields[1:9]]
     return result
 
@@ -96,7 +97,7 @@ def parse_pid_stat(text):
     left = text.index('(')
     right = text.rindex(')')
     f = text[right+1:].split()
-    return {'pid':int(text[:left].strip()), 'name':text[left+1:right], 'state':f[0], 'ppid':int(f[1]), 'utime':int(f[11]), 'stime':int(f[12]), 'num_threads':int(f[17]), 'starttime':int(f[19])}
+    return {'pid':int(text[:left].strip()), 'name':text[left+1:right], 'state':f[0], 'ppid':int(f[1]), 'utime':int(f[11]), 'stime':int(f[12]), 'num_threads':int(f[17]), 'starttime':int(f[19]), 'rss_pages':int(f[21])}
 
 
 def parse_cgroup(text):
@@ -154,18 +155,25 @@ def iso_time(ms):
 
 def group_tasks(procs, *, own_pid, boot_ms, clk_tck, cwd_of=None):
     cwd_of = cwd_of or (lambda pid: None)
+    for p in procs:
+        if 'exe' not in p:
+            p['exe'] = os.path.basename(p['argv'][0]) if p['argv'] else p['comm']
+        if 'isHostmon' not in p:
+            p['isHostmon'] = any(a.rsplit('/',1)[-1]=='hostmon.py' for a in p['argv'])
+        if 'startedAt' not in p:
+            p['startedAt'] = iso_time(boot_ms+p['starttime']*1000/clk_tck)
     by_pid = {p['pid']:p for p in procs}
     groups, roots, units = {}, {}, {}
     noise = {'sftp-server','sshd','sshd-session','(sd-pam)'}
     anchors = {'systemd','sshd','login','tmux: server','screen','SCREEN'}
     shells = {'bash','sh','zsh','dash','fish','ksh','tcsh','csh'}
     desktop = {'gdm-session-worker','gdm-session-wor','gdm-x-session','gdm-wayland-session','Xorg','Xwayland','Xvnc','x11vnc','xrdp','lightdm','sddm','gnome-session-binary','gnome-session'}
-    def name(p): return os.path.basename(p['argv'][0]) if p['argv'] else p['comm']
+    def name(p): return p['exe']
     def interactive(p): return name(p).lstrip('-') in shells and all(a in {'-l','-i','--login','-il','-li'} for a in p['argv'][1:])
     for p in procs:
         pid, cg, comm = p['pid'], p.get('cgroup',''), p['comm']
         unit = None
-        if pid == 2 or p['ppid'] == 2 or pid == own_pid or any(os.path.basename(a)=='hostmon.py' for a in p['argv']) or '/hostmon.service' in cg or pid == 1 or name(p) in noise or comm in noise or comm.startswith('sshd:'):
+        if pid == 2 or p['ppid'] == 2 or pid == own_pid or p['isHostmon'] or '/hostmon.service' in cg or pid == 1 or name(p) in noise or comm in noise or comm.startswith('sshd:'):
             key = 'system'
         elif cg.startswith('/system.slice/'):
             unit = cg[len('/system.slice/'):].split('/')[0]
@@ -192,7 +200,9 @@ def group_tasks(procs, *, own_pid, boot_ms, clk_tck, cwd_of=None):
         root = min(members,key=lambda p:(p['starttime'],p['pid'])) if unit else roots[key]
         kind = 'job' if not unit or unit.startswith('job-') else 'service'
         cpu = sum(p['cpuPct'] for p in members)
-        return {'id':key, 'kind':kind, 'label':re.sub(r'\.(service|scope)$','',unit) if kind=='service' else make_label(root['argv'],root['comm']), 'command':' '.join(root['argv'])[:300] if root['argv'] else '['+root['comm']+']', 'cwd':cwd_of(root['pid']), 'user':root['user'], 'unit':unit, 'rootPid':root['pid'], 'startedAt':iso_time(boot_ms+root['starttime']*1000/clk_tck), 'pids':len(members), 'threads':sum(p['threads'] for p in members), 'cpuPct':round(cpu,1), 'cores':round(cpu/100,2), 'rssMb':round(sum(p['rssMb'] for p in members),1), 'top':[{'pid':p['pid'],'name':p['comm'],'cpuPct':round(p['cpuPct'],1),'rssMb':round(p['rssMb'],1)} for p in sorted(members,key=lambda p:(-p['cpuPct'],p['pid']))[:3]]}
+        label = re.sub(r'\.(service|scope)$','',unit) if kind=='service' else root.get('label')
+        if label is None: label = make_label(root['argv'],root['comm'])
+        return {'id':key, 'kind':kind, 'label':label, 'command':' '.join(root['argv'])[:300] if root['argv'] else '['+root['comm']+']', 'cwd':cwd_of(root['pid']), 'user':root['user'], 'unit':unit, 'rootPid':root['pid'], 'startedAt':root['startedAt'], 'pids':len(members), 'threads':sum(p['threads'] for p in members), 'cpuPct':round(cpu,1), 'cores':round(cpu/100,2), 'rssMb':round(sum(p['rssMb'] for p in members),1), 'top':[{'pid':p['pid'],'name':p['comm'],'cpuPct':round(p['cpuPct'],1),'rssMb':round(p['rssMb'],1)} for p in sorted(members,key=lambda p:(-p['cpuPct'],p['pid']))[:3]]}
     for key, members in list(groups.items()):
         if key == 'system': continue
         task = render(key,members)
@@ -218,7 +228,7 @@ def atomic_write_json(path, obj):
     fd, tmp = tempfile.mkstemp(prefix='.hostmon-', dir=os.path.dirname(path))
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(obj, f, ensure_ascii=False, separators=(',',':'))
+            f.write(json.dumps(obj, ensure_ascii=False, separators=(',',':')))
         os.replace(tmp, path)
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
@@ -228,6 +238,19 @@ def read_json_file(path, fallback=None):
     try:
         with open(path, encoding='utf-8') as f: return json.load(f)
     except (OSError, ValueError): return fallback
+
+
+def read_proc(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        chunks = []
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk: break
+            chunks.append(chunk)
+        return b''.join(chunks).decode('utf-8', 'replace')
+    finally:
+        os.close(fd)
 
 
 class Sampler:
@@ -242,6 +265,8 @@ class Sampler:
         self.prev = None
         self.proc_prev = {}
         self.cache = {}
+        self.kthreads = set()
+        self.scan_count = 0
         self.mhz = None
         self.mhz_at = 0
         self.procs = {'t':0, 'at':iso_time(0), 'totals':{'processes':0,'threads':0}, 'tasks':[], 'processes':[], 'omitted':0, 'fs':[]}
@@ -254,7 +279,7 @@ class Sampler:
 
     @staticmethod
     def read(path):
-        with open(path, encoding='utf-8', errors='replace') as f: return f.read()
+        return read_proc(path)
 
     def host_info(self):
         import platform
@@ -281,29 +306,41 @@ class Sampler:
 
     def scan(self, now_ms):
         records, alive = [], set()
-        for item in os.listdir('/proc'):
-            if not item.isdigit(): continue
+        if self.scan_count >= 20:
+            self.kthreads.clear()
+            self.scan_count = 0
+        self.scan_count += 1
+        entries = os.listdir('/proc')
+        for item in entries:
+            if not item.isdigit() or item in self.kthreads: continue
             pid = int(item); base = '/proc/'+item+'/'
             try:
                 stat = parse_pid_stat(self.read(base+'stat'))
-                rss = int(self.read(base+'statm').split()[1])*self.page/1048576
-                try: cg = parse_cgroup(self.read(base+'cgroup'))
-                except OSError: cg = ''
-                if pid == 2 or stat['ppid'] == 2: continue
+                rss = stat['rss_pages']*self.page/1048576
+                if pid == 2 or stat['ppid'] == 2:
+                    self.kthreads.add(item)
+                    continue
                 key = (pid, stat['starttime']); alive.add(key)
                 if key not in self.cache:
+                    try: cg = parse_cgroup(self.read(base+'cgroup'))
+                    except OSError: cg = ''
                     try: argv = [s for s in self.read(base+'cmdline').split('\0') if s]
                     except OSError: argv = []
                     uid = os.stat('/proc/'+item).st_uid
                     try: user = self.pwd.getpwuid(uid).pw_name
                     except KeyError: user = str(uid)
-                    self.cache[key] = {'argv':argv,'uid':uid,'user':user}
+                    self.cache[key] = {'argv':argv,'uid':uid,'user':user,'cgroup':cg,
+                                       'exe':os.path.basename(argv[0]) if argv else stat['name'],
+                                       'isHostmon':any(a.rsplit('/',1)[-1]=='hostmon.py' for a in argv),
+                                       'label':make_label(argv,stat['name']),
+                                       'startedAt':iso_time(self.boot_ms+stat['starttime']*1000/self.clock)}
                 cache = self.cache[key]
                 prev = self.proc_prev.get(key); ticks = stat['utime']+stat['stime']
                 cpu = 100*(ticks-prev[0])*1000/(self.clock*(now_ms-prev[1])) if prev and now_ms > prev[1] else 0
                 self.proc_prev[key] = (ticks,now_ms)
-                records.append({'pid':pid,'ppid':stat['ppid'],'comm':stat['name'],'state':stat['state'],'argv':cache['argv'],'uid':cache['uid'],'user':cache['user'],'starttime':stat['starttime'],'cpuPct':max(0,cpu),'rssMb':rss,'threads':stat['num_threads'],'cgroup':cg})
+                records.append({'pid':pid,'ppid':stat['ppid'],'comm':stat['name'],'state':stat['state'],'argv':cache['argv'],'uid':cache['uid'],'user':cache['user'],'starttime':stat['starttime'],'cpuPct':max(0,cpu),'rssMb':rss,'threads':stat['num_threads'],'cgroup':cache['cgroup'],'exe':cache['exe'],'isHostmon':cache['isHostmon'],'label':cache['label'],'startedAt':cache['startedAt']})
             except (OSError, ValueError, IndexError, KeyError): continue
+        self.kthreads.intersection_update(entries)
         self.cache = {k:v for k,v in self.cache.items() if k in alive}
         self.proc_prev = {k:v for k,v in self.proc_prev.items() if k in alive}
         by_pid = {p['pid']:p for p in records}
@@ -315,7 +352,7 @@ class Sampler:
             return entry['cwd']
         tasks = group_tasks(records,own_pid=os.getpid(),boot_ms=self.boot_ms,clk_tck=self.clock,cwd_of=cwd)
         eligible = sorted((p for p in records if p['cpuPct']>=0.1 or p['rssMb']>=20),key=lambda p:(-p['cpuPct'],p['pid']))
-        listed = [{'pid':p['pid'],'ppid':p['ppid'],'name':p['comm'],'user':p['user'],'state':p['state'],'cpuPct':round(p['cpuPct'],1),'rssMb':round(p['rssMb'],1),'threads':p['threads'],'startedAt':iso_time(self.boot_ms+p['starttime']*1000/self.clock),'command':(' '.join(p['argv']) if p['argv'] else '['+p['comm']+']')[:300],'taskId':p['taskId']} for p in eligible[:300]]
+        listed = [{'pid':p['pid'],'ppid':p['ppid'],'name':p['comm'],'user':p['user'],'state':p['state'],'cpuPct':round(p['cpuPct'],1),'rssMb':round(p['rssMb'],1),'threads':p['threads'],'startedAt':p['startedAt'],'command':(' '.join(p['argv']) if p['argv'] else '['+p['comm']+']')[:300],'taskId':p['taskId']} for p in eligible[:300]]
         fs = []
         for m in sorted(parse_mounts(self.read('/proc/mounts')),key=lambda x:x['mount']):
             try:
@@ -346,7 +383,7 @@ class Daemon:
         self.now = now or time.time
         self.sampler = sampler or Sampler()
         self.seq = 0; self.procs_seq = 0; self.minute_seq = 0
-        self.latest_procs = None; self.latest_minute = None
+        self.latest_minute = None
         self.seconds = []; self.minute_points = []
         saved = read_json_file(os.path.join(state_dir,'history-1m.json'), {}) or {}
         self.minutes = [p for p in saved.get('points',[]) if p['t'] >= self.now()*1000-7*86400000][-10080:]
@@ -355,7 +392,9 @@ class Daemon:
         ms = int(self.now()*1000)
         try:
             if self.seq % 3 == 0:
-                self.latest_procs = self.sampler.scan(ms); self.procs_seq += 1
+                procs = self.sampler.scan(ms)
+                atomic_write_json(os.path.join(self.run_dir,'procs.json'),procs)
+                self.procs_seq += 1
             point = self.sampler.sample(ms)
             if self.minute_points and self.minute_points[0]['t']//60000 != ms//60000:
                 self.latest_minute = build_minute_point(self.minute_points); self.minute_seq += 1
@@ -363,7 +402,7 @@ class Daemon:
                 atomic_write_json(os.path.join(self.state_dir,'history-1m.json'),{'points':self.minutes})
                 self.minute_points = []
             self.minute_points.append(point); self.seconds = (self.seconds+[point])[-600:]; self.seq += 1
-            atomic_write_json(os.path.join(self.run_dir,'latest.json'),{'seq':self.seq,'t':ms,'at':iso_time(ms),'hello':self.sampler.hello(),'point':point,'procs':self.latest_procs,'procsSeq':self.procs_seq,'minute':self.latest_minute,'minuteSeq':self.minute_seq})
+            atomic_write_json(os.path.join(self.run_dir,'latest.json'),{'seq':self.seq,'t':ms,'at':iso_time(ms),'hello':self.sampler.hello(),'point':point,'procsSeq':self.procs_seq,'minute':self.latest_minute,'minuteSeq':self.minute_seq})
             if self.seq % 10 == 0: atomic_write_json(os.path.join(self.run_dir,'history-1s.json'),{'points':self.seconds})
             return point
         except (OSError, ValueError, KeyError, IndexError) as e:
@@ -406,7 +445,10 @@ def run_stream(options, now, sleep, read_json, stat_mtime, make_sampler, write, 
                 send({'type':'notice','code':'daemon-stale','message':'守护进程数据已过期'}); mode = False; sampler = make_sampler(); next_sample = 0; next_scan = 0; next_probe = ms+5000
             else:
                 if latest.get('seq',0)>seq: send({'type':'sample','point':latest['point']}); seq = latest['seq']
-                if latest.get('procsSeq',0)>pseq and latest.get('procs') is not None: send(dict(latest['procs'],type='procs')); pseq = latest['procsSeq']
+                if latest.get('procsSeq',0)>pseq:
+                    pseq = latest['procsSeq']
+                    procs = get(os.path.join(run_dir,'procs.json'))
+                    if isinstance(procs,dict): send(dict(procs,type='procs'))
                 if latest.get('minuteSeq',0)>mseq and latest.get('minute') is not None: send({'type':'minute','point':latest['minute']}); mseq = latest['minuteSeq']
         if not mode:
             if ms >= next_probe:

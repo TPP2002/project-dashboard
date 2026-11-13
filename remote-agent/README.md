@@ -14,6 +14,8 @@ node scripts/remote-host-install.cjs --target my-server
 
 登录服务器后运行 `systemctl status hostmon` 查看服务状态，运行 `python3 /opt/hostmon/hostmon.py once` 查看当前采集结果。
 
+服务每秒更新 `/run/hostmon/latest.json`，每次扫描进程时另行更新 `/run/hostmon/procs.json`。最近的秒级历史保存在 `/run/hostmon/history-1s.json`，分钟级历史保存在 `/var/lib/hostmon/history-1m.json`。
+
 ## 卸载
 
 运行 `systemctl disable --now hostmon`，然后删除 `/opt/hostmon`、`/etc/systemd/system/hostmon.service` 和 `/var/lib/hostmon`，最后运行 `systemctl daemon-reload`。
