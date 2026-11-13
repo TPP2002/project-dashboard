@@ -85,7 +85,7 @@ test('B1⑤ 批量建卡：三张里有一张命中 → 整批拒收、一张不
   const { dir, reg, board, root } = setup();
   const cards = [
     { id: 'B1', title: '第一张：把闸接进建卡', plainTitle: '第一张卡的普通说明', model: 'sonnet·低', desc: '正常的一句话。' },
-    { id: 'B2', title: '第二张：把闸接进收单指令', plainTitle: '第二张卡的普通说明', model: 'sonnet·低', desc: '有冲突立刻停下报告。' },
+    { id: 'B2', title: '第二张：把闸接进收单指令', plainTitle: '第二张卡的普通说明', model: 'sonnet·低', desc: '有冲突立刻停下问负责人。' },
     { id: 'B3', title: '第三张：补回归测试', plainTitle: '第三张卡的普通说明', model: 'sonnet·低', desc: '也是正常的一句话。' },
   ];
   const file = path.join(root, 'cards.json');
@@ -101,7 +101,7 @@ test('B1⑥ collect-brief 的指令命中 → 拒收且卡上 collectBrief 不�
   const { dir, reg, board } = setup();
   const created = cli(reg, 'add', 'C1', '--project', 't', ...CARD, '--desc', '正常的一句话。');
   assert.equal(created.code, 0, '先要有一张卡，输出:' + created.out);
-  const hit = '有冲突立刻停下报告。';
+  const hit = '有冲突立刻停下问负责人。';
   const rejected = cli(reg, 'collect-brief', 'C1', '--project', 't', '--text', hit);
   assert.notEqual(rejected.code, 0, '命中应拒收，输出:' + rejected.out);
   assert.ok(rejected.out.includes(hit), '要把命中的原句打出来，输出:' + rejected.out);
@@ -119,5 +119,16 @@ test('B1⑦ desc「不用先问负责人,直接做。」是明确的否定句 �
   const r = cli(reg, 'add', 'C1', '--project', 't', ...CARD, '--desc', '不用先问负责人,直接做。');
   assert.equal(r.code, 0, '否定句不该拦，输出:' + r.out);
   assert.equal((readBoard(board).tasks || []).length, 1);
+  clean(dir);
+});
+
+test('B1⑧ 主仓接了代理决策:desc 写游戏里的买卖和停下报告 → 照常建卡', () => {
+  const { dir, reg, board } = setup();
+  const r = cli(reg, 'add', 'C1', '--project', 't', ...CARD,
+    '--desc', '玩家花钱买情报提前躲雷，成交流水显示手续费。对契约未覆盖的机制选择停下报告，不扩面。');
+  assert.equal(r.code, 0, '游戏里的买卖与停下报告都不该被拦，输出:' + r.out);
+  assert.equal((readBoard(board).tasks || []).length, 1);
+  assert.ok(!r.out.includes('六类'), '输出不该有六类改法，输出:' + r.out);
+  assert.ok(!r.out.includes('原话'), '输出不该要求负责人原话，输出:' + r.out);
   clean(dir);
 });
