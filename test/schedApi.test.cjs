@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const c = require('../core/schedContract.cjs');
+const { parseSubmitter } = require('../core/schedSubmitter.cjs');
 const { startServer, heartbeat, ticket, openStream, write, AT } = require('./fixtures/sched/support.cjs');
 const saveTicket = (srv, value) => write(path.join(srv.paths.tickets, `${value.ticketId}.json`), value);
 const commandFiles = srv => fs.readdirSync(srv.paths.commands).filter(name => name.endsWith('.json'));
@@ -69,10 +70,10 @@ test('七种指令原子写入：主机名由配置补齐、时间十分钟、�
     assert.equal(result.status, 200); assert.equal(result.body.ok, true);
     const file = path.join(srv.paths.commands, result.body.commandId + '.json');
     const command = c.readJson(file); c.validateCommand(command);
-    assert.equal(command.submitter, 'dashboard'); assert.equal(command.kind, input.kind);
+    assert.match(command.submitter, /^dashboard;client=api;addr=/); assert.equal(parseSubmitter(command.submitter).client, 'api'); assert.equal(command.kind, input.kind);
     assert.equal(Date.parse(command.expiresAt) - Date.parse(command.createdAt), 600000);
     assert.equal(fs.readFileSync(file, 'utf8'), c.canonicalJson(command));
-    assert.deepEqual(command.data, ['reserve', 'owner-hold', 'owner-release'].includes(input.kind) ? { ...input.data, machine: 'fixture-host' } : input.data);
+    assert.deepEqual(command.data, input.kind === 'reserve' ? { requestedCores: 5, durationMinutes: 180, machine: 'fixture-host' } : ['owner-hold', 'owner-release'].includes(input.kind) ? { ...input.data, machine: 'fixture-host' } : input.data);
     assert.deepEqual(fs.readdirSync(srv.paths.staging), []);
   }
   const before = commandFiles(srv);
@@ -99,9 +100,11 @@ test('预留只交统一调度：四档、两种到期时间与手动期限均�
     const result = await srv.json('/api/sched/command', { kind: 'reserve', data });
     assert.equal(result.status, 200); assert.equal(Object.hasOwn(result.body, 'legacy'), false);
     const command = c.readJson(path.join(srv.paths.commands, result.body.commandId + '.json'));
-    assert.deepEqual(command.data, { ...data, machine: 'fixture-host' });
+    assert.deepEqual(command.data, { ...data, ...(!duration ? { durationMinutes: 180 } : {}), machine: 'fixture-host' });
     assert.equal(fs.readFileSync(reserveFile, 'utf8'), 'retired-reserve-sentinel');
   }
+  const unlimited = await srv.json('/api/sched/command', { kind: 'reserve', data: { requestedCores: 5 }, confirmNoExpiry: true });
+  assert.deepEqual(c.readJson(path.join(srv.paths.commands, unlimited.body.commandId + '.json')).data, { requestedCores: 5, machine: 'fixture-host' });
   const result = await srv.json('/api/sched/command', { kind: 'reserve', data: { requestedCores: 0 } });
   assert.equal(result.body.ok, true); assert.equal(Object.hasOwn(result.body, 'legacy'), false);
   assert.deepEqual(c.readJson(path.join(srv.paths.commands, result.body.commandId + '.json')).data, { requestedCores: 0, machine: 'fixture-host' });

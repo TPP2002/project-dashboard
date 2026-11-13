@@ -6,10 +6,11 @@ export interface ReserveData { requestedCores: ReserveCores; durationMinutes?: 6
 export type CommandInput =
   | { kind: 'jump-queue' | 'cancel' | 'pause-one' | 'resume-one'; data: { ticketId: string } }
   | { kind: 'owner-hold' | 'owner-release'; data: Record<string, never> }
-  | { kind: 'reserve'; data: ReserveData }
+  | { kind: 'reserve'; data: ReserveData; confirmNoExpiry?: true }
 export interface Receipt { commandId: string; status: 'executed' | 'rejected' | 'expired'; at: string; reason?: string }
 export interface Timing { queuedMs: number; runningMs: number; pausedMs: number; slowMs: number }
 export interface Reservation { requestedCores: ReserveCores; fulfilledCores: number; untilAt: string | null }
+export interface ReservationChange { at: string; requestedCores: ReserveCores; untilAt: string | null; submitter: string | null }
 export interface MachineSnapshot {
   name: string; preference: number; quotaCores: number; grantedCores: number; externalLoadCores: number
   availableCores: number; overCommitted: boolean; fresh: boolean; online: boolean
@@ -58,6 +59,7 @@ export interface TicketDetail {
     allowedMachines: string[]; codeRef: CodeRef; work: { type: string; targetPaths: string[] }; parentTicketId?: string; engine?: string; resident?: boolean }
 }
 export interface SchedSnapshot {
+  hostReservationChange?: ReservationChange | null
   ok: true; readable: true; share: string; format: { formatVersion: number; capabilities: string[]; createdAt: string }
   dispatcher: { config: { machine: string; createdAt: string; createdBy: string }; heartbeatAgeMs: number
     heartbeat: { machine: string; pid: number; protocol: number; head: string; at: string; tick: number; cursorSeq: number; queued: number; granted: number } }
@@ -75,7 +77,7 @@ export interface TicketPage {
 
 async function request<T>(endpoint: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await authFetch(`/api/sched/${endpoint}`, { signal, ...(body === undefined ? {} : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(endpoint === 'command' ? { 'X-Dashboard-Client': 'sched-console' } : {}) }, body: JSON.stringify(body),
   }) })
   const value = await response.json()
   if (!response.ok || value.ok === false) throw new Error([value.error || '调度请求失败', value.reason].filter(Boolean).join('：'))

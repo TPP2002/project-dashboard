@@ -128,6 +128,7 @@ function snapshot(share, nowMs) {
     return { ok: true, share, readable: true, format,
       ...(unknownHeartbeatFields.length ? { unknownHeartbeatFields } : {}),
       dispatcher: { config, heartbeat, heartbeatAgeMs: Math.max(0, nowMs - Date.parse(heartbeat.at)) },
+      hostReservationChange: index.reservationChange(config.machine),
       machines: heartbeat.machines, queue: heartbeat.queue, locks: heartbeat.locks,
       running: tickets.filter(ticket => ACTIVE.includes(ticket.state)),
       registerOnly, registerOnlyGroups: groupExternalTickets(registerOnly, tickets), recentReceipts: receipts,
@@ -136,7 +137,7 @@ function snapshot(share, nowMs) {
   } catch (error) {
     return { ...readFailure(error), share, format: null, dispatcher: null, machines: null, queue: null, locks: null,
       running: null, registerOnly: null, registerOnlyGroups: null, recentReceipts: null,
-      estimates: null, estimatesAt: null, historyError: null, connectedProjects: null };
+      estimates: null, estimatesAt: null, historyError: null, connectedProjects: null, hostReservationChange: null };
   }
 }
 
