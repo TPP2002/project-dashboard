@@ -3,13 +3,18 @@
 const c = require('../core/schedContract.cjs');
 const read = require('../core/schedRead.cjs');
 const { createSchedReadExecutor } = require('../core/schedReadExecutor.cjs');
+const { formatSubmitter } = require('../core/schedSubmitter.cjs');
 
 function createSchedApi({ sendJson, readBody, bodyMax, resolveShare, sources = c.productionSources,
   executor = createSchedReadExecutor() }) {
   let previousStamp;
 
   function validateInput(body) {
-    c.fields(body, { kind: c.text, data: v => c.requireRecord(v, '指令 data') });
+    c.fields(body, { kind: c.text, data: v => c.requireRecord(v, '指令 data') }, { confirmNoExpiry: () => {} });
+    if (Object.hasOwn(body, 'confirmNoExpiry') && (body.confirmNoExpiry !== true || body.kind !== 'reserve'
+      || !(body.data.requestedCores > 0) || body.data.durationMinutes !== undefined)) {
+      throw new Error('confirmNoExpiry 只用于不带期限的非零预留');
+    }
     if (body.kind === 'reserve') c.validateReserve(body.data, false);
     else if (['owner-hold', 'owner-release'].includes(body.kind)) c.fields(body.data, {});
     else if (['jump-queue', 'cancel', 'pause-one', 'resume-one'].includes(body.kind)) c.fields(body.data, { ticketId: c.ticketId });
@@ -28,12 +33,14 @@ function createSchedApi({ sendJson, readBody, bodyMax, resolveShare, sources = c
       try {
         const data = ['reserve', 'owner-hold', 'owner-release'].includes(body.kind)
           ? { ...body.data, machine: read.readConfig(share).machine } : body.data;
+        if (body.kind === 'reserve' && data.requestedCores > 0 && data.durationMinutes === undefined && !body.confirmNoExpiry) data.durationMinutes = 180;
         const createdAt = new Date(nowMs).toISOString();
         const commandId = c.segment(`dash-${createdAt.replace(/[-:.]/g, '')}-${sources.nonce()}`);
-        const command = { commandId, kind: body.kind, data, submitter: 'dashboard', createdAt,
+        const command = { commandId, kind: body.kind, data, submitter: formatSubmitter({ clientHeader: req.headers['x-dashboard-client'],
+          remoteAddress: req.socket.remoteAddress, userAgent: req.headers['user-agent'] }), createdAt,
           expiresAt: new Date(nowMs + 10 * 60000).toISOString() };
         c.writeCommand(share, command, sources);
-        return sendJson(res, 200, { ok: true, commandId });
+        return sendJson(res, 200, { ok: true, commandId, ...(body.kind === 'reserve' ? { durationMinutes: data.durationMinutes ?? null } : {}) });
       } catch (error) {
         return sendJson(res, error.code === 'EEXIST' ? 409 : 503, { ok: false, error: `指令未提交:${error.message}` });
       }

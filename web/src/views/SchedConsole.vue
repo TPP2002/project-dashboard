@@ -6,6 +6,7 @@ import AttentionItems from '@/components/sched/AttentionItems.vue'
 import MachineCard from '@/components/sched/MachineCard.vue'
 import QueueTable from '@/components/sched/QueueTable.vue'
 import ReserveCard from '@/components/sched/ReserveCard.vue'
+import ReservationBanner from '@/components/sched/ReservationBanner.vue'
 import EngineTickets from '@/components/sched/EngineTickets.vue'
 import RecentCommands from '@/components/sched/RecentCommands.vue'
 import LedgerTable from '@/components/sched/LedgerTable.vue'
@@ -32,6 +33,7 @@ onUnmounted(store.stop)
   <main class="sched-page">
     <DispatcherBanner v-if="store.readable && store.snapshot" :heartbeat-at="store.snapshot.dispatcher.heartbeat.at" :now="store.now" />
     <ReserveCard :host="store.readable ? store.host : null" :busy="store.busy || !store.readable" @command="store.command" />
+    <ReservationBanner v-if="store.readable && store.snapshot" :host="store.host" :change="store.snapshot.hostReservationChange ?? null" :now="store.now" :busy="store.busy" @command="store.command" />
     <header class="sched-page-head">
       <h1>调度台</h1>
       <div class="sched-pills">

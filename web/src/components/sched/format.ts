@@ -107,6 +107,6 @@ export function commandLabel(input: CommandInput) {
   if (input.kind === 'resume-one') return `恢复 ${input.data.ticketId}`
   if (input.kind === 'owner-hold') return '一键全部暂停（主机）'
   if (input.kind === 'owner-release') return '恢复主机上的活'
-  if (input.kind === 'reserve') return `预留主机 ${input.data.requestedCores} 核${input.data.durationMinutes ? ` · ${input.data.durationMinutes / 60} 小时` : ''}`
+  if (input.kind === 'reserve') return `预留主机 ${input.data.requestedCores} 核${input.data.durationMinutes ? ` · ${input.data.durationMinutes / 60} 小时` : input.data.requestedCores ? ' · 不限期' : ''}`
   return '调度指令'
 }

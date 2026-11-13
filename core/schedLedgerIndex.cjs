@@ -36,21 +36,23 @@ function createLedgerIndex(options = {}) {
   let bytesRead = 0, fullRebuilds = 0;
   let pending, requests, submissions, handoffs, marks, starts, permits, samples, programs, versions;
   let previousSeq, foldedSeq, foldedAt, retainFrom, highNow;
+  let reservePending, reserveChanges;
   function clear() {
     pending = []; requests = new Map(); submissions = new Map(); handoffs = new Map(); marks = [];
     starts = new Map(); permits = new Map(); samples = new Map(); previousSeq = 0; foldedSeq = 0; foldedAt = -Infinity;
     programs = new Map(); versions = new Map();
+    reservePending = new Map(); reserveChanges = new Map();
     retainFrom = -Infinity; highNow = -Infinity;
   }
   clear();
-  const signatureEqual = (a, b) => a.name === b.name && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
+  const signatureEqual = (a, b) => a.name === b.name && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
   function listing() {
     const directory = path.join(c.schedPaths(share).root, 'ledger');
     return fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1).map(entry => {
       if (!entry.isFile() || !/^\d{4}-\d{2}-\d{2}\.jsonl$/.test(entry.name)) throw new Error('台账目录含未知文件');
       c.isoTime(`${entry.name.slice(0, 10)}T00:00:00.000Z`);
-      const stat = fs.statSync(path.join(directory, entry.name));
-      return { name: entry.name, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs };
+      const stat = fs.statSync(path.join(directory, entry.name), { bigint: true });
+      return { name: entry.name, size: Number(stat.size), mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs };
     });
   }
   function readRange(file, start, length) {
@@ -68,6 +70,19 @@ function createLedgerIndex(options = {}) {
   }
   function accept(event) {
     previousSeq = event.seq;
+    if (event.type === 'command-received' && event.data.command?.kind === 'reserve') {
+      const command = event.data.command, data = command.data;
+      reservePending.set(data.machine, { requestedCores: data.requestedCores, hasDuration: data.durationMinutes !== undefined, submitter: command.submitter });
+    }
+    if (event.type === 'reservation-changed') {
+      const data = event.data, pendingCommand = reservePending.get(data.machine);
+      const submitter = pendingCommand && pendingCommand.requestedCores === data.requestedCores
+        && pendingCommand.hasDuration === (data.untilAt !== undefined) ? pendingCommand.submitter : null;
+      if (!reserveChanges.has(data.machine) || reserveChanges.get(data.machine).seq < event.seq) {
+        reserveChanges.set(data.machine, { seq: event.seq, at: event.at, requestedCores: data.requestedCores, untilAt: data.untilAt ?? null, submitter });
+      }
+      reservePending.delete(data.machine);
+    }
     if (event.type === 'submitted') {
       const request = requestOf(event.data.request);
       if (!submissions.has(event.ticketId) || submissions.get(event.ticketId).seq < event.seq) submissions.set(event.ticketId, { seq: event.seq, request });
@@ -282,7 +297,11 @@ function createLedgerIndex(options = {}) {
     // Accessors stay live if a query needs a rewind rebuild or encounters a read error.
     return { get readable() { return readable; }, get reason() { return reason; }, events: [], durationSamples, connectedProjects, handoffsFor };
   }
-  return { refresh, durationSamples, connectedProjects, history,
+  function reservationChange(machine) {
+    const row = readable ? reserveChanges.get(machine) : null;
+    return row ? { at: row.at, requestedCores: row.requestedCores, untilAt: row.untilAt, submitter: row.submitter } : null;
+  }
+  return { refresh, durationSamples, connectedProjects, history, reservationChange,
     stats: () => ({ files: files.length, bytesRead, fullRebuilds, retainedEvents: pending.length, recentMarks: marks.length }) };
 }
 
