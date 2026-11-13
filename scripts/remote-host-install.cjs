@@ -11,7 +11,7 @@ function buildPlan({ targets, agentDir, agentSource, unitSource }) {
     { title: '检查 Python', remote: "python3 -c 'import sys; print(sys.version_info[:2] >= (3, 8))'", stdin: undefined },
     { title: '上传采集程序', remote: `mkdir -p ${agentDir} && cat > ${agentDir}/hostmon.py.tmp && mv ${agentDir}/hostmon.py.tmp ${agentDir}/hostmon.py && chmod 755 ${agentDir}/hostmon.py`, stdin: agent },
     { title: '上传服务文件', remote: 'cat > /etc/systemd/system/hostmon.service.tmp && mv /etc/systemd/system/hostmon.service.tmp /etc/systemd/system/hostmon.service', stdin: unit },
-    { title: '启动服务', remote: 'systemctl daemon-reload && systemctl enable hostmon && systemctl restart hostmon', stdin: undefined },
+    { title: '启动服务', remote: "systemctl daemon-reload && systemctl enable hostmon && systemctl restart hostmon && (pkill -f '[h]ostmon.py stream' || true)", stdin: undefined },
     { title: '等待采集', remote: 'test -f /run/hostmon/latest.json', stdin: undefined },
     { title: '检查采集', remote: `python3 ${agentDir}/hostmon.py once`, stdin: undefined },
   ];

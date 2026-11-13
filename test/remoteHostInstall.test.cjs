@@ -27,6 +27,7 @@ test('plan has ordered commands, LF input, and custom install directory', () => 
   assert.match(plan[2].remote, /mkdir -p.*hostmon\.py\.tmp.*mv.*chmod 755/);
   assert.match(plan[3].remote, /hostmon\.service\.tmp.*mv/);
   assert.match(plan[4].remote, /systemctl daemon-reload.*enable hostmon.*restart hostmon/);
+  assert.match(plan[4].remote, /restart hostmon && \(pkill -f '\[h\]ostmon\.py stream' \|\| true\)$/);
   assert.match(plan[5].remote, /test -f/);
   assert.equal(plan[2].stdin.toString(), 'a\nb\n');
   assert.match(plan[3].stdin.toString(), /\/opt\/test\/hostmon\.py/);
