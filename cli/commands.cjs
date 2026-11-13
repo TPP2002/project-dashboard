@@ -20,6 +20,7 @@ const { isGeneratedArtifact } = require('../core/generatedArtifacts.cjs');
 const { withLock } = require('../core/lock.cjs');
 const { recordBinding } = require('../core/sessionBindings.cjs');
 const { resolveClaimBuilder, resolveListBuilder, selfRunReasonHint } = require('../core/taskBuilder.cjs');
+const { scanBrief, textOfCard, formatRejection, projectAdopted } = require('./briefScan.cjs');
 
 // ---------- helpers ----------
 // today = 本地时区日期。旧版用 toISOString()(UTC)——北京凌晨 0:00-7:59 的完工/开工/拍板
@@ -107,6 +108,27 @@ function register(flags) {
   return { ok: true, id, board };
 }
 
+// ---------- briefScan 闸（AD-20261111-BRIEF-SCAN）----------
+// 接了代理决策的项目（主仓有 docs/授权页.md）建卡、存收单指令时先扫一遍：夹带「要负责人拍板」的句子、
+// 或写了发版/花钱却没引负责人原话的，整单拒收并把命中的原句和改法打出来。没接代理决策的项目一律不扫
+// （briefScanGate 返回 null），行为与加这道闸之前逐字节相同。
+// 误拦比漏拦伤害大，所以留 --allow-ask "<理由>"：理由记进看板动态，事后查得到是谁、为什么放的。
+function allowAskOf(flags) {
+  const raw = flags['allow-ask'];
+  if (raw === true) throw new Error('--allow-ask 后面要写放行理由');
+  if (typeof raw !== 'string') return undefined;
+  return raw.trim() || undefined;
+}
+/** 扫一遍；放行返回 { allowed:理由 }，不扫或无命中返回 null，命中就抛带原句与改法的拒收。 */
+function briefScanGate(proj, text, { kind, where, allowAsk } = {}) {
+  if (typeof allowAsk === 'string' && allowAsk) return { allowed: allowAsk };
+  if (!projectAdopted(proj && proj.mainRepo)) return null;
+  const { hits } = scanBrief(text, { kind });
+  if (!hits.length) return null;
+  throw new Error(formatRejection(hits, { where }) + '\n确属误拦:加 --allow-ask "<理由>" 放行,理由会记进看板动态');
+}
+function scanNote(scan) { return scan ? `(扫描放行:${scan.allowed})` : ''; }
+
 // ---------- add（新建 task） ----------
 function add(flags) {
   const { normalizePriority } = require('../core/taskPriority.cjs');
@@ -130,6 +152,8 @@ function add(flags) {
     if (!plainTitle) throw new Error('--plain-title 不能是空字符串');
   }
   const scopes = asArray(flags.scope);
+  const scan = briefScanGate(proj, textOfCard({ title, plainTitle, desc: flags.desc }),
+    { kind: 'card', where: '卡 ' + id, allowAsk: allowAskOf(flags) });
   const { board, changed } = mutateTask(proj, id, (b) => {
     b.tasks = b.tasks || [];
     if (b.tasks.find((t) => t.id === id)) throw new Error(`任务 ${id} 已存在`);
@@ -146,7 +170,7 @@ function add(flags) {
     if (plainTitle) t.plainTitle = plainTitle;
     if (scopes.length) t.fileScope = scopes;
     b.tasks.push(t);
-  }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}${plainTitle ? '（人话标题 ' + plainTitle + '）' : ''}`, id));
+  }, act('note', flags.author, `新建任务 ${id}：${title}${modelHint ? '（建议档位 ' + modelHint + '）' : ''}${plainTitle ? '（人话标题 ' + plainTitle + '）' : ''}` + scanNote(scan), id));
   warnGeneratedScopes(scopes);
   return okTask(board, id, changed);
 }
@@ -292,8 +316,20 @@ function addBatch(flags) {
 
     const priority = item.priority === undefined ? undefined : require('../core/taskPriority.cjs').normalizePriority(item.priority);
     if (priority === null) errs.push(`${at2}: priority 非法优先级`);
-    drafts.push({ id, title, plainTitle, model, status, wave, scope, deps, priority, desc: item.desc || '' });
+    drafts.push({ id, title, plainTitle, model, status, wave, scope, deps, priority, desc: item.desc || '', at });
   });
+
+  // 代理决策项目的卡面扫描：命中就与形状问题一起整批拒收（锁外、不写盘，全有或全无）。
+  // 项目没接代理决策（主仓没有 docs/授权页.md）就整段跳过——不扫、不改输出，与加这道闸之前逐字节相同。
+  const allowAsk = allowAskOf(flags);
+  const adopted = projectAdopted(proj.mainRepo);
+  if (adopted && !allowAsk) {
+    for (const d of drafts) {
+      const { hits } = scanBrief(textOfCard({ title: d.title, plainTitle: d.plainTitle, desc: d.desc }), { kind: 'card' });
+      if (hits.length) errs.push(formatRejection(hits, { where: `${d.at} ${d.id}` }));
+    }
+  }
+  const scanText = adopted && allowAsk ? `(扫描放行:${allowAsk})` : '';
 
   // 跟板有关的校验：先只读查一遍，好把错误跟上面的形状问题一起报全（锁内还会再查一次兜并发）
   const existingIds = new Set((((readBoardOrNull(proj.board) || {}).tasks) || []).map((t) => t.id));
@@ -331,7 +367,7 @@ function addBatch(flags) {
       if (d.scope.length) t.fileScope = d.scope;
       b.tasks.push(t);
       // 每张卡各留一条流水，跟单卡 add 一模一样 —— 批量不该让某张卡在活动流里查无此人
-      b.activity.push(act('note', flags.author, `新建任务 ${d.id}：${d.title}（建议档位 ${d.model}）（人话标题 ${d.plainTitle}）`, d.id));
+      b.activity.push(act('note', flags.author, `新建任务 ${d.id}：${d.title}（建议档位 ${d.model}）（人话标题 ${d.plainTitle}）` + scanText, d.id));
     }
   }, act('note', flags.author, `批量建卡 ${drafts.length} 张：${drafts.map((d) => d.id).join('、')}`, null));
 
@@ -525,6 +561,8 @@ function collectBrief(flags) {
     throw new Error(`collect-brief 的指令文本超过 ${COLLECT_BRIEF_MAX} 字上限(当前 ${text.length} 字),先精简再存`);
   }
   const author = flags.author === undefined || flags.author === true ? undefined : String(flags.author);
+  const scan = briefScanGate(proj, text,
+    { kind: 'brief', where: '卡 ' + id + ' 的收单指令', allowAsk: allowAskOf(flags) });
   const { board, changed } = mutateTask(proj, id, (b) => {
     const t = findTask(b, id);
     // 终态卡的一生已结账,不再改收单指令;要动先 reopen。拒绝即抛,一个字段都不改。
@@ -534,7 +572,7 @@ function collectBrief(flags) {
     t.collectBrief = { text, updatedAt: nowIso() };
     if (author !== undefined) t.collectBrief.author = author;
     // 不改 status、lastProgressAt、进度 —— 存指令不等于动了工。
-  }, act('collect-brief', flags.author, `收单指令已存 ${id}(${text.length} 字)`, id));
+  }, act('collect-brief', flags.author, `收单指令已存 ${id}(${text.length} 字)` + scanNote(scan), id));
   const res = okTask(board, id, changed);
   res.text = `✔ collect-brief ${id}:已存 ${text.length} 字,看板卡抽屉「复制收单指令」一键复制`;
   return res;
