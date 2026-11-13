@@ -201,6 +201,7 @@ onUnmounted(() => {
             :to="navItem(item.id).to"
             class="item"
             active-class="on"
+            :class="{ on: item.id === 'cpu' && $route.path.startsWith('/sched/') }"
           >
             <Icon class="ic" :name="navItem(item.id).icon" :size="16" />
             <span class="tt">{{ navItem(item.id).title }}</span>
