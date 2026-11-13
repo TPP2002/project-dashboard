@@ -33,6 +33,67 @@ function readForbiddenTokens(file = FORBIDDEN_FILE) {
   }
 }
 
+const SHARE_LIST_SEGMENTS = ['private', 'opensource-forbidden.txt'];
+
+/** 逐字去重、保留首次出现顺序：词集比较与条数统计都以它为准。 */
+function dedupeTokens(tokens) {
+  const seen = new Set();
+  const result = [];
+  for (const token of tokens) {
+    if (!seen.has(token)) {
+      seen.add(token);
+      result.push(token);
+    }
+  }
+  return result;
+}
+
+function sameTokenSet(left, right) {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((token) => rightSet.has(token));
+}
+
+/**
+ * 名单从哪来、是不是必需(卡 DASH-NOLOCAL-LIST-HOST-ONLY-SPARE-FALSE-GREEN-1113)。
+ * 不在调度台下:只读本机名单,行为与 readForbiddenTokens() 相同。
+ * 在调度台下(SCHED_PERMIT 非空):名单必需;共享盘那份必须有,本机那份也有时两份词集必须一致。
+ */
+function resolveForbiddenList({ env = process.env, homeFile = FORBIDDEN_FILE } = {}) {
+  const vars = env && typeof env === 'object' ? env : {};
+  const homeTokens = dedupeTokens(readForbiddenTokens(homeFile));
+  const permit = typeof vars.SCHED_PERMIT === 'string' ? vars.SCHED_PERMIT.trim() : '';
+  if (!permit) {
+    return {
+      tokens: homeTokens,
+      required: false,
+      problem: null,
+      homeCount: homeTokens.length,
+      shareCount: 0,
+      shareFile: null,
+    };
+  }
+  // 副机没有主机的看板数据目录，只能读调度台给的共享盘；共享盘根缺失等同于名单缺失。
+  const shareRoot = typeof vars.SCHED_SHARE === 'string' ? vars.SCHED_SHARE.trim() : '';
+  const shareFile = shareRoot ? path.join(shareRoot, ...SHARE_LIST_SEGMENTS) : null;
+  const shareTokens = shareFile ? dedupeTokens(readForbiddenTokens(shareFile)) : [];
+  const tokens = [...homeTokens];
+  for (const token of shareTokens) {
+    if (!homeTokens.includes(token)) tokens.push(token);
+  }
+  let problem = null;
+  if (shareTokens.length === 0) problem = 'share-list-missing';
+  else if (homeTokens.length > 0 && !sameTokenSet(homeTokens, shareTokens)) problem = 'lists-differ';
+  return {
+    tokens,
+    required: true,
+    problem,
+    homeCount: homeTokens.length,
+    shareCount: shareTokens.length,
+    shareFile,
+  };
+}
+
 /** 纯扫描：输入 { file, content } 数组，返回「文件: 标识」，不读盘、不依赖名单。 */
 function findViolations(tokens, files) {
   const violations = [];
@@ -109,7 +170,9 @@ function findBadPaths(files) {
 module.exports = {
   BINARY_EXTENSIONS,
   TEXT_ALLOWLIST,
+  SHARE_LIST_SEGMENTS,
   readForbiddenTokens,
+  resolveForbiddenList,
   findViolations,
   findTokenHits,
   PATH_PLACEHOLDERS,

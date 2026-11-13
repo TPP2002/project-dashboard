@@ -1,6 +1,7 @@
 'use strict';
 /**
  * 两道闸必须共存：外置名单拦项目名、主机名等非路径标识，缺名单时仅该用例 skip；
+ * 在调度台下(SCHED_PERMIT 非空)名单是必需的：本机没有就读共享盘 private/ 下那份，缺了判红不 skip；两份都在时必须一致。
  * 路径形状闸不依赖本机数据，只允许仓内已有的占位符及标准软件安装路径，在本机和 CI 都执行。
  * 中文项目名等非路径标识仍由名单闸负责，不能为补覆盖把真实标识写回公开仓。
  */
@@ -15,7 +16,7 @@ const { DASHBOARD_HOME } = require('../core/resolveProject.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const {
-  BINARY_EXTENSIONS, TEXT_ALLOWLIST, readForbiddenTokens, findViolations,
+  BINARY_EXTENSIONS, TEXT_ALLOWLIST, readForbiddenTokens, resolveForbiddenList, findViolations,
   PATH_PLACEHOLDERS, STANDARD_WINDOWS_SOFTWARE_PATHS, findBadPaths,
 } = require('../core/localIdentifierScan.cjs');
 const FORBIDDEN_FILE = path.join(DASHBOARD_HOME, 'opensource-forbidden.txt');
@@ -37,7 +38,14 @@ function readTrackedTextFiles() {
 }
 
 test(MAIN_TEST, (t) => {
-  const tokens = readForbiddenTokens();
+  const list = resolveForbiddenList();
+  if (list.problem === 'share-list-missing') {
+    assert.fail(`在调度台下跑，名单是必需的：共享盘 private/opensource-forbidden.txt 缺失、为空或读不出(本机名单 ${list.homeCount} 条)。把主机看板数据目录里的 opensource-forbidden.txt 原样复制过去；名单不进公开仓。`);
+  }
+  if (list.problem === 'lists-differ') {
+    assert.fail(`本机名单 ${list.homeCount} 条与共享盘 private/opensource-forbidden.txt 的 ${list.shareCount} 条不一致：先把两份同步成同一份，副机才查得全。`);
+  }
+  const tokens = list.tokens;
   if (tokens.length === 0) {
     t.diagnostic(`期望名单文件：${FORBIDDEN_FILE}；名单本身就是要防的东西，写进公开仓等于把它发布出去。`);
     t.skip('名单不存在、为空、不可读或不是有效 UTF-8');
@@ -83,6 +91,11 @@ test('A2 名单加载：TEMP 中有名单时主用例执行并通过，不得 sk
   const env = { ...process.env, DASHBOARD_HOME: dir };
   // 独立测试运行器不能继承父级的递归检测标记，否则会退出成功却不运行用例。
   delete env.NODE_TEST_CONTEXT;
+  // 外层在调度台下跑时会带这两个变量，子进程要模拟不在调度台下。
+  for (const key of Object.keys(env)) {
+    const upper = key.toUpperCase();
+    if (upper === 'SCHED_PERMIT' || upper === 'SCHED_SHARE') delete env[key];
+  }
   // 用真实子进程验证环境变量与模块初始化，按名称只运行主用例，避免递归启动本测试。
   const result = spawnSync(process.execPath, [
     '--test', '--test-reporter=tap', `--test-name-pattern=^${MAIN_TEST}$`, __filename,
