@@ -167,7 +167,7 @@ def group_tasks(procs, *, own_pid, boot_ms, clk_tck, cwd_of=None):
     noise = {'sftp-server','sshd','sshd-session','(sd-pam)'}
     anchors = {'systemd','sshd','login','tmux: server','screen','SCREEN'}
     shells = {'bash','sh','zsh','dash','fish','ksh','tcsh','csh'}
-    desktop = {'gdm-session-worker','gdm-session-wor','gdm-x-session','gdm-wayland-session','Xorg','Xwayland','Xvnc','x11vnc','xrdp','lightdm','sddm','gnome-session-binary','gnome-session'}
+    desktop = {'gdm-session-worker','gdm-session-wor','gdm-x-session','gdm-wayland-session','Xorg','Xwayland','Xvnc','x11vnc','xrdp','lightdm','sddm','gnome-session-binary','gnome-session','gnome-keyring-daemon','gnome-keyring-d'}
     def name(p): return p['exe']
     def interactive(p): return name(p).lstrip('-') in shells and all(a in {'-l','-i','--login','-il','-li'} for a in p['argv'][1:])
     for p in procs:

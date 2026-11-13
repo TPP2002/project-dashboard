@@ -161,6 +161,10 @@ class HostmonTest(unittest.TestCase):
         ps=[self.proc(699,937,['gdm-session-worker'],cg,comm='gdm-session-wor',uid=1000),self.proc(700,699,['gdm-x-session'],cg,uid=1000),self.proc(701,700,['Xorg'],cg,rss=150,uid=1000)]
         self.assertEqual(self.group(ps)[-1]['pids'],3)
 
+    def test_group_desktop_keyring(self):
+        ps=[self.proc(9843,1,['/usr/bin/gnome-keyring-daemon','--daemonize','--login'],'/user.slice/user-1000.slice/session-27.scope',rss=7,comm='gnome-keyring-d',uid=1000)]
+        self.assertEqual([t['kind'] for t in self.group(ps)],['system'])
+
     def test_group_additional_cases(self):
         cg = '/user.slice/user-0.slice/session-7.scope'
         ps = [self.proc(200,1,['/srv/env/bin/python3','-m','http.server'],'/user.slice/user-0.slice/session-6.scope'),
