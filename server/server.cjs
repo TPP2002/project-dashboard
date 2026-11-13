@@ -73,6 +73,8 @@ const { createResourcesApi } = require('./resourcesApi.cjs');
 const { createPerksApi } = require('./perksApi.cjs');
 const { createPerksRepoFinder } = require('./perksRepo.cjs');
 const { createSchedApi } = require('./schedApi.cjs');
+const { createRemoteHostsMonitor } = require('../core/remoteHosts.cjs');
+const { createRemoteHostsApi } = require('./remoteHostsApi.cjs');
 const { createCiJobsMonitor, POLL_MS: CI_POLL_MS } = require('../core/schedCiJobs.cjs');
 const { createCiBoardsReader, readCiRepository } = require('../core/schedCiBoards.cjs');
 const { createCiPollGate } = require('../core/ciPollGate.cjs');
@@ -943,6 +945,9 @@ const recordingSchedExecutor = {
   close: () => schedExecutor.close(),
 };
 const schedApi = createSchedApi({ sendJson, readBody, bodyMax: BODY_MAX, resolveShare: resolveSchedShare, executor: recordingSchedExecutor });
+const remoteHostsMonitor = createRemoteHostsMonitor({ configFile: process.env.DASHBOARD_REMOTE_HOSTS_FILE || path.join(DASHBOARD_HOME, 'remote-hosts.json') });
+const remoteHostsApi = createRemoteHostsApi({ sendJson, monitor: remoteHostsMonitor, enabled: () => resolveModules().cpu, now: Date.now });
+process.once('exit', () => remoteHostsMonitor.stop());
 
 const ciBoards = createCiBoardsReader({ registryPath: REGISTRY, readRegistry, resolveProject: resolveProjectSafe });
 // DASHBOARD_CI_RUNNER_MAP 是 JSON 对象：runner 名 -> 机器名，或 { machine, project? }。
@@ -1745,6 +1750,7 @@ const server = http.createServer(async (req, res) => {
       if (sub === 'codex' && codexApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'reader' && readerApi.route(segs[2], req, res, parsed.query || {})) return;
       if (sub === 'audition' && auditionApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
+      if (sub === 'sched' && remoteHostsApi.route(segs.slice(2).join('/'), req, res, parsed.query || {})) return;
       if (sub === 'sched' && segs.length === 3 && segs[2] === 'ci-jobs' && req.method === 'GET') {
         return sendJson(res, 200, ciJobs.snapshot());
       }
@@ -1857,11 +1863,13 @@ function closeSchedReads() {
 // Stop pending reads before close waits for their HTTP connections to drain.
 const closeServer = server.close;
 server.close = function (...args) {
+  remoteHostsMonitor.stop();
   if (collaborationApi) collaborationApi.close();
   closeSchedReads();
   return closeServer.apply(this, args);
 };
 server.on('close', () => {
+  remoteHostsMonitor.stop();
   if (collaborationApi) collaborationApi.close();
   clearBoardReadCaches();
   closeSchedReads();
@@ -1871,6 +1879,7 @@ function refreshCi() {
   if (resolveModules().cpu && ciPollGate.shouldPoll()) ciJobs.refresh().catch(error => console.warn(`[sched-ci] ${error.message}`));
 }
 function startIntervals() {
+  if (resolveModules().cpu) remoteHostsMonitor.start();
   boardPoller.start();
   void healthSource.start();
   const poll = setInterval(() => {
