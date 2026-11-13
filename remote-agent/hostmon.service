@@ -1,0 +1,17 @@
+[Unit]
+Description=hostmon resource monitor agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/hostmon/hostmon.py daemon
+Restart=always
+RestartSec=3
+RuntimeDirectory=hostmon
+RuntimeDirectoryPreserve=yes
+StateDirectory=hostmon
+CPUQuota=100%
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
