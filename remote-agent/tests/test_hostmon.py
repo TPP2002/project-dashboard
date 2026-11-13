@@ -43,6 +43,19 @@ class HostmonTest(unittest.TestCase):
         point=sampler.sample(2000)
         self.assertEqual((point['cpu'],point['cores'][0],len(point['cores']),point['busyCores']),(75,75,32,24.0))
 
+    def test_first_sample_primes_then_uses_delta(self):
+        sampler = hostmon.Sampler.__new__(hostmon.Sampler)
+        sampler.src='daemon'; sampler.host={'logicalCores':1}; sampler.mhz=None; sampler.mhz_at=1000
+        sampler.procs={'totals':{'processes':0,'threads':0}}; sampler.prev=None
+        stats=['cpu 100 0 100 1000 0 0 0 0\ncpu0 100 0 100 1000 0 0 0 0',
+               'cpu 150 0 125 1020 5 0 0 0\ncpu0 150 0 125 1020 5 0 0 0']
+        values={'/proc/meminfo':'\n'.join(k+': 0 kB' for k in ['MemTotal','MemAvailable','Buffers','Cached','SReclaimable','MemFree','SwapTotal','SwapFree','Committed_AS','CommitLimit']),
+                '/proc/diskstats':'','/proc/net/dev':'','/proc/loadavg':'0 0 0 0/0 0','/proc/uptime':'2 0'}
+        sampler.read=lambda path:stats.pop(0) if path=='/proc/stat' else values[path]
+        self.assertIsNone(sampler.sample(1000))
+        point=sampler.sample(2000)
+        self.assertEqual((point['t'],point['cpu'],point['cores']), (2000,75.0,[75]))
+
     def test_memory(self):
         data = {'MemTotal':98833964, 'MemFree':94381868, 'MemAvailable':96570636, 'Buffers':69332, 'Cached':2875000, 'SReclaimable':120000, 'SwapTotal':6191100, 'SwapFree':6191100, 'Committed_AS':2048000, 'CommitLimit':55608080}
         text = '\n'.join('%s: %d kB' % item for item in data.items())
@@ -211,6 +224,27 @@ class HostmonTest(unittest.TestCase):
             with open(os.path.join(d,'history-1m.json'),'w') as f: f.write('{')
             self.assertEqual(hostmon.Daemon(d,d,Sampler(),lambda:clock[0]).minutes,[])
 
+    def test_daemon_priming_does_not_publish_point(self):
+        class Sampler:
+            def __init__(self): self.count=0; self.scans=0
+            def hello(self): return {'host':{}}
+            def scan(self,t): self.scans+=1; return {'t':t,'totals':{},'tasks':[],'processes':[],'omitted':0,'fs':[]}
+            def sample(self,t):
+                self.count+=1
+                return None if self.count==1 else {'t':t,'cpu':75}
+        with tempfile.TemporaryDirectory() as d:
+            clock=[1000.0]; sampler=Sampler(); daemon=hostmon.Daemon(d,d,sampler,lambda:clock[0])
+            self.assertIsNone(daemon.tick())
+            self.assertFalse(os.path.exists(os.path.join(d,'latest.json')))
+            self.assertEqual(daemon.seconds,[])
+            self.assertEqual(daemon.minute_points,[])
+            self.assertEqual(sampler.scans,1)
+            clock[0]+=1; self.assertEqual(daemon.tick()['cpu'],75)
+            with open(os.path.join(d,'latest.json'),encoding='utf8') as f: latest=json.load(f)
+            self.assertEqual(latest['seq'],1)
+            self.assertEqual(latest['point']['cpu'],75)
+            self.assertEqual(sampler.scans,1)
+
     def test_stream_fallback_and_recovery(self):
         class Sampler:
             def hello(self): return {'host':{},'daemon':False}
@@ -248,6 +282,43 @@ class HostmonTest(unittest.TestCase):
         rows=[json.loads(s) for s in lines]
         self.assertFalse(rows[0]['daemon'])
         self.assertEqual(rows[1]['points'],[])
+
+    def test_stream_priming_suppresses_first_sample(self):
+        class Sampler:
+            def __init__(self): self.count=0
+            def hello(self): return {'host':{},'daemon':False}
+            def scan(self,t): return {'t':t,'totals':{},'tasks':[],'processes':[],'omitted':0,'fs':[]}
+            def sample(self,t):
+                self.count+=1
+                return None if self.count==1 else {'t':t,'cpu':75,'src':'stream'}
+        clock=[1000.0]; lines=[]
+        def sleep(seconds): clock[0]+=seconds
+        opts=SimpleNamespace(run_dir='run',state_dir='state',backfill_minutes=10)
+        hostmon.run_stream(opts,lambda:clock[0],sleep,lambda p:None,lambda p:0,Sampler,lines.append,max_iterations=8)
+        samples=[r['point'] for r in map(json.loads,lines) if r['type']=='sample']
+        self.assertEqual([p['t'] for p in samples],[1001250])
+        self.assertEqual(samples[0]['cpu'],75)
+
+    def test_stream_restarts_sequence_baselines(self):
+        clock=[1000.0]; lines=[]; state={'mtime':0}
+        latest={'t':1000000,'seq':4999,'procsSeq':10,'minuteSeq':10,'hello':{'host':{}},'point':{'t':1000000},'minute':None}
+        def sleep(seconds):
+            clock[0]+=seconds
+            if clock[0]==1000.25:
+                latest.update(t=1000250,seq=5000,point={'t':1000250}); state['mtime']+=1
+            if clock[0]==1000.5:
+                latest.update(t=1000500,seq=1,procsSeq=1,minuteSeq=1,point={'t':1000500},minute={'t':960000}); state['mtime']+=1
+        def read(path):
+            if path.endswith('latest.json'): return dict(latest)
+            if path.endswith('procs.json'): return {'t':1000500,'tasks':[]}
+            return {'points':[]}
+        opts=SimpleNamespace(run_dir='run',state_dir='state',backfill_minutes=10)
+        hostmon.run_stream(opts,lambda:clock[0],sleep,read,lambda p:state['mtime'],lambda:None,lines.append,max_iterations=3)
+        rows=[json.loads(line) for line in lines]
+        self.assertEqual([r['point']['t'] for r in rows if r['type']=='sample'],[1000250,1000500])
+        notice=next(i for i,r in enumerate(rows) if r.get('code')=='daemon-restarted')
+        self.assertEqual(rows[notice],{'type':'notice','code':'daemon-restarted','message':'守护进程已重启'})
+        self.assertEqual([r['type'] for r in rows[notice+1:]],['sample','procs','minute'])
 
     def test_stream_minute_and_sample_failure(self):
         clock=[1000.0]; lines=[]; state={'mtime':1}

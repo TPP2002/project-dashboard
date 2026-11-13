@@ -364,7 +364,9 @@ class Sampler:
 
     def sample(self, now_ms):
         cur = {'stat':parse_proc_stat(self.read('/proc/stat')),'mem':parse_meminfo(self.read('/proc/meminfo')),'disk':parse_diskstats(self.read('/proc/diskstats')),'net':parse_net_dev(self.read('/proc/net/dev')),'load':parse_loadavg(self.read('/proc/loadavg')),'uptime':parse_uptime(self.read('/proc/uptime')),'t':now_ms}
-        prev = self.prev or cur; dt = now_ms-prev['t']; self.prev = cur
+        prev = self.prev; self.prev = cur
+        if prev is None: return None
+        dt = now_ms-prev['t']
         cpu, wait, steal = cpu_usage(prev['stat']['cpu'],cur['stat']['cpu'])
         cores = [round(cpu_usage(prev['stat'].get('cpu'+str(i),cur['stat'].get('cpu'+str(i),[0]*8)),cur['stat'].get('cpu'+str(i),[0]*8))[0]) for i in range(self.host['logicalCores'])]
         disk, disks = disk_rates(prev['disk'],cur['disk'],dt); net, nets = net_rates(prev['net'],cur['net'],dt)
@@ -383,6 +385,7 @@ class Daemon:
         self.now = now or time.time
         self.sampler = sampler or Sampler()
         self.seq = 0; self.procs_seq = 0; self.minute_seq = 0
+        self.ticks = 0
         self.latest_minute = None
         self.seconds = []; self.minute_points = []
         saved = read_json_file(os.path.join(state_dir,'history-1m.json'), {}) or {}
@@ -390,12 +393,15 @@ class Daemon:
 
     def tick(self):
         ms = int(self.now()*1000)
+        scan_due = self.ticks % 3 == 0
+        self.ticks += 1
         try:
-            if self.seq % 3 == 0:
+            if scan_due:
                 procs = self.sampler.scan(ms)
                 atomic_write_json(os.path.join(self.run_dir,'procs.json'),procs)
                 self.procs_seq += 1
             point = self.sampler.sample(ms)
+            if point is None: return None
             if self.minute_points and self.minute_points[0]['t']//60000 != ms//60000:
                 self.latest_minute = build_minute_point(self.minute_points); self.minute_seq += 1
                 self.minutes = (self.minutes+[self.latest_minute])[-10080:]
@@ -440,7 +446,11 @@ def run_stream(options, now, sleep, read_json, stat_mtime, make_sampler, write, 
             mt = mtime()
             if mt != last_mtime:
                 candidate = get(latest_path); last_mtime = mt
-                if candidate: latest = candidate
+                if candidate:
+                    if candidate.get('seq',0) < seq:
+                        send({'type':'notice','code':'daemon-restarted','message':'守护进程已重启'})
+                        seq = 0; pseq = 0; mseq = 0
+                    latest = candidate
             if not fresh(latest,ms):
                 send({'type':'notice','code':'daemon-stale','message':'守护进程数据已过期'}); mode = False; sampler = make_sampler(); next_sample = 0; next_scan = 0; next_probe = ms+5000
             else:
@@ -461,10 +471,12 @@ def run_stream(options, now, sleep, read_json, stat_mtime, make_sampler, write, 
                 try:
                     if ms >= next_scan:
                         procs = sampler.scan(ms); send(dict(procs,type='procs')); next_scan = ms+3000
-                    point = sampler.sample(ms); point['src'] = 'stream'
-                    if points and points[0]['t']//60000 != ms//60000:
-                        send({'type':'minute','point':build_minute_point(points)}); points = []
-                    points.append(point); send({'type':'sample','point':point})
+                    point = sampler.sample(ms)
+                    if point is not None:
+                        point['src'] = 'stream'
+                        if points and points[0]['t']//60000 != ms//60000:
+                            send({'type':'minute','point':build_minute_point(points)}); points = []
+                        points.append(point); send({'type':'sample','point':point})
                 except (OSError, ValueError, KeyError, IndexError) as e: send({'type':'notice','code':'sample-failed','message':str(e)})
 
 
