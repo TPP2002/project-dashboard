@@ -4,6 +4,8 @@ import { useSchedStore } from '@/stores/sched'
 import DispatcherBanner from '@/components/sched/DispatcherBanner.vue'
 import AttentionItems from '@/components/sched/AttentionItems.vue'
 import MachineCard from '@/components/sched/MachineCard.vue'
+import RemoteHostCard from '@/components/sched/RemoteHostCard.vue'
+import { useRemoteHosts } from '@/components/sched/useRemoteHosts'
 import QueueTable from '@/components/sched/QueueTable.vue'
 import ReserveCard from '@/components/sched/ReserveCard.vue'
 import ReservationBanner from '@/components/sched/ReservationBanner.vue'
@@ -16,6 +18,7 @@ import { age, ticketLabel } from '@/components/sched/format'
 import '@/components/sched/console.css'
 
 const store = useSchedStore()
+const remote = useRemoteHosts()
 const heartbeatAge = computed(() => age(store.snapshot?.dispatcher.heartbeat.at ?? null, store.now))
 const online = computed(() => store.snapshot?.machines.filter(machine => machine.online) ?? [])
 const offline = computed(() => store.snapshot?.machines.filter(machine => !machine.online) ?? [])
@@ -73,8 +76,10 @@ onUnmounted(store.stop)
         <p class="sched-note">按最近 7 天的台账统计</p>
       </details>
       <p v-if="store.snapshot.historyError" class="warn" role="status">{{ store.snapshot.historyError }}；暂无法预估</p>
+      <p v-if="!remote.disabled.value && remote.configError.value" class="warn" role="status">远程机器配置有误:{{ remote.configError.value }}</p>
+      <p v-if="!remote.disabled.value && remote.error.value" class="warn" role="status">远程机器读数暂时取不到:{{ remote.error.value }}</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
+        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /><RemoteHostCard v-for="host in remote.disabled.value ? [] : remote.hosts.value" :key="`remote-${host.name}`" :host="host" /></div>
       <details v-if="offline.length" class="sched-offline"><summary>离线机器 {{ offline.length }} 台（不参与派单）</summary>
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
           :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
