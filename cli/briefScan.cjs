@@ -7,7 +7,7 @@ const ASK_PATTERNS = [
   /先(?:去)?(?:问|请示|报|找)(?:一下)?负责人/,
   /(?:问|请示|报给?|请)负责人(?:拍板|定|确认|同意|点头|放行|批)/,
   /等(?:待)?(?:负责人)?(?:拍板|放行|点头|批准|确认)(?:后|再|之后|才)?/,
-  /停下(?:来)?(?:并)?(?:报告|汇报|问负责人|等(?:负责人|拍板|指令|放行|确认|我|人拍))/,
+  /停下(?:来)?(?:并)?(?:(?:报告|汇报)给?负责人|问负责人|等(?:负责人|拍板|指令|放行|确认|我|人拍))/,
   /等我(?:说)?(?:开工|放行|确认|点头|拍板)/,
   /负责人(?:确认|同意|拍板|点头|放行)(?:后|之后|以后)(?:再|才)/,
 ];
@@ -22,7 +22,17 @@ const SIX_KINDS = [
 const NEG = /(?:不用|不必|无需|不需要|不许|不要|别|禁止|不再|不得|勿|不准|严禁|不是|而非|取消|作废|废止|删掉|拦下|拦截|扫描|检测|命中)[^。；;\n]{0,12}$/;
 const META = /夹带|这类句子|类句子|的句子|句式|词表/;
 const OWNER_QUOTE = /负责人[^。\n]{0,30}(?:20\d\d-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2}|\d{1,2}月\d{1,2}日|\b\d{4}\b)|(?:20\d\d-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2})[^。\n]{0,20}负责人|原话/;
-const RISK = /发版|发新版|部署到(?:线上|生产|服务器|VPS|云)|上线到生产|动生产|(?:删|清)(?:除|空)?(?:生产|线上|真实?|用户|玩家)?(?:数据库|数据|存档)|删库|充值|(?:花钱|付费)(?:买|购买|订阅|开通|升级)|续费|购买(?:额度|套餐|会员|服务)/;
+const RISK = /发版|发新版|部署到\s*(?:线上|生产|服务器|VPS|云)|上线到生产|动生产|(?:删|清)(?:除|空)?(?:生产|线上|真实?|用户|玩家)?(?:数据库|数据|存档)|删库|充值|(?:花钱|付费)(?:买|购买|订阅|开通|升级)|(?<!手)续费|购买(?:额度|套餐|会员|服务)/g;
+// 花钱类命中词
+const SPEND = /^(?:充值|(?:花钱|付费)(?:买|购买|订阅|开通|升级)|续费|购买(?:额度|套餐|会员|服务))$/;
+// 这一句在说游戏里的事
+const GAME_CONTEXT = /玩家|局内|游戏内|游戏里|对局|机器人|bot|seed|情报|商店|道具|遗物/i;
+// 负责人自己动手
+const OWNER_ACTOR = /负责人(?:自己|本人|亲自)?(?:去|来)?$/;
+// 发版类命中词
+const RELEASE = /^发(?:新)?版$/;
+// 同一小句前面在说看板工具
+const BOARD_CLAUSE = /看板[^，,；;:：、]*$/;
 
 function splitSentences(text) {
   return String(text).split(/(?<=[。！？!?；;])|\n+/).map((s) => s.trim()).filter(Boolean);
@@ -54,11 +64,15 @@ function scanRisk(text) {
   if (OWNER_QUOTE.test(String(text))) return [];
   const hits = [];
   for (const sentence of splitSentences(text)) {
-    const match = RISK.exec(sentence);
-    if (!match || inQuotes(sentence, match.index)) continue;
-    const before = sentence.slice(0, match.index);
-    if (NEG.test(before) || /(?:不|没|未|别|禁|勿|非)\S{0,2}$/.test(before)) continue;
-    hits.push({ rule: 'risk', sentence, match: match[0] });
+    for (const m of sentence.matchAll(RISK)) {
+      if (inQuotes(sentence, m.index)) continue;
+      const before = sentence.slice(0, m.index);
+      if (NEG.test(before) || /(?:不|没|未|别|禁|勿|非)\S{0,2}$/.test(before)) continue;
+      if (SPEND.test(m[0]) && (GAME_CONTEXT.test(sentence) || OWNER_ACTOR.test(before))) continue;
+      if (RELEASE.test(m[0]) && BOARD_CLAUSE.test(before)) continue;
+      hits.push({ rule: 'risk', sentence, match: m[0] });
+      break;
+    }
   }
   return hits;
 }
