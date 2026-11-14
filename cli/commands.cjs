@@ -542,6 +542,46 @@ function awaitCollect(flags) {
   return res;
 }
 
+// ---------- await-decision（挂着未答决策的卡回到待拍板） ----------
+function awaitDecision(flags) {
+  const proj = resolveProj(flags);
+  const id = need(flags._[0], 'await-decision <卡号> --project <id> [--reason <一句话>] [--author <身份>]');
+  const unanswered = (t) => (t.decisions || []).filter((d) => d.answer === null || d.answer === undefined || d.answer === '');
+  const check = (t) => {
+    const pending = unanswered(t);
+    if (t.status !== '施工中' && t.status !== '待收单' && t.status !== '待拍板') {
+      throw new Error(`await-decision 非法迁移：${t.status} → 待拍板（只能从 施工中/待收单）`);
+    }
+    if (!pending.length) throw new Error(`await-decision 拒绝：${id} 没有未答的决策（先 pending 登记，或已全部拍完）`);
+    return pending;
+  };
+  const initial = readBoard(proj.board);
+  const task = findTask(initial, id);
+  const first = check(task);
+  const ids = (items) => items.map((d) => d.id).join('、');
+  if (task.status === '待拍板') {
+    return { ...okTask(initial, id, []), text: `✔ await-decision ${id} 已是待拍板(未答 ${ids(first)})` };
+  }
+  let pending;
+  const already = {};
+  let result;
+  try {
+    result = mutateTask(proj, id, (b) => {
+      const t = findTask(b, id);
+      pending = check(t);
+      if (t.status === '待拍板') { already.board = b; already.pending = pending; throw already; }
+      t.status = '待拍板';
+      t.nextMilestone = '等拍板：' + summarize(pending[0].question, 40);
+      t.lastProgressAt = nowIso();
+    }, () => act('await-decision', flags.author, `转待拍板 ${id}：未答 ${ids(pending)}` +
+      (flags.reason === undefined || flags.reason === true ? '' : `；${flags.reason}`), id));
+  } catch (err) {
+    if (err !== already) throw err;
+    return { ...okTask(already.board, id, []), text: `✔ await-decision ${id} 已是待拍板(未答 ${ids(already.pending)})` };
+  }
+  return { ...okTask(result.board, id, result.changed), text: `✔ await-decision ${id} → 待拍板(未答 ${ids(pending)})` };
+}
+
 // ---------- collect-brief（把完整收单员指令存到卡上） ----------
 // 收单员指令不再让人去留言里翻:写契约的对话派完工单后,用本命令把完整指令整段存进卡
 // (collectBrief),网页卡抽屉最上方显示、一键复制;CLI 的 await-collect/brief 与网页复制
@@ -1331,7 +1371,7 @@ function cost(flags) {
 module.exports = {
   COMMAND_DEFAULTS, currentBranch, readStdinSync,
   taskTransition,
-  register, add, addBatch, isBatchAdd, claim, assign, unassign, awaitCollect, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
+  register, add, addBatch, isBatchAdd, claim, assign, unassign, awaitCollect, awaitDecision, collectBrief, unclaim, progress, syncProgress, pending, decide, markLanded,
   park, unpark, block, unblock, done, cancel, reopen, note, edit, set, list, show, cost, deriveStats,
   hasCostQuantity, hasCostLedger, costGateRefusal,
 };

@@ -13,7 +13,7 @@ const { STATUS } = require('../core/boardSchema.cjs');
 const cmds = require('../cli/commands.cjs');
 
 const CLI = path.resolve(__dirname, '../cli/index.cjs');
-const NAMES = ['brief', 'claim', 'assign', 'unassign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
+const NAMES = ['brief', 'claim', 'assign', 'unassign', 'progress', 'await-collect', 'collect-brief', 'await-decision', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox'];
 const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const card = (flags = {}) => JSON.parse(protocol({ ...flags, format: 'json' }).text);
@@ -36,12 +36,13 @@ function run(args, cwd) {
   return result.stdout.trim();
 }
 
-test('md 协议不超过 66 行，每条命令原样引用帮助的一行 usage', () => {
+test('md 协议不超过 68 行，每条命令原样引用帮助的一行 usage', () => {
   const result = protocol({ project: 't' });
   assert.equal(result.ok, true);
   const lines = result.text.split('\n');
   // 66 = 旧上限 60 + await-collect/collect-brief 两条新命令各自的 usage/迁移/规矩三行(待收单状态落地,0924)。
-  assert.ok(lines.length <= 66, `实际 ${lines.length} 行`);
+  // 68 = 原上限 66 + await-decision 的用法和迁移两行。
+  assert.ok(lines.length <= 68, `实际 ${lines.length} 行`);
   assert.match(lines[0], /看板协议卡 · 项目 t · 由 CLI 生成、与 --help 同源/);
   for (const name of NAMES) {
     assert.ok(!COMMANDS[name].usage.includes('\n'), `${name} 用法应为一行`);
@@ -147,7 +148,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
       assert.ok(Object.hasOwn(expected, condition), `${command} 缺条件 ${condition}`);
       expected = expected[condition];
     }
-    const fn = command === 'mark-landed' ? 'markLanded' : command === 'collect-brief' ? 'collectBrief' : command === 'await-collect' ? 'awaitCollect' : command;
+    const fn = command === 'mark-landed' ? 'markLanded' : command === 'collect-brief' ? 'collectBrief' : command === 'await-collect' ? 'awaitCollect' : command === 'await-decision' ? 'awaitDecision' : command;
     cmds[fn]({ ...f.P, _: ['T1'], ...flags });
     const after = get();
     assert.equal(after.status, expected === null ? before.status : expected, `${command} ${condition || ''}`);
@@ -221,6 +222,15 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   task = apply('collect-brief', { text: '收单员指令全文' });
   assert.equal(task.collectBrief.text, '收单员指令全文');
   assert.equal(task.status, '待收单');
+  apply('pending', pendingFlags, '其它状态');
+  const beforeDecision = get();
+  task = apply('await-decision');
+  assert.deepEqual(task.awaitCollect, beforeDecision.awaitCollect);
+  assert.equal(task.percent, beforeDecision.percent);
+  assert.deepEqual(task.gitBranch, beforeDecision.gitBranch);
+  assert.match(task.nextMilestone, /^等拍板：/);
+  apply('decide', { did: 'd4', answer: '分批切换' }, '待拍板且全部答完且未传 --no-promote');
+  apply('claim', { branch: 'feat/test', builder: '派单器' });
   // 收官前先登记这一单的开销(COST-LEDGER-CLOSEOUT-DISCIPLINE,0914):顺序照真实干活写。
   // 硬闸本身在 CLI 入口层,这里是编程调用所以不被拦 —— 拦不拦另有 doneCostGate.test.cjs 专管。
   task = apply('cost', { agents: 'glm:1', tokens: '15271358', credits: '6209', 'credit-unit': '积分' });
@@ -248,7 +258,7 @@ test('静默行为表逐项对照真实命令的落盘状态与字段（含条�
   assert.equal(task.dates.done, null);
   assert.deepEqual(task.prNumbers, [42]);
   assert.deepEqual(task.commitShas, ['a1b2c3d']);
-  assert.equal(task.decisions.length, 3);
+  assert.equal(task.decisions.length, 4);
   assert.ok(!Object.hasOwn(task, 'unparkReason') && !Object.hasOwn(task, 'unclaimReason'));
   apply('claim', { branch: 'feat/test', builder: '派单器' });
   task = apply('unclaim', { branch: 'other', reason: '交回' }, '施工中且无 unparkReason');

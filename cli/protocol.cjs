@@ -6,7 +6,7 @@ const { detectProjectIds } = require('../core/resolveProject.cjs');
 const { displayCliCommand } = require('../core/runtimeRoot.cjs');
 
 const COMMAND_NAMES = [
-  'brief', 'claim', 'assign', 'unassign', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
+  'brief', 'claim', 'assign', 'unassign', 'progress', 'await-collect', 'collect-brief', 'await-decision', 'pending', 'decide', 'cost', 'done', 'note', 'unclaim',
   'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen', 'edit', 'mark-landed', 'list', 'show', 'inbox',
 ];
 
@@ -35,6 +35,10 @@ const TRANSITIONS = [
   { command: 'await-collect', status: '待收单', writes: [
     '仅允许施工中/待收单；其余拒绝（退出码 1，不改任何字段）',
     '从施工中进入时重置 awaitCollect={since,jobs:[]}；按 --job 合并 awaitCollect.jobs（同名工单覆盖 outcome/finishedAt/engine）；总写 lastProgressAt；进度与分支不动',
+  ] },
+  { command: 'await-decision', status: '待拍板', writes: [
+    '仅允许施工中/待收单且至少一条未答决策；已是待拍板且有未答决策时成功但不写；其余拒绝（退出码 1，不改任何字段）',
+    '写 status、nextMilestone=等拍板：首条未答问题摘要、lastProgressAt；进度、分支、交活记录、决策不动',
   ] },
   { command: 'collect-brief', status: null, writes: [
     '已完工/已作废拒绝;整段覆盖 collectBrief={text,updatedAt,author?};不改状态、进度与 lastProgressAt',

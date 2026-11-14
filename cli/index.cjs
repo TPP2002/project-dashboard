@@ -41,6 +41,7 @@ const REGISTRY = {
   unassign: ['./commands.cjs', 'unassign'],
   progress: ['./commands.cjs', 'progress'],
   'await-collect': ['./commands.cjs', 'awaitCollect'],
+  'await-decision': ['./commands.cjs', 'awaitDecision'],
   'collect-brief': ['./commands.cjs', 'collectBrief'],
   pending: ['./commands.cjs', 'pending'], decide: ['./commands.cjs', 'decide'],
   undecide: ['./undecide.cjs', 'undecide'],
