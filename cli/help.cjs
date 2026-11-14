@@ -27,7 +27,7 @@ const EXIT_CODES = [
 
 /** 全局 help 的分组:先给天天用的,装机维护的沉到后面。 */
 const GROUPS = [
-  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
+  ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'await-decision', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
   ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
   ['卡的生命周期', ['add', 'assign', 'unassign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
@@ -156,6 +156,21 @@ const COMMANDS = {
       '从施工中进入时重置交活记录并记 since；同一工单重复调用只覆盖该条的 outcome/finishedAt/engine，不重复追加。',
       '派单器监工在交活那一刻自动调；没经监工的交活（续聊交活后本对话不收、别的平台）由派单对话手动跑。',
       '收单员开工第一步 claim（待收单 → 施工中）；卡上没存收单指令时，命令输出会附一句兜底开场白。',
+    ],
+  },
+  'await-decision': {
+    summary: '挂着未答决策的卡转回「待拍板」等负责人',
+    usage: 'await-decision <卡号> --project <id> [--reason <一句话>] [--author <身份>]',
+    args: [
+      ['<卡号>', '施工中或待收单且有未答决策的卡'],
+      ['--reason <一句话>', '可选，写入活动流；裸开关视为未给'],
+      ['--author <身份>', '活动署名，可选'],
+    ],
+    examples: ['await-decision MY-CARD --project myproj --reason "等负责人决定"'],
+    notes: [
+      '施工中或待收单且有未答决策时转待拍板，下一步写首条未答问题摘要；进度、分支、交活记录和决策不动。',
+      '已是待拍板且有未答决策时成功但不写；其他状态或没有未答决策时拒绝，退出码 1 且不改任何字段。',
+      '答案为 null、未定义或空字符串的决策视为未答。',
     ],
   },
   'collect-brief': {

@@ -72,6 +72,7 @@ const cases = {
   unclaim: { setup: claim, args: ['unclaim', 'T1', '--reason', '释放工位'] },
   progress: { args: ['progress', 'T1', '--percent', '35', '--next', '测试', '--tests', '5/4/1', '--typecheck'] },
   'await-collect': { setup: claim, args: ['await-collect', 'T1', '--job', 'job-one', '--engine', 'test'] },
+  'await-decision': { setup: f => { claim(f); addPending(f); }, args: ['await-decision', 'T1', '--reason', '等待决定'] },
   'collect-brief': { args: ['collect-brief', 'T1'], fileFlag: 'file', content: ' 完整收单说明\n' },
   pending: { args: ['pending', 'T1'], fileFlag: 'json-file', content: '\ufeff' + JSON.stringify(payload) },
   decide: { setup: addPending, args: ['decide', 'T1', '--did', 'd1', '--answer', '甲'] },
