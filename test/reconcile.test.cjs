@@ -178,7 +178,8 @@ test('C9 发现的 detail 变了再跑:写第二条', (t) => {
   const f = setup(t); const rf = seed(f);
   run(f, rf, { apply: true });
   const b = readBoard(f.main.board);
-  b.tasks.find((x) => x.id === 'LD1').lastProgressAt = iso(5 * H);
+  // 发现里的「最后一次动静」只显示到月-日:挪 3 天保证跨日,否则同一天里跑这条会因 detail 没变而红
+  b.tasks.find((x) => x.id === 'LD1').lastProgressAt = iso(3 * 24 * H);
   writeJson(f.main.board, b);
   const res = run(f, rf, { apply: true, exempt: ['ST1', 'CL1', 'JB1', 'JB2', 'JB3'] });
   assert.equal(res.applied.notes, 1);
