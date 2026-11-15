@@ -58,6 +58,7 @@ const REGISTRY = {
   brief: ['./brief.cjs', 'brief'],
   precheck: ['./precheck.cjs', 'precheck'], cleanup: ['./cleanup.cjs', 'cleanup'],
   'docs-audit': ['./docsAudit.cjs', 'docsAudit'],
+  reconcile: ['./reconcile.cjs', 'reconcile'],
   'sync-from-git': ['./gitSync.cjs', 'syncFromGit'], doctor: ['./gitSync.cjs', 'doctor'],
   'claim-check': ['./claimCheck.cjs', 'claimCheck'],
   'identifier-check': ['./identifierCheck.cjs', 'identifierCheck'],
@@ -89,6 +90,7 @@ const REGISTRY = {
 const NO_AUTO_PROJECT = new Set([
   'cloud',
   'register', 'enroll', 'release', 'claim-check', 'identifier-check', 'hooks-global', 'hooks-trunk-guard', 'sync-progress', 'protocol',
+  'reconcile',
 ]);
 
 /**
