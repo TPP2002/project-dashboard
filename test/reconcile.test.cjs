@@ -161,6 +161,79 @@ test('C6 gh 不存在:不抛,prAvailable=false,依赖 PR 数据的三类不判',
   assert.ok(missing.calls.some((c) => c[0] === 'gh'));
 });
 
+const rcNotes = (f, id) => readBoard(f.main.board).activity
+  .filter((a) => a.taskId === id && a.author === 'reconcile' && a.text.includes('〔RC:'));
+
+test('C8 同一发现连跑两次 --apply:第二次 skippedDuplicate 为 1、留言数不变', (t) => {
+  const f = setup(t); const rf = seed(f);
+  run(f, rf, { apply: true });
+  const before = rcNotes(f, 'LD1').length;
+  const res = run(f, rf, { apply: true, exempt: ['ST1', 'CL1', 'JB1', 'JB2', 'JB3'] });
+  assert.equal(res.applied.skippedDuplicate, 1);
+  assert.equal(res.applied.notes, 0);
+  assert.equal(rcNotes(f, 'LD1').length, before);
+});
+
+test('C9 发现的 detail 变了再跑:写第二条', (t) => {
+  const f = setup(t); const rf = seed(f);
+  run(f, rf, { apply: true });
+  const b = readBoard(f.main.board);
+  b.tasks.find((x) => x.id === 'LD1').lastProgressAt = iso(5 * H);
+  writeJson(f.main.board, b);
+  const res = run(f, rf, { apply: true, exempt: ['ST1', 'CL1', 'JB1', 'JB2', 'JB3'] });
+  assert.equal(res.applied.notes, 1);
+  const notes = rcNotes(f, 'LD1');
+  assert.equal(notes.length, 2);
+  assert.notEqual(notes[0].text, notes[1].text);
+});
+
+test('C10 第一条留言 ts 改成 8 天前、全文相同再跑:写第二条', (t) => {
+  const f = setup(t); const rf = seed(f);
+  run(f, rf, { apply: true });
+  const b = readBoard(f.main.board);
+  for (const a of b.activity) if (a.author === 'reconcile') a.ts = iso(8 * 24 * H);
+  writeJson(f.main.board, b);
+  const res = run(f, rf, { apply: true, exempt: ['ST1', 'CL1', 'JB1', 'JB2', 'JB3'] });
+  assert.equal(res.applied.notes, 1);
+  assert.equal(rcNotes(f, 'LD1').length, 2);
+});
+
+function contractSetup(t) {
+  const f = setup(t);
+  const { P, repo, board } = f.main;
+  cmds.add({ ...P, _: ['X1'], title: 'X1', 'plain-title': '卡 X1' });
+  const b = readBoard(board);
+  Object.assign(b.tasks.find((x) => x.id === 'X1'), { status: '收官', lastProgressAt: iso(H), prNumbers: [21] });
+  writeJson(board, b);
+  const rf = fakeRun({ merged: [{ number: 21, title: 'X1: done', headRefName: 'codex/x1', mergedAt: iso(H) }] });
+  const contract = path.join(repo, 'docs', 'plans', 'x1-task-contract.json');
+  writeJson(contract, { taskId: 'X1', slug: 'x1-slug' });
+  const setDirs = (dirs) => {
+    const reg = JSON.parse(fs.readFileSync(f.reg, 'utf8'));
+    reg.projects.myproj.reconcileContractDirs = dirs;
+    fs.writeFileSync(f.reg, JSON.stringify(reg));
+  };
+  const hasLanded = (res) => res.projects[0].findings.some((x) => x.kind === 'ALL_LANDED' && x.taskId === 'X1');
+  return { f, rf, contract, setDirs, hasLanded };
+}
+
+test('C11 登记了契约目录:没派的契约让卡不报 ALL_LANDED;删掉契约再跑就报', (t) => {
+  const { f, rf, contract, setDirs, hasLanded } = contractSetup(t);
+  assert.equal(hasLanded(run(f, rf)), true, '没登记目录时照旧报');
+  setDirs(['docs/plans']);
+  assert.equal(hasLanded(run(f, rf)), false);
+  fs.rmSync(contract);
+  assert.equal(hasLanded(run(f, rf)), true);
+});
+
+test('C12 --contracts-dir 给了时覆盖注册表字段', (t) => {
+  const { f, rf, setDirs, hasLanded } = contractSetup(t);
+  setDirs(['docs/plans']);
+  assert.equal(hasLanded(run(f, rf, { 'contracts-dir': 'docs/nowhere' })), true, '覆盖成不存在的目录');
+  setDirs(['docs/nowhere']);
+  assert.equal(hasLanded(run(f, rf, { 'contracts-dir': ['docs/plans'] })), false, '覆盖成有契约的目录');
+});
+
 test('C7 源码里每处 execFileSync / spawnSync 调用都带 windowsHide: true', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'cli', 'reconcile.cjs'), 'utf8');
   const re = /(execFileSync|spawnSync)\(/g;

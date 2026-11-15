@@ -32,7 +32,7 @@ const GROUPS = [
   ['卡的生命周期', ['add', 'assign', 'unassign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
-    'release', 'claim-check', 'identifier-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud']],
+    'release', 'claim-check', 'identifier-check', 'doctor', 'sync-from-git', 'cleanup', 'docs-audit', 'cloud', 'reconcile-schedule']],
   ['导入导出', ['import', 'backfill', 'onboard', 'render-index', 'snapshot', 'archive-activity']],
 ];
 
@@ -360,7 +360,7 @@ const COMMANDS = {
 
   reconcile: {
     summary: '对账：在办卡对 PR、分支、派单器的单，列出状态和实情对不上的卡',
-    usage: 'reconcile (--project <id>... | --all) [--apply] [--fetch] [--stale-days <n>] [--collect-hours <n>] [--exempt <卡号>...] [--jobs-dir <路径>...] [--registry <路径>] [--json]',
+    usage: 'reconcile (--project <id>... | --all) [--apply] [--fetch] [--stale-days <n>] [--collect-hours <n>] [--exempt <卡号>...] [--jobs-dir <路径>...] [--contracts-dir <路径>...] [--renote-days <n>] [--registry <路径>] [--json]',
     args: [
       ['--project <id> / --all', '二选一：指定项目（可重复）或遍历注册表全部项目'],
       ['--apply', '对每条发现留一条去重的【对账】留言，并把多日没动静的施工中卡转暂缓'],
@@ -369,6 +369,8 @@ const COMMANDS = {
       ['--collect-hours <n>', '交活/停在岔路多少小时没人理算对不上，默认 6'],
       ['--exempt <卡号>', '跳过这张卡（可重复；注册表项目项的 reconcileExempt 也生效）'],
       ['--jobs-dir <路径>', '派单器单目录（可重复）；缺省用各项目主仓下的 .codex/jobs'],
+      ['--renote-days <n>', '全文相同的发现满多少天再提醒写一次，默认 7'],
+      ['--contracts-dir <路径>', '放还没派的契约的目录（可重复；相对路径按项目主仓解析；给了就覆盖注册表项目项的 reconcileContractDirs）'],
       ['--registry <路径>', '指定注册表（测试隔离用）'],
       ['--json', '输出结构化结果'],
     ],
@@ -376,8 +378,24 @@ const COMMANDS = {
     notes: [
       '六类：单都进主干卡没销、推了分支没开 PR、交活没人收、停在岔路、施工中多日没动静、卡已关 PR 还开着。',
       '不带 --apply 只读；--apply 只写留言和把多日没动静的施工中卡转暂缓，不会自动销卡。',
+      '同一条发现只在新出现、内容变了、或满 --renote-days 天时才再写。',
       '云项目只读：不写，只输出。命令有发现时退出码仍为 0。',
     ],
+  },
+  'reconcile-schedule': {
+    summary: '装、卸、查「每隔几小时静默对账一次」的计划任务',
+    usage: 'reconcile-schedule <install|uninstall|status> [--every-hours <n>] [--task-name <名字>] [--registry <路径>] [--json]',
+    args: [
+      ['install', '注册计划任务，每隔 N 小时静默跑一次 reconcile --all --apply --fetch，输出写日志'],
+      ['uninstall', '注销计划任务并删启动器，日志保留'],
+      ['status', '看任务是否已装、下次触发时间，并列出日志最后 20 行'],
+      ['--every-hours <n>', '只对 install 有效：间隔小时数，1~24 的整数，默认 2'],
+      ['--task-name <名字>', '计划任务名，默认 DashboardReconcile'],
+      ['--registry <路径>', '指定注册表（启动器与日志放在它旁边的 reconcile 目录）'],
+      ['--json', '输出结构化结果'],
+    ],
+    examples: ['reconcile-schedule install', 'reconcile-schedule install --every-hours 4', 'reconcile-schedule status'],
+    notes: ['只支持 Windows；计划任务挂 wscript 隐藏运行，不弹窗；装上后到下一个周期才第一次跑。'],
   },
 
   // ——— 卡的生命周期 ———
