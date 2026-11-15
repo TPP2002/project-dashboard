@@ -3,15 +3,18 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { MachineSnapshot, TicketSummary, TicketEstimate } from '@/api/sched'
 import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
-import { age, ciJobLabel, ciQueueHeading, ciQueuedForCard, ciQueuedLabel, ciRunnersDiffer, ciThrottleNote, duration, freshness, stamp, ticketLabel, ticketTone } from './format'
+import { age, ciJobLabel, ciQueueHeading, ciQueuedForCard, ciQueuedLabel, ciRunnersDiffer, ciThrottleNote, duration, freshness, stamp, ticketLabel, ticketTone, visibleTickets } from './format'
 import { agentSlotsDisplay, formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
-const props = defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean; onlineMachines?: string[] }>()
+const props = withDefaults(defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean; onlineMachines?: string[]; showResident?: boolean }>(), { showResident: true })
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
 const fresh = computed(() => freshness(props.machine, props.now))
 const capacity = computed(() => machineCapacity(props.machine, fresh.value.stale))
 // 作业槽与可用核是两个口径:槽满只说明执行端槽满,不冒充核满;离线或过期时数字注明旧快照。
 const slots = computed(() => agentSlotsDisplay(props.machine.agentSlots, !props.machine.online || fresh.value.stale))
-const jobs = computed(() => props.tickets.filter(ticket => !ticket.registerOnly && ticket.machine === props.machine.name))
+// 常驻占用单照旧占核，只是默认不在列表里逐条列出；被收起的条数在列表下方单独说明。
+const allJobs = computed(() => props.tickets.filter(ticket => !ticket.registerOnly && ticket.machine === props.machine.name))
+const jobs = computed(() => visibleTickets(allJobs.value, props.showResident !== false))
+const hiddenResident = computed(() => allJobs.value.length - jobs.value.length)
 const ciSnapshot = ref<CiJobsSnapshot | null>(null), ciFailed = ref(false)
 const ciData = computed(() => ciSnapshot.value && !('unavailable' in ciSnapshot.value) ? ciSnapshot.value : null)
 const ciUnavailable = computed(() => ciSnapshot.value && 'unavailable' in ciSnapshot.value ? ciSnapshot.value.unavailable : null)
@@ -135,6 +138,7 @@ onUnmounted(() => {
       </ul>
     </details>
     <p v-if="!jobs.length" class="sched-empty">{{ machine.online ? '这台机器没有调度中的单子' : '离线，不参与派单' }}</p>
+    <p v-if="hiddenResident > 0" class="sched-note resident-hidden-note">另有 {{ hiddenResident }} 个常驻占用已隐藏，勾选页头的「显示常驻占用」可查看</p>
   </section>
 </template>
 
@@ -171,4 +175,5 @@ onUnmounted(() => {
 .job-cores { margin-left: auto; white-space: nowrap; }
 .job-meta { justify-content: space-between; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--text-3); margin-top: var(--s1); overflow-wrap: anywhere; }
 .job-actions { display: flex; gap: 6px; }
+.resident-hidden-note { margin-top: var(--s2); font-size: var(--fs-xs); color: var(--text-3); }
 </style>
