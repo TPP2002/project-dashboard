@@ -110,3 +110,15 @@ export function commandLabel(input: CommandInput) {
   if (input.kind === 'reserve') return `预留主机 ${input.data.requestedCores} 核${input.data.durationMinutes ? ` · ${input.data.durationMinutes / 60} 小时` : input.data.requestedCores ? ' · 不限期' : ''}`
   return '调度指令'
 }
+/** 判据一律 ticket.resident === true；缺省或 false 都是普通单。 */
+export function isResidentTicket(ticket: { resident?: boolean }): boolean {
+  return ticket.resident === true
+}
+/** 常驻占用单张数：机器卡收起时用它说明被收起几条，页头用它给出总数。 */
+export function residentCount(tickets: { resident?: boolean }[]): number {
+  return tickets.filter(isResidentTicket).length
+}
+/** 隐藏常驻占用时去掉它们，原顺序、原对象不变，也不改动传入数组；显示时原样返回。 */
+export function visibleTickets<T extends { resident?: boolean }>(tickets: T[], showResident: boolean): T[] {
+  return showResident ? tickets : tickets.filter(ticket => !isResidentTicket(ticket))
+}

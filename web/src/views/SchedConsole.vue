@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useSchedStore } from '@/stores/sched'
 import DispatcherBanner from '@/components/sched/DispatcherBanner.vue'
 import AttentionItems from '@/components/sched/AttentionItems.vue'
@@ -14,7 +14,8 @@ import RecentCommands from '@/components/sched/RecentCommands.vue'
 import LedgerTable from '@/components/sched/LedgerTable.vue'
 import TicketDrawer from '@/components/sched/TicketDrawer.vue'
 import EstimateText from '@/components/sched/EstimateText.vue'
-import { age, ticketLabel } from '@/components/sched/format'
+import { age, residentCount, ticketLabel, visibleTickets } from '@/components/sched/format'
+import { loadShowResident, saveShowResident } from '@/components/sched/preferences'
 import '@/components/sched/console.css'
 
 const store = useSchedStore()
@@ -23,7 +24,10 @@ const heartbeatAge = computed(() => age(store.snapshot?.dispatcher.heartbeat.at 
 const online = computed(() => store.snapshot?.machines.filter(machine => machine.online) ?? [])
 const offline = computed(() => store.snapshot?.machines.filter(machine => !machine.online) ?? [])
 const onlineMachines = computed(() => online.value.map(machine => machine.name))
-const unassigned = computed(() => store.snapshot?.running.filter(ticket => !ticket.registerOnly && !store.snapshot?.machines.some(machine => machine.name === ticket.machine)) ?? [])
+const unassigned = computed(() => visibleTickets(store.snapshot?.running ?? [], showResident.value).filter(ticket => !ticket.registerOnly && !store.snapshot?.machines.some(machine => machine.name === ticket.machine)) ?? [])
+const showResident = ref(loadShowResident())
+watch(showResident, value => { saveShowResident(value) })
+const residentTotal = computed(() => residentCount(store.snapshot?.running ?? []))
 const cancel = (ticketId: string) => store.command({ kind: 'cancel', data: { ticketId } })
 const jump = (ticketId: string) => store.command({ kind: 'jump-queue', data: { ticketId } })
 const pause = (ticketId: string) => store.command({ kind: 'pause-one', data: { ticketId } })
@@ -42,7 +46,7 @@ onUnmounted(store.stop)
       <div class="sched-pills">
         <span v-if="store.readable" class="sched-pill" :class="heartbeatAge !== null && heartbeatAge <= 120000 ? 'ok' : 'bad'">
           {{ heartbeatAge !== null && heartbeatAge <= 120000 ? '派单员在线' : '派单员失联' }} · 心跳 {{ heartbeatAge === null ? '未知' : Math.floor(heartbeatAge / 1000) + ' 秒前' }}
-        </span><span class="sched-pill">台账永久 · 日志 90 天</span>
+        </span><span class="sched-pill">台账永久 · 日志 90 天</span><label v-if="store.readable" class="sched-resident-toggle" title="勾选后，机器卡的「调度中的单子」会列出常驻占用的单子；不勾选则收起。"><input v-model="showResident" type="checkbox">显示常驻占用（{{ residentTotal }}）</label>
       </div>
     </header>
     <div v-if="store.snapshotError" class="sched-banner bad" role="alert"><div><strong>读不到调度共享盘</strong><p>{{ store.snapshotError }}</p></div>
@@ -79,10 +83,10 @@ onUnmounted(store.stop)
       <p v-if="!remote.disabled.value && remote.configError.value" class="warn" role="status">远程机器配置有误:{{ remote.configError.value }}</p>
       <p v-if="!remote.disabled.value && remote.error.value" class="warn" role="status">远程机器读数暂时取不到:{{ remote.error.value }}</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /><RemoteHostCard v-for="host in remote.disabled.value ? [] : remote.hosts.value" :key="`remote-${host.name}`" :host="host" /></div>
+        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" :show-resident="showResident" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /><RemoteHostCard v-for="host in remote.disabled.value ? [] : remote.hosts.value" :key="`remote-${host.name}`" :host="host" /></div>
       <details v-if="offline.length" class="sched-offline"><summary>离线机器 {{ offline.length }} 台（不参与派单）</summary>
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
+          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" :show-resident="showResident" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       </details>
       <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
         :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />
@@ -107,6 +111,8 @@ onUnmounted(store.stop)
 .sched-pills { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s2); }
 .sched-pill { border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 10px; font-size: var(--fs-sm); color: var(--text-2); background: var(--surface); white-space: nowrap; }
 .sched-pill.ok { color: var(--ok); }.sched-pill.bad { color: var(--bad); }
+.sched-resident-toggle { display: inline-flex; align-items: center; gap: var(--s1); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 10px; font-size: var(--fs-sm); color: var(--text-2); background: var(--surface); white-space: nowrap; cursor: pointer; }
+.sched-resident-toggle input { accent-color: var(--info); margin: 0; }
 .sched-page .sched-banner.info { border-color: var(--info); background: color-mix(in srgb, var(--info) 12%, transparent); }
 .sched-howto { color: var(--text-3); font-size: var(--fs-sm); }.sched-howto summary, .sched-offline summary { cursor: pointer; }
 .sched-flow { display: flex; gap: 6px; flex-wrap: wrap; margin: var(--s2) 0; }

@@ -9,6 +9,7 @@ export interface SubmittedCommand {
 export const DEFAULT_FILTERS: LedgerPrefs = { project: '', machine: '', submitter: '', engine: '', result: '', from: '', to: '', period: 'd7' }
 const FILTER_KEY = 'dashboard.sched.filters.v1'
 const COMMAND_KEY = 'dashboard.sched.commands.v1'
+const SHOW_RESIDENT_KEY = 'dashboard.sched.showResident.v1'
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const iso = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
   && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value
@@ -21,6 +22,14 @@ function load(key: string): unknown {
 }
 export function saveLocal(key: 'filters' | 'commands', value: LedgerPrefs | SubmittedCommand[]): boolean {
   try { localStorage.setItem(key === 'filters' ? FILTER_KEY : COMMAND_KEY, JSON.stringify(value)); return true }
+  catch { return false }
+}
+/** 显示常驻占用只记在本机浏览器；读到的值不严格等于 true 一律回默认(隐藏),脏值不冒充选择。 */
+export function loadShowResident(): boolean {
+  return load(SHOW_RESIDENT_KEY) === true
+}
+export function saveShowResident(value: boolean): boolean {
+  try { localStorage.setItem(SHOW_RESIDENT_KEY, JSON.stringify(value === true)); return true }
   catch { return false }
 }
 /** 逐字段恢复；不展开持久化对象，未知键和脏值不会进入请求。 */
