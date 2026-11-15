@@ -28,7 +28,7 @@ const EXIT_CODES = [
 /** 全局 help 的分组:先给天天用的,装机维护的沉到后面。 */
 const GROUPS = [
   ['开工与同步（最常用）', ['protocol', 'brief', 'claim', 'progress', 'await-collect', 'collect-brief', 'await-decision', 'pending', 'decide', 'undecide', 'done', 'note', 'request-info']],
-  ['查询', ['list', 'show', 'inbox', 'cost', 'precheck']],
+  ['查询', ['list', 'show', 'inbox', 'cost', 'precheck', 'reconcile']],
   ['卡的生命周期', ['add', 'assign', 'unassign', 'unclaim', 'park', 'unpark', 'block', 'unblock', 'cancel', 'reopen',
     'edit', 'set', 'mark-landed', 'sync-progress']],
   ['装机与维护', ['register', 'enroll', 'hooks-install', 'hooks-global', 'hooks-trunk-guard',
@@ -356,6 +356,28 @@ const COMMANDS = {
     ],
     examples: ['precheck --project myproj'],
     notes: ['三查只是开工的前半截：还要建分支推远程 + claim 才算认领完成。'],
+  },
+
+  reconcile: {
+    summary: '对账：在办卡对 PR、分支、派单器的单，列出状态和实情对不上的卡',
+    usage: 'reconcile (--project <id>... | --all) [--apply] [--fetch] [--stale-days <n>] [--collect-hours <n>] [--exempt <卡号>...] [--jobs-dir <路径>...] [--registry <路径>] [--json]',
+    args: [
+      ['--project <id> / --all', '二选一：指定项目（可重复）或遍历注册表全部项目'],
+      ['--apply', '对每条发现留一条去重的【对账】留言，并把多日没动静的施工中卡转暂缓'],
+      ['--fetch', '先对远端做 git fetch --prune'],
+      ['--stale-days <n>', '施工中多少天没动静算对不上，默认 2'],
+      ['--collect-hours <n>', '交活/停在岔路多少小时没人理算对不上，默认 6'],
+      ['--exempt <卡号>', '跳过这张卡（可重复；注册表项目项的 reconcileExempt 也生效）'],
+      ['--jobs-dir <路径>', '派单器单目录（可重复）；缺省用各项目主仓下的 .codex/jobs'],
+      ['--registry <路径>', '指定注册表（测试隔离用）'],
+      ['--json', '输出结构化结果'],
+    ],
+    examples: ['reconcile --project myproj', 'reconcile --all --apply', 'reconcile --project myproj --json'],
+    notes: [
+      '六类：单都进主干卡没销、推了分支没开 PR、交活没人收、停在岔路、施工中多日没动静、卡已关 PR 还开着。',
+      '不带 --apply 只读；--apply 只写留言和把多日没动静的施工中卡转暂缓，不会自动销卡。',
+      '云项目只读：不写，只输出。命令有发现时退出码仍为 0。',
+    ],
   },
 
   // ——— 卡的生命周期 ———
