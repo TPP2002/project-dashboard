@@ -87,6 +87,35 @@ function readJobsDir(dir) {
   return out;
 }
 
+/**
+ * 读文档目录里还没派的契约(只扫一层 *.json):有字符串 taskId 与 slug、jobs 目录下没有同名子目录、
+ * 且该 slug 还没被读到的,记成 dispatched=false 的条目(形状同 readJobsDir 的「契约有、目录没有」)。
+ */
+function readContractDirs(rels, mainRepo, jobsDirs, haveSlugs) {
+  const out = [];
+  const seen = new Set(haveSlugs);
+  for (const rel of rels) {
+    const dir = path.resolve(mainRepo, rel);
+    let names;
+    try { names = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const f of names) {
+      if (!f.isFile() || !f.name.endsWith('.json')) continue;
+      const contract = readJson(path.join(dir, f.name));
+      if (!contract || typeof contract.taskId !== 'string' || !contract.taskId
+        || typeof contract.slug !== 'string' || !contract.slug) continue;
+      if (seen.has(contract.slug)) continue;
+      if (jobsDirs.some((jd) => fs.existsSync(path.join(jd, contract.slug)))) continue;
+      seen.add(contract.slug);
+      out.push({
+        dir, meta: contract, slug: contract.slug, taskId: contract.taskId, branch: null,
+        landed: false, pushed: false, landBranch: null, finishedAt: null, startedAt: null, pid: null,
+        verdict: null, worktreeExists: false, dispatched: false, autoLandPr: null,
+      });
+    }
+  }
+  return out;
+}
+
 /** 单是否归项目 P(见施工单第 5 步⑥)。 */
 function jobBelongs(job, p) {
   const meta = job.meta || {};
@@ -170,6 +199,9 @@ function reconcile(flags, deps = {}) {
   }
   const staleDays = numFlag(flags['stale-days'], 2, '--stale-days');
   const collectHours = numFlag(flags['collect-hours'], 6, '--collect-hours');
+  const renoteDays = numFlag(flags['renote-days'], 7, '--renote-days');
+  const cliContractDirs = asArray(flags['contracts-dir']);
+  const contractRels = (p) => (cliContractDirs.length ? cliContractDirs : p.contractDirs);
   const apply = flags.apply === true;
   const registryPath = flags.registry && flags.registry !== true ? path.resolve(String(flags.registry)) : undefined;
   const cmds = require('./commands.cjs');
@@ -194,6 +226,7 @@ function reconcile(flags, deps = {}) {
       board: e.board ? path.resolve(e.board) : path.join(mainRepo, '.dashboard', 'board.json'),
       cloud: !!(e.cloud && e.cloud.enabled),
       exempt: Array.isArray(e.reconcileExempt) ? e.reconcileExempt.filter((x) => typeof x === 'string') : [],
+      contractDirs: Array.isArray(e.reconcileContractDirs) ? e.reconcileContractDirs.filter((x) => typeof x === 'string' && x) : [],
     });
   }
 
@@ -220,7 +253,16 @@ function reconcile(flags, deps = {}) {
     const notes = [];
     const { branches, prs } = gitInfo(p, runFile, now, flags.fetch === true, notes);
     const taskIds = new Set(board.tasks.map((t) => t.id));
-    const jobs = allJobs.filter((j) => taskIds.has(j.taskId) && jobBelongs(j, p)).map(({ meta, dir, ...j }) => j);
+    const own = allJobs.filter((j) => taskIds.has(j.taskId) && jobBelongs(j, p));
+    const have = new Set(allJobs.map((j) => j.slug));
+    const jobsOfProject = new Set([path.join(p.mainRepo, '.codex', 'jobs'), ...jobsDirs].map(normPath));
+    const extra = readContractDirs(contractRels(p), p.mainRepo, [...jobsOfProject], have)
+      .filter((j) => taskIds.has(j.taskId))
+      .filter((j) => {
+        const m = j.meta || {};
+        return (m.repoRoot || (m.boardAwaitCollect && m.boardAwaitCollect.projectId)) ? jobBelongs(j, p) : true;
+      });
+    const jobs = [...own, ...extra].map(({ meta, dir, ...j }) => j);
     const exempt = new Set([...asArray(flags.exempt), ...p.exempt]);
     const scan = scanProject({ projectId: p.id, board, now, staleDays, collectHours, exempt, prs, branches, jobs });
     totalFindings += scan.findings.length;
@@ -244,14 +286,17 @@ function reconcile(flags, deps = {}) {
     for (const f of scan.findings) {
       try {
         const fresh = readBoard(p.board) || board;
-        const recent = (fresh.activity || []).filter((a) => a.taskId === f.taskId).slice(-30);
         const tag = `〔RC:${f.key}〕`;
-        const dup = recent.some((a) => a.author === 'reconcile' && String(a.text || '').includes(tag)
-          && now - Date.parse(a.ts) < DAY);
+        const text = `【对账】${KINDS[f.kind]}:${f.detail}${tag}`;
+        let last = null;
+        for (const a of fresh.activity || []) {
+          if (a.taskId === f.taskId && a.author === 'reconcile' && String(a.text || '').includes(tag)) last = a;
+        }
+        const lastTs = last ? Date.parse(last.ts) : NaN;
+        const dup = last && String(last.text) === text && !(now - lastTs >= renoteDays * DAY);
         if (dup) applied.skippedDuplicate++;
         else {
-          cmds.note({ ...base, _: [f.taskId], author: 'reconcile',
-            text: `【对账】${KINDS[f.kind]}:${f.detail}${tag}` });
+          cmds.note({ ...base, _: [f.taskId], author: 'reconcile', text });
           applied.notes++;
         }
         if (f.kind === 'STALE_IN_PROGRESS') {
