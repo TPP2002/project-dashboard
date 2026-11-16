@@ -125,3 +125,31 @@ test('页头小标签:正常时按四舍五入的百分比报最近准确度', (
   assert.ok(result.title.includes(`学习于 ${stamp(updatedAt)}`), result.title)
   assert.equal(result.ok, true)
 })
+
+test('宽范围的等待只说明耗时差别大', () => {
+  const result = describe({ kind: 'wait', learned: true, startAt: START, waitMs: 60000, lowMs: 1, highMs: 29220000 })
+  assert.equal(result.detail, ` · ${stamp(START)} 开跑 · 这类活耗时差别很大，只能给个大概`)
+})
+
+test('宽范围的完成保留低优先级说明', () => {
+  const result = describe({ kind: 'completion', learned: true, finishAt: FINISH, lowMs: 54000, highMs: 29220000, slowdown: 1.5 })
+  assert.equal(result.detail, ' · 这类活耗时差别很大，完成时刻只能给个大概 · 低优先级耗时 1.5 倍（估）')
+})
+
+test('范围恰好二十倍不算宽，多一毫秒算宽', () => {
+  const base = { kind: 'completion', learned: true, finishAt: FINISH, lowMs: 60000 }
+  assert.equal(describe({ ...base, highMs: 1200000 }).detail, ` · 一般跑 ${duration(60000)}~${duration(1200000)}`)
+  assert.equal(describe({ ...base, highMs: 1200001 }).detail, ' · 这类活耗时差别很大，完成时刻只能给个大概')
+  assert.equal(describe({ ...base, highMs: undefined }).detail, ` · 一般跑 ${duration(60000)}~${duration(undefined)}`)
+})
+
+test('常驻占用直接显示不会自己结束', () => {
+  assert.deepEqual(describe({ kind: 'unavailable', code: 'resident', reason: '常驻占用，不会自己结束' }),
+    { headline: '常驻占用，不会自己结束', detail: '', title: '', warn: false })
+})
+
+test('宽范围超时的两种说明保持不变', () => {
+  const base = { kind: 'completion', learned: true, overdue: true, remainingMs: 30000, lowMs: 1, highMs: 29220000 }
+  assert.equal(describe({ ...base, tail: true }).detail, ` · 按已跑时长估,还要约 ${duration(30000)}(把握不大)`)
+  assert.equal(describe({ ...base, tail: false }).detail, ` · 按同类活里更慢的几次估,还要约 ${duration(30000)}`)
+})

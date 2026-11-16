@@ -451,3 +451,72 @@ test('有模型时仍是纯函数:输入冻结后跑两遍结果相同,输入不
   assert.deepEqual(estimateTickets(input, samples, { model }), first);
   assert.equal(JSON.stringify([input, samples, model]), before);
 });
+
+test('常驻占用不释放核，也不阻止其他任务释放后排队', () => {
+  for (const hasSamples of [false, true]) {
+    const resident = job(1, hasSamples ? 'running' : 'granted', 4000), running = job(2, 'running', 4000), waiting = job(3);
+    resident.request.resident = true;
+    resident.request.work.type = hasSamples ? 'test' : 'resident-only';
+    resident.request.requestedCores = 1; resident.attempts[0].grantedCores = 1;
+    const input = snapshot([resident, running, waiting], [machine({ quotaCores: 5, grantedCores: 5 })]);
+    const samples = history([8000, 10000, 12000]);
+    const result = estimateTickets(input, samples);
+    assert.equal(result[resident.ticketId].kind, 'unavailable');
+    assert.equal(result[resident.ticketId].code, 'resident');
+    assert.equal(result[waiting.ticketId].startAt, iso(NOW + 6000));
+    const control = snapshot([running, waiting], [machine({ quotaCores: 4, grantedCores: 4 })]);
+    assert.deepEqual(result[waiting.ticketId], estimateTickets(control, samples)[waiting.ticketId]);
+    assert.equal(estimateTickets(input, samples, { model: createModel() })[resident.ticketId].code, 'resident');
+  }
+});
+
+test('老的未开跑许可仍阻止等待释放的任务估时', () => {
+  const granted = job(1, 'granted'), waiting = job(2);
+  granted.attempts[0].permit.issuedAt = iso(NOW - 1200000);
+  const result = estimateTickets(snapshot([granted, waiting]), history([10000]), { model: learnedModel([{ durations: [8000, 10000, 12000] }]) });
+  assert.equal(result[granted.ticketId].code, 'start');
+  assert.equal(result[waiting.ticketId].code, 'start');
+});
+
+test('新许可按学到的启动耗时和运行耗时估计完成', () => {
+  const granted = job(1, 'granted'), waiting = job(2), model = learnedModel([{ durations: [8000, 10000, 12000] }]);
+  for (let index = 0; index < 8; index++) {
+    assert.equal(learnSample(model, { ticketId: `start-${index}`, attemptId: 'a1', project: 'sample', usageKey: null,
+      category: 'unit-test', workType: 'test', args: null, machine: 'fixture-worker', cores: 4,
+      durationMs: null, startMs: 5000, endedAt: iso(NOW - 1000), ciAware: false }).learned, true);
+  }
+  const input = snapshot([granted, waiting]), samples = history([8000, 10000, 12000]);
+  granted.attempts[0].permit.issuedAt = iso(NOW - 3000);
+  let result = estimateTickets(input, samples, { model });
+  assert.equal(result[granted.ticketId].finishAt, iso(NOW + 12000));
+  assert.equal(result[granted.ticketId].remainingMs, 12000);
+  assert.equal(result[granted.ticketId].learned, true);
+  assert.equal(result[granted.ticketId].tail, false);
+  assert.equal(result[granted.ticketId].overdue, false);
+  assert.equal(result[waiting.ticketId].startAt, iso(NOW + 12000));
+  granted.attempts[0].permit.issuedAt = iso(NOW - 60000);
+  assert.equal(estimateTickets(input, samples, { model })[granted.ticketId].finishAt, iso(NOW + 10000));
+  assert.equal(estimateTickets(input, samples)[granted.ticketId].code, 'start');
+  assert.equal(estimateTickets(input, samples, { model: createModel() })[granted.ticketId].code, 'start');
+  assert.equal(estimateTickets(input, history([]), { model: createModel() })[granted.ticketId].code, 'history');
+  granted.attempts[0].permit.ciAware = true;
+  const slowed = estimateTickets(input, samples, { model })[granted.ticketId];
+  const predicted = predictRun(model, { project: 'sample', usageKey: null, category: 'unit-test', workType: 'test',
+    args: null, machine: 'fixture-worker', cores: 4 });
+  assert.equal(slowed.remainingMs, 15000);
+  assert.equal(slowed.remainingLowMs, predicted.low * 1.5);
+  assert.equal(slowed.remainingHighMs, predicted.high * 1.5);
+  assert.equal(slowed.slowdown, 1.5);
+  assert.equal(slowed.slowdownEstimated, true);
+});
+
+test('常驻和新许可的估值冻结输入后可重复', () => {
+  const resident = job(1, 'granted'), granted = job(2, 'granted'), waiting = job(3);
+  resident.request.resident = true; resident.attempts[0].grantedCores = 1;
+  granted.attempts[0].permit.issuedAt = iso(NOW - 3000);
+  const input = freeze(snapshot([resident, granted, waiting], [machine({ quotaCores: 5, grantedCores: 5 })]));
+  const samples = freeze(history([8000, 10000, 12000])), model = freeze(learnedModel([{ durations: [8000, 10000, 12000] }]));
+  const before = JSON.stringify([input, samples, model]), first = estimateTickets(input, samples, { model });
+  assert.deepEqual(estimateTickets(input, samples, { model }), first);
+  assert.equal(JSON.stringify([input, samples, model]), before);
+});

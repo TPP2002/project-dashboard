@@ -125,6 +125,7 @@ export function visibleTickets<T extends { resident?: boolean }>(tickets: T[], s
 
 /** 估时文案:旧估值逐字沿用原模板,学了模型的改成「一般跑 a~b」并说清超时后还要多久。 */
 export type EstimateText = { headline: string; detail: string; title: string; warn: boolean }
+const WIDE_RANGE_RATIO = 20
 /** 只读渲染入参:两种估值与展示附加字段的可能键都在,缺了按「暂无」处理。 */
 type EstimateInput = {
   kind: TicketEstimate['kind']
@@ -142,17 +143,21 @@ function slowdownNote(slowdown: number | undefined, estimated: boolean | undefin
 
 export function describeEstimate(estimate?: EstimateInput | null): EstimateText {
   if (!estimate) return { headline: '算不出（读不到预估数据）', detail: '', title: '', warn: false }
-  if (estimate.kind === 'unavailable') return { headline: `算不出（${estimate.reason}）`, detail: '', title: '', warn: false }
+  if (estimate.kind === 'unavailable') return { headline: estimate.code === 'resident' ? '常驻占用，不会自己结束' : `算不出（${estimate.reason}）`, detail: '', title: '', warn: false }
   const note = slowdownNote(estimate.slowdown, estimate.slowdownEstimated)
   if (estimate.learned === true) {
     const title = `依据:${estimate.basis};中位 ${duration(estimate.medianMs)}`
+    const wide = estimate.lowMs !== undefined && estimate.highMs !== undefined && Number.isFinite(estimate.lowMs)
+      && Number.isFinite(estimate.highMs) && estimate.highMs > WIDE_RANGE_RATIO * Math.max(estimate.lowMs, 60000)
     if (estimate.kind === 'wait') return { headline: `预计等待 ${duration(estimate.waitMs)}`,
-      detail: ` · ${stamp(estimate.startAt)} 开跑 · 一般跑 ${duration(estimate.lowMs)}~${duration(estimate.highMs)}${note}`, title, warn: false }
+      detail: wide ? ` · ${stamp(estimate.startAt)} 开跑 · 这类活耗时差别很大，只能给个大概`
+        : ` · ${stamp(estimate.startAt)} 开跑 · 一般跑 ${duration(estimate.lowMs)}~${duration(estimate.highMs)}${note}`, title, warn: false }
     if (estimate.overdue) return { headline: '已超出常见耗时', warn: true, title,
       detail: (estimate.tail === true ? ` · 按已跑时长估,还要约 ${duration(estimate.remainingMs)}(把握不大)`
         : ` · 按同类活里更慢的几次估,还要约 ${duration(estimate.remainingMs)}`) + note }
     return { headline: `预计完成 ${stamp(estimate.finishAt)}`, title, warn: false,
-      detail: ` · 一般跑 ${duration(estimate.lowMs)}~${duration(estimate.highMs)}${note}` }
+      detail: wide ? ` · 这类活耗时差别很大，完成时刻只能给个大概${note}`
+        : ` · 一般跑 ${duration(estimate.lowMs)}~${duration(estimate.highMs)}${note}` }
   }
   const title = `同类最近 ${estimate.sampleCount} 次执行的中位耗时：${duration(estimate.medianMs)}`
   const headline = estimate.kind === 'wait' ? `预计等待 ${duration(estimate.waitMs)}`
