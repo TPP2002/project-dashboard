@@ -26,8 +26,18 @@ export interface QueueEntry {
 }
 export type TicketEstimate =
   | { kind: 'unavailable'; code: string; reason: string }
-  | { kind: 'wait'; startAt: string; waitMs: number; machine: string; medianMs: number; sampleCount: number }
-  | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number; slowdown?: number; slowdownEstimated?: boolean }
+  | { kind: 'wait'; startAt: string; waitMs: number; machine: string; medianMs: number; sampleCount: number
+    lowMs?: number; highMs?: number; basis?: string; level?: number; learned?: boolean; tail?: boolean; remainingLowMs?: number; remainingHighMs?: number }
+  | { kind: 'completion'; finishAt: string; remainingMs: number; overdue: boolean; medianMs: number; sampleCount: number; slowdown?: number; slowdownEstimated?: boolean
+    lowMs?: number; highMs?: number; basis?: string; level?: number; learned?: boolean; tail?: boolean; remainingLowMs?: number; remainingHighMs?: number }
+/** 估时模型状态:派单员写到共享盘,看板只读;没生成时页面照常工作。 */
+export interface EtaModelAccuracy {
+  n: number; medianApe: number | null; within30: number | null; within50: number | null; intervalHit: number | null
+  scale: number; updatedAt: string | null
+}
+export type SchedEtaModel =
+  | { loaded: true; updatedAt: string | null; buckets: number; accuracy: EtaModelAccuracy }
+  | { loaded: false; reason: string }
 export interface TicketRelations {
   readable: boolean; reason: string | null
   children: { ticketId: string; title: string; state: TicketState; category: string }[] | null
@@ -67,6 +77,7 @@ export interface SchedSnapshot {
   running: TicketSummary[]; registerOnly: TicketSummary[]; recentReceipts: Receipt[]
   registerOnlyGroups?: EngineGroup[]
   estimates: Record<string, TicketEstimate>; estimatesAt: string; historyError: string | null
+  etaModel?: SchedEtaModel | null
   connectedProjects: { readable: boolean; names: string[]; reason: string | null }
 }
 export interface TicketFilters { project: string; machine: string; submitter: string; engine?: string; result: string; from: string; to: string }

@@ -1,0 +1,147 @@
+{
+  "model": {
+    "schema": 1,
+    "updatedAt": "2026-11-16T00:00:00.000Z",
+    "scale": 2,
+    "buckets": {
+      "L1|k1|[\"a1\"]|m1|4": { "u": 1, "v": [10000, 10000, 10000] },
+      "L2|k2|[\"a2\"]|4": { "u": 2, "v": [20000, 20000, 20000] },
+      "L3|k3|[\"a3\"]|m1": { "u": 3, "v": [30000, 30000, 30000] },
+      "L4|k4|[\"a4\"]": { "u": 4, "v": [40000, 40000, 40000] },
+      "L5|k5|m1|4": { "u": 5, "v": [50000, 50000, 50000, 50000] },
+      "L6|k6|4": { "u": 6, "v": [60000, 60000, 60000, 60000] },
+      "L7|k7|m1": { "u": 7, "v": [70000, 70000, 70000, 70000] },
+      "L8|k8": { "u": 8, "v": [80000, 80000, 80000] },
+      "L9|p9|unit-test|unit-test": { "u": 9, "v": [90000, 90000, 90000] },
+      "L10|unit-test|unit-test": { "u": 10, "v": [12345] },
+      "L1|kn|[\"an\"]|?|4": { "u": 11, "v": [99999, 99999, 99999, 99999] },
+      "L2|kn|[\"an\"]|4": { "u": 12, "v": [15000, 15000, 15000] },
+      "L1|kf|[\"af\"]|m1|4": { "u": 13, "v": [11111, 11111] },
+      "L4|kf|[\"af\"]": { "u": 14, "v": [22222, 22222, 22222] },
+      "L4|ks|[\"as\"]": { "u": 15, "v": [10000, 20000, 30000] },
+      "L4|kr|[\"ar\"]": { "u": 16, "v": [10000, 20000, 30000, 40000, 50000] }
+    },
+    "starts": {
+      "mA": [3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 500000],
+      "mB": [3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 3000, 100000]
+    },
+    "recent": [],
+    "seen": []
+  },
+  "cases": [
+    {
+      "name": "第 1 层:同命令、同参数、同机器、同核数",
+      "call": "predictRun",
+      "input": { "project": "p1", "usageKey": "k1", "category": "unit-test", "workType": "unit-test", "args": ["a1"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 10000, "low": 10000, "high": 10000, "n": 3, "level": 1, "basis": "最近 3 次同命令、同参数、同机器、同核数" }
+    },
+    {
+      "name": "第 2 层:同命令、同参数、同核数",
+      "call": "predictRun",
+      "input": { "project": "p2", "usageKey": "k2", "category": "unit-test", "workType": "unit-test", "args": ["a2"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 20000, "low": 20000, "high": 20000, "n": 3, "level": 2, "basis": "最近 3 次同命令、同参数、同核数" }
+    },
+    {
+      "name": "第 3 层:同命令、同参数、同机器",
+      "call": "predictRun",
+      "input": { "project": "p3", "usageKey": "k3", "category": "unit-test", "workType": "unit-test", "args": ["a3"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 30000, "low": 30000, "high": 30000, "n": 3, "level": 3, "basis": "最近 3 次同命令、同参数、同机器" }
+    },
+    {
+      "name": "第 4 层:同命令、同参数",
+      "call": "predictRun",
+      "input": { "project": "p4", "usageKey": "k4", "category": "unit-test", "workType": "unit-test", "args": ["a4"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 40000, "low": 40000, "high": 40000, "n": 3, "level": 4, "basis": "最近 3 次同命令、同参数" }
+    },
+    {
+      "name": "第 5 层:同命令、同机器、同核数",
+      "call": "predictRun",
+      "input": { "project": "p5", "usageKey": "k5", "category": "unit-test", "workType": "unit-test", "args": ["a5"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 50000, "low": 50000, "high": 50000, "n": 4, "level": 5, "basis": "最近 4 次同命令、同机器、同核数" }
+    },
+    {
+      "name": "第 6 层:同命令、同核数",
+      "call": "predictRun",
+      "input": { "project": "p6", "usageKey": "k6", "category": "unit-test", "workType": "unit-test", "args": ["a6"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 60000, "low": 60000, "high": 60000, "n": 4, "level": 6, "basis": "最近 4 次同命令、同核数" }
+    },
+    {
+      "name": "第 7 层:同命令、同机器",
+      "call": "predictRun",
+      "input": { "project": "p7", "usageKey": "k7", "category": "unit-test", "workType": "unit-test", "args": ["a7"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 70000, "low": 70000, "high": 70000, "n": 4, "level": 7, "basis": "最近 4 次同命令、同机器" }
+    },
+    {
+      "name": "第 8 层:同命令",
+      "call": "predictRun",
+      "input": { "project": "p8", "usageKey": "k8", "category": "unit-test", "workType": "unit-test", "args": ["a8"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 80000, "low": 80000, "high": 80000, "n": 3, "level": 8, "basis": "最近 3 次同命令" }
+    },
+    {
+      "name": "第 9 层:同项目同类活",
+      "call": "predictRun",
+      "input": { "project": "p9", "usageKey": null, "category": "unit-test", "workType": "unit-test", "args": ["a9"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 90000, "low": 90000, "high": 90000, "n": 3, "level": 9, "basis": "最近 3 次同项目同类活" }
+    },
+    {
+      "name": "第 10 层:全部同类活",
+      "call": "predictRun",
+      "input": { "project": "p10", "usageKey": null, "category": "unit-test", "workType": "unit-test", "args": ["a10"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 12345, "low": 12345, "high": 12345, "n": 1, "level": 10, "basis": "最近 1 次全部同类活" }
+    },
+    {
+      "name": "层回退:第 1 层只有 2 个样本,落到第 4 层",
+      "call": "predictRun",
+      "input": { "project": "pf", "usageKey": "kf", "category": "unit-test", "workType": "unit-test", "args": ["af"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 22222, "low": 22222, "high": 22222, "n": 3, "level": 4, "basis": "最近 3 次同命令、同参数" }
+    },
+    {
+      "name": "机器未知:跳过第 1、3、5、7 层",
+      "call": "predictRun",
+      "input": { "project": "pn", "usageKey": "kn", "category": "unit-test", "workType": "unit-test", "args": ["an"], "machine": null, "cores": 4 },
+      "expected": { "p50": 15000, "low": 15000, "high": 15000, "n": 3, "level": 2, "basis": "最近 3 次同命令、同参数、同核数" }
+    },
+    {
+      "name": "没有任何样本桶时返回 null",
+      "call": "predictRun",
+      "input": { "project": "nope", "usageKey": null, "category": "calib-run", "workType": "calib", "args": null, "machine": "m1", "cores": 1 },
+      "expected": null
+    },
+    {
+      "name": "区间系数 2:按 p10/p90 展宽",
+      "call": "predictRun",
+      "input": { "project": "ps", "usageKey": "ks", "category": "unit-test", "workType": "unit-test", "args": ["as"], "machine": "m1", "cores": 4 },
+      "expected": { "p50": 20000, "low": 1, "high": 40000, "n": 3, "level": 4, "basis": "最近 3 次同命令、同参数" }
+    },
+    {
+      "name": "超时续估:还有至少 3 个更长的历史样本",
+      "call": "predictRemaining",
+      "input": {
+        "query": { "project": "pr", "usageKey": "kr", "category": "unit-test", "workType": "unit-test", "args": ["ar"], "machine": "m1", "cores": 4 },
+        "elapsedMs": 25000
+      },
+      "expected": { "remainingMs": 15000, "lowMs": 5000, "highMs": 25000, "tail": false, "level": 4, "n": 5, "basis": "最近 5 次同命令、同参数" }
+    },
+    {
+      "name": "超时续估:已经超过全部历史样本,走尾巴公式",
+      "call": "predictRemaining",
+      "input": {
+        "query": { "project": "pr", "usageKey": "kr", "category": "unit-test", "workType": "unit-test", "args": ["ar"], "machine": "m1", "cores": 4 },
+        "elapsedMs": 55000
+      },
+      "expected": { "remainingMs": 30000, "lowMs": 8250, "highMs": 110000, "tail": true, "level": 4, "n": 5, "basis": "最近 5 次同命令、同参数" }
+    },
+    {
+      "name": "启动耗时:19 个 3000 加 1 个 500000 按 95 分位封顶",
+      "call": "predictStartMs",
+      "input": { "machine": "mA", "fallbackMs": 120000 },
+      "expected": 3000
+    },
+    {
+      "name": "启动耗时:9 个 3000 加 1 个 100000 封顶线是最大值",
+      "call": "predictStartMs",
+      "input": { "machine": "mB", "fallbackMs": 120000 },
+      "expected": 12700
+    }
+  ]
+}

@@ -14,12 +14,13 @@ import RecentCommands from '@/components/sched/RecentCommands.vue'
 import LedgerTable from '@/components/sched/LedgerTable.vue'
 import TicketDrawer from '@/components/sched/TicketDrawer.vue'
 import EstimateText from '@/components/sched/EstimateText.vue'
-import { age, residentCount, ticketLabel, visibleTickets } from '@/components/sched/format'
+import { age, etaModelPill, residentCount, ticketLabel, visibleTickets } from '@/components/sched/format'
 import { loadShowResident, saveShowResident } from '@/components/sched/preferences'
 import '@/components/sched/console.css'
 
 const store = useSchedStore()
 const remote = useRemoteHosts()
+const etaPill = computed(() => etaModelPill(store.snapshot?.etaModel ?? null))
 const heartbeatAge = computed(() => age(store.snapshot?.dispatcher.heartbeat.at ?? null, store.now))
 const online = computed(() => store.snapshot?.machines.filter(machine => machine.online) ?? [])
 const offline = computed(() => store.snapshot?.machines.filter(machine => !machine.online) ?? [])
@@ -46,7 +47,7 @@ onUnmounted(store.stop)
       <div class="sched-pills">
         <span v-if="store.readable" class="sched-pill" :class="heartbeatAge !== null && heartbeatAge <= 120000 ? 'ok' : 'bad'">
           {{ heartbeatAge !== null && heartbeatAge <= 120000 ? '派单员在线' : '派单员失联' }} · 心跳 {{ heartbeatAge === null ? '未知' : Math.floor(heartbeatAge / 1000) + ' 秒前' }}
-        </span><span class="sched-pill">台账永久 · 日志 90 天</span><label v-if="store.readable" class="sched-resident-toggle" title="勾选后，机器卡的「调度中的单子」会列出常驻占用的单子；不勾选则收起。"><input v-model="showResident" type="checkbox">显示常驻占用（{{ residentTotal }}）</label>
+        </span><span class="sched-pill">台账永久 · 日志 90 天</span><label v-if="store.readable" class="sched-resident-toggle" title="勾选后，机器卡的「调度中的单子」会列出常驻占用的单子；不勾选则收起。"><input v-model="showResident" type="checkbox">显示常驻占用（{{ residentTotal }}）</label><span v-if="etaPill.text" class="sched-pill" :class="{ warn: !etaPill.ok }" :title="etaPill.title">{{ etaPill.text }}</span>
       </div>
     </header>
     <div v-if="store.snapshotError" class="sched-banner bad" role="alert"><div><strong>读不到调度共享盘</strong><p>{{ store.snapshotError }}</p></div>

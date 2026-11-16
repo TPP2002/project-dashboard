@@ -1,5 +1,6 @@
 'use strict';
 const { durationSamples, sampleKey } = require('./schedLedger.cjs');
+const { predictRun, predictRemaining } = require('./schedEtaModel.cjs');
 
 // 样本不足时的估算系数；同类 ciAware 至少五次且普通中位数有效时改用实测比值。
 const CI_AWARE_SLOWDOWN = 1.5;
@@ -15,6 +16,15 @@ const REASONS = Object.freeze({
 const unknown = (code, extra = {}) => ({ kind: 'unavailable', code, reason: REASONS[code], ...extra });
 const currentAttempt = ticket => ticket.attempts.find(attempt => attempt.attemptId === ticket.currentAttemptId);
 const headroom = machine => machine?.ciReserveCores === undefined ? {} : { ciHeadroom: machine.ciReserveCores };
+/** 模型查询:与派单员学习时的字段一一对应;缺的参数按 null,不编造。 */
+const etaQuery = (request, machine, cores) => ({ project: request.project, usageKey: request.usageKey ?? null,
+  category: request.category, workType: request.work.type, args: request.menu?.args ?? null, machine, cores });
+/** ciAware 的低优先级系数:有实测比值用实测,否则用显式系数或默认值。 */
+function slowdownOf(sample, measured, ciAwareSlowdown) {
+  const ratio = measured?.sampleCount >= 5 && sample !== undefined && sample.medianMs > 0 ? measured.medianMs / sample.medianMs : NaN;
+  const calibrated = ciAwareSlowdown === undefined && Number.isFinite(ratio) && ratio > 0;
+  return { slowdown: calibrated ? ratio : ciAwareSlowdown ?? CI_AWARE_SLOWDOWN, calibrated };
+}
 
 function machineBlock(machine, nowMs) {
   if (machine.reservation?.requestedCores > 0 && machine.reservation.fulfilledCores < machine.reservation.requestedCores) return 'reservation';
@@ -23,22 +33,35 @@ function machineBlock(machine, nowMs) {
   return null;
 }
 
-function runningEstimate(ticket, machines, samples, ciSamples, nowMs, ciAwareSlowdown) {
+function runningEstimate(ticket, machines, samples, ciSamples, nowMs, ciAwareSlowdown, model) {
   const attempt = currentAttempt(ticket), machine = machines.find(item => item.name === (attempt?.permit?.machine ?? attempt?.intent?.machine));
   if (!machine && !ticket.registerOnly) return unknown('missingMachine');
   const block = machine && machineBlock(machine, nowMs);
   if (block) return unknown(block);
   const ciAware = attempt?.permit?.ciAware === true;
   if (ticket.pauseReasons.includes('ci') && !ciAware) return unknown('ci');
-  const sample = samples.get(sampleKey(ticket.request));
+  // ciAware 只解释 CI 下的低优先级，不能把真正的暂停或其他原因的降速当作继续执行。
+  const paused = ticket.state === 'paused' || (ticket.state === 'slow' && (!ciAware || ticket.pauseReasons.some(reason => reason !== 'ci')));
+  const sample = samples.get(sampleKey(ticket.request)), measured = ciSamples.get(sampleKey(ticket.request));
+  if (model !== undefined && !paused && attempt?.startedAt) {
+    const query = etaQuery(ticket.request, machine?.name ?? null, attempt.grantedCores);
+    const elapsed = Math.max(0, nowMs - Date.parse(attempt.startedAt));
+    const run = predictRun(model, query), remaining = run === null ? null : predictRemaining(model, query, elapsed);
+    if (run !== null && remaining !== null) {
+      const { slowdown, calibrated } = slowdownOf(sample, measured, ciAwareSlowdown);
+      const factor = ciAware ? slowdown : 1, remainingMs = remaining.remainingMs * factor;
+      return { kind: 'completion', medianMs: run.p50, lowMs: run.low, highMs: run.high, sampleCount: run.n,
+        basis: run.basis, level: run.level, learned: true, tail: remaining.tail,
+        finishAt: new Date(nowMs + remainingMs).toISOString(), remainingMs,
+        remainingLowMs: remaining.lowMs * factor, remainingHighMs: remaining.highMs * factor,
+        overdue: elapsed > run.high, ...(ciAware ? { slowdown, slowdownEstimated: !calibrated } : {}) };
+    }
+  }
+  // 没有模型、模型给不出估值或暂停中：与接入模型前逐字节相同。
   if (!sample) return unknown('history');
   if (!attempt?.startedAt) return unknown('start');
-  // ciAware 只解释 CI 下的低优先级，不能把真正的暂停或其他原因的降速当作继续执行。
-  if (ticket.state === 'paused' || (ticket.state === 'slow' && (!ciAware || ticket.pauseReasons.some(reason => reason !== 'ci')))) return unknown('paused');
-  const measured = ciSamples.get(sampleKey(ticket.request));
-  const ratio = measured?.sampleCount >= 5 && sample.medianMs > 0 ? measured.medianMs / sample.medianMs : NaN;
-  const calibrated = ciAwareSlowdown === undefined && Number.isFinite(ratio) && ratio > 0;
-  const slowdown = calibrated ? ratio : ciAwareSlowdown ?? CI_AWARE_SLOWDOWN;
+  if (paused) return unknown('paused');
+  const { slowdown, calibrated } = slowdownOf(sample, measured, ciAwareSlowdown);
   const finishMs = Date.parse(attempt.startedAt) + sample.medianMs * (ciAware ? slowdown : 1);
   return { kind: 'completion', ...sample, ...(ciAware ? { slowdown, slowdownEstimated: !calibrated } : {}),
     finishAt: new Date(finishMs).toISOString(), remainingMs: Math.max(0, finishMs - nowMs), overdue: nowMs > finishMs };
@@ -66,7 +89,30 @@ function earliestSlot(machine, cores, durationMs, nowMs, ticketId) {
   return start;
 }
 
-function queueEstimate(entry, ticket, machines, samples, nowMs) {
+/** 学了模型的排队耗时:每台可去的机器各预测一次,再按「最早完成」选机;都给不出估值时返回 null 回旧口径。 */
+function learnedWait(entry, ticket, machines, ready, nowMs, model) {
+  const usable = ready.filter(machine => !machine.uncertain);
+  if (!usable.length) return null;
+  const anyRun = predictRun(model, etaQuery(ticket.request, null, entry.requestedCores));
+  const items = usable.map(machine => ({ machine,
+    run: predictRun(model, etaQuery(ticket.request, machine.name, entry.requestedCores)) ?? anyRun }))
+    .filter(item => item.run !== null);
+  if (!items.length) return null;
+  const chosen = items.map(item => ({ ...item,
+    at: earliestSlot(item.machine, entry.requestedCores, item.run.p50, nowMs, entry.ticketId) }))
+    .filter(slot => slot.at !== null)
+    .sort((a, b) => (a.at + a.run.p50) - (b.at + b.run.p50)
+      || a.machine.preference - b.machine.preference || (a.machine.name < b.machine.name ? -1 : 1))[0];
+  if (!chosen) return null;
+  chosen.machine.changes.push({ at: chosen.at, cores: -entry.requestedCores }, { at: chosen.at + chosen.run.p50, cores: entry.requestedCores });
+  for (const machine of machines) if (machine.protectedBy === entry.ticketId) machine.protectedUntil = chosen.at;
+  return { kind: 'wait', ...headroom(chosen.machine), machine: chosen.machine.name,
+    startAt: new Date(chosen.at).toISOString(), waitMs: chosen.at - nowMs, medianMs: chosen.run.p50,
+    lowMs: chosen.run.low, highMs: chosen.run.high, sampleCount: chosen.run.n, basis: chosen.run.basis,
+    level: chosen.run.level, learned: true };
+}
+
+function queueEstimate(entry, ticket, machines, samples, nowMs, model) {
   const allowed = machines.filter(machine => entry.allowedMachines.includes(machine.name));
   const unavailable = code => unknown(code, allowed.length === 1 ? headroom(allowed[0]) : {});
   if (entry.state === 'unsatisfiable' || (allowed.length === entry.allowedMachines.length && allowed.every(machine => machine.quotaCores < entry.requestedCores))) return unavailable('capacity');
@@ -76,6 +122,10 @@ function queueEstimate(entry, ticket, machines, samples, nowMs) {
   if (!ticket || ticket.state !== entry.state) {
     for (const machine of ready) machine.uncertain = 'snapshot';
     return unavailable('snapshot');
+  }
+  if (model !== undefined) {
+    const learned = learnedWait(entry, ticket, machines, ready, nowMs, model);
+    if (learned !== null) return learned;
   }
   const sample = ticket && samples.get(sampleKey(ticket.request));
   if (!sample) {
@@ -96,7 +146,7 @@ function queueEstimate(entry, ticket, machines, samples, nowMs) {
 }
 
 /** 纯投影：显式 nowMs，不写输入、不读盘/系统时钟；显式覆盖系数须为有限数且不小于 1。 */
-function estimateTickets(snapshot, history, { ciAwareSlowdown } = {}) {
+function estimateTickets(snapshot, history, { ciAwareSlowdown, model } = {}) {
   if (ciAwareSlowdown !== undefined && (!Number.isFinite(ciAwareSlowdown) || ciAwareSlowdown < 1)) throw new RangeError('CI 低优先级耗时系数必须是大于等于 1 的有限数');
   const { nowMs } = snapshot;
   const tickets = snapshot.tickets ?? [], queue = snapshot.queue ?? [], machines = snapshot.machines ?? [];
@@ -117,19 +167,20 @@ function estimateTickets(snapshot, history, { ciAwareSlowdown } = {}) {
       protectedBy, protectedUntil: protectedBy ? Infinity : nowMs };
   });
   for (const ticket of tickets.filter(item => ['granted', 'running', 'paused', 'slow'].includes(item.state))) {
-    const estimate = runningEstimate(ticket, machines, samples, ciSamples, nowMs, ciAwareSlowdown);
+    const estimate = runningEstimate(ticket, machines, samples, ciSamples, nowMs, ciAwareSlowdown, model);
     const attempt = currentAttempt(ticket), machine = simulated.find(item => item.name === (attempt?.permit?.machine ?? attempt?.intent?.machine));
     result[ticket.ticketId] = { ...estimate, ...headroom(machine) };
     if (!machine || ticket.registerOnly || !attempt?.grantedCores) continue;
     const releasing = Math.min(attempt.grantedCores, machine.releaseBudget);
     machine.releaseBudget -= releasing;
-    if (estimate.kind === 'completion' && !estimate.overdue) machine.changes.push({ at: nowMs + estimate.remainingMs, cores: releasing });
+    // 学了模型的估值即使已超时也给出还要多久，照它的完成时刻释放核数，后面排队的单才不会「算不出」。
+    if (estimate.kind === 'completion' && (estimate.learned === true || !estimate.overdue)) machine.changes.push({ at: nowMs + estimate.remainingMs, cores: releasing });
     // 超时或未知执行保持占用；已有空闲核仍可用，只有需要释放这些核时才报告原因。
     else machine.releaseUnknown = estimate.overdue ? 'overdue' : estimate.code;
   }
   const byId = new Map(tickets.map(ticket => [ticket.ticketId, ticket]));
   for (const entry of [...queue].sort((a, b) => a.position - b.position)) {
-    const estimate = queueEstimate(entry, byId.get(entry.ticketId), simulated, samples, nowMs);
+    const estimate = queueEstimate(entry, byId.get(entry.ticketId), simulated, samples, nowMs, model);
     if (estimate.kind === 'unavailable' && estimate.code === 'load') {
       const code = simulated.find(machine => entry.allowedMachines.includes(machine.name) && machine.releaseUnknown)?.releaseUnknown;
       result[entry.ticketId] = code ? { ...estimate, ...unknown(code) } : estimate;

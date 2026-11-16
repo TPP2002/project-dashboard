@@ -325,3 +325,129 @@ test('接入项目只来自最近七天的事件，支持旧单新事件、去�
   assert.deepEqual(connectedProjects([old, recent], data, NOW).names, ['fixture-new-project', 'fixture-older-project']);
   assert.deepEqual(connectedProjects([], { readable: false, reason: 'fixture-unreadable' }, NOW), { readable: false, names: [], reason: 'fixture-unreadable' });
 });
+
+// ── 第三张单(AD-20261116-SCHED-ETA-LEARN):估算改用学到的模型;没有模型时上一节逐字不变 ──
+const { createModel, learn: learnSample, predictRun } = require('../core/schedEtaModel.cjs');
+
+/** 用模型自带的学习入口造模型:同一命令在指定机器上学若干耗时,query 字段与票据请求一致。 */
+function learnedModel(items) {
+  const model = createModel();
+  let index = 0;
+  for (const item of items) for (const durationMs of item.durations) {
+    index += 1;
+    const result = learnSample(model, { ticketId: `tk-${String(index).padStart(20, '0')}`, attemptId: 'a1',
+      project: item.project ?? 'sample', usageKey: item.usageKey ?? null, category: item.category ?? 'unit-test',
+      workType: item.workType ?? 'test', args: item.args ?? null, machine: item.machine ?? 'fixture-worker',
+      cores: item.cores ?? 4, durationMs, startMs: null, endedAt: iso(NOW - index * 1000), ciAware: false });
+    assert.equal(result.learned, true);
+  }
+  return model;
+}
+
+test('有模型:在跑未超时给出中位耗时与还要多久,排队单按模型占住释放时刻', () => {
+  const running = job(1, 'running', 4000), waiting = job(2);
+  const model = learnedModel([{ durations: [8000, 10000, 12000] }]);
+  const result = estimateTickets(snapshot([running, waiting]), history([8000, 10000, 12000]), { model });
+  const completion = result[running.ticketId];
+  // 区间由模型自己按 p10/p90 与区间系数给出,这里只钉住它和模型输出一致。
+  const expected = predictRun(model, { project: 'sample', usageKey: null, category: 'unit-test', workType: 'test',
+    args: null, machine: 'fixture-worker', cores: 4 });
+  assert.equal(completion.kind, 'completion');
+  assert.equal(completion.learned, true);
+  assert.equal(completion.medianMs, 10000);
+  assert.equal(completion.lowMs, expected.low);
+  assert.equal(completion.highMs, expected.high);
+  assert.equal(completion.sampleCount, 3);
+  assert.equal(completion.level, 1);
+  assert.equal(completion.basis, '最近 3 次同命令、同参数、同机器、同核数');
+  assert.equal(completion.remainingMs, 6000);
+  assert.equal(completion.remainingLowMs, 4000);
+  assert.equal(completion.remainingHighMs, 8000);
+  assert.equal(completion.tail, false);
+  assert.equal(completion.finishAt, iso(NOW + 6000));
+  assert.equal(completion.overdue, false);
+  assert.equal(result[waiting.ticketId].kind, 'wait');
+  assert.equal(result[waiting.ticketId].learned, true);
+  assert.equal(result[waiting.ticketId].startAt, iso(NOW + 6000));
+  assert.equal(result[waiting.ticketId].waitMs, 6000);
+  assert.equal(result[waiting.ticketId].medianMs, 10000);
+});
+
+test('有模型:在跑超过全部样本走尾巴规则,后面的排队单仍有开跑时刻', () => {
+  const running = job(1, 'running', 30000), waiting = job(2);
+  const model = learnedModel([{ durations: [8000, 10000, 12000] }]);
+  const result = estimateTickets(snapshot([running, waiting]), history([8000, 10000, 12000]), { model });
+  const completion = result[running.ticketId];
+  assert.equal(completion.remainingMs, 30000);
+  assert.equal(completion.tail, true);
+  assert.equal(completion.overdue, true);
+  assert.equal(completion.learned, true);
+  assert.equal(completion.finishAt, iso(NOW + 30000));
+  // 超时单不再让后面的单「算不出」:它按模型给的完成时刻释放核数。
+  assert.equal(result[waiting.ticketId].kind, 'wait');
+  assert.equal(result[waiting.ticketId].learned, true);
+  assert.equal(result[waiting.ticketId].startAt, iso(NOW + 30000));
+  assert.equal(result[waiting.ticketId].waitMs, 30000);
+});
+
+test('有模型:两台空机器按「最早完成」选,不只比开跑时刻', () => {
+  const waiting = job(1);
+  waiting.request.allowedMachines = ['fixture-fast', 'fixture-slow'];
+  const model = learnedModel([{ machine: 'fixture-fast', durations: [20000, 20000, 20000] },
+    { machine: 'fixture-slow', durations: [40000, 40000, 40000] }]);
+  const hosts = [machine({ name: 'fixture-fast', grantedCores: 0, availableCores: 4 }),
+    machine({ name: 'fixture-slow', grantedCores: 0, availableCores: 4 })];
+  const estimate = estimateTickets(snapshot([waiting], hosts), history([10000]), { model })[waiting.ticketId];
+  assert.equal(estimate.kind, 'wait');
+  assert.equal(estimate.machine, 'fixture-fast');
+  assert.equal(estimate.waitMs, 0);
+  assert.equal(estimate.startAt, iso(NOW));
+  assert.equal(estimate.medianMs, 20000);
+  assert.equal(estimate.learned, true);
+});
+
+test('模型里没有该命令任何一层样本时,与接入模型前的口径逐字相同', () => {
+  const waiting = job(1);
+  const model = learnedModel([{ project: 'other-project', category: 'calib-run', workType: 'calib', durations: [5000, 6000, 7000] }]);
+  const legacy = estimateTickets(snapshot([waiting]), history([10000]));
+  assert.deepEqual(estimateTickets(snapshot([waiting]), history([10000]), { model }), legacy);
+  const running = job(2, 'running', 4000);
+  const runningModel = learnedModel([{ project: 'other-project', category: 'calib-run', workType: 'calib', durations: [5000, 6000, 7000] }]);
+  assert.deepEqual(estimateTickets(snapshot([running]), history([10000]), { model: runningModel }),
+    estimateTickets(snapshot([running]), history([10000])));
+});
+
+test('有模型:ciAware 的剩余时长与上下界同乘低优先级系数', () => {
+  const running = job(1, 'running', 4000);
+  running.attempts[0].permit.ciAware = true;
+  const host = machine({ ci: 'active', quotaCores: 12, ciReserveCores: 8 });
+  const model = learnedModel([{ durations: [8000, 10000, 12000] }]);
+  const completion = estimateTickets(snapshot([running], [host]), history([8000, 10000, 12000]), { model })[running.ticketId];
+  assert.equal(completion.kind, 'completion');
+  assert.equal(completion.learned, true);
+  assert.equal(completion.slowdown, 1.5);
+  assert.equal(completion.slowdownEstimated, true);
+  assert.equal(completion.medianMs, 10000);
+  assert.equal(completion.remainingMs, 9000);
+  assert.equal(completion.remainingLowMs, 6000);
+  assert.equal(completion.remainingHighMs, 12000);
+  assert.equal(completion.finishAt, iso(NOW + 9000));
+  assert.equal(completion.overdue, false);
+  const calibrated = estimateTickets(snapshot([running], [host]), history([8000, 10000, 12000]),
+    { model, ciAwareSlowdown: 2 })[running.ticketId];
+  assert.equal(calibrated.slowdown, 2);
+  assert.equal(calibrated.remainingMs, 12000);
+  assert.equal(calibrated.remainingLowMs, 8000);
+  assert.equal(calibrated.remainingHighMs, 16000);
+  assert.equal(calibrated.finishAt, iso(NOW + 12000));
+});
+
+test('有模型时仍是纯函数:输入冻结后跑两遍结果相同,输入不被改', () => {
+  const running = job(1, 'running', 4000), waiting = job(2);
+  const input = freeze(snapshot([running, waiting])), samples = freeze(history([8000, 10000, 12000]));
+  const model = freeze(learnedModel([{ durations: [8000, 10000, 12000] }]));
+  const before = JSON.stringify([input, samples, model]);
+  const first = estimateTickets(input, samples, { model });
+  assert.deepEqual(estimateTickets(input, samples, { model }), first);
+  assert.equal(JSON.stringify([input, samples, model]), before);
+});
