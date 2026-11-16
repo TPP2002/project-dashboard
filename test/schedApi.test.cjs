@@ -240,3 +240,43 @@ test('worker reads retain CSV headers/bytes and detail related=0; every complete
   saveTicket(srv, ticket(2));
   assert.equal((await srv.json('/api/sched/tickets')).body.total, 2);
 });
+
+test('快照带估时模型状态：共享盘没有模型文件时照常工作并说明未生成', async t => {
+  const srv = await startServer(t);
+  const result = await srv.json('/api/sched/snapshot');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.readable, true);
+  assert.equal(result.body.etaModel.loaded, false);
+  assert.match(result.body.etaModel.reason, /还没生成/);
+});
+
+test('快照读到合法估时模型时为 true，在跑单按模型给出 learned 估值', async t => {
+  const srv = await startServer(t);
+  const { createModel, learn, serializeModel } = require('../core/schedEtaModel.cjs');
+  const model = createModel();
+  [8000, 10000, 12000].forEach((durationMs, index) => {
+    assert.equal(learn(model, { ticketId: `tk-${String(index + 1).padStart(20, '0')}`, attemptId: 'a1', project: 'sample',
+      usageKey: null, category: 'unit-test', workType: 'test', args: null, machine: 'fixture-worker', cores: 4,
+      durationMs, startMs: null, endedAt: new Date(Date.now() - (index + 1) * 1000).toISOString(), ciAware: false }).learned, true);
+  });
+  const stats = path.join(srv.paths.root, '_stats');
+  fs.mkdirSync(stats, { recursive: true });
+  fs.writeFileSync(path.join(stats, 'eta-model.json'), serializeModel(model));
+  // 空台账目录也算可读:没有历史事件时才看得出估值来自模型而不是旧口径。
+  fs.mkdirSync(path.join(srv.paths.root, 'ledger'), { recursive: true });
+  const running = ticket(1, { state: 'running' });
+  running.attempts[0].startedAt = new Date(Date.now() - 4000).toISOString();
+  saveTicket(srv, running);
+  write(srv.paths.heartbeat, heartbeat(new Date().toISOString()));
+  const result = await srv.json('/api/sched/snapshot');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.etaModel.loaded, true);
+  assert.equal(result.body.etaModel.buckets, Object.keys(model.buckets).length);
+  assert.equal(result.body.etaModel.accuracy.n, model.recent.length);
+  assert.equal(result.body.etaModel.updatedAt, model.updatedAt);
+  const estimate = result.body.estimates[running.ticketId];
+  assert.equal(estimate.kind, 'completion');
+  assert.equal(estimate.learned, true);
+  assert.equal(estimate.medianMs, 10000);
+  assert.ok(estimate.remainingMs > 5000 && estimate.remainingMs < 7000, `剩余时长应接近 6 秒:${estimate.remainingMs}`);
+});

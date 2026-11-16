@@ -1,4 +1,4 @@
-import type { CommandInput, MachineSnapshot, TicketSummary, TicketState } from '@/api/sched'
+import type { CommandInput, MachineSnapshot, SchedEtaModel, TicketEstimate, TicketSummary, TicketState } from '@/api/sched'
 import type { CiJob, CiThrottle } from '@/api/schedCiJobs'
 
 export const stateLabels: Record<TicketState, string> = { queued: '排队中', granted: '已授予，等待开跑', running: '运行中',
@@ -121,4 +121,54 @@ export function residentCount(tickets: { resident?: boolean }[]): number {
 /** 隐藏常驻占用时去掉它们，原顺序、原对象不变，也不改动传入数组；显示时原样返回。 */
 export function visibleTickets<T extends { resident?: boolean }>(tickets: T[], showResident: boolean): T[] {
   return showResident ? tickets : tickets.filter(ticket => !isResidentTicket(ticket))
+}
+
+/** 估时文案:旧估值逐字沿用原模板,学了模型的改成「一般跑 a~b」并说清超时后还要多久。 */
+export type EstimateText = { headline: string; detail: string; title: string; warn: boolean }
+/** 只读渲染入参:两种估值与展示附加字段的可能键都在,缺了按「暂无」处理。 */
+type EstimateInput = {
+  kind: TicketEstimate['kind']
+  code?: string; reason?: string
+  startAt?: string; waitMs?: number; finishAt?: string; remainingMs?: number; overdue?: boolean
+  machine?: string; medianMs?: number; sampleCount?: number
+  lowMs?: number; highMs?: number; basis?: string; level?: number; learned?: boolean; tail?: boolean
+  remainingLowMs?: number; remainingHighMs?: number
+  ciHeadroom?: number; slowdown?: number; slowdownEstimated?: boolean
+}
+
+function slowdownNote(slowdown: number | undefined, estimated: boolean | undefined) {
+  return slowdown === undefined ? '' : ` · 低优先级耗时 ${Number(slowdown.toFixed(2))} 倍（${estimated === false ? '实测' : '估'}）`
+}
+
+export function describeEstimate(estimate?: EstimateInput | null): EstimateText {
+  if (!estimate) return { headline: '算不出（读不到预估数据）', detail: '', title: '', warn: false }
+  if (estimate.kind === 'unavailable') return { headline: `算不出（${estimate.reason}）`, detail: '', title: '', warn: false }
+  const note = slowdownNote(estimate.slowdown, estimate.slowdownEstimated)
+  if (estimate.learned === true) {
+    const title = `依据:${estimate.basis};中位 ${duration(estimate.medianMs)}`
+    if (estimate.kind === 'wait') return { headline: `预计等待 ${duration(estimate.waitMs)}`,
+      detail: ` · ${stamp(estimate.startAt)} 开跑 · 一般跑 ${duration(estimate.lowMs)}~${duration(estimate.highMs)}${note}`, title, warn: false }
+    if (estimate.overdue) return { headline: '已超出常见耗时', warn: true, title,
+      detail: (estimate.tail === true ? ` · 按已跑时长估,还要约 ${duration(estimate.remainingMs)}(把握不大)`
+        : ` · 按同类活里更慢的几次估,还要约 ${duration(estimate.remainingMs)}`) + note }
+    return { headline: `预计完成 ${stamp(estimate.finishAt)}`, title, warn: false,
+      detail: ` · 一般跑 ${duration(estimate.lowMs)}~${duration(estimate.highMs)}${note}` }
+  }
+  const title = `同类最近 ${estimate.sampleCount} 次执行的中位耗时：${duration(estimate.medianMs)}`
+  const headline = estimate.kind === 'wait' ? `预计等待 ${duration(estimate.waitMs)}`
+    : estimate.overdue ? '已超出预计耗时' : `预计完成 ${stamp(estimate.finishAt)}`
+  const start = estimate.kind === 'wait' ? ` · ${stamp(estimate.startAt)} 开跑` : ''
+  const total = estimate.medianMs === undefined ? undefined : estimate.medianMs * (estimate.slowdown ?? 1)
+  return { headline, title, warn: estimate.kind === 'completion' && estimate.overdue === true,
+    detail: `${start} · 预计跑 ${duration(total)}${note}` }
+}
+
+/** 页头小标签:报告估时模型自己的准确度;没读到状态或未就绪时如实说明。 */
+export function etaModelPill(info: SchedEtaModel | null | undefined): { text: string; title: string; ok: boolean } {
+  if (info === null || info === undefined) return { text: '', title: '', ok: false }
+  if (info.loaded === false) return { text: '估时模型未就绪 · 暂用旧口径', title: info.reason, ok: false }
+  if (info.accuracy.n === 0) return { text: '估时模型刚起步 · 还没有对照数据', title: `已学 ${info.buckets} 组`, ok: true }
+  const percent = (value: number | null) => Math.round((value ?? 0) * 100)
+  return { text: `估时模型 · 近 ${info.accuracy.n} 次误差 30% 内 ${percent(info.accuracy.within30)}%`, ok: true,
+    title: `范围命中 ${percent(info.accuracy.intervalHit)}% · 误差 50% 内 ${percent(info.accuracy.within50)}% · 学习于 ${stamp(info.updatedAt)}` }
 }

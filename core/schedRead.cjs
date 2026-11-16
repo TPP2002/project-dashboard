@@ -6,6 +6,7 @@ const c = require('./schedContract.cjs');
 const { connectedProjects } = require('./schedLedger.cjs');
 const { ledgerIndexFor, ledgerIndexStats } = require('./schedLedgerIndex.cjs');
 const { estimateTickets } = require('./schedEstimates.cjs');
+const { readEtaModelFile } = require('./schedEtaModelFile.cjs');
 const { ticketCsv } = require('./schedCsv.cjs');
 const { ticketRelations } = require('./schedRelations.cjs');
 const { ticketReadCache } = require('./schedTicketReadCache.cjs');
@@ -116,8 +117,11 @@ function snapshot(share, nowMs) {
     const registerOnly = tickets.filter(ticket => ticket.registerOnly && ticket.state === 'running');
     const index = ledgerIndexFor(share); index.refresh(share);
     const history = index.history();
+    // 估时模型只是增强:文件没生成、读坏都照常用旧的同类中位耗时口径,不影响其余字段。
+    const eta = readEtaModelFile(share);
     const estimates = estimateTickets({ readable: true, nowMs, tickets: records, queue: heartbeat.queue,
-      machines: heartbeat.machines, locks: heartbeat.locks, heartbeatAt: heartbeat.at, cursorSeq: heartbeat.cursorSeq }, history);
+      machines: heartbeat.machines, locks: heartbeat.locks, heartbeatAt: heartbeat.at, cursorSeq: heartbeat.cursorSeq }, history,
+      eta.loaded ? { model: eta.model } : {});
     const receipts = recentReceipts(share);
     const unknownHeartbeatFields = c.heartbeatUnknownFields(heartbeat);
     const unknownKey = unknownHeartbeatFields.join(',');
@@ -133,11 +137,14 @@ function snapshot(share, nowMs) {
       running: tickets.filter(ticket => ACTIVE.includes(ticket.state)),
       registerOnly, registerOnlyGroups: groupExternalTickets(registerOnly, tickets), recentReceipts: receipts,
       estimates, estimatesAt: new Date(nowMs).toISOString(), historyError: history.reason,
+      etaModel: eta.loaded ? { loaded: true, updatedAt: eta.updatedAt, buckets: eta.buckets, accuracy: eta.accuracy }
+        : { loaded: false, reason: eta.reason },
       connectedProjects: connectedProjects(records, history, nowMs) };
   } catch (error) {
     return { ...readFailure(error), share, format: null, dispatcher: null, machines: null, queue: null, locks: null,
       running: null, registerOnly: null, registerOnlyGroups: null, recentReceipts: null,
-      estimates: null, estimatesAt: null, historyError: null, connectedProjects: null, hostReservationChange: null };
+      estimates: null, estimatesAt: null, historyError: null, connectedProjects: null, hostReservationChange: null,
+      etaModel: null };
   }
 }
 
