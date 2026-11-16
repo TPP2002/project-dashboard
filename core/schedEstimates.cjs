@@ -1,6 +1,6 @@
 'use strict';
 const { durationSamples, sampleKey } = require('./schedLedger.cjs');
-const { predictRun, predictRemaining } = require('./schedEtaModel.cjs');
+const { predictRun, predictRemaining, predictStartMs } = require('./schedEtaModel.cjs');
 
 // 样本不足时的估算系数；同类 ciAware 至少五次且普通中位数有效时改用实测比值。
 const CI_AWARE_SLOWDOWN = 1.5;
@@ -11,6 +11,7 @@ const REASONS = Object.freeze({
   paused: '任务已暂停或降速，何时恢复还不知道', load: '正在占用的核数何时能腾出来还不知道',
   overdue: '任务已超过预计耗时，何时结束还不知道', missingMachine: '找不到这项任务所在机器的最新信息',
   head: '还不知道前面的任务何时开跑',
+  resident: '常驻占用，不会自己结束',
   snapshot: '还没读到最新的调度信息', ledger: '读不到历史执行记录',
 });
 const unknown = (code, extra = {}) => ({ kind: 'unavailable', code, reason: REASONS[code], ...extra });
@@ -38,11 +39,28 @@ function runningEstimate(ticket, machines, samples, ciSamples, nowMs, ciAwareSlo
   if (!machine && !ticket.registerOnly) return unknown('missingMachine');
   const block = machine && machineBlock(machine, nowMs);
   if (block) return unknown(block);
+  if (ticket.request.resident === true) return unknown('resident');
   const ciAware = attempt?.permit?.ciAware === true;
   if (ticket.pauseReasons.includes('ci') && !ciAware) return unknown('ci');
   // ciAware 只解释 CI 下的低优先级，不能把真正的暂停或其他原因的降速当作继续执行。
   const paused = ticket.state === 'paused' || (ticket.state === 'slow' && (!ciAware || ticket.pauseReasons.some(reason => reason !== 'ci')));
   const sample = samples.get(sampleKey(ticket.request)), measured = ciSamples.get(sampleKey(ticket.request));
+  const issuedMs = Date.parse(attempt?.permit?.issuedAt);
+  if (model !== undefined && ticket.state === 'granted' && attempt && !attempt.startedAt
+      && Number.isFinite(issuedMs) && nowMs - issuedMs <= 600000) {
+    const query = etaQuery(ticket.request, machine?.name ?? null, attempt.grantedCores);
+    const run = predictRun(model, query);
+    if (run !== null) {
+      const startMs = Math.max(nowMs, issuedMs + predictStartMs(model, machine?.name ?? null, 15000));
+      const { slowdown, calibrated } = slowdownOf(sample, measured, ciAwareSlowdown);
+      const factor = ciAware ? slowdown : 1, finishMs = startMs + run.p50 * factor;
+      return { kind: 'completion', medianMs: run.p50, lowMs: run.low, highMs: run.high, sampleCount: run.n,
+        basis: run.basis, level: run.level, learned: true, tail: false,
+        finishAt: new Date(finishMs).toISOString(), remainingMs: finishMs - nowMs,
+        remainingLowMs: startMs + run.low * factor - nowMs, remainingHighMs: startMs + run.high * factor - nowMs,
+        overdue: false, ...(ciAware ? { slowdown, slowdownEstimated: !calibrated } : {}) };
+    }
+  }
   if (model !== undefined && !paused && attempt?.startedAt) {
     const query = etaQuery(ticket.request, machine?.name ?? null, attempt.grantedCores);
     const elapsed = Math.max(0, nowMs - Date.parse(attempt.startedAt));
@@ -173,6 +191,7 @@ function estimateTickets(snapshot, history, { ciAwareSlowdown, model } = {}) {
     if (!machine || ticket.registerOnly || !attempt?.grantedCores) continue;
     const releasing = Math.min(attempt.grantedCores, machine.releaseBudget);
     machine.releaseBudget -= releasing;
+    if (ticket.request.resident === true) continue;
     // 学了模型的估值即使已超时也给出还要多久，照它的完成时刻释放核数，后面排队的单才不会「算不出」。
     if (estimate.kind === 'completion' && (estimate.learned === true || !estimate.overdue)) machine.changes.push({ at: nowMs + estimate.remainingMs, cores: releasing });
     // 超时或未知执行保持占用；已有空闲核仍可用，只有需要释放这些核时才报告原因。
