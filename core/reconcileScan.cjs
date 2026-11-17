@@ -68,6 +68,8 @@ function scanProject(input) {
   const activity = (board && board.activity) || [];
   const jobBranches = (j) => [j.branch, j.landBranch].filter(Boolean);
   const findings = [];
+  const waiting = [];
+  const waitingPrereq = input.waitingPrereq || new Map();
   let activeCount = 0;
   const push = (kind, task, taskKey, detail) => findings.push({
     kind, taskId: task.id, plainTitle: task.plainTitle || task.title || '', status: task.status,
@@ -155,16 +157,24 @@ function scanProject(input) {
         return t !== null && t > now - staleDays * DAY;
       });
       if (stale && myOpen.length === 0 && !busy && !freshBranch) {
-        const days = tt === null ? null : Math.floor((now - tt) / DAY);
-        push('STALE_IN_PROGRESS', task, '',
-          `${days === null ? '一直' : days + ' 天'}没有动静,没有开着的 PR、在跑的单,分支也没有新提交`);
+        const entries = waitingPrereq.get(task.id);
+        if (Array.isArray(entries) && entries.length) {
+          const n = entries.length;
+          const list = entries.slice(0, 3).map((entry) => `${entry.slug}(${entry.reasons[0] || '没写原因'})`).join(';');
+          waiting.push({ taskId: task.id, plainTitle: task.plainTitle || task.title || '', status: task.status,
+            detail: `${n} 份契约在等前置:${list}${n > 3 ? `;等 ${n} 份` : ''}` });
+        } else {
+          const days = tt === null ? null : Math.floor((now - tt) / DAY);
+          push('STALE_IN_PROGRESS', task, '',
+            `${days === null ? '一直' : days + ' 天'}没有动静,没有开着的 PR、在跑的单,分支也没有新提交`);
+        }
       }
     }
   }
 
   const order = Object.keys(KINDS);
   findings.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
-  return { projectId, findings, activeCount };
+  return { projectId, findings, activeCount, waiting };
 }
 
 module.exports = { scanProject, KINDS, lastTouched, titleMatches };
