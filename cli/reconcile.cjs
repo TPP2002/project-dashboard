@@ -17,7 +17,7 @@ function defaultRunFile(cmd, args, opts = {}) {
   try {
     const stdout = childProcess.execFileSync(cmd, args, {
       encoding: 'utf8', windowsHide: true, timeout: opts.timeout || 30000, maxBuffer: 32 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'ignore'], ...(opts.cwd ? { cwd: opts.cwd } : {}),
     });
     return { status: 0, stdout: String(stdout) };
   } catch (e) {
@@ -186,6 +186,26 @@ function readBoard(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
+function readWaitingPrereq(p, runFile) {
+  const waiting = new Map();
+  const [first, ...args] = p.queueCommand;
+  const r = runFile(first === 'node' ? process.execPath : first, args, { cwd: p.mainRepo, timeout: 120000 });
+  if (r.status !== 0) return { available: false, waiting, reason: '队列判读命令没跑成' };
+  let data;
+  try { data = JSON.parse(r.stdout); } catch { return { available: false, waiting, reason: '队列判读输出读不懂' }; }
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.items)) {
+    return { available: false, waiting, reason: '队列判读输出读不懂' };
+  }
+  if (data.gitOk === false) return { available: false, waiting, reason: '队列判读读不了 git 合并记录' };
+  for (const item of data.items) {
+    if (!item || item.verdict !== 'wait-prereq' || typeof item.card !== 'string' || !item.card.trim()
+      || typeof item.slug !== 'string' || !item.slug.trim()) continue;
+    if (!waiting.has(item.card)) waiting.set(item.card, []);
+    waiting.get(item.card).push({ slug: item.slug, reasons: Array.isArray(item.reasons) ? item.reasons.filter((v) => typeof v === 'string') : [] });
+  }
+  return { available: true, waiting, reason: '' };
+}
+
 function reconcile(flags, deps = {}) {
   const runFile = deps.runFile || defaultRunFile;
   const nowFn = deps.now || Date.now;
@@ -227,6 +247,8 @@ function reconcile(flags, deps = {}) {
       cloud: !!(e.cloud && e.cloud.enabled),
       exempt: Array.isArray(e.reconcileExempt) ? e.reconcileExempt.filter((x) => typeof x === 'string') : [],
       contractDirs: Array.isArray(e.reconcileContractDirs) ? e.reconcileContractDirs.filter((x) => typeof x === 'string' && x) : [],
+      queueCommand: Array.isArray(e.reconcileQueueCommand) && e.reconcileQueueCommand.length > 0
+        && e.reconcileQueueCommand.every((x) => typeof x === 'string' && x.trim()) ? e.reconcileQueueCommand : null,
     });
   }
 
@@ -264,11 +286,17 @@ function reconcile(flags, deps = {}) {
       });
     const jobs = [...own, ...extra].map(({ meta, dir, ...j }) => j);
     const exempt = new Set([...asArray(flags.exempt), ...p.exempt]);
-    const scan = scanProject({ projectId: p.id, board, now, staleDays, collectHours, exempt, prs, branches, jobs });
+    const scanInput = { projectId: p.id, board, now, staleDays, collectHours, exempt, prs, branches, jobs };
+    let scan = scanProject(scanInput);
+    if (p.queueCommand && scan.findings.some((f) => f.kind === 'STALE_IN_PROGRESS')) {
+      const queue = readWaitingPrereq(p, runFile);
+      if (queue.available) scan = scanProject({ ...scanInput, waitingPrereq: queue.waiting });
+      else notes.push(`${queue.reason},「施工中多日没动静」按原规则判`);
+    }
     totalFindings += scan.findings.length;
     result.push({
       id: p.id, name: p.name, activeCount: scan.activeCount, prAvailable: prs.available,
-      branchAvailable: branches.available, cloudReadOnly: p.cloud, findings: scan.findings,
+      branchAvailable: branches.available, cloudReadOnly: p.cloud, findings: scan.findings, waitingPrereq: scan.waiting,
     });
 
     lines.push(`${p.name}(${p.id}):在办 ${scan.activeCount} 张,对不上 ${scan.findings.length} 张`);
@@ -279,6 +307,10 @@ function reconcile(flags, deps = {}) {
       if (!group.length) continue;
       lines.push(`  【${label}】${group.length} 条`);
       for (const f of group) lines.push(`    ${f.taskId} ${f.plainTitle} —— ${f.detail}`);
+    }
+    if (scan.waiting.length) {
+      lines.push(`  【等前置,不挂暂缓】${scan.waiting.length} 条`);
+      for (const w of scan.waiting) lines.push(`    ${w.taskId} ${w.plainTitle} —— ${w.detail}`);
     }
 
     if (!apply || p.cloud) continue;

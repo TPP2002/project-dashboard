@@ -163,3 +163,32 @@ test('R7 括号写卡号与 prNumbers 都能归属', () => {
   assert.deepEqual(kinds(mk({ number: 8, title: 'fix stuff (FEAT-1)', headRefName: 'b', updatedAt: ago(H) })), ['CLOSED_WITH_OPEN_PR']);
   assert.deepEqual(kinds(mk({ number: 8, title: 'plain', headRefName: 'b', updatedAt: ago(H) }, { prNumbers: [8] })), ['CLOSED_WITH_OPEN_PR']);
 });
+
+test('S1 等前置的两份契约不报多日无动静', () => {
+  const res = scanProject(r5({ waitingPrereq: new Map([['FEAT-1', [
+    { slug: 'slug-x', reasons: ['原因一', '其他'] }, { slug: 'slug-y', reasons: ['原因二'] },
+  ]]]) }));
+  assert.deepEqual(res.findings, []);
+  assert.equal(res.waiting.length, 1);
+  assert.match(res.waiting[0].detail, /slug-x\(原因一\).*slug-y\(原因二\)/);
+});
+test('S2 别的卡等前置不影响本卡', () => {
+  const res = scanProject(r5({ waitingPrereq: new Map([['FEAT-2', [{ slug: 'slug-x', reasons: [] }]]]) }));
+  assert.deepEqual(kinds(res), ['STALE_IN_PROGRESS']);
+  assert.deepEqual(res.waiting, []);
+});
+test('S3 空契约数组仍报多日无动静', () => {
+  const res = scanProject(r5({ waitingPrereq: new Map([['FEAT-1', []]]) }));
+  assert.deepEqual(kinds(res), ['STALE_IN_PROGRESS']);
+  assert.deepEqual(res.waiting, []);
+});
+test('S4 四份契约只显示前三份并写总数', () => {
+  const entries = ['slug-a', 'slug-b', 'slug-c', 'slug-d'].map((slug) => ({ slug, reasons: [] }));
+  const res = scanProject(r5({ waitingPrereq: new Map([['FEAT-1', entries]]) }));
+  assert.match(res.waiting[0].detail, /^4 份契约在等前置:slug-a\(没写原因\);slug-b\(没写原因\);slug-c\(没写原因\);等 4 份$/);
+});
+test('S5 不传等待信息返回空数组', () => {
+  const res = scanProject(r5());
+  assert.deepEqual(kinds(res), ['STALE_IN_PROGRESS']);
+  assert.deepEqual(res.waiting, []);
+});

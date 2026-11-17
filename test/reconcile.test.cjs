@@ -16,8 +16,12 @@ const writeJson = (file, v) => { fs.mkdirSync(path.dirname(file), { recursive: t
 /** 假的 gh/git:按 cmd 与 args 返回预设输出。 */
 function fakeRun(opts = {}) {
   const calls = [];
-  const fn = (cmd, args) => {
+  const fn = (cmd, args, runOpts) => {
     calls.push([cmd, ...args]);
+    if (cmd === process.execPath) {
+      fn.queueCalls.push({ args, opts: runOpts });
+      return opts.queueResult || { status: 0, stdout: '{}' };
+    }
     if (cmd === 'gh') {
       if (opts.ghMissing) return { status: -1, stdout: '' };
       const state = args[args.indexOf('--state') + 1];
@@ -33,6 +37,7 @@ function fakeRun(opts = {}) {
     }
   };
   fn.calls = calls;
+  fn.queueCalls = [];
   return fn;
 }
 
@@ -244,4 +249,73 @@ test('C7 源码里每处 execFileSync / spawnSync 调用都带 windowsHide: true
     assert.ok(src.slice(m.index, m.index + 400).includes('windowsHide: true'), `第 ${count} 处缺 windowsHide`);
   }
   assert.ok(count >= 1);
+});
+
+function queueSetup(t, queueResult, register = true) {
+  const f = setup(t);
+  seed(f);
+  if (register) {
+    const reg = JSON.parse(fs.readFileSync(f.reg, 'utf8'));
+    reg.projects.myproj.reconcileQueueCommand = ['node', 'queue.cjs', '--json'];
+    writeJson(f.reg, reg);
+  }
+  return { f, rf: fakeRun({ queueResult }) };
+}
+const queueOutput = (items, gitOk = true) => ({ status: 0, stdout: JSON.stringify({ gitOk, items }) });
+const waitingItem = { card: 'ST1', slug: 'slug-x', verdict: 'wait-prereq', reasons: ['等待前置'] };
+const statusOf = (f) => readBoard(f.main.board).tasks.find((x) => x.id === 'ST1').status;
+
+test('Q1 等前置不留言不暂缓并在主仓运行队列命令', (t) => {
+  const { f, rf } = queueSetup(t, queueOutput([waitingItem]));
+  const res = run(f, rf, { apply: true });
+  assert.equal(statusOf(f), '施工中');
+  assert.equal(readBoard(f.main.board).activity.filter((a) => a.taskId === 'ST1' && a.author === 'reconcile').length, 0);
+  assert.match(res.text, /【等前置,不挂暂缓】1 条/);
+  assert.match(res.text, /slug-x/);
+  assert.equal(rf.queueCalls.length, 1);
+  assert.deepEqual(rf.queueCalls[0].args, ['queue.cjs', '--json']);
+  assert.equal(rf.queueCalls[0].opts.cwd, f.main.repo);
+  assert.equal(rf.queueCalls[0].opts.timeout, 120000);
+});
+test('Q2 git 不可读时按原规则暂缓', (t) => {
+  const { f, rf } = queueSetup(t, queueOutput([waitingItem], false));
+  const res = run(f, rf, { apply: true });
+  assert.equal(statusOf(f), '暂缓');
+  assert.match(res.text, /队列判读读不了 git 合并记录/);
+});
+test('Q3 命令失败时按原规则暂缓', (t) => {
+  const { f, rf } = queueSetup(t, { status: 1, stdout: '' });
+  const res = run(f, rf, { apply: true });
+  assert.equal(statusOf(f), '暂缓');
+  assert.match(res.text, /队列判读命令没跑成/);
+});
+test('Q4 输出不是 JSON 时按原规则暂缓', (t) => {
+  const { f, rf } = queueSetup(t, { status: 0, stdout: 'bad' });
+  const res = run(f, rf, { apply: true });
+  assert.equal(statusOf(f), '暂缓');
+  assert.match(res.text, /队列判读输出读不懂/);
+});
+test('Q5 可派的契约不阻止暂缓', (t) => {
+  const { f, rf } = queueSetup(t, queueOutput([{ ...waitingItem, verdict: 'dispatchable' }]));
+  run(f, rf, { apply: true });
+  assert.equal(statusOf(f), '暂缓');
+});
+test('Q6 没登记命令不调用队列', (t) => {
+  const { f, rf } = queueSetup(t, queueOutput([waitingItem]), false);
+  run(f, rf);
+  assert.equal(rf.queueCalls.length, 0);
+});
+test('Q7 没有久未动静的施工中卡不调用队列', (t) => {
+  const { f, rf } = queueSetup(t, queueOutput([waitingItem]));
+  const b = readBoard(f.main.board);
+  b.tasks.find((x) => x.id === 'ST1').lastProgressAt = iso(H);
+  writeJson(f.main.board, b);
+  run(f, rf);
+  assert.equal(rf.queueCalls.length, 0);
+});
+test('Q8 JSON 项目结果含等前置的卡', (t) => {
+  const { f, rf } = queueSetup(t, queueOutput([waitingItem]));
+  const res = run(f, rf, { json: true });
+  assert.equal(res.projects[0].waitingPrereq.length, 1);
+  assert.equal(res.projects[0].waitingPrereq[0].taskId, 'ST1');
 });
