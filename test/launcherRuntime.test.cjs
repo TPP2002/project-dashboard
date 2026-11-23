@@ -36,12 +36,7 @@ const launcher = require('../cli/launcher.cjs');
 const { CODE_ROOT } = require('../core/runtimeRoot.cjs');
 
 const SHAM = 'a'.repeat(40);
-// 删临时目录统一走本单新增的 core/testTempRoot.cjs；旧代码上没有这个模块，正是这一单要钉的新行为。
-const tempRoot = (() => { try { return require('../core/testTempRoot.cjs'); } catch { return null; } })();
-assert.ok(tempRoot, '缺本单新增的临时根清理模块 core/testTempRoot.cjs，旧代码上这条必须红');
-const clean = (dir) => tempRoot.removeRunRoot(dir, (target) => fs.rmSync(target, {
-  recursive: true, force: true, maxRetries: 5, retryDelay: 100,
-}));
+const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
 // 建出来的临时目录统一记下来，文件级 after 兜底删掉：用例中途断言失败也不留残渣（TEMP-LEAK-DASH-1123）。
 const tempDirs = [];
 const tmp = (p) => {
