@@ -1,6 +1,7 @@
 import { apiJson } from './http'
 import { progressBody } from './flow'
 import { actionPath } from './board'
+import { patchMemberTasks } from './writeEcho'
 import type { MemberTask, Project, TaskAction } from './types'
 
 export type MemberRequest = <T>(path: string, body?: unknown, signal?: AbortSignal) => Promise<T>
@@ -16,6 +17,9 @@ function cleanTasks(tasks: MemberTask[]): MemberTask[] {
     messages: (task.messages ?? []).map(({ ts, author, text, userId }) => ({ ts, author, text, userId })),
     collaborators: (task.collaborators ?? []).map(({ userId, name, joinedAt }) => ({ userId, name, joinedAt })),
   }))
+}
+function echoedTask(response: { task?: MemberTask }): MemberTask | null {
+  return response?.task && typeof response.task.id === 'string' ? cleanTasks([response.task])[0] : null
 }
 /** Explicit member field whitelist; owner metadata must never enter this view. */
 export function memberApi(request: MemberRequest = apiJson) {
@@ -34,17 +38,17 @@ export function memberApi(request: MemberRequest = apiJson) {
       if (response.unchanged && typeof response.version === 'string') return { unchanged: true, version: response.version }
       return { unchanged: false, version: response.version, tasks: cleanTasks(response.tasks!) }
     },
-    async create(projectId: string, body: { title: string; plainTitle?: string; description?: string }, signal?: AbortSignal): Promise<void> {
-      await request(`/api/collaboration/projects/${encodeURIComponent(projectId)}/tasks`, body, signal)
+    async create(projectId: string, body: { title: string; plainTitle?: string; description?: string }, signal?: AbortSignal): Promise<MemberTask | null> {
+      return echoedTask(await request<{ task?: MemberTask }>(`/api/collaboration/projects/${encodeURIComponent(projectId)}/tasks`, body, signal))
     },
-    async act(projectId: string, taskId: string, action: TaskAction, body: unknown = {}, signal?: AbortSignal): Promise<void> {
-      await request(actionPath(projectId, taskId, action), body, signal)
+    async act(projectId: string, taskId: string, action: TaskAction, body: unknown = {}, signal?: AbortSignal): Promise<MemberTask | null> {
+      return echoedTask(await request<{ task?: MemberTask }>(actionPath(projectId, taskId, action), body, signal))
     },
-    async claim(projectId: string, taskId: string, signal?: AbortSignal): Promise<void> {
-      await request(actionPath(projectId, taskId, 'claim'), {}, signal)
+    async claim(projectId: string, taskId: string, signal?: AbortSignal): Promise<MemberTask | null> {
+      return echoedTask(await request<{ task?: MemberTask }>(actionPath(projectId, taskId, 'claim'), {}, signal))
     },
-    async progress(projectId: string, taskId: string, percent: number, note: string, signal?: AbortSignal): Promise<void> {
-      await request(actionPath(projectId, taskId, 'progress'), progressBody(percent, note), signal)
+    async progress(projectId: string, taskId: string, percent: number, note: string, signal?: AbortSignal): Promise<MemberTask | null> {
+      return echoedTask(await request<{ task?: MemberTask }>(actionPath(projectId, taskId, 'progress'), progressBody(percent, note), signal))
     },
   }
 }
@@ -57,6 +61,13 @@ export class MemberLoader {
   private memory = new Map<string, { version?: string; tasks: MemberTask[] }>()
   constructor(private api = memberApi()) {}
   cancel() { this.generation++; this.controller?.abort(); this.controller = null }
+  patch(projectId: string, task: MemberTask): MemberTask[] | null {
+    const previous = this.memory.get(projectId)
+    if (!previous) return null
+    const tasks = patchMemberTasks(previous.tasks, task)
+    this.memory.set(projectId, { tasks })
+    return tasks
+  }
   async load(selected: string, allowedIds: readonly string[]): Promise<MemberSnapshot | null> {
     this.cancel()
     for (const id of this.memory.keys()) if (!allowedIds.includes(id)) this.memory.delete(id)

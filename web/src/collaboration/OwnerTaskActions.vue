@@ -7,8 +7,10 @@ import { actionPath, type DrawerAction } from './board'
 import { ownerCardActions, ownerDrawerActions } from './ownerActions'
 import { toChineseError } from './errorText'
 import ActionDialog from './ActionDialog.vue'
+import { useBoardStore } from '../stores/board'
 
 const props = defineProps<{ task: Task; projectId: string; refresh: () => Promise<unknown>; variant: 'card' | 'drawer'; inline?: boolean }>()
+const store = useBoardStore()
 const user = computed(() => collaborationOwnerUser())
 const entries = computed(() => {
   const all = ownerDrawerActions(props.task, user.value)
@@ -23,10 +25,15 @@ async function perform(action: TaskAction, body: unknown) {
   busy.value = true
   error.value = ''
   try {
-    await apiJson(actionPath(props.projectId, props.task.id, action), body, controller.signal)
+    const response = await apiJson<{ task?: unknown }>(actionPath(props.projectId, props.task.id, action), body, controller.signal)
     if (!controller.signal.aborted) {
       selected.value = null
-      await props.refresh()
+      if (store.applyTaskEcho(props.projectId, response?.task)) {
+        busy.value = false
+        void props.refresh().catch(cause => {
+          if (!controller.signal.aborted) error.value = toChineseError(0, cause instanceof Error ? cause.message : '操作失败，请重试')
+        })
+      } else await props.refresh()
     }
   } catch (cause) {
     if (!controller.signal.aborted) error.value = toChineseError(0, cause instanceof Error ? cause.message : '操作失败，请重试')

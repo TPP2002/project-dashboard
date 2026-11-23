@@ -9,6 +9,7 @@ import * as derive from '@/utils/derive'
 import { emitBoardEvent, type BoardEventKind } from '@/utils/boardEvents'
 import { applyBoardDelta } from '@/utils/boardDelta'
 import { createReloadQueue } from '@/utils/reloadQueue'
+import { applyOwnerEcho } from '@/collaboration/writeEcho'
 
 export const useBoardStore = defineStore('board', () => {
   // ---------- state ----------
@@ -91,6 +92,20 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   // ---------- actions ----------
+  function applyTaskEcho(pid: string, echo: unknown): boolean {
+    if (!echo || typeof echo !== 'object' || Array.isArray(echo)) return false
+    const board = boards.value[pid]
+    if (!board) return false
+    const id = (echo as { id?: unknown }).id
+    const index = board.tasks.findIndex(task => task.id === id)
+    if (index < 0) return false
+    const task = applyOwnerEcho(board.tasks[index], echo)
+    if (task === board.tasks[index]) return false
+    const tasks = [...board.tasks]
+    tasks[index] = task
+    boards.value = { ...boards.value, [pid]: { ...board, tasks } }
+    return true
+  }
   async function loadProjects() {
     projects.value = await fetchProjects()
   }
@@ -281,7 +296,7 @@ export const useBoardStore = defineStore('board', () => {
     projectList, allBoards, currentBoard, currentTasks, currentStatusCounts,
     currentProgress, pendingDecisions, pendingCount, decidedHistory, unlandedDecisions, unlandedCount, unlandedByTask, presumedLandedByTask, globalActivity, todayDoneCount, selectedBoard, selectedTask,
     isPulsing,
-    init, loadProjects, loadModules, loadBoard, loadAllBoards, ensureFullActivity, selectProject,
+    init, loadProjects, loadModules, loadBoard, loadAllBoards, ensureFullActivity, selectProject, applyTaskEcho,
     openTask, closeTask, decide, undecide, startStream, stopStream, refresh,
   }
 })
