@@ -36,11 +36,24 @@ function git(repo, args, opts = {}) {
 }
 function write(root, rel, s) { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), s); }
 const read = (p) => fs.readFileSync(p, 'utf8');
-const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
+// 删临时目录统一走本单新增的 core/testTempRoot.cjs；旧代码上没有这个模块，正是这一单要钉的新行为。
+const tempRoot = (() => { try { return require('../core/testTempRoot.cjs'); } catch { return null; } })();
+assert.ok(tempRoot, '缺本单新增的临时根清理模块 core/testTempRoot.cjs，旧代码上这条必须红');
+const clean = (dir) => tempRoot.removeRunRoot(dir, (target) => fs.rmSync(target, {
+  recursive: true, force: true, maxRetries: 5, retryDelay: 100,
+}));
+// 建出来的临时目录统一记下来，文件级 after 兜底删掉：用例中途断言失败也不留残渣（TEMP-LEAK-DASH-1123）。
+const tempDirs = [];
+const mkTmp = (p) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p)));
+  tempDirs.push(dir);
+  return dir;
+};
+test.after(() => { for (const dir of tempDirs.splice(0)) clean(dir); });
 
 /** seed 仓(master)→ bare origin → work 克隆;返回各路径。 */
 function setup() {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rel-')));
+  const dir = mkTmp('rel-');
   const seed = path.join(dir, 'seed'); fs.mkdirSync(seed);
   git(seed, ['init', '-q', '-b', 'master']);
   git(seed, ['config', 'user.email', 't@t.t']); git(seed, ['config', 'user.name', 't']); git(seed, ['config', 'commit.gpgsign', 'false']);
@@ -167,7 +180,7 @@ test('release --commit <sha>:钉死某个提交(回滚用)', () => {
 });
 
 test('release:代码根不是 git 检出(安装版/发布副本自身)→ 友好跳过,不报错', () => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rel-nogit-')));
+  const dir = mkTmp('rel-nogit-');
   const r = release({ source: dir, dest: path.join(dir, 'out'), 'skip-web': true });
   assert.equal(r.ok, true); assert.equal(r.skipped, true);
   assert.match(r.text, /无需发布/);
@@ -184,7 +197,7 @@ test('releaseStatus:副本不存在 → exists=false 且文案说未发布', () 
 });
 
 test('resolveHookCliRoot:环境变量 > 自身非检出 > 发布副本 > 拒装(永不指进 git 检出)', () => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'hookroot-')));
+  const dir = mkTmp('hookroot-');
   const checkout = path.join(dir, 'checkout'); fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });
   const installed = path.join(dir, 'installed'); fs.mkdirSync(installed);
   const rel = path.join(dir, 'rel');
@@ -224,7 +237,7 @@ test('release:副本根写出 board/kb 短别名垫片,印章记下来,垫片真
 });
 
 test('displayCliCommand:有垫片就用短名,没垫片回落 node 长写法,路径带空白一律不用垫片', () => {
-  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'shim-')));
+  const dir = mkTmp('shim-');
   const checkout = path.join(dir, 'checkout'); fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });
   const rel = path.join(dir, 'rel');
   fs.mkdirSync(path.join(rel, 'cli'), { recursive: true }); fs.writeFileSync(path.join(rel, 'cli', 'index.cjs'), '');

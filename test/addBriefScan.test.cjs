@@ -11,10 +11,18 @@ const { execFileSync } = require('node:child_process');
 const cmds = require('../cli/commands.cjs');
 
 const INDEX = path.join(__dirname, '..', 'cli', 'index.cjs');
+// 删临时目录统一走本单新增的 core/testTempRoot.cjs；旧代码上没有这个模块，正是这一单要钉的新行为。
+const tempRoot = (() => { try { return require('../core/testTempRoot.cjs'); } catch { return null; } })();
+assert.ok(tempRoot, '缺本单新增的临时根清理模块 core/testTempRoot.cjs，旧代码上这条必须红');
+
+// 建出来的临时项目目录统一记下来，文件级 after 兜底删掉：用例中途断言失败也不留残渣（TEMP-LEAK-DASH-1123）。
+const tempDirs = [];
+test.after(() => { for (const dir of tempDirs.splice(0)) clean(dir); });
 
 /** 临时项目：注册一块板；adopted=true 时主仓里放 docs/授权页.md（= 接了代理决策）。 */
 function setup({ adopted = true } = {}) {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'abs-')));
+  tempDirs.push(dir);
   const reg = path.join(dir, 'registry.json');
   fs.writeFileSync(reg, JSON.stringify({ schemaVersion: '1.0', projects: {} }));
   const root = path.join(dir, 'repo'); fs.mkdirSync(root);
@@ -25,7 +33,9 @@ function setup({ adopted = true } = {}) {
   cmds.register({ id: 't', name: 'd', root, registry: reg });
   return { dir, reg, root, board: path.join(root, '.dashboard', 'board.json') };
 }
-const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* Windows 偶发句柄滞留 */ } };
+const clean = (dir) => tempRoot.removeRunRoot(dir, (target) => fs.rmSync(target, {
+  recursive: true, force: true, maxRetries: 5, retryDelay: 100,
+}));
 const readBoard = (board) => JSON.parse(fs.readFileSync(board, 'utf8'));
 
 /** 跑真 CLI 入口，返回 {code, out} */
