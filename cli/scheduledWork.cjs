@@ -1,18 +1,36 @@
 'use strict';
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { scheduledJob } = require('../core/scheduledJobs.cjs');
 const { runScheduled, checkedCores, inheritedPermit } = require('../core/scheduledWork.cjs');
 const { resolveSchedShare } = require('../core/settings.cjs');
+const {
+  sweepStaleRunRoots, createRunRoot, tempEnv, removeRunRoot,
+} = require('../core/testTempRoot.cjs');
 
 function execute(job, root, cores) {
   return new Promise((resolve, reject) => {
+    // 本轮临时根：测试在系统临时文件夹里建的东西都落在它下面，跑完整个删掉（TEMP-LEAK-DASH-1123）。
+    const base = os.tmpdir();
+    for (const leftover of sweepStaleRunRoots(base)) {
+      console.error(`[temp-root] 旧残留没删掉:${leftover.path} ${leftover.error}`);
+    }
+    const runRoot = createRunRoot(base);
+    const cleanup = () => {
+      const result = removeRunRoot(runRoot);
+      if (!result.removed) console.error(`[temp-root] 本轮临时根没删掉:${runRoot} ${result.error}`);
+    };
     const child = spawn(job.command, job.args(cores), { cwd: job.cwd || root,
-      env: { ...process.env, GOMAXPROCS: String(cores), UV_THREADPOOL_SIZE: String(cores) },
+      env: tempEnv({
+        ...process.env,
+        GOMAXPROCS: String(cores),
+        UV_THREADPOOL_SIZE: String(cores),
+      }, runRoot),
       stdio: 'inherit', windowsHide: true });
-    child.once('error', reject);
-    child.once('exit', (code, signal) => resolve(code ?? (signal ? 130 : 1)));
+    child.once('error', (error) => { cleanup(); reject(error); });
+    child.once('exit', (code, signal) => { cleanup(); resolve(code ?? (signal ? 130 : 1)); });
   });
 }
 
@@ -57,4 +75,4 @@ async function main(argv, deps = {}) {
 
 if (require.main === module) main(process.argv.slice(2)).then(code => { process.exitCode = code; })
   .catch(error => { console.error(error.message); process.exitCode = error.exitCode || 1; });
-module.exports = { main };
+module.exports = { main, execute };

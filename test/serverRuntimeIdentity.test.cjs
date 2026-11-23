@@ -11,7 +11,7 @@
  *   · 老实例(不报 codeRoot 的旧版本)一律判"不是同一份"——迁移当天在跑的就是那种;
  *   · 开发实例(代码根是 git 检出)与发布副本【端口段不重叠】:不重叠才不会互相误杀。
  */
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -20,8 +20,15 @@ const http = require('node:http');
 const { spawn, execFileSync } = require('node:child_process');
 
 const DASH_ROOT = path.resolve(__dirname, '..');
-const realTmp = (p) => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
+// 建出来的临时目录统一记下来，文件级 after 兜底删掉：用例中途断言失败也不留残渣（TEMP-LEAK-DASH-1123）。
+const tempDirs = [];
+const realTmp = (p) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p)));
+  tempDirs.push(dir);
+  return dir;
+};
+after(() => { for (const dir of tempDirs.splice(0)) clean(dir); });
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const freePort = require('../scripts/free-port.cjs');
 

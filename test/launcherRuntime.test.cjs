@@ -36,8 +36,15 @@ const launcher = require('../cli/launcher.cjs');
 const { CODE_ROOT } = require('../core/runtimeRoot.cjs');
 
 const SHAM = 'a'.repeat(40);
-const tmp = (p) => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 const clean = (dir) => { try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* 清理失败不判红 */ } };
+// 建出来的临时目录统一记下来，文件级 after 兜底删掉：用例中途断言失败也不留残渣（TEMP-LEAK-DASH-1123）。
+const tempDirs = [];
+const tmp = (p) => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), p)));
+  tempDirs.push(dir);
+  return dir;
+};
+test.after(() => { for (const dir of tempDirs.splice(0)) clean(dir); });
 /** 与真实客户端 residentLeaseFile 同判据的租约路径：<share>/sched/leases/<单号>.json。 */
 const leaseFileOf = (share, id) => path.join(share, 'sched', 'leases', `${id}.json`);
 
