@@ -39,6 +39,15 @@ export function clock(at: string) {
 export function age(at: string | null, now: number): number | null {
   return at && Number.isFinite(Date.parse(at)) ? Math.max(0, now - Date.parse(at)) : null
 }
+/** 心跳龄按取到快照那一刻算；页面自己久未刷新时只说数据待刷新，不替派单员下结论。 */
+export function dispatcherHealth(input: { heartbeatAt: string | null; snapshotAt: number | null; now: number }):
+  { kind: 'online' | 'lost' | 'stale-view'; heartbeatAgeMs: number | null; viewAgeMs: number | null } {
+  const viewAgeMs = input.snapshotAt === null ? null : Math.max(0, input.now - input.snapshotAt)
+  const heartbeatAgeMs = input.snapshotAt === null ? null : age(input.heartbeatAt, input.snapshotAt)
+  const kind = viewAgeMs === null || viewAgeMs > 30000 ? 'stale-view'
+    : heartbeatAgeMs === null || heartbeatAgeMs > 120000 ? 'lost' : 'online'
+  return { kind, heartbeatAgeMs, viewAgeMs }
+}
 export function freshness(machine: MachineSnapshot, now: number) {
   const heartbeat = age(machine.heartbeatAt, now), load = age(machine.loadSampledAt, now)
   const ageMs = heartbeat === null || load === null ? null : Math.max(heartbeat, load)

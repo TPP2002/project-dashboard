@@ -14,14 +14,20 @@ import RecentCommands from '@/components/sched/RecentCommands.vue'
 import LedgerTable from '@/components/sched/LedgerTable.vue'
 import TicketDrawer from '@/components/sched/TicketDrawer.vue'
 import EstimateText from '@/components/sched/EstimateText.vue'
-import { age, etaModelPill, residentCount, ticketLabel, visibleTickets } from '@/components/sched/format'
+import { dispatcherHealth, etaModelPill, residentCount, ticketLabel, visibleTickets } from '@/components/sched/format'
 import { loadShowResident, saveShowResident } from '@/components/sched/preferences'
 import '@/components/sched/console.css'
 
 const store = useSchedStore()
 const remote = useRemoteHosts()
 const etaPill = computed(() => etaModelPill(store.snapshot?.etaModel ?? null))
-const heartbeatAge = computed(() => age(store.snapshot?.dispatcher.heartbeat.at ?? null, store.now))
+const health = computed(() => dispatcherHealth({ heartbeatAt: store.snapshot?.dispatcher.heartbeat.at ?? null, snapshotAt: store.snapshotAt, now: store.now }))
+const healthPill = computed(() => {
+  const { kind, heartbeatAgeMs, viewAgeMs } = health.value
+  if (kind === 'online') return { tone: 'ok', text: `派单员在线 · 心跳 ${Math.floor((heartbeatAgeMs ?? 0) / 1000)} 秒前` }
+  if (kind === 'lost') return { tone: 'bad', text: `派单员失联 · 心跳 ${heartbeatAgeMs === null ? '未知' : `${Math.floor((heartbeatAgeMs + (viewAgeMs ?? 0)) / 1000)} 秒前`}` }
+  return { tone: '', text: viewAgeMs === null ? '数据待刷新' : `数据待刷新 · ${Math.floor(viewAgeMs / 1000)} 秒前取到` }
+})
 const online = computed(() => store.snapshot?.machines.filter(machine => machine.online) ?? [])
 const offline = computed(() => store.snapshot?.machines.filter(machine => !machine.online) ?? [])
 const onlineMachines = computed(() => online.value.map(machine => machine.name))
@@ -39,15 +45,13 @@ onUnmounted(store.stop)
 
 <template>
   <main class="sched-page">
-    <DispatcherBanner v-if="store.readable && store.snapshot" :heartbeat-at="store.snapshot.dispatcher.heartbeat.at" :now="store.now" />
+    <DispatcherBanner v-if="store.readable && store.snapshot" :heartbeat-at="store.snapshot.dispatcher.heartbeat.at" :snapshot-at="store.snapshotAt" :now="store.now" />
     <ReserveCard :host="store.readable ? store.host : null" :busy="store.busy || !store.readable" @command="store.command" />
     <ReservationBanner v-if="store.readable && store.snapshot" :host="store.host" :change="store.snapshot.hostReservationChange ?? null" :now="store.now" :busy="store.busy" @command="store.command" />
     <header class="sched-page-head">
       <h1>调度台</h1>
       <div class="sched-pills">
-        <span v-if="store.readable" class="sched-pill" :class="heartbeatAge !== null && heartbeatAge <= 120000 ? 'ok' : 'bad'">
-          {{ heartbeatAge !== null && heartbeatAge <= 120000 ? '派单员在线' : '派单员失联' }} · 心跳 {{ heartbeatAge === null ? '未知' : Math.floor(heartbeatAge / 1000) + ' 秒前' }}
-        </span><span class="sched-pill">台账永久 · 日志 90 天</span><label v-if="store.readable" class="sched-resident-toggle" title="勾选后，机器卡的「调度中的单子」会列出常驻占用的单子；不勾选则收起。"><input v-model="showResident" type="checkbox">显示常驻占用（{{ residentTotal }}）</label><span v-if="etaPill.text" class="sched-pill" :class="{ warn: !etaPill.ok }" :title="etaPill.title">{{ etaPill.text }}</span>
+        <span v-if="store.readable" class="sched-pill" :class="healthPill.tone">{{ healthPill.text }}</span><span class="sched-pill">台账永久 · 日志 90 天</span><label v-if="store.readable" class="sched-resident-toggle" title="勾选后，机器卡的「调度中的单子」会列出常驻占用的单子；不勾选则收起。"><input v-model="showResident" type="checkbox">显示常驻占用（{{ residentTotal }}）</label><span v-if="etaPill.text" class="sched-pill" :class="{ warn: !etaPill.ok }" :title="etaPill.title">{{ etaPill.text }}</span>
       </div>
     </header>
     <div v-if="store.snapshotError" class="sched-banner bad" role="alert"><div><strong>读不到调度共享盘</strong><p>{{ store.snapshotError }}</p></div>
@@ -84,10 +88,10 @@ onUnmounted(store.stop)
       <p v-if="!remote.disabled.value && remote.configError.value" class="warn" role="status">远程机器配置有误:{{ remote.configError.value }}</p>
       <p v-if="!remote.disabled.value && remote.error.value" class="warn" role="status">远程机器读数暂时取不到:{{ remote.error.value }}</p>
       <div class="sched-machines"><MachineCard v-for="machine in online" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" :show-resident="showResident" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /><RemoteHostCard v-for="host in remote.disabled.value ? [] : remote.hosts.value" :key="`remote-${host.name}`" :host="host" /></div>
+        :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :data-at="store.snapshotAt ?? store.now" :busy="store.busy" :online-machines="onlineMachines" :show-resident="showResident" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /><RemoteHostCard v-for="host in remote.disabled.value ? [] : remote.hosts.value" :key="`remote-${host.name}`" :host="host" /></div>
       <details v-if="offline.length" class="sched-offline"><summary>离线机器 {{ offline.length }} 台（不参与派单）</summary>
         <div class="sched-machines"><MachineCard v-for="machine in offline" :key="machine.name" :machine="machine" :host="store.snapshot.dispatcher.config.machine"
-          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" :online-machines="onlineMachines" :show-resident="showResident" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
+          :tickets="store.snapshot.running" :estimates="store.snapshot.estimates" :now="store.now" :data-at="store.snapshotAt ?? store.now" :busy="store.busy" :online-machines="onlineMachines" :show-resident="showResident" @open="store.openDetail" @cancel="cancel" @pause="pause" @resume="resume" /></div>
       </details>
       <QueueTable :queue="store.snapshot.queue" :locks="store.snapshot.locks" :details="store.queueDetails" :errors="store.queueErrors"
         :estimates="store.snapshot.estimates" :now="store.now" :busy="store.busy" @open="store.openDetail" @cancel="cancel" @jump="jump" />
