@@ -5,9 +5,9 @@ import { fetchCiJobs, type CiJobsSnapshot } from '@/api/schedCiJobs'
 import EstimateText from './EstimateText.vue'
 import { age, ciJobLabel, ciQueueHeading, ciQueuedForCard, ciQueuedLabel, ciRunnersDiffer, ciThrottleNote, duration, freshness, stamp, ticketLabel, ticketTone, visibleTickets } from './format'
 import { agentSlotsDisplay, formatCores, machineCapacity } from '../../../../core/schedMachineDisplay.mjs'
-const props = withDefaults(defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; busy: boolean; onlineMachines?: string[]; showResident?: boolean }>(), { showResident: true })
+const props = withDefaults(defineProps<{ machine: MachineSnapshot; host: string; tickets: TicketSummary[]; estimates: Record<string, TicketEstimate>; now: number; dataAt?: number; busy: boolean; onlineMachines?: string[]; showResident?: boolean }>(), { showResident: true })
 const emit = defineEmits<{ open: [id: string]; cancel: [id: string]; pause: [id: string]; resume: [id: string] }>()
-const fresh = computed(() => freshness(props.machine, props.now))
+const fresh = computed(() => freshness(props.machine, props.dataAt ?? props.now))
 const capacity = computed(() => machineCapacity(props.machine, fresh.value.stale))
 // 作业槽与可用核是两个口径:槽满只说明执行端槽满,不冒充核满;离线或过期时数字注明旧快照。
 const slots = computed(() => agentSlotsDisplay(props.machine.agentSlots, !props.machine.online || fresh.value.stale))

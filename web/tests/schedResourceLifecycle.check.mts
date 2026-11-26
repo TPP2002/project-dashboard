@@ -17,7 +17,7 @@ function deferred() {
   const promise = new Promise<any>((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-export function harness(source = path.join(root, 'web/src/stores/sched.ts')) {
+export function harness(source = path.join(root, 'web/src/stores/sched.ts'), fixtures: { Date?: DateConstructor } = {}) {
   const calls: any[] = [], metadata: any[] = [], detailCalls: any[] = [], snapshotCalls: any[] = [], intervals = new Map(), listeners = new Map(), streams: any[] = []
   const counters = { ledgerFetches: 0, metadataFetches: 0, snapshotFetches: 0, detailFetches: 0 }
   const storage = new Map([['dashboard.sched.filters.v1', JSON.stringify(prefs)]])
@@ -48,7 +48,7 @@ export function harness(source = path.join(root, 'web/src/stores/sched.ts')) {
     postCommand: async () => ({ commandId: 'dash-20261017T000000000Z-test' }),
   }
   const document = { visibilityState: 'visible', addEventListener: (k: string, v: any) => listeners.set(k, v), removeEventListener: (k: string) => listeners.delete(k) }
-  const sandbox: any = { AbortController, Date, URL, URLSearchParams, Error, console, document,
+  const sandbox: any = { AbortController, Date: fixtures.Date ?? Date, URL, URLSearchParams, Error, console, document,
     fetch: (input: string, init: any) => {
       const url = new URL(input, 'http://fixture.invalid')
       assert.equal(url.pathname, '/api/sched/tickets')

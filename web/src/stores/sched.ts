@@ -8,6 +8,7 @@ import { pruneQueueRecords, queueMetadataOf, type QueueMetadata } from './schedR
 
 export const useSchedStore = defineStore('sched', () => {
   const snapshot = ref<api.SchedSnapshot | null>(null)
+  const snapshotAt = ref<number | null>(null)
   const snapshotError = ref(''), loading = ref(false), commandError = ref(''), storageError = ref('')
   const now = ref(Date.now()), busy = ref(false)
   const reconnecting = ref(false), reconnectAttempt = ref(0)
@@ -23,7 +24,9 @@ export const useSchedStore = defineStore('sched', () => {
   const host = computed(() => snapshot.value?.machines.find(machine => machine.name === snapshot.value?.dispatcher.config.machine) ?? null)
   const commands = computed(() => submitted.value.filter(item => item.share === snapshot.value?.share))
   let active = false, stream: BoardStream | null = null, timer: number | undefined
-  let snapshotRequest: AbortController | null = null, ledgerRequest: AbortController | null = null, detailRequest: AbortController | null = null
+  let snapshotRequest: AbortController | null = null, snapshotRequestStartedAt = 0
+  let metadataRequest: AbortController | null = null
+  let ledgerRequest: AbortController | null = null, detailRequest: AbortController | null = null
   let exportRequest: AbortController | null = null
   let ledgerQuery = queryFilters(filters.value, now.value), metadataShare = ''
   let metadataGeneration = 0, metadataTickets = new Set<string>()
@@ -61,8 +64,9 @@ export const useSchedStore = defineStore('sched', () => {
   }
   async function refreshSnapshot() {
     if (!active || document.visibilityState !== 'visible' || snapshotRequest) return
-    const request = new AbortController(); snapshotRequest = request; loading.value = true
+    const request = new AbortController(); snapshotRequest = request; snapshotRequestStartedAt = Date.now(); loading.value = true
     reconnecting.value = false; reconnectAttempt.value = 0
+    let details: Promise<void> | null = null
     try {
       const data = await fetchSnapshotWithRetry(api.fetchSnapshot, {
         signal: request.signal,
@@ -75,14 +79,18 @@ export const useSchedStore = defineStore('sched', () => {
       if (metadataShare !== data.share) { queueDetails.value = {}; queueErrors.value = {}; metadataShare = data.share }
       metadataGeneration++; metadataTickets = new Set(data.queue.map(item => item.ticketId))
       pruneQueueRecords(queueDetails.value, metadataTickets); pruneQueueRecords(queueErrors.value, metadataTickets)
-      snapshot.value = data; snapshotError.value = ''; now.value = Date.now(); reconcileReceipts(data)
-      await queueMetadata(data, request.signal)
+      snapshot.value = data; snapshotAt.value = Date.now(); snapshotError.value = ''; now.value = Date.now(); reconcileReceipts(data)
+      metadataRequest?.abort()
+      const metadata = new AbortController(); metadataRequest = metadata
+      details = queueMetadata(data, metadata.signal)
     } catch (error) {
       if (!request.signal.aborted) {
         reconnecting.value = false
         snapshotError.value = error instanceof Error ? error.message : String(error)
       }
     } finally { if (snapshotRequest === request) { snapshotRequest = null; loading.value = false } }
+    // 排队单详情另起一路：快照请求已在上面释放，下一拍不会被它挡住；本拍详情照旧随这次调用收尾。
+    if (details) await details
   }
   async function loadLedger() {
     if (!active || document.visibilityState !== 'visible') return
@@ -163,6 +171,7 @@ export const useSchedStore = defineStore('sched', () => {
     if (timer !== undefined) window.clearInterval(timer)
     timer = undefined; stream?.stop(); stream = null
     snapshotRequest?.abort(); snapshotRequest = null; loading.value = false
+    metadataRequest?.abort(); metadataRequest = null
     ledgerRequest?.abort(); ledgerRequest = null; ledgerRefreshPending = false; ledgerLoading.value = false
   }
   function visibilityChanged() {
@@ -171,7 +180,13 @@ export const useSchedStore = defineStore('sched', () => {
     now.value = Date.now(); void refreshSnapshot(); void loadLedger()
     stream = new BoardStream({ onChanged: () => {}, onSchedChanged: () => { void refreshSnapshot(); void loadLedger() } })
     stream.start()
-    timer = window.setInterval(() => { now.value = Date.now(); void refreshSnapshot() }, 5000)
+    timer = window.setInterval(() => {
+      now.value = Date.now()
+      if (snapshotRequest && Date.now() - snapshotRequestStartedAt > 20000) {
+        snapshotRequest.abort(); snapshotRequest = null; loading.value = false
+      }
+      void refreshSnapshot()
+    }, 5000)
   }
   function start() {
     if (active) return
@@ -181,12 +196,12 @@ export const useSchedStore = defineStore('sched', () => {
   function stop() {
     active = false; document.removeEventListener('visibilitychange', visibilityChanged); suspend(); closeDetail()
     metadataGeneration++; metadataTickets.clear(); metadataShare = ''; queueDetails.value = {}; queueErrors.value = {}
-    snapshot.value = null; ledger.value = null; cursors.value = ['']; page.value = 0
+    snapshot.value = null; snapshotAt.value = null; ledger.value = null; cursors.value = ['']; page.value = 0
     snapshotError.value = ''; ledgerError.value = ''; detailError.value = ''; exportError.value = ''
     ledgerRequestKey = ''
   }
 
-  return { snapshot, snapshotError, loading, commandError, storageError, now, busy, readable, host, commands, reconnecting, reconnectAttempt,
+  return { snapshot, snapshotAt, snapshotError, loading, commandError, storageError, now, busy, readable, host, commands, reconnecting, reconnectAttempt,
     filters, ledger, ledgerError, ledgerLoading, page, detail, detailId, detailError, detailLoading, related, queueDetails, queueErrors,
     exporting, exportError, exportLedger, refreshSnapshot, loadLedger, applyFilters, movePage, openDetail, closeDetail, command, start, stop }
 })
